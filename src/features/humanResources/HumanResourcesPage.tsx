@@ -29,7 +29,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation, useOutletContext } from 'react-router-dom';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
@@ -38,6 +38,9 @@ import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
 import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
 import './hrDocumentActions.css';
+import './hrDashboard.css';
+import { EmploymentPeriodsPanel } from './EmploymentPeriodsPanel';
+import { HrActionPlanningPanel } from './HrActionPlanningPanel';
 import {
   buildStaffEvolution,
   buildMonthlyStaffEvolution,
@@ -97,6 +100,7 @@ interface HumanResourcesPageProps {
   roles?: RoleKey[];
   initialPersonId?: number | null;
   initialDocumentId?: number | null;
+  initialActions?: boolean;
   initialSectionKey?: HrDetailsSectionKey;
 }
 
@@ -730,10 +734,10 @@ export function HumanResourcesRoute(props: HumanResourcesPageProps) {
   const section = documentId ? 'documents' : params.get('section') === 'contract' ? 'contract'
     : params.get('section') === 'signature' ? 'signature' : undefined;
   // A fresh navigation, including a click on the active RH link, starts on oneself.
-  return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} />;
+  return <HumanResourcesPage key={location.key} {...props} initialPersonId={personId} initialDocumentId={documentId} initialSectionKey={section} initialActions={params.get('actions') === '1'} />;
 }
 
-export function HumanResourcesPage({ client, currentPersonId, roles, initialPersonId, initialDocumentId, initialSectionKey }: HumanResourcesPageProps) {
+export function HumanResourcesPage({ client, currentPersonId, roles, initialPersonId, initialDocumentId, initialSectionKey, initialActions }: HumanResourcesPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -750,7 +754,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
   const [documents, setDocuments] = useState<HrDocumentRecord[]>([]);
   const [documentTypes, setDocumentTypes] = useState<HrDocumentTypeOption[]>([]);
   const [visibilityRules, setVisibilityRules] = useState<HrVisibilityRule[]>([]);
-  const [rosterPopulation, setRosterPopulation] = useState<HrRosterPopulation>('current');
+  const [rosterPopulation, setRosterPopulation] = useState<HrRosterPopulation>(initialPersonId ? 'all' : 'current');
   const [staffEvolutionYear, setStaffEvolutionYear] = useState<StaffEvolutionYearFilter>('all');
   const [isRosterFiltersOpen, setIsRosterFiltersOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1037,6 +1041,12 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
     } else return;
     openedInitialDocumentId.current = initialDocumentId;
   }, [initialDocumentId, isLoading, isManager, roleVisibleDocuments, selectedPersonDocuments]);
+
+  useEffect(() => {
+    if (isLoading || !selectedPerson || selectedPerson.id !== initialPersonId) return;
+    const targetId = initialActions ? 'rh-actions' : initialDocumentId ? `hr-document-${initialDocumentId}` : '';
+    if (targetId) document.getElementById(targetId)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [initialActions, initialDocumentId, initialPersonId, isLoading, selectedPerson]);
 
   function updateFormValue(key: keyof PersonFormState, value: string) {
     setForm((currentForm) => ({
@@ -1394,6 +1404,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         <MetricCluster
           icon={<Users aria-hidden="true" size={18} />}
           label="Effectif RH"
+          visualization="population"
           value={dashboard.metrics.activePeople}
           items={[
             { label: 'Sédentaires', value: dashboard.metrics.sedentaryPeople },
@@ -1413,6 +1424,9 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
               label: 'Visites médicales',
               value: dashboard.metrics.medicalVisitRenewals,
             },
+            ...(dashboard.metrics.otherRenewals > 0 ? [{
+              ariaLabel: 'Autres documents a revalider', label: 'Autres documents', value: dashboard.metrics.otherRenewals,
+            }] : []),
           ]}
         />
         <MetricCluster
@@ -1425,9 +1439,11 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
             { ariaLabel: 'Documents manquants', label: 'Documents manquants', value: dashboard.metrics.missing },
           ]}
         />
-        <StrategicMetric label="Turnover CDI 12 mois" suffix="%" value={trailingWorkforceMetrics.permanentTurnover.rate} />
-        <StrategicMetric label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
-        <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
+        <div className="hr-strategic-stack">
+          <StrategicMetric icon={<TrendingUp aria-hidden="true" size={17} />} label="Turnover CDI 12 mois" suffix="%" value={trailingWorkforceMetrics.permanentTurnover.rate} />
+          <StrategicMetric icon={<BriefcaseBusiness aria-hidden="true" size={17} />} label="Ancienneté moyenne" suffix=" ans" value={dashboard.metrics.averageTenureYears} />
+          <StrategicMetric label="Conformité médicale" suffix="%" tone="success" value={dashboard.metrics.medicalComplianceRate} />
+        </div>
       </div> : null}
 
       {!isRestrictedHrView ? <div className="hr-analytics-grid">
@@ -1608,6 +1624,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         )}
         </section> : null}
 
+        <div className="hr-profile-workspace">
         <PersonProfileCard
           initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
           canCreateDocument={isManager || isCaptainView}
@@ -1644,10 +1661,16 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
           onDocumentSelect={toggleDocumentSelection}
           onDelete={handleDeletePerson}
           onSave={handleSavePersonDetails}
+          onEmploymentSaved={(updatedPerson) => setPeople((currentPeople) => sortPeople(currentPeople.map((person) => person.id === updatedPerson.id ? updatedPerson : person)))}
           person={selectedPerson}
           selectedDocumentIds={selectedDocumentIds}
           visibleSectionKeys={visibleSectionKeys}
         />
+        {selectedPerson && visibleSectionKeys.has('documents') ? <div id="hr-action-planning" className="hr-action-planning-anchor">
+          <HrActionPlanningPanel key={selectedPerson.id} client={effectiveClient} personId={selectedPerson.id}
+            personName={formatPersonName(selectedPerson)} documents={selectedPersonDocuments} canEdit={isManager} />
+        </div> : null}
+        </div>
       </div>
 
       {isBulkSheetOpen && !isMarinView && visiblePeople.length ? (
@@ -1725,14 +1748,18 @@ function StaffEvolutionChart({
   yearFilter: StaffEvolutionYearFilter;
   years: number[];
 }) {
+  const gradientId = useId().replace(/:/g, '');
   const maxCount = Math.max(1, ...points.map((point) => point.count));
   const chartPoints = points.map((point, index) => {
-    const x = points.length <= 1 ? 24 : 24 + (index * 552) / (points.length - 1);
-    const y = 78 - (point.count / maxCount) * 56;
+    const x = points.length <= 1 ? 56 : 56 + (index * 568) / (points.length - 1);
+    const y = 202 - (point.count / maxCount) * 150;
 
     return { ...point, x, y };
   });
   const polylinePoints = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+  const areaPath = chartPoints.length ? `M ${chartPoints[0].x},202 L ${chartPoints.map((point) => `${point.x},${point.y}`).join(' L ')} L ${chartPoints[chartPoints.length - 1].x},202 Z` : '';
+  const latestCount = points[points.length - 1]?.count || 0;
+  const difference = latestCount - (points[0]?.count || 0);
   const periodLabel = selectedYear === null
     ? `${years[0]} – ${years[years.length - 1]}`
     : `Janvier – ${points[points.length - 1]?.label || 'Décembre'} ${selectedYear}`;
@@ -1762,21 +1789,30 @@ function StaffEvolutionChart({
         </div>
       </div>
       <div className="hr-evolution-content">
-        <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="none" viewBox="0 0 600 96">
-          <line className="hr-evolution-axis" x1="24" x2="576" y1="78" y2="78" />
+        <div className="hr-evolution-plot">
+        <div className="hr-evolution-summary"><div><strong>{latestCount}</strong><span>collaborateurs en fin de période</span></div><span className={difference < 0 ? 'is-negative' : 'is-positive'}><TrendingUp size={15} aria-hidden="true" />{difference >= 0 ? '+' : ''}{difference} sur la période</span></div>
+        <svg aria-hidden="true" className="hr-evolution-chart" preserveAspectRatio="xMidYMid meet" viewBox="0 0 680 246">
+          <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2184f4" stopOpacity=".23" /><stop offset="100%" stopColor="#2184f4" stopOpacity=".015" /></linearGradient></defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => <g key={ratio}><line className="hr-evolution-gridline" x1="56" x2="624" y1={202 - ratio * 150} y2={202 - ratio * 150} /><text className="hr-evolution-scale" x="38" y={206 - ratio * 150}>{Math.round(maxCount * ratio)}</text></g>)}
+          <path d={areaPath} fill={`url(#${gradientId})`} />
           <polyline className="hr-evolution-line" points={polylinePoints} />
           {chartPoints.map((point) => (
             <g key={point.key}>
-              <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="3" />
-              <text className="hr-evolution-value" x={point.x} y={Math.max(10, point.y - 8)}>
+              <title>{point.label} : {point.count} collaborateurs</title>
+              <circle className="hr-evolution-dot-halo" cx={point.x} cy={point.y} r="8" />
+              <circle className="hr-evolution-dot" cx={point.x} cy={point.y} r="4.5" />
+              <text className="hr-evolution-value" x={point.x} y={Math.max(15, point.y - 16)}>
                 {point.count}
               </text>
-              <text className="hr-evolution-year" x={point.x} y="93">
+              <text className="hr-evolution-year" x={point.x} y="232">
                 {point.label}
               </text>
             </g>
           ))}
         </svg>
+        <ul className="hr-visually-hidden" aria-label="Valeurs de l’évolution des effectifs">{points.map((point) => <li key={point.key}>{point.label} : {point.count} collaborateurs</li>)}</ul>
+        <p className="hr-evolution-footnote">Effectif présent à chaque fin de période · interruptions et réembauches incluses</p>
+        </div>
         <aside className="hr-turnover-panel" aria-label="Indicateurs de sorties">
           <div className="hr-turnover-stat">
             <small>{permanentTurnoverLabel}</small>
@@ -1846,24 +1882,31 @@ function formatMetric(value: number, maximumFractionDigits = 1): string {
 }
 
 function StrategicMetric({
+  icon,
   label,
   suffix,
   tone = 'neutral',
   value,
 }: {
+  icon?: ReactNode;
   label: string;
   suffix: string;
   tone?: 'neutral' | 'success';
   value: number;
 }) {
   return (
-    <section aria-label={label} className={`hr-strategic-metric hr-strategic-metric-${tone}`}>
-      <small>{label}</small>
+    <section aria-label={label} className={`hr-strategic-metric hr-strategic-metric-${tone}${tone === 'success' ? ` hr-medical-compliance--${value >= 95 ? 'high' : value >= 80 ? 'intermediate' : 'low'}` : ''}`}>
+      {tone === 'success' ? <span aria-hidden="true" className="hr-medical-progress">
+        <svg viewBox="0 0 36 36"><circle className="hr-medical-progress-track" cx="18" cy="18" r="14" pathLength="100" /><circle className="hr-medical-progress-value" cx="18" cy="18" r="14" pathLength="100" strokeDasharray={`${Math.min(100, Math.max(0, value))} 100`} /></svg>
+        <HeartPulse size={13} />
+      </span> : <span aria-hidden="true" className="hr-strategic-icon">{icon}</span>}
+      <div className="hr-strategic-copy"><small>{label}</small>
+        <span>{tone === 'success' ? 'Dossiers à jour' : label === 'Ancienneté moyenne' ? 'Périodes travaillées cumulées' : 'Indicateur sur 12 mois'}</span>
+      </div>
       <strong>
         {formatMetric(value)}
         {suffix}
       </strong>
-      <span>{tone === 'success' ? 'Dossiers à jour' : 'Indicateur sur 12 mois'}</span>
     </section>
   );
 }
@@ -1915,29 +1958,46 @@ function MetricCluster({
   label,
   tone = 'neutral',
   value,
+  visualization = 'status',
 }: {
   icon?: ReactNode;
   items: Array<{ ariaLabel?: string; label: string; value: number }>;
   label: string;
   tone?: 'neutral' | 'warning' | 'danger';
   value: number;
+  visualization?: 'population' | 'status';
 }) {
+  const partsTotal = items.reduce((total, item) => total + item.value, 0);
+  let cumulative = 0;
+  const parts = items.map((item) => {
+    const offset = cumulative;
+    cumulative += item.value;
+    return { ...item, share: partsTotal > 0 ? (item.value / partsTotal) * 100 : 0, offset: partsTotal > 0 ? (offset / partsTotal) * 100 : 0 };
+  });
   return (
-    <section aria-label={label} className={`hr-kpi-cluster hr-kpi-cluster-${tone}`}>
+    <section aria-label={label} className={`hr-kpi-cluster hr-kpi-cluster-${tone} hr-kpi-cluster--${visualization}`}>
       <div className="hr-kpi-cluster-total">
         <span className="hr-kpi-cluster-label">
           {icon}
           {label}
         </span>
-        <strong>{value}</strong>
+        {visualization === 'status' ? <strong>{value}</strong> : null}
       </div>
+      <div className="hr-kpi-cluster-body">
+      {visualization === 'population' ? <div className="hr-population-donut">
+        <svg aria-hidden="true" viewBox="0 0 88 88"><circle className="hr-population-track" cx="44" cy="44" r="35" />
+          {parts.map((item, index) => item.value > 0 ? <circle className={`hr-population-segment hr-population-part-${index}`} key={item.label} cx="44" cy="44" r="35" pathLength="100" strokeDasharray={`${item.share} ${100 - item.share}`} strokeDashoffset={-item.offset} /> : null)}
+        </svg><div><strong>{value}</strong><small>personnes</small></div>
+      </div> : <div aria-hidden="true" className={`hr-kpi-segments${partsTotal === 0 ? ' is-empty' : ''}`}>{parts.map((item, index) => <i className={`hr-kpi-segment-${index}`} key={item.label} style={{ flexGrow: item.value }} />)}</div>}
       <div className="hr-kpi-cluster-items">
-        {items.map((item) => (
+        {items.map((item, index) => (
           <span aria-label={item.ariaLabel || item.label} className="hr-kpi-submetric" key={item.ariaLabel || item.label}>
+            <i aria-hidden="true" className={`hr-kpi-legend-${index}`} />
             <strong>{item.value}</strong>
             <small>{item.label}</small>
           </span>
         ))}
+      </div>
       </div>
     </section>
   );
@@ -2098,6 +2158,7 @@ function PersonProfileCard({
   onDocumentSelect,
   onDelete,
   onSave,
+  onEmploymentSaved,
   person,
   selectedDocumentIds,
   visibleSectionKeys,
@@ -2129,6 +2190,7 @@ function PersonProfileCard({
     input: UpdatePersonDetailsInput,
     medicalUpdates: MedicalDocumentUpdate[],
   ) => Promise<void>;
+  onEmploymentSaved: (person: PersonRecord) => void;
   person: PersonRecord | null;
   selectedDocumentIds: Set<number>;
   visibleSectionKeys: Set<HrDetailsSectionKey>;
@@ -2176,6 +2238,7 @@ function PersonProfileCard({
         onDocumentSelect={onDocumentSelect}
         onDelete={() => onDelete(person)}
         onSave={onSave}
+        onEmploymentSaved={onEmploymentSaved}
         person={person}
         renewalCount={renewalCount}
         selectedDocumentIds={selectedDocumentIds}
@@ -2931,6 +2994,7 @@ function PersonDetailsPanel({
   onDocumentSelect,
   onDelete,
   onSave,
+  onEmploymentSaved,
   person,
   renewalCount,
   selectedDocumentIds,
@@ -2965,6 +3029,7 @@ function PersonDetailsPanel({
     input: UpdatePersonDetailsInput,
     medicalUpdates: MedicalDocumentUpdate[],
   ) => Promise<void>;
+  onEmploymentSaved: (person: PersonRecord) => void;
   person: PersonRecord;
   renewalCount: number;
   selectedDocumentIds: Set<number>;
@@ -2990,7 +3055,8 @@ function PersonDetailsPanel({
     category: person.enimCategory ?? getHrEnimClassification(person.functionLabel).category,
   };
   const availableSections = HR_DETAILS_SECTIONS.filter((section) => visibleSectionKeys.has(section.key));
-  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>(availableSections[0]?.key || 'identity');
+  const [activeSectionKey, setActiveSectionKey] = useState<HrDetailsSectionKey>(() =>
+    initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
 
   useEffect(() => {
     setForm(buildPersonDetailsForm(person));
@@ -3169,6 +3235,7 @@ function PersonDetailsPanel({
                 </>
               )}
             </DetailsGrid>
+            <EmploymentPeriodsPanel key={`${person.id}-${isEditing}`} client={client} person={person} canEdit={isManager && !isEditing} onSaved={onEmploymentSaved} />
           </section>
         );
       case 'contact':
@@ -3622,7 +3689,7 @@ function ProfileDocumentsSection({
               {isExpanded ? (
                 <div className="hr-profile-document-list">
                   {group.documents.map((document) => (
-                    <article className="hr-profile-document-row" key={document.id}>
+                    <article className={`hr-profile-document-row ${selectedDocumentIds.has(document.id) ? 'is-focused' : ''}`} id={`hr-document-${document.id}`} key={document.id}>
                       <label className="hr-profile-document-select">
                         <input
                           aria-label={`Sélectionner ${document.title}`}

@@ -14,6 +14,7 @@ import { isSeaOperationPreviewProject, seaOperationPreviewDocumentLocationVisibl
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
+import { performancePreviewRpc, performancePreviewTable } from './previewProcessPerformanceFixtures';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -2292,6 +2293,8 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  const performanceResult = performancePreviewRpc(functionName, args);
+  if (performanceResult) return performanceResult;
   if (functionName === 'projects_document_deletion_snapshot' || functionName === 'projects_delete_document') {
     if (isSeaOperationPreviewProject(args.target_project_id)) return createPreviewQuery(seaOperationPreviewRpc(functionName, args));
     const failure = (code: string, message: string) => createPreviewQuery({ data: null, error: { code, message } });
@@ -3321,9 +3324,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 }
 
 export const previewSupabaseClient = {
-  from: (table: string) => table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
+  from: (table: string) => performancePreviewTable(table) || (table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
-    : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR }),
+    : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
   auth: {
     getUser: () => Promise.resolve({ data: { user: { id: 'preview-user', email: 'preview@bbtm.local' } }, error: null }),
