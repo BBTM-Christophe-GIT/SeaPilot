@@ -79,7 +79,9 @@ where company.code = 'bbtm';
 
 insert into public.project_contracts (company_id, project_id, owner_identity, source_label)
 select company_id, id, 'Phase 6 owner', 'seapilot'
-from public.projects where title = 'Phase 6 fixture project';
+from public.projects where title = 'Phase 6 fixture project'
+on conflict (project_id, company_id) do update
+set owner_identity = excluded.owner_identity, source_label = excluded.source_label;
 
 insert into public.project_documents (
   company_id, project_id, project_code, project_title, title, source_label,

@@ -260,7 +260,7 @@ select is(public.working_time_day_context(current_setting('test.captain')::bigin
 select is(public.working_time_entry_context(current_date,current_date)->>'can_act_as_captain', 'true',
   'Marin UI receives the effective Captain capability');
 select is((select person->>'functionLabel' from jsonb_array_elements(public.dpr_entry_context(current_date,current_setting('test.vessel')::bigint)->'people') person
-  where (person->>'id')::bigint=current_setting('test.captain')::bigint), 'Capitaine', 'DPR reflects the temporary duty');
+  where (person->>'id')::bigint=current_setting('test.captain')::bigint), '2nd Capitaine', 'DPR retains the real HR function while temporary Captain permissions apply');
 
 reset role;
 update public.planning_assignments set assignment_role='2nd Capitaine' where id=current_setting('test.assignment')::bigint;
