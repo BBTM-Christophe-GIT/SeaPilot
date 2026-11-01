@@ -37,7 +37,13 @@
     "migrate:qsms:apply": "node --experimental-strip-types scripts/migrate-qsms-documents-to-storage.ts --apply",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ci:db:start": "node scripts/ci/local-supabase.mjs start",
+    "ci:db:env": "node scripts/ci/local-supabase.mjs env",
+    "ci:db:fixtures": "node scripts/ci/local-supabase.mjs sql e2e/fixtures.sql",
+    "ci:db:stop": "node scripts/ci/local-supabase.mjs stop",
+    "test:permissions": "node scripts/ci/local-supabase.mjs permissions",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@mapbox/vector-tile": "3.0.0",
@@ -63,6 +69,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

@@ -1,0 +1,83 @@
+name: Profile permissions and browser journeys
+
+on:
+  push:
+    branches:
+      - main
+      - 'codex/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profiles-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  profile-integration:
+    name: Marin and Capitaine (SQL + Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.34.5
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
+        with:
+          version: 2.109.1
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start disposable Supabase and apply migrations
+        run: pnpm ci:db:start
+
+      - name: Configure local application environment
+        run: pnpm ci:db:env
+
+      - name: Test real Marin and Capitaine RPC and RLS permissions
+        run: pnpm test:permissions
+
+      - name: Create local browser accounts and business fixtures
+        run: pnpm ci:db:fixtures
+
+      - name: Build application against the disposable database
+        run: pnpm build
+
+      - name: Test desktop and mobile browser journeys
+        run: pnpm test:e2e
+
+      - name: Upload browser report and failure evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: profile-browser-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop disposable Supabase
+        if: always()
+        run: pnpm ci:db:stop

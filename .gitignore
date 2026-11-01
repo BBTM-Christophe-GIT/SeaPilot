@@ -28,3 +28,8 @@ __pycache__/
 .design-qa/
 .superdesign/tmp/
 .env*
+
+# Disposable local CI database and browser reports
+.ci/
+playwright-report/
+test-results/
