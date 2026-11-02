@@ -19,7 +19,7 @@ const TABLE_CLIENTS: Record<string, Register> = {
 };
 const RPC_CLIENTS: Record<string, Register> = {
   chemical_available_vessels: 'chemical', lsa_available_vessels: 'lsa', pharmacy_available_vessels: 'pharmacy',
-  lifting_available_vessels: 'lifting', emergency_exercises_people: 'exercise', emergency_exercises_report: 'exercise',
+  lifting_available_vessels: 'lifting', emergency_exercises_people: 'exercise', emergency_exercises_report: 'exercise', emergency_exercises_performance: 'exercise',
 };
 const VESSEL_RPC: Record<Register, string> = {
   chemical: 'chemical_available_vessels', exercise: 'emergency_exercises_people',
@@ -163,6 +163,29 @@ export function performancePreviewRpc(name: string, args: Record<string, unknown
   return readQuery(async () => {
     const mapping = await registerVesselMapping(kind);
     if (name.endsWith('_available_vessels')) return { data: [...mapping.values()], error: null };
+    if (name === 'emergency_exercises_performance') {
+      const { data, error } = await registerClient('exercise').rpc('emergency_exercises_people');
+      if (error || !data) return { data, error };
+      const today = todayPlanningDate();
+      const year = Number(args.target_year);
+      const currentYear = Number(today.slice(0, 4));
+      const months = year < currentYear ? 12 : year === currentYear ? Number(today.slice(5, 7)) : 0;
+      const vessels = [...mapping.values()];
+      const people = Array.isArray(data.people) ? data.people.filter((person: Row) => person.current) : [];
+      const personMonths = people.flatMap((person: Row, index: number) => {
+        const vessel = vessels[index % Math.max(1, vessels.length)];
+        if (!vessel) return [];
+        return Array.from({ length: months }, (_, offset) => {
+          const month = offset + 1;
+          const current = year === currentYear && month === Number(today.slice(5, 7));
+          const fireCount = !current && (month + index) % 4 ? 1 : 0;
+          const abandonCount = !current && (month + index) % 3 ? 1 : 0;
+          return { personId: Number(person.id), personName: String(person.name), month, fireCount, abandonCount,
+            units: [{ vesselId: Number(vessel.id), fireCount, abandonCount }] };
+        });
+      });
+      return { data: { scope: data.scope, year, asOf: today, vessels, personMonths }, error: null };
+    }
     if (name === 'emergency_exercises_people') {
       const { data, error } = await registerClient(kind).rpc(name, args);
       if (error || !data) return { data, error };
@@ -192,17 +215,18 @@ interface PreviewLinkedDashboard {
 /** Independent register pages keep their native fictional IDs; only their links need translating back. */
 export async function resolvePerformancePreviewDashboardLinks<T extends PreviewLinkedDashboard>(dashboard: T): Promise<T> {
   const registerKeys: Record<string, Register> = {
-    chemicals: 'chemical', emergencyExercises: 'exercise', lifting: 'lifting', lsa: 'lsa', pharmacy: 'pharmacy',
+    chemicals: 'chemical', emergencyExercises: 'exercise', lifting: 'lifting', towing: 'lifting', lsa: 'lsa', pharmacy: 'pharmacy',
   };
   const mappings = new Map<Register, Promise<Map<number, Row>>>();
   async function processLinks<P extends PreviewLinkedProcess>(process: P): Promise<P> {
     const kind = registerKeys[process.key];
-    if (!kind || !process.tasks.some((task) => task.to.startsWith(`/modules/${process.key}`) && task.to.includes('vessel='))) return process;
+    const modulePath = `/modules/${process.key === 'towing' ? 'lifting' : process.key}`;
+    if (!kind || !process.tasks.some((task) => task.to.startsWith(modulePath) && task.to.includes('vessel='))) return process;
     let mapping = mappings.get(kind);
     if (!mapping) { mapping = registerVesselMapping(kind); mappings.set(kind, mapping); }
     const nativeByCanonical = new Map([...(await mapping)].map(([nativeId, asset]) => [Number(asset.id), nativeId]));
     return { ...process, tasks: process.tasks.map((task) => {
-      if (!task.to.startsWith(`/modules/${process.key}`)) return task;
+      if (!task.to.startsWith(modulePath)) return task;
       const url = new URL(task.to, 'https://seapilot-preview.invalid');
       const nativeId = nativeByCanonical.get(Number(url.searchParams.get('vessel')));
       if (nativeId === undefined) return task;

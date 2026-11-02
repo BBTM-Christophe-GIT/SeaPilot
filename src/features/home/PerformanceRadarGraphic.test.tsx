@@ -11,6 +11,35 @@ const axes: RadarAxis[] = [
 ];
 
 describe('generic performance radar graphic', () => {
+  it('colors titles, displayed scores and points by the measured score including exact thresholds', () => {
+    const levels: RadarAxis[] = [
+      { key: 'zero', label: 'Mesuré zéro', score: 0 }, { key: 'low', label: 'Faible', score: 39 },
+      { key: 'warning', label: 'À renforcer', score: 40 }, { key: 'upper-warning', label: 'Près du seuil', score: 74 },
+      { key: 'success', label: 'Sous contrôle', score: 75 }, { key: 'unknown', label: 'Non applicable', score: null },
+    ];
+    const { container } = render(<PerformanceRadarGraphic axes={levels} onSelect={vi.fn()} />);
+    for (const [key, label, tone] of [['zero', 'Mesuré zéro', 'danger'], ['low', 'Faible', 'danger'], ['warning', 'À renforcer', 'warning'],
+      ['upper-warning', 'Près du seuil', 'warning'], ['success', 'Sous contrôle', 'success']]) {
+      expect(screen.getByRole('button', { name: `Détailler ${label}` })).toHaveClass(`is-${tone}`);
+      expect(container.querySelector(`[data-axis-key="${key}"]`)).toHaveClass(`is-${tone}`);
+    }
+    expect(screen.getByRole('button', { name: 'Détailler Non applicable' })).toHaveClass('is-unknown');
+    expect(container.querySelector('[data-axis-key="unknown"]')).toBeNull();
+    expect(screen.getByRole('list', { name: 'Couleurs des niveaux de performance' })).toBeVisible();
+  });
+
+  it('keeps full long unit names accessible and filters an old cached medical-logbook axis', async () => {
+    const user = userEvent.setup();
+    const name = 'BUREAUX — ARMEMENT ET CENTRE TECHNIQUE DE CHERBOURG';
+    render(<PerformanceRadarGraphic axes={[{ key: 'unit-1', label: name, score: 80 },
+      { key: 'medicalLogbook', label: 'REGISTRE MÉDICAL CONFIDENTIEL', score: 0 }]} onSelect={vi.fn()} />);
+    expect(screen.getByRole('button', { name: `Détailler ${name}` })).toHaveAttribute('title', name);
+    expect(screen.getByRole('img')).toHaveAccessibleName(new RegExp(name));
+    expect(screen.queryByText('REGISTRE MÉDICAL CONFIDENTIEL')).toBeNull();
+    await user.click(screen.getByText('Consulter les valeurs du graphique'));
+    expect(screen.getByRole('row', { name: `${name} 80 %` })).toBeVisible();
+  });
+
   it('draws actual criteria as a polygon, exposes exact text values and supports accessible axis selection', async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();

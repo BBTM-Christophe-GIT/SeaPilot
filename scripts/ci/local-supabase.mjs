@@ -99,6 +99,7 @@ const assertionTests = [
   'assignment_vessel_read_window_test.sql',
   'dpr_dashboard_access_scope_test.sql',
   'hr_document_captain_upload_test.sql',
+  'exercise_monthly_performance_test.sql',
 ]
 
 function fail(message) {

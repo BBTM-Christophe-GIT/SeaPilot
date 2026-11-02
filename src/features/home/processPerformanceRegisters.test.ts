@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { loadRegisterPerformance, loadRegisterPerformanceDashboard } from './processPerformanceRegisters';
+import { buildExercisePerformance, loadRegisterPerformance, loadRegisterPerformanceDashboard, type ExercisePerformanceSnapshot } from './processPerformanceRegisters';
 import type { ProcessPerformanceScope } from './processPerformanceScope';
 
 const company: ProcessPerformanceScope = { kind: 'company', label: 'Société', personId: 1, personIds: [], vesselIds: [], vesselNames: [], watchGroups: [] };
@@ -32,6 +32,7 @@ function fixtureClient(tables: Record<string, Row[]> = {}, options: { failedTabl
   });
   const vessels = options.vessels || [{ id: 1, name: 'Autre navire' }, { id: 2, name: 'GOURY' }];
   const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+    if (name === 'emergency_exercises_performance') return { data: { scope: 'fleet', year: args?.target_year, asOf: '2026-11-01', vessels, personMonths: [{ personId: 9, personName: 'Fixture marin', month: 10, fireCount: options.exercises || 0, abandonCount: 0, units: vessels.map((vessel) => ({ vesselId: vessel.id, fireCount: options.exercises || 0, abandonCount: 0 })) }] }, error: null };
     if (name === 'emergency_exercises_people') return { data: { scope: 'watch', people: [], vessels }, error: null };
     if (name === 'emergency_exercises_report') return { data: { person: args?.target_person_id ? { id: args.target_person_id, name: 'Self', current: true, former: false } : null,
       vessel: vessels.find((vessel) => vessel.id === args?.target_vessel_id), year: args?.target_year,
@@ -42,6 +43,25 @@ function fixtureClient(tables: Record<string, Row[]> = {}, options: { failedTabl
 }
 
 describe('Permission-scoped register performance', () => {
+  it('assigns zero to an absent LSA register on an authorized active vessel and keeps a quay non-applicable', async () => {
+    const fixture = fixtureClient({ lsa_items: [{ id: 1, vessel_id: 1, title: 'À jour', expires_on: '2027-05-01' }] });
+    const data = await loadRegisterPerformanceDashboard(fixture.client, ['lsa'], company, '2026-11-01', [watch]);
+    expect(data.processes[0].score).toBe(50);
+    expect(data.entities[0][0].score).toBe(0);
+    expect(data.entities[0][0].tasks[0]).toMatchObject({ id: 'lsa-register-missing-2', to: '/modules/lsa?vessel=2' });
+    const quay = fixtureClient({}, { vessels: [{ id: 2, name: 'QUAI LE HAVRE' }] });
+    expect((await loadRegisterPerformance(quay.client, ['lsa', 'lifting'], watch, '2026-11-01')).every((process) => process.score === null)).toBe(true);
+  });
+
+  it('does not hide an absent towing register behind current lifting equipment', async () => {
+    const fixture = fixtureClient({ lifting_inventory: [{ id: 1, vessel_id: 2, reference: 'Apparaux', kind: 'lifting', active: true, inspection_due_on: '2027-01-01' }] });
+    const [lifting, towing] = await loadRegisterPerformance(fixture.client, ['lifting'], watch, '2026-11-01');
+    expect(lifting.score).toBe(100);
+    expect(towing.score).toBe(0);
+    expect(towing.criteria[0]).toMatchObject({ id: 'towing-controls', score: 0 });
+    expect(towing.tasks[0]).toMatchObject({ id: 'lifting-register-towing-2', to: '/modules/lifting/remorques?vessel=2' });
+  });
+
   it('shares authorized inventory reads across entity comparisons and leaves an office non-applicable', async () => {
     const fixture = fixtureClient({ lifting_inventory: [
       { id: 1, vessel_id: 1, reference: 'À jour', kind: 'lifting', active: true, inspection_due_on: '2027-05-01' },
@@ -51,11 +71,12 @@ describe('Permission-scoped register performance', () => {
     const result = await loadRegisterPerformanceDashboard(fixture.client, ['lifting', 'medicalLogbook'], company, '2026-11-01', entityScopes);
     expect(result.processes[0].score).toBe(50);
     expect(result.entities.map((processes) => processes[0].score)).toEqual([100, 0, null]);
-    expect(result.entities.every((processes) => processes.map((process) => process.key).join() === 'lifting,medicalLogbook')).toBe(true);
+    expect(result.entities.every((processes) => processes.map((process) => process.key).join() === 'lifting,towing')).toBe(true);
     expect(fixture.rpc).toHaveBeenCalledTimes(1);
     expect(fixture.from).toHaveBeenCalledTimes(1);
     expect(fixture.selections[0].table).toBe('lifting_inventory');
   });
+
 
   it('reuses only chemical attachment metadata without repeating product reads for each entity', async () => {
     const fixture = fixtureClient({ chemical_products: [
@@ -76,18 +97,14 @@ describe('Permission-scoped register performance', () => {
     await loadRegisterPerformanceDashboard(fixture.client, ['emergencyExercises'], self, '2026-11-01', [
       { ...self, vesselIds: [1] }, { ...self, vesselIds: [2] },
     ]);
-    expect(fixture.rpc.mock.calls.filter(([name]) => name === 'emergency_exercises_people')).toHaveLength(1);
-    const reports = fixture.rpc.mock.calls.filter(([name]) => name === 'emergency_exercises_report');
-    expect(reports).toHaveLength(2);
-    expect(reports.every(([, args]) => args?.target_person_id === 9)).toBe(true);
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+    expect(fixture.rpc).toHaveBeenCalledWith('emergency_exercises_performance', { target_year: 2026 });
   });
 
   it('does not query hidden registers or medical logbook clinical content', async () => {
     const fixture = fixtureClient();
     expect(await loadRegisterPerformance(fixture.client, [], company, '2026-11-01')).toEqual([]);
-    const [medical] = await loadRegisterPerformance(fixture.client, ['medicalLogbook'], company, '2026-11-01');
-    expect(medical.score).toBeNull();
-    expect(medical.summary).toContain('confidentiel');
+    expect(await loadRegisterPerformance(fixture.client, ['medicalLogbook'], company, '2026-11-01')).toEqual([]);
     expect(fixture.from).not.toHaveBeenCalled();
     expect(fixture.rpc).not.toHaveBeenCalled();
   });
@@ -95,7 +112,7 @@ describe('Permission-scoped register performance', () => {
   it('never falls back to company-wide data for a self/watch scope without vessels', async () => {
     const fixture = fixtureClient();
     const results = await loadRegisterPerformance(fixture.client, ['chemicals', 'lsa', 'lifting', 'pharmacy', 'emergencyExercises'], { ...watch, kind: 'self', vesselIds: [] }, '2026-11-01');
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(6);
     expect(results.every((process) => process.score === null && process.tasks.length === 0)).toBe(true);
     expect(fixture.from).not.toHaveBeenCalled();
     expect(fixture.rpc).not.toHaveBeenCalled();
@@ -130,7 +147,8 @@ describe('Permission-scoped register performance', () => {
   it('does not award perfect LSA or pharmacy scores to an empty/undated source', async () => {
     const fixture = fixtureClient({ lsa_items: [{ id: 1, vessel_id: 2, title: 'Date inconnue', expires_on: null }] });
     const results = await loadRegisterPerformance(fixture.client, ['lsa', 'pharmacy'], watch, '2026-11-01');
-    expect(results.every((process) => process.score === null)).toBe(true);
+    expect(results[0].score).toBe(0);
+    expect(results[1].score).toBeNull();
     expect(results[0].tasks[0].state).toBe('unplanned');
   });
 
@@ -139,9 +157,10 @@ describe('Permission-scoped register performance', () => {
       { id: 1, vessel_id: 2, kind: 'lifting', reference: 'À jour', active: true, inspection_due_on: '2027-01-01' },
       { id: 2, vessel_id: 2, kind: 'towing', reference: 'Remorque', active: true, inspection_due_on: null },
     ] });
-    const [process] = await loadRegisterPerformance(fixture.client, ['lifting'], watch, '2026-11-01');
-    expect(process.score).toBe(50);
-    expect(process.tasks[0]).toMatchObject({ state: 'unplanned', to: '/modules/lifting/remorques?vessel=2&item=2' });
+    const [lifting, towing] = await loadRegisterPerformance(fixture.client, ['lifting'], watch, '2026-11-01');
+    expect(lifting.score).toBe(100);
+    expect(towing.score).toBe(0);
+    expect(towing.tasks[0]).toMatchObject({ state: 'unplanned', to: '/modules/lifting/remorques?vessel=2&item=2' });
     expect(fixture.from.mock.calls.map(([table]) => table)).toEqual(['lifting_inventory']);
   });
 
@@ -172,21 +191,53 @@ describe('Permission-scoped register performance', () => {
     const inventory = Array.from({ length: 501 }, (_, index) => ({ id: index + 1, vessel_id: 2, kind: 'lifting', reference: `Matériel ${index}`, active: true, inspection_due_on: '2026-01-01' }));
     const fixture = fixtureClient({ lifting_inventory: inventory });
     const [complete] = await loadRegisterPerformance(fixture.client, ['lifting'], watch, '2026-11-01');
-    expect(complete.tasks).toHaveLength(501);
+    expect(complete.tasks.filter((task) => task.id.startsWith('lifting-') && !task.id.startsWith('lifting-register'))).toHaveLength(501);
+
     expect(fixture.selections.map((selection) => selection.offset)).toEqual([0, 500]);
     const failing = fixtureClient({ lifting_inventory: inventory }, { failedTable: 'lifting_inventory', failedOffset: 500 });
     const [unavailable] = await loadRegisterPerformance(failing.client, ['lifting'], watch, '2026-11-01');
     expect(unavailable.score).toBeNull();
     expect(unavailable.tasks).toEqual([]);
-    expect(unavailable.unavailableSources).toEqual(['Levage et remorques']);
+    expect(unavailable.unavailableSources).toEqual(['Apparaux de levage']);
   });
 
-  it('reports scoped exercise counts without inventing an annual compliance objective', async () => {
+  it('rates exactly one fire and one abandon objective per eligible person-month, capping repeat exercises', async () => {
     const fixture = fixtureClient({}, { exercises: 12 });
     const [process] = await loadRegisterPerformance(fixture.client, ['emergencyExercises'], watch, '2026-11-01');
+    expect(process.score).toBe(50);
+    expect(process.criteria.map((criterion) => criterion.score)).toEqual([100, 0]);
+    expect(process.summary).toContain('1/2 objectifs échus');
+    expect(process.tasks).toHaveLength(1);
+    expect(process.tasks[0].state).toBe('overdue');
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+  });});
+
+describe('monthly exercise objectives', () => {
+  const base: ExercisePerformanceSnapshot = { scope: 'fleet', year: 2026, asOf: '2026-11-02', vessels: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], personMonths: [] };
+  it('rates only closed eligible months and labels current obligations as upcoming', () => {
+    const month = (value: number, fire = 0, abandon = 0) => ({ personId: 9, personName: 'Marin', month: value, fireCount: fire, abandonCount: abandon,
+      units: [{ vesselId: 1, fireCount: fire, abandonCount: abandon }] });
+    const process = buildExercisePerformance({ ...base, personMonths: [month(10, 3), month(11), month(12, 8, 8)] }, company, '2026-11-02');
+    expect(process.score).toBe(50);
+    expect(process.tasks.filter((task) => task.state === 'overdue')).toHaveLength(1);
+    expect(process.tasks.filter((task) => task.state === 'unplanned')).toHaveLength(2);
+    expect(process.tasks.every((task) => task.dueOn < '2026-12-01')).toBe(true);
+    expect(process.tasks.find((task) => task.state === 'unplanned')?.dueOn).toBe('2026-11-30');
+  });
+  it('deduplicates a global person-month while keeping the two local unit categories separate', () => {
+    const snapshot = { ...base, personMonths: [{ personId: 9, personName: 'Marin', month: 10, fireCount: 1, abandonCount: 1,
+      units: [{ vesselId: 1, fireCount: 1, abandonCount: 0 }, { vesselId: 2, fireCount: 0, abandonCount: 1 }] }] };
+    expect(buildExercisePerformance(snapshot, company, '2026-11-02').score).toBe(100);
+    expect(buildExercisePerformance(snapshot, { ...watch, vesselIds: [1] }, '2026-11-02').score).toBe(50);
+    expect(buildExercisePerformance(snapshot, { ...watch, vesselIds: [2] }, '2026-11-02').score).toBe(50);
+    expect(buildExercisePerformance(snapshot, company, '2026-11-02').summary).toContain('2/2 objectifs');
+  });
+  it('leaves a newly eligible current month unscored until its deadline and keeps sailor data individual', () => {
+    const snapshot = { ...base, personMonths: [9, 10].map((personId) => ({ personId, personName: `Marin ${personId}`, month: 11, fireCount: 0, abandonCount: 0,
+      units: [{ vesselId: 1, fireCount: 0, abandonCount: 0 }] })) };
+    const process = buildExercisePerformance(snapshot, { ...watch, kind: 'self', personId: 9, vesselIds: [1] }, '2026-11-02');
     expect(process.score).toBeNull();
-    expect(process.summary).toContain('12 exercice(s)');
-    expect(process.criteria[0].detail).toContain('Aucun objectif annuel ou mensuel');
-    expect(fixture.rpc).toHaveBeenCalledWith('emergency_exercises_report', { target_person_id: null, target_year: 2026, target_vessel_id: 2, target_population: 'current' });
+    expect(process.tasks).toHaveLength(2);
+    expect(process.tasks.every((task) => task.state === 'unplanned' && task.context.startsWith('Marin 9'))).toBe(true);
   });
 });
