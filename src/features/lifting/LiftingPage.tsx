@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Link, useNavigate, useOutletContext } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, Download, FileCheck2, Package, Pencil, Plus, Printer, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
@@ -32,6 +32,9 @@ import { LiftingTransferDialog } from './LiftingTransferDialog';
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
 export function LiftingPage({ client, roles, section = 'lifting' }: { client?: SupabaseClient; roles?: RoleKey[]; section?: LiftingSection }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedVessel = Number(searchParams.get('vessel'));
+  const requestedItem = Number(searchParams.get('item'));
   const navigate = useNavigate();
   const [previewClient] = useState(() => createLiftingPreviewClient({ roles: roles || context?.roles || ['admin'], fleet: true }));
   const db = client || (context?.previewMode ? previewClient : context?.client) || supabase;
@@ -82,7 +85,8 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
   const activeItems = items.filter((i) => i.active);
   const complete = entries.filter(entryComplete).length;
   const inventoryItems = items.filter((item) => showInactive || item.active);
-  const filtered = inventoryItems.filter((item) => matchesLiftingItem(item, query, accessoryType));
+  const linkedItem = inventoryItems.find((item) => item.id === requestedItem && (!requestedVessel || item.vessel_id === requestedVessel));
+  const filtered = inventoryItems.filter((item) => (!linkedItem || item.id === linkedItem.id) && matchesLiftingItem(item, query, accessoryType));
   const displayedReports = inspections.filter((r) => !year || String(r.inspection_year) === year);
   const setNavigationBlocked = context?.setLiftingNavigationBlocked;
 
@@ -103,11 +107,11 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
     fetchLiftingCanStart(db).then((allowed) => { if (!cancelled) setCanStart(allowed); }).catch((e) => { if (!cancelled) setError(messageOf(e)); });
     fetchLiftingVessels(db).then((loaded) => {
       if (cancelled) return;
-      setVessels(loaded); setVesselId((current) => loaded.some((v) => v.id === current) ? current : (loaded.find((v) => v.acronym === 'SUR')?.id || loaded[0]?.id || 0));
+      setVessels(loaded); setVesselId((current) => loaded.some((v) => v.id === requestedVessel) ? requestedVessel : loaded.some((v) => v.id === current) ? current : (loaded.find((v) => v.acronym === 'SUR')?.id || loaded[0]?.id || 0));
       if (!loaded.length) setLoading(false);
     }).catch((e) => { if (!cancelled) { setError(messageOf(e)); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [db]);
+  }, [db, requestedVessel]);
 
   async function reload() {
     if (!vesselId || section === 'crane') return;
@@ -194,6 +198,7 @@ export function LiftingPage({ client, roles, section = 'lifting' }: { client?: S
       {expiryError && <div className="lifting-error" role="alert">Pastilles d’échéance indisponibles : {expiryError}<button type="button" onClick={() => void refreshCounts()}>Réessayer les pastilles</button></div>}
       {error && !replacement && !transferItem && !removeDraft && !paperOpen && !editor && !startOpen && !publishOpen && !removeItem && <div className="lifting-error" role="alert">{error}<button onClick={() => { setError(''); void reloadCurrentReport(); }}>Recharger</button></div>}
       {notice && <p className="lifting-notice" role="status"><CheckCircle2 size={18} />{notice}</p>}
+      {linkedItem ? <p className="lifting-notice" role="status">Équipement sélectionné : {linkedItem.reference} <button type="button" disabled={busy || dirty} onClick={() => { const next = new URLSearchParams(searchParams); next.delete('item'); setSearchParams(next); }}>Afficher tout le registre</button></p> : null}
       {!report ? <>
         <div className="lifting-summary"><div><strong>{activeItems.length}</strong><span>matériels en inventaire</span></div><div><strong>{inspections.filter((r) => r.status === 'draft').length}</strong><span>contrôles en cours</span></div><div><strong>{inspections.filter((r) => r.status === 'published').length}</strong><span>rapports finalisés</span></div><div className="lifting-summary-actions"><button className="secondary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setPaperOpen(true); }}><Printer size={18} /> Fiche de contrôle papier</button>{canStart && <button className="primary-button" disabled={busy || loading || !vessels.length} onClick={() => { setError(''); setStartOpen(true); }}><Plus size={18} /> Nouveau contrôle annuel</button>}</div></div>
         <div className="lifting-content"><div className="lifting-content-heading"><div className="lifting-view-switch" role="group" aria-label="Vue du registre"><button type="button" aria-label="Inventaire" aria-pressed={view === 'inventory'} onClick={() => setView('inventory')}><Package size={22} aria-hidden="true" /><span><strong>Inventaire</strong><small>Matériels et équipements</small></span><b>{loading ? '…' : activeItems.length}</b></button><button type="button" aria-label="Rapports de contrôle" aria-pressed={view === 'reports'} onClick={() => setView('reports')}><FileCheck2 size={22} aria-hidden="true" /><span><strong>Rapports de contrôle</strong><small>Suivi annuel et historique</small></span><b>{loading ? '…' : inspections.length}</b></button></div>{view === 'inventory' ? <button className="secondary-button" disabled={busy || loading || !vesselId} onClick={() => { setError(''); setEditor({ draft: blankItem(section) }); }}><Plus size={17} /> Ajouter un matériel</button> : <div className="lifting-verifier"><span>Vérificateur</span><strong>{INSPECTOR}</strong></div>}</div>

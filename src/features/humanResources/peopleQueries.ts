@@ -32,6 +32,7 @@ const PEOPLE_SELECT = [
   'hired_on',
   'departed_on',
   'departure_reason',
+  'employment_periods',
   'emergency_contact_name',
   'emergency_contact_relationship',
   'emergency_contact_phone',
@@ -164,6 +165,7 @@ interface PersonRow {
   hired_on: string | null;
   departed_on: string | null;
   departure_reason: string | null;
+  employment_periods?: EmploymentPeriod[] | null;
   emergency_contact_name: string | null;
   emergency_contact_relationship: string | null;
   emergency_contact_phone: string | null;
@@ -219,6 +221,13 @@ interface HrDocumentTypeRow {
   file_name?: string | null;
 }
 
+export interface EmploymentPeriod {
+  hiredOn: string;
+  departedOn: string;
+  contractType: string;
+  departureReason: string;
+}
+
 export interface PersonRecord {
   photoDocumentId?: number | null;
   photoPath?: string;
@@ -248,6 +257,7 @@ export interface PersonRecord {
   hiredOn: string;
   departedOn: string;
   departureReason: string;
+  employmentPeriods?: EmploymentPeriod[];
   emergencyContactName: string;
   emergencyContactRelationship: string;
   emergencyContactPhone: string;
@@ -338,6 +348,7 @@ export interface HumanResourcesDashboardMetrics {
   expiredDocuments: number;
   certificateRenewals: number;
   medicalVisitRenewals: number;
+  otherRenewals: number;
   unassignedDocuments: number;
   contractsReady: number;
   emergencyContactsReady: number;
@@ -845,6 +856,7 @@ export function mapPersonRows(rows: PersonRow[]): PersonRecord[] {
     hiredOn: nullableText(row.hired_on),
     departedOn: nullableText(row.departed_on),
     departureReason: nullableText(row.departure_reason),
+    ...(row.employment_periods?.length ? { employmentPeriods: row.employment_periods } : {}),
     emergencyContactName: nullableText(row.emergency_contact_name),
     emergencyContactRelationship: nullableText(row.emergency_contact_relationship),
     emergencyContactPhone: nullableText(row.emergency_contact_phone),
@@ -905,6 +917,10 @@ function isTrainee(person: PersonRecord): boolean {
   return normalizeSearchValue(`${person.roleLabel} ${person.functionLabel} ${person.gradeLabel}`).includes('stagiaire');
 }
 
+export function isPersonMedicalVisitRequired(person: PersonRecord): boolean {
+  return !isSedentary(person) && !isTrainee(person);
+}
+
 function hasContractReady(person: PersonRecord): boolean {
   return Boolean(person.contractType);
 }
@@ -933,32 +949,56 @@ function getLocalIsoDate(date = new Date()): string {
 
 function normalizeIsoDateKey(value: string): string {
   const key = value.trim().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(key) && parseIsoDate(key) ? key : '';
+  const date = parseIsoDate(key);
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) && date && getLocalIsoDate(date) === key ? key : '';
 }
 
 export function isPersonEmployedOn(person: PersonRecord, dateKey: string): boolean {
-  const hiredOn = normalizeIsoDateKey(person.hiredOn);
-  const departedOn = normalizeIsoDateKey(person.departedOn);
-  return Boolean(hiredOn && hiredOn <= dateKey && (!departedOn || departedOn > dateKey));
+  return getPersonEmploymentPeriods(person).some(({ hiredOn, departedOn }) =>
+    Boolean(hiredOn && hiredOn <= dateKey && (!departedOn || departedOn > dateKey)),
+  );
 }
 
 export function isPersonFormerOn(person: PersonRecord, dateKey: string): boolean {
-  const hiredOn = normalizeIsoDateKey(person.hiredOn);
-  const departedOn = normalizeIsoDateKey(person.departedOn);
-  return Boolean(hiredOn && departedOn && hiredOn <= departedOn && departedOn <= dateKey);
+  return !isPersonEmployedOn(person, dateKey) && getPersonEmploymentPeriods(person).some(({ departedOn }) =>
+    Boolean(departedOn && departedOn <= dateKey),
+  );
+}
+
+/** Each interval includes the hire day and excludes the departure day. */
+export function getPersonEmploymentPeriods(person: PersonRecord): EmploymentPeriod[] {
+  const periods = person.employmentPeriods?.length ? person.employmentPeriods : [{
+    hiredOn: person.hiredOn, departedOn: person.departedOn,
+    contractType: person.contractType, departureReason: person.departureReason,
+  }];
+  return periods.map((period) => ({ ...period,
+    hiredOn: normalizeIsoDateKey(period.hiredOn), departedOn: normalizeIsoDateKey(period.departedOn),
+  })).filter((period) => Boolean(period.hiredOn)).sort((a, b) => a.hiredOn.localeCompare(b.hiredOn));
+}
+
+export function validateEmploymentPeriods(periods: EmploymentPeriod[]): string | null {
+  if (!periods.length) return 'Ajoutez au moins une période.';
+  const sorted = [...periods].sort((a, b) => a.hiredOn.localeCompare(b.hiredOn));
+  for (const [index, period] of sorted.entries()) {
+    if (!normalizeIsoDateKey(period.hiredOn)) return 'Chaque période doit avoir une date d’embauche valide.';
+    if (period.departedOn && (!normalizeIsoDateKey(period.departedOn) || period.departedOn < period.hiredOn)) {
+      return 'La date de départ ne peut pas précéder la date d’embauche.';
+    }
+    const previous = sorted[index - 1];
+    if (previous && (!previous.departedOn || previous.departedOn > period.hiredOn)) {
+      return 'Les périodes ne doivent pas se chevaucher. Clôturez la période précédente avant une réembauche.';
+    }
+  }
+  return null;
 }
 
 function countPeopleEmployedOn(people: PersonRecord[], dateKey: string): number {
   return people.filter((person) => isPersonEmployedOn(person, dateKey)).length;
 }
 
-function didPersonLeaveDuring(person: PersonRecord, startsOn: string, endsOn: string): boolean {
-  const departedOn = normalizeIsoDateKey(person.departedOn);
-  return Boolean(
-    departedOn &&
-      departedOn > startsOn &&
-      departedOn <= endsOn &&
-      isPersonFormerOn(person, endsOn),
+function personExitsDuring(person: PersonRecord, startsOn: string, endsOn: string): EmploymentPeriod[] {
+  return getPersonEmploymentPeriods(person).filter(({ departedOn }) =>
+    departedOn && departedOn > startsOn && departedOn <= endsOn,
   );
 }
 
@@ -1002,10 +1042,15 @@ function buildStrategicMetrics(
   const asOfDate = parseIsoDate(asOf) || new Date();
   const turnover = buildWorkforceTurnover(people, asOf);
   const tenureYears = activePeople.flatMap((person) => {
-    const hiredOn = parseIsoDate(person.hiredOn);
-    return hiredOn ? [(asOfDate.getTime() - hiredOn.getTime()) / (365.25 * 24 * 60 * 60 * 1000)] : [];
+    const periods = getPersonEmploymentPeriods(person);
+    if (!periods.length) return [];
+    return [periods.reduce((total, period) => {
+      const start = parseIsoDate(period.hiredOn)!;
+      const end = period.departedOn && period.departedOn < asOf ? parseIsoDate(period.departedOn)! : asOfDate;
+      return total + Math.max(0, end.getTime() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    }, 0)];
   });
-  const peopleRequiringMedicalVisit = activePeople.filter((person) => !isSedentary(person) && !isTrainee(person));
+  const peopleRequiringMedicalVisit = activePeople.filter(isPersonMedicalVisitRequired);
   const medicallyCompliant = peopleRequiringMedicalVisit.filter((person) =>
     (documentsByPersonId.get(person.id) || []).some(
       (document) =>
@@ -1101,6 +1146,9 @@ export function buildHumanResourcesDashboard(
       medicalVisitRenewals: documents.filter(
         (document) => document.categoryKey === 'medical_visit' && isHrDocumentRenewalDue(document),
       ).length,
+      otherRenewals: documents.filter(
+        (document) => document.categoryKey === 'administrative' && isHrDocumentRenewalDue(document),
+      ).length,
       unassignedDocuments: documents.filter((document) => document.personId === null).length,
       contractsReady: activePeople.filter(hasContractReady).length,
       emergencyContactsReady: activePeople.filter(hasEmergencyContactReady).length,
@@ -1161,7 +1209,7 @@ export function buildWorkforceTurnover(
   startsOn = shiftIsoYear(endsOn, -1),
 ): WorkforceTurnoverMetric {
   const dateKeys = getIsoDateKeys(startsOn, endsOn);
-  const departures = people.filter((person) => didPersonLeaveDuring(person, startsOn, endsOn)).length;
+  const departures = people.reduce((count, person) => count + personExitsDuring(person, startsOn, endsOn).length, 0);
   const headcountStart = countPeopleEmployedOn(people, startsOn);
   const headcountEnd = countPeopleEmployedOn(people, endsOn);
   const averageHeadcount =
@@ -1186,9 +1234,11 @@ export function buildPermanentWorkforceTurnover(
   startsOn = shiftIsoYear(endsOn, -1),
 ): WorkforceTurnoverMetric {
   return buildWorkforceTurnover(
-    people.filter(
-      (person) => normalizeSearchValue(person.contractType) === 'cdi' && !isTrainee(person),
-    ),
+    people.map((person) => ({
+      ...person,
+      employmentPeriods: getPersonEmploymentPeriods(person).filter((period) => normalizeSearchValue(period.contractType) === 'cdi'),
+      hiredOn: '', departedOn: '',
+    })),
     endsOn,
     startsOn,
   );
@@ -1247,7 +1297,7 @@ export function buildWorkforceExitBreakdown(
   endsOn = getLocalIsoDate(),
   startsOn = shiftIsoYear(endsOn, -1),
 ): WorkforceExitBreakdown {
-  const departures = people.filter((person) => didPersonLeaveDuring(person, startsOn, endsOn));
+  const departures = people.flatMap((person) => personExitsDuring(person, startsOn, endsOn));
 
   return {
     departures: departures.length,
@@ -1265,34 +1315,64 @@ export function buildWorkforceExitBreakdown(
 }
 
 export async function fetchPeople(client: SupabaseClient, personId?: number | null): Promise<PersonRecord[]> {
-  let query = client
-    .from('people')
-    .select(PEOPLE_SELECT)
-    .order('last_name', { ascending: true })
-    .order('first_name', { ascending: true });
-  if (personId !== undefined) query = query.eq('id', personId ?? -1);
-  const { data, error } = await query;
+  const rows: PersonRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    let query = client
+      .from('people')
+      .select(PEOPLE_SELECT)
+      .order('last_name', { ascending: true })
+      .order('first_name', { ascending: true });
+    if (personId !== undefined) query = query.eq('id', personId ?? -1);
+    if (typeof query.order === 'function') query = query.order('id', { ascending: true });
+    const paginated = typeof query.range === 'function';
+    if (paginated) query = query.range(offset, offset + 499);
+    const { data, error } = await query;
 
-  if (error) {
-    throw error;
+    if (error) throw error;
+
+    rows.push(...((data || []) as unknown as PersonRow[]));
+    if (!paginated || (data || []).length < 500) break;
   }
-
-  return loadPeoplePortraits(client, mapPersonRows((data || []) as unknown as PersonRow[]));
+  return loadPeoplePortraits(client, mapPersonRows(rows));
 }
 
+export const fetchAllPeople = fetchPeople;
+
 export async function fetchHrDocuments(client: SupabaseClient, personId?: number | null): Promise<HrDocumentRecord[]> {
-  let query = client.from('hr_documents').select(HR_DOCUMENT_SELECT).order('expires_on', {
-    ascending: true,
-    nullsFirst: false,
-  });
-  if (personId !== undefined) query = query.eq('person_id', personId ?? -1);
-  const { data, error } = await query;
+  const rows: HrDocumentRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    let query = client.from('hr_documents').select(HR_DOCUMENT_SELECT).order('expires_on', {
+      ascending: true,
+      nullsFirst: false,
+    });
+    if (personId !== undefined) query = query.eq('person_id', personId ?? -1);
+    if (typeof query.order === 'function') query = query.order('id', { ascending: true });
+    const paginated = typeof query.range === 'function';
+    if (paginated) query = query.range(offset, offset + 499);
+    const { data, error } = await query;
 
-  if (error) {
-    throw error;
+    if (error) throw error;
+
+    rows.push(...((data || []) as unknown as HrDocumentRow[]));
+    if (!paginated || (data || []).length < 500) break;
   }
+  return mapHrDocumentRows(rows);
+}
 
-  return mapHrDocumentRows((data || []) as unknown as HrDocumentRow[]);
+export const fetchAllHrDocuments = fetchHrDocuments;
+
+export async function savePersonEmploymentPeriods(
+  client: SupabaseClient, personId: number, periods: EmploymentPeriod[],
+): Promise<PersonRecord> {
+  const issue = validateEmploymentPeriods(periods);
+  if (issue) throw new Error(issue);
+  const sortedPeriods = [...periods].sort((a, b) => a.hiredOn.localeCompare(b.hiredOn));
+  const { data, error } = await client.from('people').update({
+    employment_periods: sortedPeriods,
+    ...(!sortedPeriods[sortedPeriods.length - 1].departedOn ? { active: true } : {}),
+  }).eq('id', personId).select(PEOPLE_SELECT).single();
+  if (error) throw error;
+  return (await loadPeoplePortraits(client, mapPersonRows([data as unknown as PersonRow])))[0];
 }
 
 export async function fetchHrDocumentTypes(client: SupabaseClient): Promise<HrDocumentTypeOption[]> {

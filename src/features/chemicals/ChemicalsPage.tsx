@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { Download, FlaskConical, Layers3, Paperclip, Pencil, Plus, RefreshCw, Search, Ship, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
@@ -18,6 +18,10 @@ function Pictograms({ product }: { product: ChemicalProduct }) {
 }
 export function ChemicalsPage({ client, fileStore }: { client?: SupabaseClient; fileStore?: ChemicalFileStore }) {
   const context = useOutletContext<AppShellOutletContext | undefined>();
+  const [searchParams] = useSearchParams();
+  const requestedVessel = Number(searchParams.get('vessel'));
+  const requestedProduct = searchParams.get('product') || '';
+  const handledLink = useRef('');
   const [preview] = useState(createChemicalPreviewClient);
   const db = client || (context?.previewMode ? preview : context?.client) || supabase;
   const [previewFiles] = useState(createChemicalPreviewFiles);
@@ -51,9 +55,20 @@ export function ChemicalsPage({ client, fileStore }: { client?: SupabaseClient; 
   }, [db]);
   useEffect(() => {
     setWorkspace({ vessels: [], products: [], attachments: [] }); setDetailId(null); setEditor(null); setVesselId(0); setError('');
+    handledLink.current = '';
     void load().catch((e) => setError(messageOf(e)));
     return () => { request.current++; };
   }, [load]);
+  useEffect(() => {
+    const key = `${requestedVessel}:${requestedProduct}`;
+    if (loading || busy || handledLink.current === key || (!requestedVessel && !requestedProduct)) return;
+    handledLink.current = key;
+    const vessel = vessels.find((item) => item.id === requestedVessel);
+    if (vessel) setVesselId(vessel.id);
+    const product = products.find((item) => item.id === requestedProduct && (!requestedVessel || item.vessel_id === requestedVessel));
+    if (product) { setVesselId(product.vessel_id); setDetailId(product.id); }
+    else if (requestedProduct) setError('Le produit demandé n’est pas disponible dans votre accès.');
+  }, [loading, busy, vessels, products, requestedVessel, requestedProduct]);
   async function act(action: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError(''); setNotice('');

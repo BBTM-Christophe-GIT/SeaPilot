@@ -17,6 +17,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
+import type { ModuleKey } from '../permissions/moduleAccess';
+import { ProcessPerformanceRadar } from './ProcessPerformanceRadar';
 import {
   fetchManagerHomeDashboard,
   toLocalIsoDate,
@@ -35,6 +37,7 @@ interface ManagerHomeDashboardProps {
   firstName: string;
   personId: number | null;
   roles: RoleKey[];
+  moduleKeys?: ModuleKey[];
   children?: ReactNode;
 }
 
@@ -273,7 +276,7 @@ function QueueRow({ item, todayKey }: { item: ManagerHomeItem; todayKey: string 
   );
 }
 
-export function ManagerHomeDashboard({ client, firstName, personId, roles, children }: ManagerHomeDashboardProps) {
+export function ManagerHomeDashboard({ client, firstName, personId, roles, moduleKeys, children }: ManagerHomeDashboardProps) {
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toLocalIsoDate(now), [now]);
   const roleKey = [...roles].sort().join(',');
@@ -338,6 +341,8 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles, child
         </div>
         <time dateTime={todayKey}>{new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(now)}</time>
       </header>
+
+      <ProcessPerformanceRadar client={client} moduleKeys={moduleKeys} personId={personId} roles={roles} />
 
       <section className="manager-home-workspace" aria-labelledby="manager-home-title">
         <header className="manager-home-summary">

@@ -104,6 +104,12 @@ export function InternalAuditsPage() {
   const context = useOutletContext<AppShellOutletContext>();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedAudit = searchParams.get('audit');
+  const requestedSite = searchParams.get('site') || '';
+  const requestedTab = searchParams.get('tab') || '';
+  const requestedYear = Number(searchParams.get('year'));
+  const validRequestedYear = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2200;
+  const auditNavigationKey = `${requestedAudit}|${requestedTab}|${requestedYear}`;
+  const [handledViewLink, setHandledViewLink] = useState('');
   const [handledAuditLink, setHandledAuditLink] = useState<string | null>(null);
   const [auditLinkBlocked, setAuditLinkBlocked] = useState(false);
   const [data, setData] = useState<InternalAuditData | null>(null);
@@ -111,8 +117,8 @@ export function InternalAuditsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [tab, setTab] = useState<Tab>('planning');
-  const [year, setYear] = useState(Number(today().slice(0, 4)));
+  const [tab, setTab] = useState<Tab>(TABS.some((item) => item.id === requestedTab) ? requestedTab as Tab : 'planning');
+  const [year, setYear] = useState(validRequestedYear ? requestedYear : Number(today().slice(0, 4)));
   const [auditId, setAuditId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [draftAudit, setDraftAudit] = useState<InternalAudit | null>(null);
@@ -171,8 +177,8 @@ export function InternalAuditsPage() {
       }
       return;
     }
-    if (!data || busy || hasUnsavedChanges || handledAuditLink === requestedAudit) return;
-    setHandledAuditLink(requestedAudit);
+    if (!data || busy || hasUnsavedChanges || handledAuditLink === auditNavigationKey) return;
+    setHandledAuditLink(auditNavigationKey);
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedAudit);
     const linkedAudit = isUuid ? data.audits.find((audit) => audit.id.toLowerCase() === requestedAudit.toLowerCase() && audit.companyId === data.companyId && data.sites.some((site) => site.id === audit.siteId && site.companyId === data.companyId)) : undefined;
     if (!linkedAudit) {
@@ -185,10 +191,18 @@ export function InternalAuditsPage() {
     setAuditId(linkedAudit.id);
     setAuditLinkBlocked(false);
     setDraftAudit(structuredClone(linkedAudit));
-    setYear(linkedAudit.year);
-    setTab('grid');
+    setYear(validRequestedYear ? requestedYear : linkedAudit.year);
+    setTab(TABS.some((item) => item.id === requestedTab) ? requestedTab as Tab : 'grid');
     setSection(''); setSearch(''); setFindingFilter(''); setError('');
-  }, [requestedAudit, data, busy, hasUnsavedChanges, handledAuditLink, auditLinkBlocked]);
+  }, [requestedAudit, requestedTab, requestedYear, validRequestedYear, auditNavigationKey, data, busy, hasUnsavedChanges, handledAuditLink, auditLinkBlocked]);
+  useEffect(() => {
+    const key = `${requestedSite}|${requestedTab}|${requestedYear}`;
+    if (!data || requestedAudit !== null || busy || hasUnsavedChanges || handledViewLink === key) return;
+    setHandledViewLink(key);
+    if (validRequestedYear) setYear(requestedYear);
+    if (TABS.some((item) => item.id === requestedTab)) setTab(requestedTab as Tab);
+    else if (requestedSite) setTab('planning');
+  }, [data, requestedAudit, requestedSite, requestedTab, requestedYear, validRequestedYear, busy, hasUnsavedChanges, handledViewLink]);
   const currentSite = data?.sites.find((site) => site.id === draftAudit?.siteId) || null;
   const score = scoreAudit(draftAudit?.rows || []);
   const sections = [...new Set(draftAudit?.rows.map((row) => row.section) || [])];
@@ -201,6 +215,8 @@ export function InternalAuditsPage() {
   const comparison = useMemo(() => draftAudit && data ? compareAuditScores(draftAudit, data.audits) : null, [draftAudit, data]);
   const pendingCount = (data?.findings || []).filter((finding) => finding.status !== 'closed').length;
   const sortedSites = useMemo(() => [...(data?.sites || [])].sort(compareFleetAssets), [data?.sites]);
+  const linkedSite = sortedSites.find((site) => site.id === requestedSite && site.companyId === data?.companyId);
+  const planningSites = requestedSite ? linkedSite ? [linkedSite] : [] : sortedSites;
   const planningYears = [...new Set([year, ...Array.from({ length: 9 }, (_, index) => Number(today().slice(0, 4)) - 3 + index), ...(data?.audits.map((audit) => audit.year) || [])])].sort((a, b) => b - a);
   const delayAmount = Number(findingForm.delayValue);
   const findingDuration = findingForm.severity !== 'remark' && Number.isInteger(delayAmount) && delayAmount > 0 ? { amount: delayAmount, unit: findingForm.delayUnit } : null;
@@ -400,13 +416,14 @@ export function InternalAuditsPage() {
     <header className="ia-page-header"><div><p className="ia-eyebrow">Audits</p><h1>Audit ISM Interne</h1><p>Planifier les audits, évaluer la conformité et suivre chaque écart.</p></div><div className="ia-header-note"><CalendarDays size={20} /><span><strong>Périodicité annuelle</strong>Fenêtre de ± 3 mois calendaires</span></div></header>
     {error ? <p className="ia-alert is-error" role="alert"><AlertTriangle size={17} />{error}</p> : null}
     {message ? <p className="ia-alert is-success" role="status"><CheckCircle2 size={17} />{message}</p> : null}
+    {requestedSite && tab === 'planning' ? <p className="ia-alert" role="status">{linkedSite ? `Priorité sélectionnée : ${linkedSite.name}` : 'Le site demandé n’est pas disponible dans votre accès.'} <button className="is-secondary" disabled={busy || hasUnsavedChanges} type="button" onClick={() => { const next = new URLSearchParams(searchParams); next.delete('site'); setSearchParams(next); }}>Afficher tous les sites</button></p> : null}
     {hasUnsavedChanges ? <p className="ia-unsaved-notice" role="status"><Save aria-hidden="true" size={17} />{templateDirty ? 'Grille non enregistrée : enregistrez-la ou annulez les modifications avant de changer de grille ou d’onglet.' : 'Réponses non enregistrées : enregistrez-les ou annulez les modifications avant de changer d’audit ou d’onglet.'}</p> : null}
     <nav className="ia-tabs" aria-label="Onglets des audits internes">{TABS.map(({ id, label, icon: Icon }) => <button aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'is-active' : ''} disabled={busy || (hasUnsavedChanges && tab !== id)} key={id} onClick={() => setTab(id)} type="button"><Icon size={17} />{label}{id === 'findings' && pendingCount ? <span>{pendingCount}</span> : null}</button>)}</nav>
 
     {tab === 'planning' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Planning annuel d’audit</h2><p>Une campagne par site et par année. La fenêtre suit la date anniversaire.</p></div><label className="ia-compact-field">Année<select aria-label="Année du planning" onChange={(event) => { setYear(Number(event.target.value)); clearAuditLink(); }} value={year}>{planningYears.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></header>
       <div className="ia-year-legend"><span><i className="ia-key-window" />Fenêtre autorisée ± 3 mois</span><span><i className="ia-key-target" />Date cible</span><span><i className="ia-key-audit" />Audit planifié / réalisé</span>{year === Number(today().slice(0, 4)) ? <span><i className="ia-key-today" />Aujourd’hui</span> : null}</div>
       <div className="ia-year-scroll" tabIndex={0} aria-label={`Planning annuel ${year}, défilement horizontal disponible`}><div className="ia-year-planning">
-        <div className="ia-year-header" aria-hidden="true"><strong>Site / Navire</strong><div className="ia-year-months">{PLANNING_MONTHS.map((month, index) => <span key={month} style={{ left: `${yearPosition(year, `${year}-${String(index + 1).padStart(2, '0')}-15`)}%` }}>{month}</span>)}</div><span>Actions</span></div>{sortedSites.map((site) => {
+        <div className="ia-year-header" aria-hidden="true"><strong>Site / Navire</strong><div className="ia-year-months">{PLANNING_MONTHS.map((month, index) => <span key={month} style={{ left: `${yearPosition(year, `${year}-${String(index + 1).padStart(2, '0')}-15`)}%` }}>{month}</span>)}</div><span>Actions</span></div>{planningSites.map((site) => {
       const annualAudit = data.audits.find((audit) => audit.siteId === site.id && audit.year === year);
       const fallbackDate = data.audits.find((audit) => audit.siteId === site.id)?.plannedOn || '';
       const window = annualAuditWindow(site, year, annualAudit?.plannedOn || fallbackDate);

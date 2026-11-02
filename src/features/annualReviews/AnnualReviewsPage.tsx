@@ -4,7 +4,7 @@ import {
   Save, Send, ShieldCheck, UserRoundCheck, Video,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { AnnualReviewQuestionnaire } from './AnnualReviewForm';
 import {
@@ -131,8 +131,10 @@ function statusTone(status: AnnualReviewStatus): string {
 export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageProps) {
   const context = useOutletContext<AppShellOutletContext>();
   const params = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const requestedReviewId = Number(params.reviewId);
+  const requestedReviewId = Number(params.reviewId || searchParams.get('review'));
+  const requestedPersonId = Number(searchParams.get('person'));
   const currentPersonId = context.previewMode && recipientRoute
     ? previewReview().employeePersonId
     : context.currentPerson?.id || null;
@@ -185,12 +187,19 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
           isManagerProfile ? fetchAnnualReviewPeople(context.client) : Promise.resolve([]),
         ]);
         setReviews(loadedReviews); setPeople(loadedPeople.filter((person) => person.id !== currentPersonId));
-        setSelectedReviewId((current) => current && loadedReviews.some((review) => review.id === current) ? current : loadedReviews[0]?.id || null);
+        const linkedReview = loadedReviews.find((review) => review.id === requestedReviewId)
+          || loadedReviews.find((review) => review.employeePersonId === requestedPersonId);
+        setSelectedReviewId((current) => linkedReview?.id || (current && loadedReviews.some((review) => review.id === current) ? current : loadedReviews[0]?.id || null));
+        if (!linkedReview && isManagerProfile && loadedPeople.some((person) => person.id === requestedPersonId && person.active && person.id !== currentPersonId)) {
+          setInvitation((current) => ({ ...current, employeePersonId: String(requestedPersonId) }));
+          setIsCreating(true);
+          setSelectedReviewId(null);
+        }
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les entretiens.');
     } finally { setIsLoading(false); }
-  }, [context.client, context.previewMode, currentPersonId, isManagerProfile, recipientRoute, requestedReviewId]);
+  }, [context.client, context.previewMode, currentPersonId, isManagerProfile, recipientRoute, requestedReviewId, requestedPersonId]);
 
   const loadResponses = useCallback(async (review: AnnualReviewRecord | null) => {
     if (!review || context.previewMode) { setResponses([]); setObjectives([]); setAnswers(emptyAnnualReviewAnswers()); return; }
