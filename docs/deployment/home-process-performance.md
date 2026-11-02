@@ -6,6 +6,8 @@ Le menu de périmètre sous le titre conserve « Périmètre compagnie » pour l
 
 L’option « Comparer les unités » affiche un axe par navire, bureau ou quai autorisé. Sa note globale est la moyenne à poids égaux de ses processus notés ; les processus non applicables sont exclus, tandis qu’une source indisponible suspend le total. La couverture est visible sur chaque chip. Un clic sur une unité ouvre son radar des processus, puis un clic sur un processus ouvre ses composantes en barres et ses actions. « Toutes les unités » remonte d’un niveau. Une valeur non applicable ou indisponible laisse une lacune : elle ne devient jamais une conformité nulle. La vue globale des comptes terrain reste limitée à leur périmètre autorisé.
 
+Pour les comparaisons comportant au moins douze axes, les noms complets sont espacés dans deux colonnes latérales reliées à leurs axes. Le radar conserve son échelle et sa forme ; le canevas gagne en hauteur pour éviter les chevauchements, sans défilement horizontal.
+
 ## Chargement de l’accueil
 
 Le chargement initial lit uniquement la synthèse globale et le catalogue des unités accessibles. Les affectations RH de compagnie et les calculs des unités sont différés jusqu’à leur sélection ou à la comparaison. Les projections RH ne chargent ni portraits, ni fichiers, ni données personnelles inutiles au score. Les lectures indépendantes démarrent en parallèle et les exercices utilisent un seul agrégat mensuel, plutôt qu’un rapport par personne et par navire.
