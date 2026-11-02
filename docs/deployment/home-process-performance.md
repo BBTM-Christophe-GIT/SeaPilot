@@ -10,7 +10,7 @@ L’option « Comparer les unités » affiche un axe par navire, bureau ou quai 
 
 Le chargement initial lit uniquement la synthèse globale et le catalogue des unités accessibles. Les affectations RH de compagnie et les calculs des unités sont différés jusqu’à leur sélection ou à la comparaison. Les projections RH ne chargent ni portraits, ni fichiers, ni données personnelles inutiles au score. Les lectures indépendantes démarrent en parallèle et les exercices utilisent un seul agrégat mensuel, plutôt qu’un rapport par personne et par navire.
 
-Les sources sont réutilisées en mémoire pendant 30 secondes, avec huit contextes maximum par client. La clé distingue les rôles, la personne, les modules et la date ; un changement d’authentification invalide les données et rejette les lectures antérieures encore en cours. Actualiser et les changements d’actions RH invalident le cache. Aucun résultat métier n’est conservé en stockage persistant. Les changements de profil ou de droits masquent immédiatement l’ancien écran. La file des échéances déduplique aussi ses lectures d’entrée.
+Les sources sont réutilisées en mémoire pendant 30 secondes, avec huit contextes maximum par client. La clé distingue les rôles, la personne, les modules et la date ; une déconnexion ou un changement de compte invalide les données et rejette les lectures antérieures encore en cours. Actualiser, les changements d’actions RH et le renouvellement de session du même compte évincent les résultats sans interrompre les autres lecteurs de l’accueil. Aucun résultat métier n’est conservé en stockage persistant. Les changements de profil ou de droits masquent immédiatement l’ancien écran. La file des échéances déduplique aussi ses lectures d’entrée.
 
 ## Périmètre et accès
 

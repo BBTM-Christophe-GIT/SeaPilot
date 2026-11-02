@@ -3,12 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export const HOME_READ_CACHE_TTL_MS = 30_000;
 const MAX_CONTEXTS_PER_CLIENT = 8;
 interface CachedRead { value: unknown; expiresAt: number; timer: ReturnType<typeof setTimeout> }
-interface ClientReads { revision: number; values: Map<string, CachedRead>; unsubscribe?: () => void }
+interface ClientReads { revision: number; values: Map<string, CachedRead>; userId?: string | null; unsubscribe?: () => void }
 const clients = new WeakMap<SupabaseClient, ClientReads>();
 const stores = new Set<WeakRef<ClientReads>>();
 
-function clear(store: ClientReads): void {
-  store.revision += 1;
+function clear(store: ClientReads, revokeInFlight = false): void {
+  if (revokeInFlight) store.revision += 1;
   store.values.forEach((entry) => clearTimeout(entry.timer));
   store.values.clear();
 }
@@ -20,9 +20,17 @@ function reads(client: SupabaseClient): ClientReads {
     clients.set(client, store);
     for (const reference of stores) if (!reference.deref()) stores.delete(reference);
     stores.add(new WeakRef(store));
-    // Supabase callbacks must stay synchronous. No token, session or private payload is stored here.
+    // Callbacks stay synchronous; only the account ID is retained, never a token or session.
     const current = store;
-    const subscription = client.auth?.onAuthStateChange?.((event) => { if (event !== 'INITIAL_SESSION') clear(current); });
+    const subscription = client.auth?.onAuthStateChange?.((event, session) => {
+      const userId = session?.user.id ?? null;
+      const changedUser = current.userId !== undefined && current.userId !== userId;
+      const unknownSignIn = current.userId === undefined && event === 'SIGNED_IN';
+      // Focus and token renewal may emit SIGNED_IN for the same account. Evict their
+      // cache without cancelling another home reader; only account boundaries revoke it.
+      if (event !== 'INITIAL_SESSION' || changedUser) clear(current, event === 'SIGNED_OUT' || changedUser || unknownSignIn);
+      current.userId = userId;
+    });
     current.unsubscribe = subscription?.data?.subscription?.unsubscribe;
   }
   return store;
