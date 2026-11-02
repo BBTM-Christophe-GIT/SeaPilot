@@ -44,6 +44,7 @@ export function ProcessScopeSelect({ entities, value, onChange, aggregateLabel }
   const menuId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState<AppContextMenuPosition | null>(null);
+  const isOpen = position !== null;
   const seen = new Set<number>();
   const options = entities.filter((entity) => {
     if (!Number.isSafeInteger(entity.id) || entity.id <= 0 || seen.has(entity.id)) return false;
@@ -55,14 +56,24 @@ export function ProcessScopeSelect({ entities, value, onChange, aggregateLabel }
 
   const close = useCallback(() => {
     setPosition(null);
-    trigger.current?.focus();
+    trigger.current?.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {
-    if (!position) return;
+    if (!isOpen) return;
     const onScroll = (event: Event) => {
       if (event.target instanceof Element && event.target.closest('.app-context-menu')) return;
-      close();
+      const rect = trigger.current?.getBoundingClientRect();
+      if (!rect || rect.bottom <= 0 || rect.top >= window.innerHeight || rect.right <= 0 || rect.left >= window.innerWidth) {
+        close();
+        return;
+      }
+      // Browsers can finish scrolling a focused trigger after its menu has opened.
+      // Follow that movement instead of interpreting it as a dismissal.
+      setPosition((current) => {
+        if (!current || (current.x === rect.left && current.y === rect.bottom + 4)) return current;
+        return { x: rect.left, y: rect.bottom + 4 };
+      });
     };
     window.addEventListener('resize', close);
     window.addEventListener('scroll', onScroll, true);
@@ -70,7 +81,7 @@ export function ProcessScopeSelect({ entities, value, onChange, aggregateLabel }
       window.removeEventListener('resize', close);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [position, close]);
+  }, [isOpen, close]);
 
   function open() {
     const rect = trigger.current?.getBoundingClientRect();

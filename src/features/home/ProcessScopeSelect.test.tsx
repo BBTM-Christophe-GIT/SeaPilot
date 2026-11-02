@@ -90,4 +90,46 @@ describe('ProcessScopeSelect', () => {
     expect(screen.getByRole('button', { name: 'Périmètre du radar : Périmètre indisponible' })).toBeVisible();
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('follows a still-visible trigger after a native window scroll and keeps the aggregate selectable', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ProcessScopeSelect entities={entities} value="1" onChange={onChange} aggregateLabel="Votre périmètre" />);
+    const trigger = screen.getByRole('button', { name: 'Périmètre du radar : GOURY' });
+    const bounds = vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 220, 260, 44));
+    await user.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Périmètres du radar' });
+    expect(menu).toHaveStyle({ left: '20px', top: '268px' });
+    bounds.mockReturnValue(new DOMRect(24, 164, 260, 44));
+    fireEvent.scroll(window);
+    expect(screen.getByRole('menu', { name: 'Périmètres du radar' })).toBe(menu);
+    expect(menu).toHaveStyle({ left: '24px', top: '212px' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    // Scrolling the options themselves must not move or dismiss their menu.
+    bounds.mockReturnValue(new DOMRect(24, 80, 260, 44));
+    fireEvent.scroll(menu);
+    expect(menu).toHaveStyle({ left: '24px', top: '212px' });
+    await user.click(within(menu).getByRole('menuitem', { name: 'Votre périmètre' }));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('all');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('closes when scrolling the trigger out of view without scrolling the page back to it', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ProcessScopeSelect entities={entities} value="1" onChange={onChange} aggregateLabel="Votre périmètre" />);
+    const trigger = screen.getByRole('button', { name: 'Périmètre du radar : GOURY' });
+    const bounds = vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 120, 260, 44));
+    const focus = vi.spyOn(trigger, 'focus');
+    await user.click(trigger);
+    expect(screen.getByRole('menu', { name: 'Périmètres du radar' })).toBeVisible();
+    focus.mockClear();
+    bounds.mockReturnValue(new DOMRect(20, -100, 260, 44));
+    fireEvent.scroll(window);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
