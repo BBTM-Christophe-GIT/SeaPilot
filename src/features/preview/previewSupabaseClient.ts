@@ -14,7 +14,7 @@ import { isSeaOperationPreviewProject, seaOperationPreviewDocumentLocationVisibl
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
-import { performancePreviewRpc, performancePreviewTable } from './previewProcessPerformanceFixtures';
+import { configurePerformancePreviewAssets, performancePreviewRpc, performancePreviewTable, resolvePerformancePreviewDashboardLinks } from './previewProcessPerformanceFixtures';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -1839,6 +1839,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
 };
 
 // Isolated fixture configuration, never an authenticated profile or a production write.
+configurePerformancePreviewAssets(() => previewRows('vessels'));
 for (const vessel of previewRows('vessels')) vessel.weather_matrix = Number(vessel.id) === 1 ? cloneVesselWeatherMatrix(GOURY_WEATHER_MATRIX) : null;
 
 function createPreviewQuery(result: PreviewResult, readOnly = false): object {
@@ -3324,6 +3325,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 }
 
 export const previewSupabaseClient = {
+  resolveProcessPerformanceTaskLinks: resolvePerformancePreviewDashboardLinks,
   from: (table: string) => performancePreviewTable(table) || (table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),

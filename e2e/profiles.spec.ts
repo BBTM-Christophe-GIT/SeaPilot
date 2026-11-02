@@ -68,6 +68,33 @@ test.afterEach(async ({ page }) => {
 
 for (const profile of profiles) {
   test.describe(profile.label, () => {
+    test('radar : filtre limité aux unités autorisées et retour au périmètre global du profil', async ({ page }) => {
+      await signIn(page, profile, '/');
+      const radar = page.getByRole('region', { name: 'Où agir en priorité ?', exact: true });
+      await expect(radar).toBeVisible();
+      const scope = radar.getByRole('button', { name: /^Périmètre du radar/ });
+      await expect(scope).toContainText('Votre périmètre');
+      await scope.click();
+      const menu = page.getByRole('menu', { name: 'Périmètres du radar', exact: true });
+      await expect(menu.getByRole('menuitem', { name: 'CI VESSEL ASSIGNED', exact: true })).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: 'CI VESSEL UNASSIGNED', exact: true })).toHaveCount(0);
+      await expect(menu.getByRole('menuitem', { name: 'CI VESSEL FOREIGN', exact: true })).toHaveCount(0);
+      await expect(menu.getByRole('menuitem', { name: 'Périmètre compagnie', exact: true })).toHaveCount(0);
+      await menu.getByRole('menuitem', { name: 'CI VESSEL ASSIGNED', exact: true }).click();
+      await expect(scope).toContainText('CI VESSEL ASSIGNED');
+      const rh = radar.getByRole('group', { name: 'Sélectionner un processus', exact: true }).getByRole('button', { name: /Ressources humaines/ });
+      await rh.click();
+      await expect(rh).toHaveAttribute('aria-pressed', 'true');
+      await expect(radar.getByText('Composantes · Ressources humaines', { exact: true })).toBeVisible();
+      await rh.click();
+      await expect(rh).toHaveAttribute('aria-pressed', 'false');
+      await expect(radar.getByText('Vue globale des processus', { exact: true })).toBeVisible();
+      await scope.click();
+      await menu.getByRole('menuitem', { name: /^Votre périmètre/ }).click();
+      await expect(scope).toContainText('Votre périmètre');
+      await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+    });
+
     test('navigation autorisée, contrôle des outils et refus des routes administrateur', async ({ page }) => {
       await signIn(page, profile, '/modules/workingTime');
       await expect(page.getByRole('heading', { name: 'Suivi du Temps de Travail', exact: true })).toBeAttached();

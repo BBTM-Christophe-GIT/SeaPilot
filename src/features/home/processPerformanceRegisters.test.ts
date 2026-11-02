@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { loadRegisterPerformance } from './processPerformanceRegisters';
+import { loadRegisterPerformance, loadRegisterPerformanceDashboard } from './processPerformanceRegisters';
 import type { ProcessPerformanceScope } from './processPerformanceScope';
 
 const company: ProcessPerformanceScope = { kind: 'company', label: 'Société', personId: 1, personIds: [], vesselIds: [], vesselNames: [], watchGroups: [] };
@@ -42,6 +42,46 @@ function fixtureClient(tables: Record<string, Row[]> = {}, options: { failedTabl
 }
 
 describe('Permission-scoped register performance', () => {
+  it('shares authorized inventory reads across entity comparisons and leaves an office non-applicable', async () => {
+    const fixture = fixtureClient({ lifting_inventory: [
+      { id: 1, vessel_id: 1, reference: 'À jour', kind: 'lifting', active: true, inspection_due_on: '2027-05-01' },
+      { id: 2, vessel_id: 2, reference: 'Échu', kind: 'lifting', active: true, inspection_due_on: '2026-01-01' },
+    ] });
+    const entityScopes = [1, 2, 3].map((id) => ({ ...watch, vesselIds: [id], label: `Entité ${id}` }));
+    const result = await loadRegisterPerformanceDashboard(fixture.client, ['lifting', 'medicalLogbook'], company, '2026-11-01', entityScopes);
+    expect(result.processes[0].score).toBe(50);
+    expect(result.entities.map((processes) => processes[0].score)).toEqual([100, 0, null]);
+    expect(result.entities.every((processes) => processes.map((process) => process.key).join() === 'lifting,medicalLogbook')).toBe(true);
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+    expect(fixture.from).toHaveBeenCalledTimes(1);
+    expect(fixture.selections[0].table).toBe('lifting_inventory');
+  });
+
+  it('reuses only chemical attachment metadata without repeating product reads for each entity', async () => {
+    const fixture = fixtureClient({ chemical_products: [
+      { id: 'a', vessel_id: 1, brand: 'A', product_type: 'Nettoyant', storage_location: 'Local A' },
+      { id: 'b', vessel_id: 2, brand: 'B', product_type: 'Huile', storage_location: '' },
+    ], chemical_attachments: [{ id: 'aa', product_id: 'a', kind: 'fds' }] });
+    const result = await loadRegisterPerformanceDashboard(fixture.client, ['chemicals'], company, '2026-11-01', [
+      { ...watch, vesselIds: [1] }, { ...watch, vesselIds: [2] },
+    ]);
+    expect(result.entities.map((processes) => processes[0].score)).toEqual([100, 0]);
+    expect(fixture.from.mock.calls.map(([table]) => table)).toEqual(['chemical_products', 'chemical_attachments']);
+    expect(fixture.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares exercise report RPCs while preserving individual report scope for a real sailor', async () => {
+    const fixture = fixtureClient({}, { exercises: 1 });
+    const self = { ...watch, kind: 'self' as const, personId: 9, vesselIds: [1, 2] };
+    await loadRegisterPerformanceDashboard(fixture.client, ['emergencyExercises'], self, '2026-11-01', [
+      { ...self, vesselIds: [1] }, { ...self, vesselIds: [2] },
+    ]);
+    expect(fixture.rpc.mock.calls.filter(([name]) => name === 'emergency_exercises_people')).toHaveLength(1);
+    const reports = fixture.rpc.mock.calls.filter(([name]) => name === 'emergency_exercises_report');
+    expect(reports).toHaveLength(2);
+    expect(reports.every(([, args]) => args?.target_person_id === 9)).toBe(true);
+  });
+
   it('does not query hidden registers or medical logbook clinical content', async () => {
     const fixture = fixtureClient();
     expect(await loadRegisterPerformance(fixture.client, [], company, '2026-11-01')).toEqual([]);

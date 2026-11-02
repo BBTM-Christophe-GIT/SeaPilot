@@ -5,13 +5,21 @@ import { fetchVisibleModulesForRoles } from '../permissions/navigationPermission
 import { fetchAllHrDocuments, fetchAllPeople, fetchHrVisibilityRules, mapHrDocumentRows, mapPersonRows } from '../humanResources/peopleQueries';
 import type { HrActionRecord } from '../humanResources/hrActionPlanning';
 import { fetchHrActions } from '../humanResources/hrActionPlanning';
-import type { ManagerHomeAssignmentRow } from './managerHomeData';
 import { buildProcessPerformance, performanceToday, type ProcessPerformance, type ProcessPerformanceSources, type PerformanceAuditSite, type PerformanceAudit, type PerformanceFinding } from './processPerformance';
-import { buildProcessPerformanceScope, canViewCompanyPerformance, filterProcessPerformanceSources, performanceVisibilityAllowed } from './processPerformanceScope';
-import { loadRegisterPerformance } from './processPerformanceRegisters';
+import { buildProcessPerformanceScope, buildPerformanceEntityScope, canViewCompanyPerformance, currentPerformanceAssignments, filterProcessPerformanceSources, performanceAssets, performanceVisibilityAllowed, type PerformanceAssignment, type ProcessPerformanceAsset } from './processPerformanceScope';
+import { loadRegisterPerformance, loadRegisterPerformanceDashboard } from './processPerformanceRegisters';
 
 export { buildProcessPerformanceScope, canViewCompanyPerformance, filterProcessPerformanceSources } from './processPerformanceScope';
 export type { ProcessPerformanceScope } from './processPerformanceScope';
+
+export interface ProcessPerformanceEntity extends ProcessPerformanceAsset {
+  processes: ProcessPerformance[];
+}
+export interface ProcessPerformanceDashboard {
+  processes: ProcessPerformance[];
+  scopeLabel: string;
+  entities: ProcessPerformanceEntity[];
+}
 
 interface PerformanceRowFilter {
   ids?: { column: string; values: Array<string | number> };
@@ -46,7 +54,7 @@ function mapAction(row: Record<string, unknown>): HrActionRecord {
     dueOn: text(row.due_on), scheduledOn: text(row.scheduled_on), completedOn: text(row.completed_on), location: text(row.location), ownerName: text(row.owner_name), notes: text(row.notes) };
 }
 
-async function loadAudits(client: SupabaseClient, office: boolean, vesselIds: number[]) {
+async function loadAudits(client: SupabaseClient, office: boolean, vesselIds: number[], names: string[] = []) {
   const siteSelect = 'id,name,anniversary_on,vessel_id';
   const auditSelect = 'id,site_id,year,status,planned_on,performed_on';
   const findingSelect = 'id,audit_id,description,due_on,status';
@@ -58,25 +66,34 @@ async function loadAudits(client: SupabaseClient, office: boolean, vesselIds: nu
     ]);
     return { auditSites, audits, findings };
   }
-  const auditSites = await fetchPerformanceRows<PerformanceAuditSite>(client, 'internal_audit_sites', siteSelect, { ids: { column: 'vessel_id', values: vesselIds } });
+  const [idSites, namedSites] = await Promise.all([
+    fetchPerformanceRows<PerformanceAuditSite>(client, 'internal_audit_sites', siteSelect, { ids: { column: 'vessel_id', values: vesselIds } }),
+    names.length ? fetchPerformanceRows<PerformanceAuditSite>(client, 'internal_audit_sites', siteSelect, { ids: { column: 'name', values: names } }) : Promise.resolve([]),
+  ]);
+  const auditSites = [...new Map([...idSites, ...namedSites.filter((site) => site.vessel_id == null)].map((site) => [site.id, site])).values()];
   const audits = await fetchPerformanceRows<PerformanceAudit>(client, 'internal_audits', auditSelect, { ids: { column: 'site_id', values: auditSites.map((site) => site.id) } });
   const findings = await fetchPerformanceRows<PerformanceFinding>(client, 'internal_audit_findings', findingSelect, { ids: { column: 'audit_id', values: audits.map((audit) => audit.id) } });
   return { auditSites, audits, findings };
 }
 
-export async function fetchProcessPerformance(client: SupabaseClient, roles: RoleKey[], today = performanceToday(), personId: number | null = null, authorizedModuleKeys?: ModuleKey[]): Promise<ProcessPerformance[]> {
-  if (!roles.length) return [];
+async function fetchPerformanceDashboard(client: SupabaseClient, roles: RoleKey[], today: string, personId: number | null, authorizedModuleKeys: ModuleKey[] | undefined, withEntities: boolean): Promise<ProcessPerformanceDashboard> {
+  const empty = { processes: [], scopeLabel: '', entities: [] };
+  if (!roles.length) return empty;
   // The shell may supply its authoritative configured permissions. Standalone consumers load the same permissions.
   const moduleKeys = authorizedModuleKeys ?? (await fetchVisibleModulesForRoles(client, roles)).map((module) => module.key);
-  if (!moduleKeys.length) return [];
+  if (!moduleKeys.length) return empty;
   const office = canViewCompanyPerformance(roles);
-  const assignments = !office && personId ? await fetchPerformanceRows<ManagerHomeAssignmentRow>(client, 'planning_assignments', 'id,vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)', {
+  const assignmentsLoaded = (!office && personId) || (withEntities && office && moduleKeys.includes('humanResources')) ? await fetchPerformanceRows<PerformanceAssignment>(client, 'planning_assignments', 'id,vessel_id,crew_person_id,captain_person_id,watch_group,starts_on,ends_on,confirmation_status,vessels(name)', {
     lte: { column: 'starts_on', value: today }, gte: { column: 'ends_on', value: today }, neq: { column: 'confirmation_status', value: 'cancelled' },
-  }) : [];
+  }).catch((error) => { if (!office) throw error; return null; }) : [];
+  const assignments = currentPerformanceAssignments(assignmentsLoaded || [], today);
   const scope = buildProcessPerformanceScope(roles, personId, assignments);
   const has = (key: ModuleKey) => moduleKeys.includes(key);
   const hr = has('humanResources');
   const rules = hr ? await fetchHrVisibilityRules(client) : [];
+  const assetRows = withEntities ? await fetchPerformanceRows<{ id: number; name: string; asset_kind: ProcessPerformanceAsset['assetKind']; length_overall: number | string | null; active: boolean }>(client, 'vessels', 'id,name,asset_kind,length_overall,active', office ? {} : { ids: { column: 'id', values: scope.vesselIds } }).catch(() => []) : [];
+  const entities = performanceAssets(assetRows, scope);
+  const entityScopes = entities.map((entity) => buildPerformanceEntityScope(scope, entity, office ? assignments : scope.assignments || []));
   const includeDocuments = performanceVisibilityAllowed(rules, roles, 'section', 'documents');
   const includeReviews = hr && has('annualReviews') && roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role))
     && performanceVisibilityAllowed(rules, roles, 'section', 'annualReviews');
@@ -98,18 +115,37 @@ export async function fetchProcessPerformance(client: SupabaseClient, roles: Rol
   const keys = Object.keys(tasks) as Array<keyof typeof tasks>;
   const [results, auditResult, registers] = await Promise.all([
     Promise.allSettled(keys.map((key) => tasks[key])),
-    has('internalAudits') ? loadAudits(client, office, scope.vesselIds).catch(() => ({ auditSites: null, audits: null, findings: null })) : Promise.resolve({ auditSites: [], audits: [], findings: [] }),
-    loadRegisterPerformance(client, moduleKeys, scope, today),
+    has('internalAudits') ? loadAudits(client, office, scope.vesselIds, withEntities ? scope.vesselNames : []).catch(() => ({ auditSites: null, audits: null, findings: null })) : Promise.resolve({ auditSites: [], audits: [], findings: [] }),
+    withEntities ? loadRegisterPerformanceDashboard(client, moduleKeys, scope, today, entityScopes) : loadRegisterPerformance(client, moduleKeys, scope, today).then((processes) => ({ processes, entities: [] })),
   ]);
   const raw = { ...Object.fromEntries(keys.map((key, index) => {
     const result = results[index];
     return [key, result.status === 'fulfilled' ? result.value : null];
   })), ...auditResult } as unknown as ProcessPerformanceSources;
-  const sources = filterProcessPerformanceSources(raw, scope, roles, rules, includeReviews);
   const modules = { humanResources: 'humanResources', purchases: 'purchaseRequests', internalAudits: 'internalAudits', fleet: 'certificates', procedures: 'procedures' } as const;
-  const core = buildProcessPerformance(sources, today, { includeReviews, includeAnnualAuditCycles: office,
-    reviewPersonIds: office ? undefined : [...new Set((sources.reviews || []).filter((review) => review.review_year === Number(today.slice(0, 4))).map((review) => review.employee_person_id))],
-    includeDocuments,
-    includeMedical: performanceVisibilityAllowed(rules, roles, 'document_type', 'medical_visit') }).filter((process) => has(modules[process.key as keyof typeof modules]));
-  return [...core, ...registers].map((process) => ({ ...process, scopeLabel: scope.label }));
+  const build = (target: typeof scope, entityRegisters: ProcessPerformance[], membershipKnown = true) => {
+    const sources = filterProcessPerformanceSources(raw, target, roles, rules, includeReviews);
+    if (!membershipKnown && hr) { sources.people = null; sources.documents = null; sources.actions = null; sources.reviews = null; }
+    const core = buildProcessPerformance(sources, today, { includeReviews, includeAnnualAuditCycles: office,
+      reviewPersonIds: office ? undefined : [...new Set((sources.reviews || []).filter((review) => review.review_year === Number(today.slice(0, 4))).map((review) => review.employee_person_id))],
+      includeDocuments,
+      includeMedical: performanceVisibilityAllowed(rules, roles, 'document_type', 'medical_visit') }).filter((process) => has(modules[process.key as keyof typeof modules]));
+    return [...core, ...entityRegisters].map((process) => ({ ...process, scopeLabel: target.label }));
+  };
+  return { processes: build(scope, registers.processes), scopeLabel: scope.label,
+    entities: entities.map((entity, index) => ({ ...entity, processes: build(entityScopes[index], registers.entities[index] || [], assignmentsLoaded !== null) })),
+  };
+}
+
+export async function fetchProcessPerformance(client: SupabaseClient, roles: RoleKey[], today = performanceToday(), personId: number | null = null, authorizedModuleKeys?: ModuleKey[]): Promise<ProcessPerformance[]> {
+  return (await fetchPerformanceDashboard(client, roles, today, personId, authorizedModuleKeys, false)).processes;
+}
+
+export async function fetchProcessPerformanceDashboard(client: SupabaseClient, roles: RoleKey[], today = performanceToday(), personId: number | null = null, authorizedModuleKeys?: ModuleKey[]): Promise<ProcessPerformanceDashboard> {
+  const dashboard = await fetchPerformanceDashboard(client, roles, today, personId, authorizedModuleKeys, true);
+  // Optional presentation adapter for isolated previews; it never grants access or changes scoring.
+  const resolver = (client as SupabaseClient & {
+    resolveProcessPerformanceTaskLinks?: (snapshot: ProcessPerformanceDashboard) => Promise<ProcessPerformanceDashboard>;
+  }).resolveProcessPerformanceTaskLinks;
+  return typeof resolver === 'function' ? resolver(dashboard) : dashboard;
 }
