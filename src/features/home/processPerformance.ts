@@ -13,7 +13,7 @@ import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purcha
 import { getAnnualReviewDueDate } from '../procedures/procedureReview';
 
 export type PerformanceProcessKey = 'humanResources' | 'purchases' | 'internalAudits' | 'fleet' | 'procedures'
-  | 'chemicals' | 'emergencyExercises' | 'lsa' | 'pharmacy' | 'lifting' | 'medicalLogbook';
+  | 'chemicals' | 'emergencyExercises' | 'lsa' | 'pharmacy' | 'lifting' | 'towing' | 'medicalLogbook';
 export type PerformanceTaskState = 'overdue' | 'unplanned' | 'in_progress' | 'planned';
 export interface ProcessPerformanceTask {
   id: string;

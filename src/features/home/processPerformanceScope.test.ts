@@ -5,7 +5,7 @@ import { buildProcessPerformance, type ProcessPerformanceSources } from './proce
 import { buildProcessPerformanceScope, filterProcessPerformanceSources } from './processPerformanceScope';
 import { fetchProcessPerformance } from './processPerformanceQueries';
 
-vi.mock('./processPerformanceRegisters', () => ({ loadRegisterPerformance: vi.fn(async () => []) }));
+vi.mock('./processPerformanceRegisters', () => ({ createRegisterPerformanceCache: () => new Map(), loadRegisterPerformance: vi.fn(async () => []) }));
 
 const TODAY = '2026-11-01';
 const assignments = [

@@ -20,8 +20,12 @@ describe('administrator design preview for process performance', () => {
     expect(processes.every((process) => process.unavailableSources.length === 0)).toBe(true);
     expect(processes.filter((process) => process.score !== null).length).toBeGreaterThanOrEqual(8);
     expect(processes.find((process) => process.key === 'humanResources')?.summary).toContain('1 entretien réalisé · 2 planifiés');
-    expect(processes.find((process) => process.key === 'medicalLogbook')?.score).toBeNull();
-    expect(processes.find((process) => process.key === 'emergencyExercises')?.score).toBeNull();
+    expect(processes.some((process) => process.key === 'medicalLogbook')).toBe(false);
+    const exercises = processes.find((process) => process.key === 'emergencyExercises')!;
+    expect(exercises.criteria.map((criterion) => criterion.id)).toEqual(['fire-protection', 'abandon-ship']);
+    if (Number(performanceToday().slice(5, 7)) > 1) expect(exercises.score).toEqual(expect.any(Number));
+    else expect(exercises.score).toBeNull();
+    expect(processes.some((process) => process.key === 'towing')).toBe(true);
     expect(JSON.stringify(processes)).not.toMatch(/ADAM|DEBORDEAUX|LEPRETRE|HARACHE/);
   });
 

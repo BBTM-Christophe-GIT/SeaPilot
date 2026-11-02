@@ -1,10 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleKey } from '../permissions/roles';
+import type { ModuleKey } from '../permissions/moduleAccess';
 import { pharmacyNotificationHref, type PharmacyNotification } from '../pharmacy/pharmacyModel';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
 import { getAnnualReviewAlert } from '../procedures/procedureReview';
 import { derivePurchaseRequestStage, isPurchaseRequestRejected } from '../purchaseRequests/purchaseRequestQueries';
 import { buildManagerHomeVessels, normalizeHomeVesselName, type ManagerHomeVessel, type ManagerHomeVesselIndex } from './managerHomeVessels';
+import { assertHomeReadRevision, cachedHomeRead, discardHomeRead, homeReadContext, homeReadRevision, invalidateHomeReadCache } from './homeReadCache';
 
 export type ManagerHomeGroupKey = 'purchases' | 'workingTime' | 'procedures' | 'fleetDocuments' | 'humanResources';
 export type ManagerHomeTone = 'danger' | 'warning' | 'success';
@@ -720,6 +722,7 @@ async function loadRows<T>(label: string, loader: () => Promise<{ data: unknown[
 export interface ManagerHomeViewer {
   roles: RoleKey[];
   personId: number | null;
+  moduleKeys?: ModuleKey[];
 }
 
 function isAssignmentScopedViewer(roles: RoleKey[]): boolean {
@@ -734,7 +737,7 @@ function assignmentScopeLabel(scope: ManagerHomeAssignmentScope): string {
   return [...scope.watchGroups, ...vesselLabels].join(' · ') || 'Aucune affectation active';
 }
 
-export async function fetchManagerHomeDashboard(
+async function loadManagerHomeDashboard(
   client: SupabaseClient,
   today = new Date(),
   viewer: ManagerHomeViewer = { roles: [], personId: null },
@@ -749,13 +752,14 @@ export async function fetchManagerHomeDashboard(
     return { items: [], vessels: [], unavailableSources: [], scopeLabel: 'Aucune fiche RH liée au profil' };
   }
 
-  const assignments = await loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
+  const assignmentsPromise = loadRows<ManagerHomeAssignmentRow>('les affectations Planning', async () => client
     .from('planning_assignments')
     .select('vessel_id,crew_person_id,captain_person_id,watch_group,vessels(name)')
     .lte('starts_on', todayKey)
     .gte('ends_on', todayKey)
     .neq('confirmation_status', 'cancelled'));
   if (assignmentScoped) {
+    const assignments = await assignmentsPromise;
     if (assignments.error) {
       return { items: [], vessels: [], unavailableSources: [assignments.label], scopeLabel: 'Affectation indisponible' };
     }
@@ -773,7 +777,9 @@ export async function fetchManagerHomeDashboard(
     ? 'procedures'
     : 'published_procedures';
 
-  const [purchases, procedures, fleetCertificates, lsaItems, pharmacyNotifications, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+  // Office queues need assignments for associations, never as a prerequisite for independent reads.
+  const [assignments, purchases, procedures, fleetCertificates, lsaItems, pharmacyNotifications, people, hrDocuments, workingTimeCalculations] = await Promise.all([
+    assignmentsPromise,
     loadRows<PurchaseRequestRow>('les achats', async () => {
       let query = client.from('purchase_requests')
         .select('id,request_number,title,requested_on,requester_name,project_code,vessel_id,vessel_name,status,urgent,approval_status,ordered_on,expected_delivery_on,received_on')
@@ -850,4 +856,24 @@ export async function fetchManagerHomeDashboard(
     unavailableSources: results.filter((result) => result.error).map((result) => result.label),
     scopeLabel: assignmentScope ? assignmentScopeLabel(assignmentScope) : null,
   };
+}
+
+/** Deduplicate remounts/in-flight effects, without retaining an account's queue beyond the short home cache. */
+export async function fetchManagerHomeDashboard(
+  client: SupabaseClient,
+  today = new Date(),
+  viewer: ManagerHomeViewer = { roles: [], personId: null },
+  options: { forceRefresh?: boolean } = {},
+): Promise<ManagerHomeDashboardResult> {
+  if (options.forceRefresh) invalidateHomeReadCache(client);
+  const key = homeReadContext('manager-home', viewer.roles, viewer.personId, viewer.moduleKeys, toLocalIsoDate(today));
+  const pending = cachedHomeRead(client, key, () => {
+    const revision = homeReadRevision(client);
+    return loadManagerHomeDashboard(client, today, viewer).then((result) => {
+      assertHomeReadRevision(client, revision);
+      return result;
+    });
+  });
+  void pending.then((result) => { if (result.unavailableSources.length) discardHomeRead(client, key, pending); }, () => discardHomeRead(client, key, pending));
+  return pending;
 }

@@ -280,10 +280,11 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles, modul
   const now = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => toLocalIsoDate(now), [now]);
   const roleKey = [...roles].sort().join(',');
+  const moduleKey = moduleKeys === undefined ? undefined : [...moduleKeys].sort().join(',');
   const [loaded, setLoaded] = useState<{
-    client: SupabaseClient; personId: number | null; roleKey: string; result: ManagerHomeDashboardResult;
+    client: SupabaseClient; personId: number | null; roleKey: string; moduleKey: string | undefined; result: ManagerHomeDashboardResult;
   } | null>(null);
-  const isLoading = !loaded || loaded.client !== client || loaded.personId !== personId || loaded.roleKey !== roleKey;
+  const isLoading = !loaded || loaded.client !== client || loaded.personId !== personId || loaded.roleKey !== roleKey || loaded.moduleKey !== moduleKey;
   const { items, vessels, unavailableSources, scopeLabel } = isLoading ? EMPTY_RESULT : loaded.result;
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [displayedMonth, setDisplayedMonth] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1, 12));
@@ -293,12 +294,14 @@ export function ManagerHomeDashboard({ client, firstName, personId, roles, modul
 
   useEffect(() => {
     let active = true;
-    void fetchManagerHomeDashboard(client, now, { personId, roles: roleKey.split(',').filter(Boolean) as RoleKey[] }).then((result) => {
+    void fetchManagerHomeDashboard(client, now, { personId, roles: roleKey.split(',').filter(Boolean) as RoleKey[], moduleKeys: moduleKey === undefined ? undefined : moduleKey.split(',').filter(Boolean) as ModuleKey[] }).then((result) => {
       if (!active) return;
-      setLoaded({ client, personId, roleKey, result });
+      setLoaded({ client, personId, roleKey, moduleKey, result });
+    }).catch(() => {
+      if (active) setLoaded({ client, personId, roleKey, moduleKey, result: { ...EMPTY_RESULT, unavailableSources: ['les données d’accueil'] } });
     });
     return () => { active = false; };
-  }, [client, now, personId, roleKey]);
+  }, [client, now, personId, roleKey, moduleKey]);
 
   const dateItems = useMemo(() => items.filter((item) => item.queueVisibleDates.includes(selectedDate)), [items, selectedDate]);
   const vesselCountItems = useMemo(() => dateItems.filter((item) => itemMatchesFilter(item, selectedFilter)), [dateItems, selectedFilter]);

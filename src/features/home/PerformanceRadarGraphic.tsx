@@ -34,6 +34,7 @@ const COLORS = [
 const DASHES = ['', '7 3', '2 3', '10 3 2 3', '5 2', '12 4'];
 const score = (value: number | null | undefined): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
 const valueLabel = (value: number | null) => value === null ? 'Non noté' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} %`;
+const scoreTone = (value: number | null): string => value === null ? 'unknown' : value < 40 ? 'danger' : value < 75 ? 'warning' : 'success';
 const pointString = (points: Point[]) => points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
 
 function radialPoint(index: number, count: number, radius: number): Point {
@@ -65,9 +66,10 @@ function knownSegments(points: Array<Point | null>, cyclic: boolean): Point[][] 
   return segments;
 }
 
-export function PerformanceRadarGraphic({ axes, series, selectedKey, onSelect, title = 'Performance des processus sur 100' }: PerformanceRadarGraphicProps) {
+export function PerformanceRadarGraphic({ axes: inputAxes, series, selectedKey, onSelect, title = 'Performance des processus sur 100' }: PerformanceRadarGraphicProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const axes = inputAxes.filter((axis) => axis.key !== 'medicalLogbook');
   const chartSeries = series === undefined ? [{ key: 'performance', label: 'Performance', values: Object.fromEntries(axes.map((axis) => [axis.key, axis.score])) }] : series;
   const values = chartSeries.map((entry) => axes.map((axis) => score(entry.values[axis.key])));
   const missingCount = values.reduce((total, entry) => total + entry.filter((value) => value === null).length, 0);
@@ -105,7 +107,7 @@ export function PerformanceRadarGraphic({ axes, series, selectedKey, onSelect, t
           return <g className="performance-radar-series" data-series-key={entry.key} key={entry.key} style={{ '--radar-series-color': color } as CSSProperties}>
             {complete && axes.length >= 3 ? <polygon className="performance-radar-area" points={pointString(points as Point[])} /> : null}
             {segments.filter((segment) => segment.length >= 2).map((segment, index) => <polyline className="performance-radar-line" key={index} points={pointString(complete && axes.length >= 3 ? [...segment, segment[0]] : segment)} strokeDasharray={DASHES[seriesIndex % DASHES.length]} />)}
-            {points.map((point, index) => point ? <circle className={`performance-radar-point${selectedKey === axes[index].key ? ' is-selected' : ''}`} cx={point[0]} cy={point[1]} data-axis-key={axes[index].key} key={axes[index].key} r={selectedKey === axes[index].key ? 6 : 4.5}>
+            {points.map((point, index) => point ? <circle className={`performance-radar-point${chartSeries.length === 1 ? ` is-${scoreTone(values[seriesIndex][index])}` : ''}${selectedKey === axes[index].key ? ' is-selected' : ''}`} cx={point[0]} cy={point[1]} data-axis-key={axes[index].key} key={axes[index].key} r={selectedKey === axes[index].key ? 6 : 4.5}>
               <title>{entry.label} · {axes[index].label} : {valueLabel(values[seriesIndex][index])}</title>
             </circle> : null)}
           </g>;
@@ -116,9 +118,10 @@ export function PerformanceRadarGraphic({ axes, series, selectedKey, onSelect, t
           const [x, y] = labelPoint(index, axes.length);
           const position = { left: `${x / WIDTH * 100}%`, top: `${y / HEIGHT * 100}%` };
           const singleValue = chartSeries.length === 1 ? values[0][index] : undefined;
+          const toneClass = singleValue === undefined ? '' : ` is-${scoreTone(singleValue)}`;
           const content = <><strong>{axis.shortLabel || axis.label}</strong>{singleValue !== undefined ? <span>{valueLabel(singleValue)}</span> : null}</>;
-          return onSelect ? <button aria-label={`Détailler ${axis.label}`} aria-pressed={selectedKey === axis.key} className={`performance-radar-axis-label${selectedKey === axis.key ? ' is-selected' : ''}`} key={axis.key} onClick={() => onSelect(axis.key)} style={position} title={axis.label} type="button">{content}</button>
-            : <div className="performance-radar-axis-label" key={axis.key} style={position} title={axis.label}>{content}</div>;
+          return onSelect ? <button aria-label={`Détailler ${axis.label}`} aria-pressed={selectedKey === axis.key} className={`performance-radar-axis-label${toneClass}${selectedKey === axis.key ? ' is-selected' : ''}`} key={axis.key} onClick={() => onSelect(axis.key)} style={position} title={axis.label} type="button">{content}</button>
+            : <div className={`performance-radar-axis-label${toneClass}`} key={axis.key} style={position} title={axis.label}>{content}</div>;
         })}
       </div>
     </div>
@@ -126,6 +129,7 @@ export function PerformanceRadarGraphic({ axes, series, selectedKey, onSelect, t
       {chartSeries.map((entry, index) => <li key={entry.key}><svg aria-hidden="true" viewBox="0 0 28 12"><line stroke={COLORS[index % COLORS.length]} strokeDasharray={DASHES[index % DASHES.length]} x1="1" x2="27" y1="6" y2="6" /><circle cx="14" cy="6" fill="var(--sp-surface, #fff)" r="3" stroke={COLORS[index % COLORS.length]} /></svg><span>{entry.label}</span></li>)}
       <li className="performance-radar-target-legend"><i aria-hidden="true" />Repère 100 %</li>
     </ul>
+    {chartSeries.length === 1 ? <ul aria-label="Couleurs des niveaux de performance" className="performance-radar-thresholds"><li className="is-danger"><i aria-hidden="true" />Moins de 40 %</li><li className="is-warning"><i aria-hidden="true" />40 à 74 %</li><li className="is-success"><i aria-hidden="true" />75 à 100 %</li><li className="is-unknown"><i aria-hidden="true" />Non noté</li></ul> : null}
     {!chartSeries.length ? <p className="performance-radar-note">Sélectionnez au moins une entité à comparer.</p> : missingCount ? <p className="performance-radar-note">{missingCount} valeur{missingCount > 1 ? 's' : ''} non notée{missingCount > 1 ? 's' : ''} : les lacunes ne valent pas 0 %.</p> : null}
     {axes.length < 3 ? <p className="performance-radar-note">{axes.length === 1 ? 'Un critère' : 'Deux critères'} : chaque échelle va de 0 à 100 %. {axes.length === 2 ? 'Le segment relie les deux valeurs d’une même entité.' : ''}</p> : null}
     <details className="performance-radar-values"><summary>Consulter les valeurs du graphique</summary><div className="performance-radar-table-scroll"><table><caption>{title} — valeurs</caption><thead><tr><th scope="col">Indicateur</th>{chartSeries.map((entry) => <th key={entry.key} scope="col">{entry.label}</th>)}</tr></thead><tbody>{axes.map((axis, index) => <tr key={axis.key}><th scope="row">{axis.label}</th>{chartSeries.map((entry, seriesIndex) => <td key={entry.key}>{valueLabel(values[seriesIndex][index])}</td>)}</tr>)}</tbody></table></div></details>

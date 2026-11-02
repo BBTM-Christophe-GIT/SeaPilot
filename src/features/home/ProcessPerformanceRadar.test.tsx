@@ -7,7 +7,7 @@ import { ProcessPerformancePanel, ProcessPerformanceRadar } from './ProcessPerfo
 import type { ProcessPerformance } from './processPerformance';
 import { fetchProcessPerformanceDashboard } from './processPerformanceQueries';
 
-vi.mock('./processPerformanceQueries', () => ({ fetchProcessPerformanceDashboard: vi.fn() }));
+vi.mock('./processPerformanceQueries', () => ({ fetchProcessPerformanceDashboard: vi.fn(), invalidateProcessPerformanceCache: vi.fn() }));
 
 function process(overrides: Partial<ProcessPerformance> = {}): ProcessPerformance {
   return { key: 'humanResources', label: 'Ressources humaines', shortLabel: 'RH', to: '/modules/humanResources', score: 60,
@@ -39,7 +39,8 @@ describe('interactive process radar', () => {
     expect(within(screen.getByRole('group', { name: 'Sélectionner un processus' })).getByRole('button', { name: /Ressources humaines/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('progressbar', { name: 'Conformité médicale' })).toHaveAttribute('value', '100');
     expect(screen.getByRole('link', { name: /Certificat sécurité/ })).toHaveAttribute('href', '/modules/humanResources?person=32&document=1&actions=1');
-    expect(screen.getByRole('img')).toHaveAccessibleName(/Composantes du score Ressources humaines sur 100/);
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByRole('group', { name: 'Composition du score Ressources humaines' })).toHaveClass('process-criterion-bars');
     await user.click(within(screen.getByRole('group', { name: 'Sélectionner un processus' })).getByRole('button', { name: /Ressources humaines/ }));
     expect(within(screen.getByRole('group', { name: 'Sélectionner un processus' })).getByRole('button', { name: /Ressources humaines/ })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('img')).toHaveAccessibleName(/Performance des processus sur 100/);
@@ -83,25 +84,50 @@ describe('interactive process radar', () => {
     expect(screen.getByRole('link', { name: /Certificat sécurité/ })).toBeVisible();
   });
 
-  it('compares accessible units on common process axes and then on criterion axes', async () => {
+  it('drills from unit scores into process radar and horizontal criterion bars', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><ProcessPerformancePanel today="2026-11-01" processes={[process()]} scopeLabel="Votre périmètre" entities={[
       { id: 1, name: 'GOURY', assetKind: 'vessel', processes: [process({ score: 20, criteria: [{ id: 'medical', label: 'Conformité médicale', weight: 30, score: 40, detail: 'À traiter' }] })] },
       { id: 2, name: 'Quai Le Havre', assetKind: 'quay', processes: [process({ score: 80 })] },
     ]} /></MemoryRouter>);
     await user.click(screen.getByRole('button', { name: 'Comparer les unités' }));
-    expect(screen.getByRole('group', { name: /Navires, bureaux et quais/ })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Sélectionner une unité' })).toBeVisible();
+    expect(screen.getByRole('img')).toHaveAccessibleName(/Performance globale des unités/);
     expect(screen.getByRole('img')).toHaveAccessibleName(/GOURY/);
     expect(screen.getByRole('img')).toHaveAccessibleName(/Quai Le Havre/);
+    await user.click(within(screen.getByRole('group', { name: 'Sélectionner une unité' })).getByRole('button', { name: /GOURY/ }));
+    expect(screen.getByRole('img')).toHaveAccessibleName(/Performance des processus/);
+    expect(screen.getByRole('img')).toHaveAccessibleName(/20 %/);
     await user.click(within(screen.getByRole('group', { name: 'Sélectionner un processus' })).getByRole('button', { name: /Ressources humaines/ }));
-    expect(screen.getByRole('img')).toHaveAccessibleName(/Composantes du score Ressources humaines/);
-    expect(screen.getByRole('img')).toHaveAccessibleName(/40/);
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByRole('progressbar', { name: 'Conformité médicale' })).toHaveAttribute('value', '40');
     await user.click(screen.getByRole('button', { name: 'Vue globale' }));
     expect(screen.getByRole('img')).toHaveAccessibleName(/Performance des processus/);
-    await user.click(screen.getByRole('checkbox', { name: 'GOURY' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Quai Le Havre' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Sélectionnez au moins une unité');
-    expect(screen.queryByRole('img')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Toutes les unités' }));
+    expect(screen.getByRole('img')).toHaveAccessibleName(/Performance globale des unités/);
     expect(screen.queryByText('Périmètre compagnie')).toBeNull();
+  });
+
+  it('does not expose the medical logbook even if an older snapshot still contains it', () => {
+    render(<MemoryRouter><ProcessPerformancePanel processes={[process(), process({ key: 'medicalLogbook', label: 'Registre médical', shortLabel: 'Médical' })]} /></MemoryRouter>);
+    expect(screen.queryByText('Registre médical')).toBeNull();
+    expect(screen.getByRole('img')).not.toHaveAccessibleName(/Registre médical/);
+  });
+
+  it('loads only global scores at entry and requests a unit only when selected', async () => {
+    const user = userEvent.setup();
+    const client = {} as SupabaseClient;
+    vi.mocked(fetchProcessPerformanceDashboard).mockResolvedValueOnce({ processes: [process()], scopeLabel: 'Périmètre compagnie', entities: [
+      { id: 1, name: 'GOURY', assetKind: 'vessel', processes: [], processesLoaded: false },
+    ] }).mockResolvedValueOnce({ processes: [process()], scopeLabel: 'Périmètre compagnie', entities: [
+      { id: 1, name: 'GOURY', assetKind: 'vessel', processes: [process({ score: 20 })], processesLoaded: true },
+    ] });
+    render(<MemoryRouter><ProcessPerformanceRadar client={client} roles={['admin']} personId={1} moduleKeys={['humanResources']} /></MemoryRouter>);
+    await screen.findByRole('img');
+    expect(vi.mocked(fetchProcessPerformanceDashboard).mock.calls.at(-1)?.[5]).toEqual({ includeEntities: false });
+    await user.click(screen.getByRole('button', { name: 'Périmètre du radar : Périmètre compagnie' }));
+    await user.click(screen.getByRole('menuitem', { name: 'GOURY' }));
+    await screen.findByRole('img', { name: /20 %/ });
+    expect(vi.mocked(fetchProcessPerformanceDashboard).mock.calls.at(-1)?.[5]).toEqual({ includeEntities: true, entityIds: [1] });
   });
 });

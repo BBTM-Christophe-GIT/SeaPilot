@@ -1,10 +1,16 @@
 # Radar de pilotage des processus
 
-L’accueil affiche les processus accessibles au compte connecté, un classement des priorités sur une seule colonne et le détail de chaque note. Un clic sur un processus remplace les axes globaux du radar par les composantes de son score ; un second clic sur ce même processus, ou « Vue globale », rétablit les axes des processus. Les actions affichent l’échéance, le rendez-vous, le lieu et un lien vers le dossier correspondant. Les animations respectent la préférence de réduction des mouvements.
+L’accueil affiche par défaut le radar des processus accessibles au compte connecté. Ses titres, valeurs et points utilisent les mêmes seuils que les chips : rouge sous 40 %, ambre sous 75 %, vert à partir de 75 %, gris pour une valeur non notée. Le classement des priorités tient sur une seule colonne dont la hauteur suit le contenu, sans défilement interne. Un clic sur un processus affiche les composantes de son score sous forme de barres horizontales ; un second clic, ou « Vue globale », rétablit le radar. Les actions conservent l’échéance, le rendez-vous, le lieu et le lien vers le dossier correspondant. Les animations respectent la préférence de réduction des mouvements.
 
 Le menu de périmètre sous le titre conserve « Périmètre compagnie » pour les comptes de bureau et propose les navires, bureaux et quais accessibles, avec leurs illustrations réduites de moitié. Les navires suivent l’ordre décroissant de longueur du référentiel partagé ; les quais et bureaux suivent. Le périmètre global inclut les éléments sans affectation ; les sous-périmètres RH utilisent les affectations courantes et ne dupliquent pas ces éléments dans toutes les unités.
 
-L’option « Comparer les unités » superpose jusqu’à quatre unités sur les mêmes axes. La sélection des unités est indépendante du filtre utilisé pour le classement, le détail et les actions. La comparaison reste disponible sur les composantes d’un processus sélectionné. Une valeur non applicable ou indisponible crée une lacune dans le tracé : elle ne devient jamais une conformité nulle. La vue globale des comptes terrain reste limitée à leur périmètre autorisé.
+L’option « Comparer les unités » affiche un axe par navire, bureau ou quai autorisé. Sa note globale est la moyenne à poids égaux de ses processus notés ; les processus non applicables sont exclus, tandis qu’une source indisponible suspend le total. La couverture est visible sur chaque chip. Un clic sur une unité ouvre son radar des processus, puis un clic sur un processus ouvre ses composantes en barres et ses actions. « Toutes les unités » remonte d’un niveau. Une valeur non applicable ou indisponible laisse une lacune : elle ne devient jamais une conformité nulle. La vue globale des comptes terrain reste limitée à leur périmètre autorisé.
+
+## Chargement de l’accueil
+
+Le chargement initial lit uniquement la synthèse globale et le catalogue des unités accessibles. Les affectations RH de compagnie et les calculs des unités sont différés jusqu’à leur sélection ou à la comparaison. Les projections RH ne chargent ni portraits, ni fichiers, ni données personnelles inutiles au score. Les lectures indépendantes démarrent en parallèle et les exercices utilisent un seul agrégat mensuel, plutôt qu’un rapport par personne et par navire.
+
+Les sources sont réutilisées en mémoire pendant 30 secondes, avec huit contextes maximum par client. La clé distingue les rôles, la personne, les modules et la date ; une déconnexion ou un changement de compte invalide les données et rejette les lectures antérieures encore en cours. Actualiser, les changements d’actions RH et le renouvellement de session du même compte évincent les résultats sans interrompre les autres lecteurs de l’accueil. Aucun résultat métier n’est conservé en stockage persistant. Les changements de profil ou de droits masquent immédiatement l’ancien écran. La file des échéances déduplique aussi ses lectures d’entrée.
 
 ## Périmètre et accès
 
@@ -17,7 +23,7 @@ Les modules visibles du shell sont la source des autorisations de navigation. Sa
 - Sans affectation, les processus navires restent non notés. Un sous-ensemble RLS ne représente jamais la compagnie entière.
 - Lors d’un changement de compte, de droits ou de client, les anciennes notes et identités sont masquées immédiatement, avant le prochain chargement.
 
-Le registre médical n’entraîne aucune requête sur les consultations, patients ou diagnostics. Son entrée n’est visible que si le module est autorisé ; elle reste non notée en l’absence d’un objectif collectif non clinique.
+Le registre médical est retiré des processus du radar et du calcul global. Le module et ses permissions restent disponibles dans leur navigation habituelle. Aucune consultation, identité de patient ou donnée clinique n’est lue pour le radar.
 
 ## Méthode de calcul
 
@@ -31,10 +37,11 @@ Les notes sont des indices de suivi de 0 à 100, pas des certifications régleme
 | Documents flotte | Validité, échéances à 90 jours et planification des contrôles, détaillées dans l’interface. |
 | Procédures QHSE | Revues annuelles selon la date de diffusion et leur échéance. Armement et équipage utilisent la bibliothèque publiée. |
 | Produits chimiques | Présence d’une FDS référencée 70 %, emplacement de stockage renseigné 30 %. La présence d’une pièce ne certifie pas son contenu. |
-| LSA | Validité des équipements datés 80 %, traçabilité des dates 20 %. À jour 100, échéance à 30 jours 50, périmé 0. Un inventaire entièrement non daté reste non noté. |
-| Levage / remorques | Échéance officielle des matériels actifs : à jour 100, à 30 jours 50, échue ou absente 0. Un brouillon de contrôle ne renouvelle pas la validité. |
+| LSA | Validité et présence des registres 80 %, traçabilité des dates 20 %, moyennes par navire. À jour 100, échéance à 30 jours 50, périmé ou registre absent 0. Un bureau ou quai sans obligation est non applicable. |
+| Apparaux de levage | Échéance officielle des matériels actifs : à jour 100, à 30 jours 50, échue ou non datée 0. Sans apparau identifié : non applicable. Un brouillon ne renouvelle pas la validité. |
+| Registre des remorques | Indicateur distinct sous la permission Levage. Même calcul des échéances ; un registre absent sur un navire autorisé vaut 0 et génère une action de saisie. Il n’est pas compensé par les apparaux de levage à jour. |
 | Pharmacie | Péremption 30 %, seuils de stock 30 %, données vérifiables (quantités et dates) 20 %, justificatifs de contrôle 20 %. Les formats de quantité inconnus restent à vérifier. |
-| Exercices | Nombre de déclarations et TBT de l’année dans les DPR autorisés. Non noté tant qu’aucun objectif de fréquence n’est configuré. |
+| Exercices | Un incendie et un abandon par personne et par mois de présence en emploi. Deux critères de poids égaux, calculés sur les mois clos. Le mois courant génère des actions avant sa fin ; les mois futurs, hors emploi ou sans présence sont exclus. Les répétitions d’un exercice ne compensent pas un autre mois ou une autre personne. Les TBT n’acquittent pas ces deux objectifs. |
 
 Pour les RH, un rendez-vous de renouvellement doit avoir une date future, un lieu et être prévu avant l’échéance pour créditer l’anticipation. Une réservation ou une action terminée ne prolonge jamais le document : le justificatif et la nouvelle validité restent à enregistrer dans RH. Les actions terminées, planifiées et annulées sont persistées dans `hr_action_plans`.
 

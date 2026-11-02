@@ -86,12 +86,21 @@ for (const profile of profiles) {
       await rh.click();
       await expect(rh).toHaveAttribute('aria-pressed', 'true');
       await expect(radar.getByText('Composantes · Ressources humaines', { exact: true })).toBeVisible();
+      await expect(radar.locator('.process-criterion-bars')).toBeVisible();
+      await expect(radar.locator('.performance-radar-canvas')).toHaveCount(0);
       await rh.click();
       await expect(rh).toHaveAttribute('aria-pressed', 'false');
       await expect(radar.getByText('Vue globale des processus', { exact: true })).toBeVisible();
       await scope.click();
       await menu.getByRole('menuitem', { name: /^Votre périmètre/ }).click();
       await expect(scope).toContainText('Votre périmètre');
+      await expect.poll(() => radar.getByRole('group', { name: 'Sélectionner un processus', exact: true })
+        .evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+      await expect(radar.getByRole('button', { name: /Registre médical/ })).toHaveCount(0);
+      await radar.getByRole('button', { name: 'Comparer les unités', exact: true }).click();
+      await expect(radar.getByRole('img', { name: /Performance globale des unités/ })).toBeVisible();
+      await radar.getByRole('group', { name: 'Sélectionner une unité', exact: true }).getByRole('button', { name: /CI VESSEL ASSIGNED/ }).click();
+      await expect(radar.getByRole('img', { name: /Performance des processus/ })).toBeVisible();
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
