@@ -70,13 +70,21 @@ export function PerformanceRadarGraphic({ axes: inputAxes, series, selectedKey, 
   const titleId = useId();
   const descriptionId = useId();
   const axes = inputAxes.filter((axis) => axis.key !== 'medicalLogbook');
+  const dense = axes.length >= 12;
+  const rightLabelCount = Math.ceil(axes.length / 2);
+  const mobileLabels = axes.map((_, index) => {
+    const right = index < rightLabelCount;
+    const count = right ? rightLabelCount : axes.length - rightLabelCount;
+    const row = right ? index : axes.length - index - 1;
+    return { x: right ? 86 : 14, y: (row + .5) / count * 100, edge: right ? 71 : 29 };
+  });
   const chartSeries = series === undefined ? [{ key: 'performance', label: 'Performance', values: Object.fromEntries(axes.map((axis) => [axis.key, axis.score])) }] : series;
   const values = chartSeries.map((entry) => axes.map((axis) => score(entry.values[axis.key])));
   const missingCount = values.reduce((total, entry) => total + entry.filter((value) => value === null).length, 0);
   const description = chartSeries.map((entry, index) => `${entry.label} : ${axes.map((axis, axisIndex) => `${axis.label} : ${values[index][axisIndex] === null ? 'indisponible (non noté)' : valueLabel(values[index][axisIndex])}`).join(' ; ')}`).join('. ');
   if (!axes.length) return <p className="performance-radar-empty">Aucun indicateur accessible pour ce périmètre.</p>;
-  return <div className={`performance-radar-graphic${axes.length < 3 ? ' is-compact-axis' : ''}`}>
-    <div className="performance-radar-canvas">
+  return <div className={`performance-radar-graphic${axes.length < 3 ? ' is-compact-axis' : ''}${dense ? ' is-dense-axis' : ''}`}>
+    <div className="performance-radar-canvas" style={dense ? { '--radar-label-rows': rightLabelCount } as CSSProperties : undefined}>
       <svg aria-describedby={descriptionId} aria-labelledby={titleId} role="img" viewBox={`0 0 ${WIDTH} ${HEIGHT}`}>
         <title id={titleId}>{title}. {description}</title>
         <desc id={descriptionId}>Échelle commune de 0 à 100 pour cent. {axes.length < 3 ? 'Les critères partagent des échelles horizontales identiques.' : 'Chaque axe correspond à un indicateur.'} Les valeurs non notées laissent des lacunes dans le tracé.</desc>
@@ -113,10 +121,20 @@ export function PerformanceRadarGraphic({ axes: inputAxes, series, selectedKey, 
           </g>;
         })}
       </svg>
+      {dense ? <div aria-hidden="true" className="performance-radar-label-connectors">{axes.map((axis, index) => {
+        const [x, y] = radialPoint(index, axes.length, RADIUS);
+        const label = mobileLabels[index];
+        // Dense comparisons keep a circular plot, 85% wide and centered vertically.
+        // Container units keep the leader attached as its text rails grow taller.
+        const startX = 7.5 + x / WIDTH * 85;
+        const startY = `calc(50% + ${(y - HEIGHT / 2) / WIDTH * 85}cqw)`;
+        return <i key={axis.key} style={{ clipPath: `polygon(${startX}% calc(${startY} - .5px), ${label.edge}% calc(${label.y}% - .5px), ${label.edge}% calc(${label.y}% + .5px), ${startX}% calc(${startY} + .5px))` }} />;
+      })}</div> : null}
       <div className="performance-radar-axis-labels">
         {axes.map((axis, index) => {
           const [x, y] = labelPoint(index, axes.length);
-          const position = { left: `${x / WIDTH * 100}%`, top: `${y / HEIGHT * 100}%` };
+          const position = { left: `${x / WIDTH * 100}%`, top: `${y / HEIGHT * 100}%`,
+            '--radar-mobile-label-x': `${mobileLabels[index].x}%`, '--radar-mobile-label-y': `${mobileLabels[index].y}%` } as CSSProperties;
           const singleValue = chartSeries.length === 1 ? values[0][index] : undefined;
           const toneClass = singleValue === undefined ? '' : ` is-${scoreTone(singleValue)}`;
           const content = <><strong>{axis.shortLabel || axis.label}</strong>{singleValue !== undefined ? <span>{valueLabel(singleValue)}</span> : null}</>;
