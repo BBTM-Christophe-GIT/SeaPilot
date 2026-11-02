@@ -2,6 +2,42 @@ import type { RoleKey } from '../permissions/roles';
 import { getHrFunctionVisibilityKey, type HrVisibilityRule, type HrVisibilityScope } from '../humanResources/peopleQueries';
 import { buildManagerHomeAssignmentScope, type ManagerHomeAssignmentRow } from './managerHomeData';
 import type { ProcessPerformanceSources } from './processPerformance';
+import { compareFleetAssets, fleetAssetKind, type FleetAssetKind } from '../fleet/fleetDisplay';
+
+export interface ProcessPerformanceAsset {
+  id: number;
+  name: string;
+  assetKind: FleetAssetKind;
+  lengthOverall?: number | string | null;
+}
+export interface PerformanceAssignment extends ManagerHomeAssignmentRow {
+  starts_on?: string;
+  ends_on?: string;
+  confirmation_status?: string;
+}
+
+/** Keep entity membership tied to present assignments, never past or cancelled work. */
+export function currentPerformanceAssignments(assignments: PerformanceAssignment[], today: string): PerformanceAssignment[] {
+  return assignments.filter((row) => row.confirmation_status !== 'cancelled'
+    && (!row.starts_on || row.starts_on <= today) && (!row.ends_on || row.ends_on >= today));
+}
+
+export function performanceAssets(rows: Array<{ id: number; name: string; asset_kind?: FleetAssetKind; length_overall?: string | number | null; active?: boolean }>, scope: ProcessPerformanceScope): ProcessPerformanceAsset[] {
+  const allowed = new Set(scope.vesselIds);
+  return rows.filter((row) => Number.isSafeInteger(row.id) && row.id > 0 && row.name?.trim() && row.active !== false
+    && (scope.kind === 'company' || allowed.has(row.id)))
+    .map((row) => ({ id: row.id, name: row.name, assetKind: fleetAssetKind(row), lengthOverall: row.length_overall }))
+    .sort(compareFleetAssets);
+}
+
+export function buildPerformanceEntityScope(parent: ProcessPerformanceScope, entity: ProcessPerformanceAsset, assignments: PerformanceAssignment[]): ProcessPerformanceScope {
+  const rows = assignments.filter((row) => row.vessel_id === entity.id);
+  const people = [...new Set(rows.flatMap((row) => [row.crew_person_id, row.captain_person_id || 0]).filter((id) => id > 0))];
+  return { ...parent, kind: parent.kind === 'company' ? 'watch' : parent.kind, label: entity.name,
+    personIds: parent.kind === 'company' ? people : people.filter((id) => parent.personIds.includes(id)),
+    vesselIds: [entity.id], vesselNames: [entity.name], assignments: rows,
+  };
+}
 
 export interface ProcessPerformanceScope {
   kind: 'company' | 'watch' | 'self';
@@ -44,7 +80,7 @@ export function filterProcessPerformanceSources(sources: ProcessPerformanceSourc
   const visibleDocumentIds = new Set((documents || []).map((document) => document.id));
   const vesselMatches = (id: number | null | undefined, name?: string | null) => company || (id != null
     ? scope.vesselIds.includes(id) : Boolean(normalizedVessel(name)) && scope.vesselNames.some((vessel) => normalizedVessel(vessel) === normalizedVessel(name)));
-  const auditSites = sources.auditSites?.filter((site) => vesselMatches(site.vessel_id)) ?? null;
+  const auditSites = sources.auditSites?.filter((site) => vesselMatches(site.vessel_id, site.name)) ?? null;
   const auditSiteIds = new Set((auditSites || []).map((site) => site.id));
   const audits = sources.audits?.filter((audit) => company || auditSiteIds.has(audit.site_id)) ?? null;
   const auditIds = new Set((audits || []).map((audit) => audit.id));

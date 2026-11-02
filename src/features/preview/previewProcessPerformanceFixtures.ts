@@ -6,6 +6,7 @@ import { createLiftingPreviewClient } from '../lifting/liftingPreview';
 import { createLsaPreviewClient } from '../lsa/lsaPreview';
 import { createPharmacyPreviewClient } from '../pharmacy/pharmacyPreview';
 import { todayPlanningDate } from '../planning/planningDates';
+import { normalizeFleetName } from '../fleet/fleetDisplay';
 
 type Row = Record<string, unknown>;
 type ReadResult = { data: unknown; error: { message: string; code?: string } | null };
@@ -20,6 +21,40 @@ const RPC_CLIENTS: Record<string, Register> = {
   chemical_available_vessels: 'chemical', lsa_available_vessels: 'lsa', pharmacy_available_vessels: 'pharmacy',
   lifting_available_vessels: 'lifting', emergency_exercises_people: 'exercise', emergency_exercises_report: 'exercise',
 };
+const VESSEL_RPC: Record<Register, string> = {
+  chemical: 'chemical_available_vessels', exercise: 'emergency_exercises_people',
+  lifting: 'lifting_available_vessels', lsa: 'lsa_available_vessels', pharmacy: 'pharmacy_available_vessels',
+};
+let dashboardAssets: () => Row[] = () => [];
+
+/** Bind to existing public preview units; never rewrite a module's own fixtures. */
+export function configurePerformancePreviewAssets(readAssets: () => Row[]): void {
+  dashboardAssets = readAssets;
+  rowsByTable = undefined;
+}
+
+function dashboardAsset(name: unknown): Row | undefined {
+  const normalized = normalizeFleetName(String(name || ''));
+  const aliases: Record<string, string> = {
+    'NAVIRE DEMONSTRATION': 'M/V DEMONSTRATION',
+    'NAVIRE EXEMPLE': 'SUPPORT DEMONSTRATION',
+  };
+  const canonical = aliases[normalized] || normalized;
+  return dashboardAssets().find((asset) => normalizeFleetName(String(asset.name || '')) === canonical);
+}
+
+async function registerVesselMapping(kind: Register): Promise<Map<number, Row>> {
+  const { data, error } = await registerClient(kind).rpc(VESSEL_RPC[kind]);
+  if (error) throw error;
+  const raw = kind === 'exercise' ? (data as { vessels?: Row[] } | null)?.vessels : data;
+  if (!Array.isArray(raw)) throw new Error('Navires de démonstration indisponibles.');
+  const mapping = new Map<number, Row>();
+  for (const vessel of raw as Row[]) {
+    const target = dashboardAsset(vessel.name);
+    if (target) mapping.set(Number(vessel.id), { ...vessel, id: target.id, name: target.name });
+  }
+  return mapping;
+}
 
 function registerClient(kind: Register): SupabaseClient {
   const existing = registerClients.get(kind);
@@ -58,7 +93,10 @@ function directRows(): Record<string, Row[]> {
     hr_action_plans: [{ id: 9951, company_id: 1, person_id: 9303, document_id: null, kind: 'training',
       title: 'Formation sécurité — démonstration', status: 'planned', due_on: shifted(30), scheduled_on: shifted(10), completed_on: null,
       location: 'Centre de formation de démonstration', owner_name: 'Équipe RH de démonstration', notes: 'Réservation fictive pour illustrer le suivi partagé.' }],
-    internal_audit_sites: audit.sites.map((site) => ({ id: site.id, name: site.name, anniversary_on: site.anniversaryOn, vessel_id: site.vesselId })),
+    internal_audit_sites: audit.sites.flatMap((site) => {
+      const asset = dashboardAsset(site.name);
+      return asset ? [{ id: site.id, name: String(asset.name), anniversary_on: site.anniversaryOn, vessel_id: Number(asset.id) }] : [];
+    }),
     internal_audits: audit.audits.map((item) => ({ id: item.id, site_id: item.siteId, year: item.year, status: item.status, planned_on: item.plannedOn, performed_on: item.performedOn })),
     internal_audit_findings: audit.findings.map((finding) => ({ id: finding.id, audit_id: finding.auditId, description: finding.description, due_on: finding.dueOn, status: finding.status })),
   };
@@ -105,8 +143,15 @@ function readQuery(load: () => Promise<ReadResult>): object {
 export function performancePreviewTable(table: string): object | null {
   const client = TABLE_CLIENTS[table];
   if (client) return readQuery(async () => {
-    const result = await registerClient(client).from(table).select('*');
-    return { data: result.data, error: result.error };
+    const [result, mapping] = await Promise.all([registerClient(client).from(table).select('*'), registerVesselMapping(client)]);
+    if (result.error || !Array.isArray(result.data)) return { data: result.data, error: result.error };
+    const data = (result.data as Row[]).flatMap((row) => {
+      // Attachment references use stable product IDs and do not carry vessel IDs.
+      if (row.vessel_id == null) return [row];
+      const vessel = mapping.get(Number(row.vessel_id));
+      return vessel ? [{ ...row, vessel_id: vessel.id, ...(row.vessel_name != null ? { vessel_name: vessel.name } : {}) }] : [];
+    });
+    return { data, error: null };
   });
   if (!['annual_reviews', 'hr_action_plans', 'internal_audit_sites', 'internal_audits', 'internal_audit_findings'].includes(table)) return null;
   return readQuery(async () => ({ data: directRows()[table], error: null }));
@@ -114,5 +159,58 @@ export function performancePreviewTable(table: string): object | null {
 
 export function performancePreviewRpc(name: string, args: Record<string, unknown>): object | null {
   const kind = RPC_CLIENTS[name];
-  return kind ? registerClient(kind).rpc(name, args) : null;
+  if (!kind) return null;
+  return readQuery(async () => {
+    const mapping = await registerVesselMapping(kind);
+    if (name.endsWith('_available_vessels')) return { data: [...mapping.values()], error: null };
+    if (name === 'emergency_exercises_people') {
+      const { data, error } = await registerClient(kind).rpc(name, args);
+      if (error || !data) return { data, error };
+      return { data: { ...data, vessels: [...mapping.values()],
+        ...(Array.isArray(data.vesselReadIds) ? { vesselReadIds: data.vesselReadIds.flatMap((id: number) => mapping.has(id) ? [mapping.get(id)!.id] : []) } : {}),
+      }, error: null };
+    }
+    // Translate the selected public unit back to the independent exercise fixture,
+    // then translate only the report identity forward for canonical validation.
+    const nativeId = args.target_vessel_id == null ? null : [...mapping].find(([, vessel]) => vessel.id === args.target_vessel_id)?.[0];
+    if (args.target_vessel_id != null && nativeId === undefined) return { data: null, error: { message: 'Navire absent de la démonstration.' } };
+    const { data, error } = await registerClient(kind).rpc(name, { ...args, target_vessel_id: nativeId });
+    if (error || !data) return { data, error };
+    return { data: { ...data, vessel: nativeId == null ? null : mapping.get(nativeId) || null }, error: null };
+  });
+}
+
+interface PreviewLinkedProcess {
+  key: string;
+  tasks: Array<{ to: string }>;
+}
+interface PreviewLinkedDashboard {
+  processes: PreviewLinkedProcess[];
+  entities: Array<{ processes: PreviewLinkedProcess[] }>;
+}
+
+/** Independent register pages keep their native fictional IDs; only their links need translating back. */
+export async function resolvePerformancePreviewDashboardLinks<T extends PreviewLinkedDashboard>(dashboard: T): Promise<T> {
+  const registerKeys: Record<string, Register> = {
+    chemicals: 'chemical', emergencyExercises: 'exercise', lifting: 'lifting', lsa: 'lsa', pharmacy: 'pharmacy',
+  };
+  const mappings = new Map<Register, Promise<Map<number, Row>>>();
+  async function processLinks<P extends PreviewLinkedProcess>(process: P): Promise<P> {
+    const kind = registerKeys[process.key];
+    if (!kind || !process.tasks.some((task) => task.to.startsWith(`/modules/${process.key}`) && task.to.includes('vessel='))) return process;
+    let mapping = mappings.get(kind);
+    if (!mapping) { mapping = registerVesselMapping(kind); mappings.set(kind, mapping); }
+    const nativeByCanonical = new Map([...(await mapping)].map(([nativeId, asset]) => [Number(asset.id), nativeId]));
+    return { ...process, tasks: process.tasks.map((task) => {
+      if (!task.to.startsWith(`/modules/${process.key}`)) return task;
+      const url = new URL(task.to, 'https://seapilot-preview.invalid');
+      const nativeId = nativeByCanonical.get(Number(url.searchParams.get('vessel')));
+      if (nativeId === undefined) return task;
+      url.searchParams.set('vessel', String(nativeId));
+      return { ...task, to: `${url.pathname}${url.search}${url.hash}` };
+    }) };
+  }
+  return { ...dashboard, processes: await Promise.all(dashboard.processes.map(processLinks)),
+    entities: await Promise.all(dashboard.entities.map(async (entity) => ({ ...entity, processes: await Promise.all(entity.processes.map(processLinks)) }))),
+  };
 }

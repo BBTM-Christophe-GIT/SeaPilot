@@ -1,6 +1,10 @@
 # Radar de pilotage des processus
 
-L’accueil affiche les processus accessibles au compte connecté, un classement des priorités et le détail de chaque note. Un clic sélectionne le processus ; les actions affichent l’échéance, le rendez-vous, le lieu et un lien vers le dossier correspondant. Les animations respectent la préférence de réduction des mouvements.
+L’accueil affiche les processus accessibles au compte connecté, un classement des priorités sur une seule colonne et le détail de chaque note. Un clic sur un processus remplace les axes globaux du radar par les composantes de son score ; un second clic sur ce même processus, ou « Vue globale », rétablit les axes des processus. Les actions affichent l’échéance, le rendez-vous, le lieu et un lien vers le dossier correspondant. Les animations respectent la préférence de réduction des mouvements.
+
+Le menu de périmètre sous le titre conserve « Périmètre compagnie » pour les comptes de bureau et propose les navires, bureaux et quais accessibles, avec leurs illustrations réduites de moitié. Les navires suivent l’ordre décroissant de longueur du référentiel partagé ; les quais et bureaux suivent. Le périmètre global inclut les éléments sans affectation ; les sous-périmètres RH utilisent les affectations courantes et ne dupliquent pas ces éléments dans toutes les unités.
+
+L’option « Comparer les unités » superpose jusqu’à quatre unités sur les mêmes axes. La sélection des unités est indépendante du filtre utilisé pour le classement, le détail et les actions. La comparaison reste disponible sur les composantes d’un processus sélectionné. Une valeur non applicable ou indisponible crée une lacune dans le tracé : elle ne devient jamais une conformité nulle. La vue globale des comptes terrain reste limitée à leur périmètre autorisé.
 
 ## Périmètre et accès
 

@@ -1,0 +1,19 @@
+.process-scope-select { position: relative; display: inline-block; min-width: 0; max-width: 100%; font-family: var(--sp-font); }
+.process-scope-select .process-scope-select__trigger { display: flex; width: 100%; min-width: 200px; max-width: 100%; min-height: 44px; align-items: center; gap: var(--sp-space-2); padding: var(--sp-space-1) var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); text-align: left; cursor: pointer; }
+.process-scope-select__trigger:hover, .process-scope-select__trigger[aria-expanded="true"] { border-color: var(--sp-border-strong); background: var(--sp-primary-soft); }
+.process-scope-select .process-scope-select__trigger:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+/* Shared ActionPlanFleetNavigator illustrations are 110×74 and fallback icons 42px; exactly half here. */
+.process-scope-select__illustration { display: grid; flex: 0 0 55px; width: 55px; height: 37px; place-items: center; color: var(--sp-primary); }
+.process-scope-select__illustration img { display: block; width: 55px; height: 37px; object-fit: contain; }
+.process-scope-select__copy { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.process-scope-select__copy > span { color: var(--sp-muted); font-size: .6875rem; }
+.process-scope-select__copy strong { color: var(--sp-heading); font-size: .8125rem; font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
+.process-scope-select__chevron { flex-shrink: 0; color: var(--sp-muted); }
+.process-scope-select__trigger[aria-expanded="true"] .process-scope-select__chevron { transform: rotate(180deg); }
+.process-scope-select .app-context-menu { width: min(320px, calc(100vw - 24px)); padding: var(--sp-space-1); border-color: var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface); box-shadow: var(--sp-shadow); font-family: var(--sp-font); }
+.process-scope-select .app-context-menu button { min-height: 44px; gap: var(--sp-space-2); padding: var(--sp-space-1) var(--sp-space-2); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-text); font-family: inherit; font-size: .8125rem; cursor: pointer; }
+.process-scope-select .app-context-menu button:hover, .process-scope-select .app-context-menu button:focus-visible, .process-scope-select .app-context-menu button.is-selected { background: var(--sp-primary-soft); color: var(--sp-primary-hover); }
+.process-scope-select .app-context-menu button:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -2px; }
+.process-scope-select__option-label { flex: 1; overflow-wrap: anywhere; }
+.process-scope-select__empty { margin: var(--sp-space-2); color: var(--sp-muted); font-size: .75rem; }
+@media (max-width: 600px) { .process-scope-select { width: 100%; } .process-scope-select .process-scope-select__trigger { min-width: 0; } }

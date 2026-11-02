@@ -13,6 +13,14 @@ interface PharmacyRow { id: number; vessel_id: number; designation: string; expi
 interface ControlRow { id: number; vessel_id: number; expires_on: string; is_current: boolean }
 interface LiftingRow { id: number; vessel_id: number; reference: string; kind: 'lifting' | 'towing'; inspection_due_on: string | null }
 
+interface RegisterPerformanceCache { data: Map<string, Promise<unknown>> }
+function cached<T>(cache: RegisterPerformanceCache | undefined, key: string, load: () => Promise<T>): Promise<T> {
+  if (!cache) return load();
+  let value = cache.data.get(key);
+  if (!value) { value = load(); cache.data.set(key, value); }
+  return value as Promise<T>;
+}
+
 type RegisterKey = 'chemicals' | 'emergencyExercises' | 'lsa' | 'pharmacy' | 'lifting' | 'medicalLogbook';
 const NAMES: Record<RegisterKey, string> = {
   chemicals: 'Produits chimiques', emergencyExercises: 'Exercices d’urgence', lsa: 'Registre LSA',
@@ -39,29 +47,36 @@ function noVessels(key: RegisterKey): ProcessPerformance {
   return result(key, 'Aucun navire accessible dans votre périmètre. Aucun score calculé.');
 }
 
-async function availableVessels(client: SupabaseClient, rpc: string, scope: ProcessPerformanceScope): Promise<Vessel[]> {
+async function availableVessels(client: SupabaseClient, rpc: string, scope: ProcessPerformanceScope, cache?: RegisterPerformanceCache): Promise<Vessel[]> {
   if (scope.kind !== 'company' && !scope.vesselIds.length) return [];
-  const { data, error } = await client.rpc(rpc);
-  if (error) throw error;
-  if (!Array.isArray(data)) throw new Error('Périmètre des navires indisponible.');
+  const data = await cached(cache, `vessels:${rpc}`, async () => {
+    const { data, error } = await client.rpc(rpc);
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('Périmètre des navires indisponible.');
+    return data as Vessel[];
+  });
   const allowed = new Set(scope.vesselIds);
   return (data as Vessel[]).filter((vessel) => Number.isSafeInteger(vessel.id) && vessel.id > 0 && (scope.kind === 'company' || allowed.has(vessel.id)));
 }
 
 // Every page carries the resolved vessel restriction; RLS remains authoritative.
-async function rows<T>(client: SupabaseClient, table: string, select: string, vesselIds: number[], filters: { eq?: [string, unknown][]; is?: [string, null][] } = {}): Promise<T[]> {
+async function rows<T>(client: SupabaseClient, table: string, select: string, vesselIds: number[], filters: { eq?: [string, unknown][]; is?: [string, null][] } = {}, cache?: RegisterPerformanceCache): Promise<T[]> {
   if (!vesselIds.length) return [];
-  const all: T[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    let query = client.from(table).select(select).in('vessel_id', vesselIds).order('id').range(offset, offset + PAGE - 1);
-    for (const [key, value] of filters.eq || []) query = query.eq(key, value);
-    for (const [key, value] of filters.is || []) query = query.is(key, value);
-    const { data, error } = await query;
-    if (error) throw error;
-    if (!Array.isArray(data)) throw new Error('Registre indisponible.');
-    all.push(...data as T[]);
-    if (data.length < PAGE) return all;
-  }
+  const data = await cached(cache, `rows:${table}:${select}:${JSON.stringify(filters)}`, async () => {
+    const all: T[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      let query = client.from(table).select(select).in('vessel_id', vesselIds).order('id').range(offset, offset + PAGE - 1);
+      for (const [key, value] of filters.eq || []) query = query.eq(key, value);
+      for (const [key, value] of filters.is || []) query = query.is(key, value);
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error('Registre indisponible.');
+      all.push(...data as T[]);
+      if (data.length < PAGE) return all;
+    }
+  });
+  // The company/watch snapshot is populated first; each comparison only reads its subset.
+  return data.filter((row) => vesselIds.includes((row as { vessel_id: number }).vessel_id));
 }
 
 function deadlineValue(item: DeadlineItem, today: string): number | null {
@@ -84,23 +99,26 @@ function deadlineTasks(key: 'lsa', items: DeadlineItem[], vessels: Vessel[], tod
   });
 }
 
-async function chemicals(client: SupabaseClient, scope: ProcessPerformanceScope): Promise<ProcessPerformance> {
-  const vessels = await availableVessels(client, 'chemical_available_vessels', scope);
+async function chemicals(client: SupabaseClient, scope: ProcessPerformanceScope, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {
+  const vessels = await availableVessels(client, 'chemical_available_vessels', scope, cache);
   if (!vessels.length) return noVessels('chemicals');
-  const products = await rows<ChemicalRow>(client, 'chemical_products', 'id,vessel_id,brand,product_type,storage_location', vessels.map((vessel) => vessel.id), { is: [['deleted_at', null]] });
-  const fds = new Set<string>();
-  // Attachment metadata only, never original files, Drive paths or hazardous content.
-  for (let start = 0; start < products.length; start += 150) {
-    const ids = products.slice(start, start + 150).map((product) => product.id);
-    for (let offset = 0; ; offset += PAGE) {
-      const { data, error } = await client.from('chemical_attachments').select('id,product_id,kind')
-        .in('product_id', ids).eq('kind', 'fds').order('id').range(offset, offset + PAGE - 1);
-      if (error) throw error;
-      if (!Array.isArray(data)) throw new Error('Pièces jointes indisponibles.');
-      (data as { product_id: string }[]).forEach((attachment) => fds.add(attachment.product_id));
-      if (data.length < PAGE) break;
+  const products = await rows<ChemicalRow>(client, 'chemical_products', 'id,vessel_id,brand,product_type,storage_location', vessels.map((vessel) => vessel.id), { is: [['deleted_at', null]] }, cache);
+  const fds = await cached(cache, 'chemical-fds', async () => {
+    const fds = new Set<string>();
+    // Attachment metadata only, never original files, Drive paths or hazardous content.
+    for (let start = 0; start < products.length; start += 150) {
+      const ids = products.slice(start, start + 150).map((product) => product.id);
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await client.from('chemical_attachments').select('id,product_id,kind')
+          .in('product_id', ids).eq('kind', 'fds').order('id').range(offset, offset + PAGE - 1);
+        if (error) throw error;
+        if (!Array.isArray(data)) throw new Error('Pièces jointes indisponibles.');
+        (data as { product_id: string }[]).forEach((attachment) => fds.add(attachment.product_id));
+        if (data.length < PAGE) break;
+      }
     }
-  }
+    return fds;
+  });
   const missing = products.filter((product) => !fds.has(product.id));
   const noLocation = products.filter((product) => !product.storage_location?.trim());
   const tasks: ProcessPerformanceTask[] = products.filter((product) => !fds.has(product.id) || !product.storage_location?.trim()).map((product) => ({
@@ -114,10 +132,10 @@ async function chemicals(client: SupabaseClient, scope: ProcessPerformanceScope)
   ], tasks);
 }
 
-async function lsa(client: SupabaseClient, scope: ProcessPerformanceScope, today: string): Promise<ProcessPerformance> {
-  const vessels = await availableVessels(client, 'lsa_available_vessels', scope);
+async function lsa(client: SupabaseClient, scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {
+  const vessels = await availableVessels(client, 'lsa_available_vessels', scope, cache);
   if (!vessels.length) return noVessels('lsa');
-  const data = await rows<DeadlineItem & { document_title: string }>(client, 'lsa_items', 'id,vessel_id,title,document_title,expires_on,planned_on,visit_location', vessels.map((vessel) => vessel.id), { is: [['deleted_at', null]] });
+  const data = await rows<DeadlineItem & { document_title: string }>(client, 'lsa_items', 'id,vessel_id,title,document_title,expires_on,planned_on,visit_location', vessels.map((vessel) => vessel.id), { is: [['deleted_at', null]] }, cache);
   const items = data.map((item) => ({ ...item, title: item.document_title || item.title || 'Équipement LSA' }));
   const values = items.map((item) => deadlineValue(item, today));
   const known = values.filter((value): value is number => value !== null);
@@ -131,10 +149,10 @@ async function lsa(client: SupabaseClient, scope: ProcessPerformanceScope, today
   ], deadlineTasks('lsa', items, vessels, today));
 }
 
-async function lifting(client: SupabaseClient, scope: ProcessPerformanceScope, today: string): Promise<ProcessPerformance> {
-  const vessels = await availableVessels(client, 'lifting_available_vessels', scope);
+async function lifting(client: SupabaseClient, scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {
+  const vessels = await availableVessels(client, 'lifting_available_vessels', scope, cache);
   if (!vessels.length) return noVessels('lifting');
-  const items = await rows<LiftingRow>(client, 'lifting_inventory', 'id,vessel_id,reference,kind,inspection_due_on', vessels.map((vessel) => vessel.id), { eq: [['active', true]] });
+  const items = await rows<LiftingRow>(client, 'lifting_inventory', 'id,vessel_id,reference,kind,inspection_due_on', vessels.map((vessel) => vessel.id), { eq: [['active', true]] }, cache);
   const values = items.map((item) => deadlineValue({ ...item, title: item.reference, expires_on: item.inspection_due_on }, today));
   const counts = { expired: values.filter((value) => value === 0).length, due: values.filter((value) => value === 50).length, missing: values.filter((value) => value === null).length };
   const tasks: ProcessPerformanceTask[] = items.flatMap((item, index) => values[index] === 100 ? [] : [{
@@ -149,13 +167,13 @@ async function lifting(client: SupabaseClient, scope: ProcessPerformanceScope, t
   ], tasks);
 }
 
-async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, today: string): Promise<ProcessPerformance> {
-  const vessels = await availableVessels(client, 'pharmacy_available_vessels', scope);
+async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {
+  const vessels = await availableVessels(client, 'pharmacy_available_vessels', scope, cache);
   if (!vessels.length) return noVessels('pharmacy');
   const ids = vessels.map((vessel) => vessel.id);
   const [items, controls] = await Promise.all([
-    rows<PharmacyRow>(client, 'pharmacy_inventory', 'id,vessel_id,designation,expires_on,quantity,required_quantity', ids, { eq: [['active', true]] }),
-    rows<ControlRow>(client, 'pharmacy_controls', 'id,vessel_id,expires_on,is_current', ids, { eq: [['is_current', true]] }),
+    rows<PharmacyRow>(client, 'pharmacy_inventory', 'id,vessel_id,designation,expires_on,quantity,required_quantity', ids, { eq: [['active', true]] }, cache),
+    rows<ControlRow>(client, 'pharmacy_controls', 'id,vessel_id,expires_on,is_current', ids, { eq: [['is_current', true]] }, cache),
   ]);
   if (!items.length) return result('pharmacy', controls.length
     ? 'Un justificatif de contrôle est disponible, mais l’inventaire est vide. Aucun score calculé.'
@@ -193,16 +211,16 @@ async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, 
   ], tasks);
 }
 
-async function exercises(client: SupabaseClient, scope: ProcessPerformanceScope, today: string): Promise<ProcessPerformance> {
+async function exercises(client: SupabaseClient, scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {
   if (scope.kind !== 'company' && !scope.vesselIds.length) return noVessels('emergencyExercises');
-  const roster = await fetchExerciseRoster(client);
+  const roster = await cached(cache, 'exercise-roster', () => fetchExerciseRoster(client));
   const allowed = new Set(scope.vesselIds);
   const vessels = roster.vessels.filter((vessel) => scope.kind === 'company' || allowed.has(vessel.id));
   if (!vessels.length) return noVessels('emergencyExercises');
   const year = Number(today.slice(0, 4));
   const person = scope.kind === 'self' ? scope.personId : null;
   if (scope.kind === 'self' && !person) return result('emergencyExercises', 'Aucune fiche personnelle accessible. Aucun score calculé.');
-  const reports = await Promise.all(vessels.map((vessel) => fetchExerciseReport(client, person, year, vessel.id, 'current')));
+  const reports = await Promise.all(vessels.map((vessel) => cached(cache, `exercise-report:${person}:${year}:${vessel.id}`, () => fetchExerciseReport(client, person, year, vessel.id, 'current'))));
   const total = reports.reduce((sum, report) => sum + report.total, 0);
   return result('emergencyExercises', `${total} exercice(s) et TBT déclaré(s) en ${year} · objectifs de fréquence non définis`, [
     { id: 'exercise-target', label: 'Réalisation du programme d’exercices', weight: 100, score: null,
@@ -213,20 +231,28 @@ async function exercises(client: SupabaseClient, scope: ProcessPerformanceScope,
 }
 
 /** Read permission is checked before resolving any register's vessels or rows. */
-export async function loadRegisterPerformance(client: SupabaseClient, moduleKeys: ModuleKey[], scope: ProcessPerformanceScope, today: string): Promise<ProcessPerformance[]> {
+export async function loadRegisterPerformance(client: SupabaseClient, moduleKeys: ModuleKey[], scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance[]> {
   const keys: RegisterKey[] = ['chemicals', 'emergencyExercises', 'lsa', 'pharmacy', 'lifting', 'medicalLogbook'];
   return Promise.all(keys.filter((key) => moduleKeys.includes(key)).map(async (key) => {
     if (key === 'medicalLogbook') return result(key, 'Registre confidentiel. Aucun objectif non clinique collectif configuré.', [
       { id: 'confidential', label: 'Indicateur collectif non clinique', weight: 100, score: null, detail: 'Aucune consultation, pathologie, identité de patient ou donnée médicale n’est interrogée pour le radar.' },
     ]);
     try {
-      if (key === 'chemicals') return await chemicals(client, scope);
-      if (key === 'emergencyExercises') return await exercises(client, scope, today);
-      if (key === 'lsa') return await lsa(client, scope, today);
-      if (key === 'pharmacy') return await pharmacy(client, scope, today);
-      return await lifting(client, scope, today);
+      if (key === 'chemicals') return await chemicals(client, scope, cache);
+      if (key === 'emergencyExercises') return await exercises(client, scope, today, cache);
+      if (key === 'lsa') return await lsa(client, scope, today, cache);
+      if (key === 'pharmacy') return await pharmacy(client, scope, today, cache);
+      return await lifting(client, scope, today, cache);
     } catch {
       return result(key, 'Les données du registre n’ont pas pu être chargées. Actualisez pour réessayer.', [], [], [NAMES[key]]);
     }
   }));
+}
+
+/** Load authorized register data once, then reuse the same snapshot for every comparison. */
+export async function loadRegisterPerformanceDashboard(client: SupabaseClient, moduleKeys: ModuleKey[], scope: ProcessPerformanceScope, today: string, entityScopes: ProcessPerformanceScope[]) {
+  const cache: RegisterPerformanceCache = { data: new Map() };
+  const processes = await loadRegisterPerformance(client, moduleKeys, scope, today, cache);
+  const entities = await Promise.all(entityScopes.map((entity) => loadRegisterPerformance(client, moduleKeys, entity, today, cache)));
+  return { processes, entities };
 }
