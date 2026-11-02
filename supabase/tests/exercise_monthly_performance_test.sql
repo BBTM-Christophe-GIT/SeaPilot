@@ -50,9 +50,14 @@ begin
     select company,vessel,p,make_date(year_value,1,1),make_date(year_value,12,31),'confirmed','A'
     from unnest(array[captain,sailor,outsider,former,future_rehire]) p;
   insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,confirmation_status,watch_group)
-    select company,second_vessel,p,make_date(year_value,3,1),make_date(year_value,3,31),'confirmed','A' from unnest(array[captain,sailor]) p;
+    select company,second_vessel,p,make_date(year_value,3,16),make_date(year_value,3,16),'confirmed','A' from unnest(array[captain,sailor]) p;
   insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,confirmation_status,watch_group)
-    select company,old_vessel,p,make_date(year_value,3,1),make_date(year_value,3,31),'confirmed','A' from unnest(array[captain,sailor]) p;
+    select company,old_vessel,p,make_date(year_value,3,17),make_date(year_value,3,17),'confirmed','A' from unnest(array[captain,sailor]) p;
+  -- Explicit daily transfer decisions supersede the long base posting. Evidence
+  -- must now match the participant's actual vessel on the DPR date.
+  insert into public.planning_days(company_id,person_id,vessel_id,work_date,sailor_status,source_label)
+    select company,p,v,d,'En Mer','sharepoint' from unnest(array[captain,sailor]) p
+      cross join (values(second_vessel,make_date(year_value,3,16)),(old_vessel,make_date(year_value,3,17))) transfer(v,d);
   -- Current confirmed assignments authorize A/B and identify the actual captain watch.
   insert into public.planning_assignments(company_id,vessel_id,crew_person_id,starts_on,ends_on,starts_at,ends_at,confirmation_status,watch_group)
     select company,v,p,today-1,today+5,(today-1)::timestamptz,(today+6)::timestamptz,'confirmed',case when p=outsider then 'B' else 'A' end
@@ -64,7 +69,8 @@ begin
     insert into public.dpr_reports(company_id,vessel_id,report_date,issuer_user_id,issuer_name_snapshot,status,dpr_number,submitted_by,submitted_at,
       validated_by,validated_at,deleted_at,deleted_by,deletion_reason)
     values(company,case when j=2 then second_vessel when j=3 then old_vessel else vessel end,
-      case when j=4 then make_date(year_value,4,15) when j=5 then make_date(year_value,6,15) else make_date(year_value,3,15) end,
+      case when j=2 then make_date(year_value,3,16) when j=3 then make_date(year_value,3,17)
+        when j=4 then make_date(year_value,4,15) when j=5 then make_date(year_value,6,15) else make_date(year_value,3,15) end,
       captain_user,'Monthly captain',case when j=4 then 'draft' else 'validated' end,j,captain_user,now(),captain_user,now(),null,null,null)
     returning id into report_id;
     insert into public.dpr_crew_members(dpr_id,company_id,person_id,crew_function,display_name_snapshot)
@@ -80,7 +86,7 @@ begin
     execute 'set local role authenticated';
     payload := public.emergency_exercises_performance(year_value);
     assert payload->>'scope'=case when i<=3 then 'fleet' when i=4 then 'watch' else 'self' end,'Role scope mismatch';
-    assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint in (former,foreign_person)), 'Former/foreign population leaked';
+    assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=foreign_person), 'Foreign population leaked';
     assert (select count(*) from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=sailor)=8,'Hire, departure or rehire gap ignored';
     assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=sailor and (p->>'month')::integer in (1,2,5,6)), 'Pre-hire/gap months became obligations';
     select p into month_row from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=sailor and p->>'month'='3';
@@ -90,6 +96,7 @@ begin
     assert (select p->>'fireCount' from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=sailor and p->>'month'='4')='0','Draft DPR counted';
     if i<=3 then
       assert exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=future_rehire),'Future rehire hid an employment period active today';
+      assert exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=former),'Historical employee excluded despite employment on the occupied day';
     else
       assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint=outsider),'Other captain watch leaked';
       assert not exists(select 1 from jsonb_array_elements(payload->'vessels') v where (v->>'id')::bigint=old_vessel),'Outside-window vessel leaked';

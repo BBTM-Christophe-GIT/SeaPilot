@@ -171,7 +171,14 @@ export function performancePreviewRpc(name: string, args: Record<string, unknown
       const currentYear = Number(today.slice(0, 4));
       const months = year < currentYear ? 12 : year === currentYear ? Number(today.slice(5, 7)) : 0;
       const vessels = [...mapping.values()];
-      const people = Array.isArray(data.people) ? data.people.filter((person: Row) => person.current) : [];
+      const exerciseTypes = [
+        ['fire-protection', 'Protection contre l’incendie'], ['abandon-ship', 'Évacuation et abandon du navire'],
+        ['onboard-evacuation', 'Évacuation à bord'], ['sea-rescue', 'Sauvetage en mer'],
+        ['loss-of-propulsion', 'Perte de propulsion – manœuvrabilité'], ['loss-of-power', 'Perte d’énergie'],
+        ['injured-person', 'Évacuation et prise en charge d’un blessé'], ['flooding-control', 'Lutte contre l’envahissement'],
+        ['anti-pollution', 'Exercice Antipollution'],
+      ].map(([key, label], index) => ({ key, label, cadenceMonths: index < 2 ? 1 : 2 }));
+      const people: Row[] = Array.isArray(data.people) ? data.people.filter((person: Row) => person.current) : [];
       const personMonths = people.flatMap((person: Row, index: number) => {
         const vessel = vessels[index % Math.max(1, vessels.length)];
         if (!vessel) return [];
@@ -180,11 +187,23 @@ export function performancePreviewRpc(name: string, args: Record<string, unknown
           const current = year === currentYear && month === Number(today.slice(5, 7));
           const fireCount = !current && (month + index) % 4 ? 1 : 0;
           const abandonCount = !current && (month + index) % 3 ? 1 : 0;
+          const counts = Object.fromEntries(exerciseTypes.map((type, typeIndex) => [type.key,
+            typeIndex === 0 ? fireCount : typeIndex === 1 ? abandonCount : !current && month % 2 === 0 && (index + typeIndex + month) % 3 ? 1 : 0]));
+          const tbtCount = !current && month % 2 ? 1 : 0;
+          const presenceDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
           return { personId: Number(person.id), personName: String(person.name), month, fireCount, abandonCount,
-            units: [{ vesselId: Number(vessel.id), fireCount, abandonCount }] };
+            counts, tbtCount, presenceDays,
+            units: [{ vesselId: Number(vessel.id), fireCount, abandonCount, counts, tbtCount, presenceDays }] };
         });
       });
-      return { data: { scope: data.scope, year, asOf: today, vessels, personMonths }, error: null };
+      const crewDays = vessels.flatMap((vessel) => Array.from({ length: months }, (_, offset) => {
+        const month = offset + 1;
+        const count = personMonths.filter((person) => person.month === month && person.units.some((unit) => unit.vesselId === Number(vessel.id))).length;
+        return Array.from({ length: new Date(Date.UTC(year, month, 0)).getUTCDate() }, (_, day) => ({
+          vesselId: Number(vessel.id), on: `${year}-${String(month).padStart(2, '0')}-${String(day + 1).padStart(2, '0')}`, count,
+        }));
+      }).flat());
+      return { data: { schemaVersion: 2, scope: data.scope, year, asOf: today, vessels, exerciseTypes, personMonths, crewDays }, error: null };
     }
     if (name === 'emergency_exercises_people') {
       const { data, error } = await registerClient(kind).rpc(name, args);
