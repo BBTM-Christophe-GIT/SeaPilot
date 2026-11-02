@@ -5,6 +5,11 @@ import type { ProcessPerformanceScope } from './processPerformanceScope';
 
 const company: ProcessPerformanceScope = { kind: 'company', label: 'Société', personId: 1, personIds: [], vesselIds: [], vesselNames: [], watchGroups: [] };
 const watch: ProcessPerformanceScope = { ...company, kind: 'watch', label: 'Bordée', vesselIds: [2], vesselNames: ['GOURY'], personIds: [1, 2] };
+const exerciseTypes = [
+  { key: 'fire-protection', label: 'Protection contre l’incendie', cadenceMonths: 1 as const },
+  { key: 'abandon-ship', label: 'Évacuation et abandon du navire', cadenceMonths: 1 as const },
+];
+const exerciseCounts = (fire = 0, abandon = 0) => ({ 'fire-protection': fire, 'abandon-ship': abandon });
 type Row = Record<string, unknown>;
 
 function fixtureClient(tables: Record<string, Row[]> = {}, options: { failedTable?: string; failedOffset?: number; vessels?: { id: number; name: string }[]; exercises?: number } = {}) {
@@ -32,7 +37,14 @@ function fixtureClient(tables: Record<string, Row[]> = {}, options: { failedTabl
   });
   const vessels = options.vessels || [{ id: 1, name: 'Autre navire' }, { id: 2, name: 'GOURY' }];
   const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
-    if (name === 'emergency_exercises_performance') return { data: { scope: 'fleet', year: args?.target_year, asOf: '2026-11-01', vessels, personMonths: [{ personId: 9, personName: 'Fixture marin', month: 10, fireCount: options.exercises || 0, abandonCount: 0, units: vessels.map((vessel) => ({ vesselId: vessel.id, fireCount: options.exercises || 0, abandonCount: 0 })) }] }, error: null };
+    if (name === 'emergency_exercises_performance') return { data: {
+      schemaVersion: 2, scope: 'fleet', year: args?.target_year, asOf: '2026-11-01', vessels, exerciseTypes,
+      crewDays: vessels.map((vessel) => ({ vesselId: vessel.id, on: `${args?.target_year}-10-01`, count: 1 })),
+      personMonths: [{ personId: 9, personName: 'Fixture marin', month: 10, fireCount: (options.exercises || 0) * vessels.length,
+        abandonCount: 0, counts: exerciseCounts((options.exercises || 0) * vessels.length), tbtCount: 0, presenceDays: 1,
+        units: vessels.map((vessel) => ({ vesselId: vessel.id, fireCount: options.exercises || 0, abandonCount: 0,
+          counts: exerciseCounts(options.exercises), tbtCount: 0, presenceDays: 1 })) }],
+    }, error: null };
     if (name === 'emergency_exercises_people') return { data: { scope: 'watch', people: [], vessels }, error: null };
     if (name === 'emergency_exercises_report') return { data: { person: args?.target_person_id ? { id: args.target_person_id, name: 'Self', current: true, former: false } : null,
       vessel: vessels.find((vessel) => vessel.id === args?.target_vessel_id), year: args?.target_year,
@@ -206,17 +218,19 @@ describe('Permission-scoped register performance', () => {
     const [process] = await loadRegisterPerformance(fixture.client, ['emergencyExercises'], watch, '2026-11-01');
     expect(process.score).toBe(50);
     expect(process.criteria.map((criterion) => criterion.score)).toEqual([100, 0]);
-    expect(process.summary).toContain('1/2 objectifs échus');
+    expect(process.summary).toContain('1/2 obligations closes');
     expect(process.tasks).toHaveLength(1);
     expect(process.tasks[0].state).toBe('overdue');
     expect(fixture.rpc).toHaveBeenCalledTimes(1);
   });});
 
 describe('monthly exercise objectives', () => {
-  const base: ExercisePerformanceSnapshot = { scope: 'fleet', year: 2026, asOf: '2026-11-02', vessels: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], personMonths: [] };
+  const base: ExercisePerformanceSnapshot = { schemaVersion: 2, scope: 'fleet', year: 2026, asOf: '2026-11-02',
+    vessels: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }], exerciseTypes, crewDays: [], personMonths: [] };
   it('rates only closed eligible months and labels current obligations as upcoming', () => {
     const month = (value: number, fire = 0, abandon = 0) => ({ personId: 9, personName: 'Marin', month: value, fireCount: fire, abandonCount: abandon,
-      units: [{ vesselId: 1, fireCount: fire, abandonCount: abandon }] });
+      counts: exerciseCounts(fire, abandon), tbtCount: 0, presenceDays: 1,
+      units: [{ vesselId: 1, fireCount: fire, abandonCount: abandon, counts: exerciseCounts(fire, abandon), tbtCount: 0, presenceDays: 1 }] });
     const process = buildExercisePerformance({ ...base, personMonths: [month(10, 3), month(11), month(12, 8, 8)] }, company, '2026-11-02');
     expect(process.score).toBe(50);
     expect(process.tasks.filter((task) => task.state === 'overdue')).toHaveLength(1);
@@ -226,15 +240,18 @@ describe('monthly exercise objectives', () => {
   });
   it('deduplicates a global person-month while keeping the two local unit categories separate', () => {
     const snapshot = { ...base, personMonths: [{ personId: 9, personName: 'Marin', month: 10, fireCount: 1, abandonCount: 1,
-      units: [{ vesselId: 1, fireCount: 1, abandonCount: 0 }, { vesselId: 2, fireCount: 0, abandonCount: 1 }] }] };
+      counts: exerciseCounts(1, 1), tbtCount: 0, presenceDays: 2,
+      units: [{ vesselId: 1, fireCount: 1, abandonCount: 0, counts: exerciseCounts(1), tbtCount: 0, presenceDays: 1 },
+        { vesselId: 2, fireCount: 0, abandonCount: 1, counts: exerciseCounts(0, 1), tbtCount: 0, presenceDays: 1 }] }] };
     expect(buildExercisePerformance(snapshot, company, '2026-11-02').score).toBe(100);
     expect(buildExercisePerformance(snapshot, { ...watch, vesselIds: [1] }, '2026-11-02').score).toBe(50);
     expect(buildExercisePerformance(snapshot, { ...watch, vesselIds: [2] }, '2026-11-02').score).toBe(50);
-    expect(buildExercisePerformance(snapshot, company, '2026-11-02').summary).toContain('2/2 objectifs');
+    expect(buildExercisePerformance(snapshot, company, '2026-11-02').summary).toContain('2/2 obligations closes');
   });
   it('leaves a newly eligible current month unscored until its deadline and keeps sailor data individual', () => {
     const snapshot = { ...base, personMonths: [9, 10].map((personId) => ({ personId, personName: `Marin ${personId}`, month: 11, fireCount: 0, abandonCount: 0,
-      units: [{ vesselId: 1, fireCount: 0, abandonCount: 0 }] })) };
+      counts: exerciseCounts(), tbtCount: 0, presenceDays: 1,
+      units: [{ vesselId: 1, fireCount: 0, abandonCount: 0, counts: exerciseCounts(), tbtCount: 0, presenceDays: 1 }] })) };
     const process = buildExercisePerformance(snapshot, { ...watch, kind: 'self', personId: 9, vesselIds: [1] }, '2026-11-02');
     expect(process.score).toBeNull();
     expect(process.tasks).toHaveLength(2);

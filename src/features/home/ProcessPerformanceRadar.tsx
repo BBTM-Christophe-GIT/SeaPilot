@@ -9,6 +9,7 @@ import { fetchProcessPerformanceDashboard, invalidateProcessPerformanceCache, ty
 import { PerformanceRadarGraphic, type RadarAxis } from './PerformanceRadarGraphic';
 import { ProcessScopeSelect } from './ProcessScopeSelect';
 import { ProcessCriterionBars } from './ProcessCriterionBars';
+import { ExerciseCrewPresence } from './ExerciseCrewPresence';
 import { summarizeProcessPerformance } from './processPerformanceSummary';
 import './processPerformance.css';
 
@@ -144,6 +145,7 @@ export function ProcessPerformancePanel({ processes: companyProcesses, entities 
       {!focusedProcess ? <div className="process-score-breakdown" aria-label={`Composition du score ${selected.label}`}>
         {selected.criteria.map((criterion) => <div className="process-score-criterion" key={criterion.id}><div><strong>{criterion.label}</strong><span>{scoreLabel(criterion.score)}</span></div><progress aria-label={criterion.label} max={100} value={criterion.score ?? 0} /><small>{criterion.score === null ? 'Non applicable ou données manquantes' : `Poids : ${criterion.weight} %`}</small><p>{criterion.score === null && selected.unavailableSources.length ? 'Les sources nécessaires au calcul sont indisponibles.' : criterion.detail}</p></div>)}
       </div> : null}
+      {selected.key === 'emergencyExercises' && selected.exercisePresence && !selected.unavailableSources.length ? <ExerciseCrewPresence data={selected.exercisePresence} /> : null}
       <div className="process-tasks-heading"><h4>Les actions derrière la note <span>{selected.tasks.length}</span></h4><span><i />En retard <i />À planifier <i />En cours / planifié</span></div>
       {selected.tasks.length && !selected.unavailableSources.length ? <div className="process-task-list">{selected.tasks.slice(0, taskLimit).map((task) => <PerformanceTask key={task.id} task={task} />)}{selected.tasks.length > taskLimit ? <button className="process-show-more" onClick={() => setTaskLimit((current) => current + 10)} type="button">Voir {Math.min(10, selected.tasks.length - taskLimit)} actions de plus <ChevronDown size={15} /></button> : null}</div>
         : <p className="process-tasks-empty"><Check size={18} />{selected.unavailableSources.length ? 'Chargez les sources pour connaître les actions à suivre.' : selected.score === null ? 'Aucune obligation renseignée pour ce processus.' : 'Aucune action en attente sur ce périmètre.'}</p>}

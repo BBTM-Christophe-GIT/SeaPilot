@@ -22,7 +22,10 @@ describe('administrator design preview for process performance', () => {
     expect(processes.find((process) => process.key === 'humanResources')?.summary).toContain('1 entretien réalisé · 2 planifiés');
     expect(processes.some((process) => process.key === 'medicalLogbook')).toBe(false);
     const exercises = processes.find((process) => process.key === 'emergencyExercises')!;
-    expect(exercises.criteria.map((criterion) => criterion.id)).toEqual(['fire-protection', 'abandon-ship']);
+    expect(exercises.criteria.map((criterion) => criterion.id)).toEqual(['fire-protection', 'abandon-ship', 'onboard-evacuation',
+      'sea-rescue', 'loss-of-propulsion', 'loss-of-power', 'injured-person', 'flooding-control', 'anti-pollution']);
+    expect(exercises.exercisePresence?.days.length).toBeGreaterThan(0);
+    expect(exercises.criteria.slice(2).every((criterion) => /période fixe de (2|deux) mois/.test(criterion.detail))).toBe(true);
     if (Number(performanceToday().slice(5, 7)) > 1) expect(exercises.score).toEqual(expect.any(Number));
     else expect(exercises.score).toBeNull();
     expect(processes.some((process) => process.key === 'towing')).toBe(true);

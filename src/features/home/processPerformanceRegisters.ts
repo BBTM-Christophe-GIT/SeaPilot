@@ -5,6 +5,8 @@ import type { ProcessPerformanceScope } from './processPerformanceScope';
 import { pharmacyExpiryStatus, pharmacyStockStatus } from '../pharmacy/pharmacyModel';
 import { countVesselExpiries, VESSEL_EXPIRY_ALERT_DAYS } from '../fleet/vesselExpiryAlerts';
 import { fleetAssetKind } from '../fleet/fleetDisplay';
+import { buildExercisePerformance, validateExerciseSnapshot } from './exercisePerformance';
+export { buildExercisePerformance, type ExercisePerformanceSnapshot } from './exercisePerformance';
 
 interface Vessel { id: number; name: string; asset_kind?: 'vessel' | 'quay' | 'office'; active?: boolean }
 interface DeadlineItem { id: number; vessel_id: number; title: string; expires_on: string | null; planned_on?: string | null; visit_location?: string | null }
@@ -236,73 +238,6 @@ async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, 
     { id: 'controls', label: 'Justificatifs de contrôle valides', weight: 20, score: pct(controlsGood, vessels.length),
       detail: `${controlsGood}/${vessels.length} navires avec un contrôle courant non échu. Les justificatifs absents restent à renseigner.` },
   ], tasks);
-}
-
-export interface ExercisePerformanceMonth {
-  personId: number; personName: string; month: number; fireCount: number; abandonCount: number;
-  units: Array<{ vesselId: number; fireCount: number; abandonCount: number }>;
-}
-export interface ExercisePerformanceSnapshot {
-  scope: 'fleet' | 'watch' | 'self'; year: number; asOf: string; vessels: Vessel[]; personMonths: ExercisePerformanceMonth[];
-}
-function validateExerciseSnapshot(data: unknown, year: number): ExercisePerformanceSnapshot {
-  if (!data || typeof data !== 'object') throw new Error('Objectifs mensuels indisponibles.');
-  const value = data as ExercisePerformanceSnapshot;
-  const count = (item: unknown) => Number.isSafeInteger(item) && Number(item) >= 0;
-  if (value.year !== year || !dateValid(value.asOf) || !['fleet','watch','self'].includes(value.scope)
-    || !Array.isArray(value.vessels) || !Array.isArray(value.personMonths)) throw new Error('Objectifs mensuels invalides.');
-  const seen = new Set<string>();
-  for (const month of value.personMonths) {
-    const key = month.personId + ':' + month.month;
-    if (!Number.isSafeInteger(month.personId) || month.personId <= 0 || typeof month.personName !== 'string'
-      || !Number.isInteger(month.month) || month.month < 1 || month.month > 12 || !count(month.fireCount) || !count(month.abandonCount)
-      || !Array.isArray(month.units) || month.units.some((unit) => !Number.isSafeInteger(unit.vesselId) || unit.vesselId <= 0 || !count(unit.fireCount) || !count(unit.abandonCount))
-      || seen.has(key)) throw new Error('Population mensuelle invalide.');
-    seen.add(key);
-  }
-  return value;
-}
-
-export function buildExercisePerformance(snapshot: ExercisePerformanceSnapshot, scope: ProcessPerformanceScope, today: string): ProcessPerformance {
-  const asOf = today < snapshot.asOf ? today : snapshot.asOf;
-  const currentYear = Number(asOf.slice(0, 4));
-  const currentMonth = Number(asOf.slice(5, 7));
-  const allowed = new Set(scope.vesselIds);
-  const roster = snapshot.personMonths.flatMap((month) => {
-    if (snapshot.year > currentYear || (snapshot.year === currentYear && month.month > currentMonth)
-      || (scope.kind === 'self' && month.personId !== scope.personId)) return [];
-    const units = month.units.filter((unit) => scope.kind === 'company' || allowed.has(unit.vesselId));
-    if (!units.length) return [];
-    return [{ ...month, units,
-      fireCount: scope.kind === 'company' ? month.fireCount : units.reduce((sum, unit) => sum + unit.fireCount, 0),
-      abandonCount: scope.kind === 'company' ? month.abandonCount : units.reduce((sum, unit) => sum + unit.abandonCount, 0),
-      closed: snapshot.year < currentYear || month.month < currentMonth,
-    }];
-  });
-  const closed = roster.filter((month) => month.closed);
-  const tasks: ProcessPerformanceTask[] = [];
-  const categories = [{ key: 'fireCount' as const, id: 'fire-protection', label: 'Protection contre l’incendie' },
-    { key: 'abandonCount' as const, id: 'abandon-ship', label: 'Évacuation et abandon du navire' }];
-  for (const month of roster) for (const category of categories) {
-    if (month[category.key] > 0) continue;
-    const dueOn = new Date(Date.UTC(snapshot.year, month.month, 0)).toISOString().slice(0, 10);
-    const query = new URLSearchParams({ year: String(snapshot.year), person: String(month.personId) });
-    if (month.units.length === 1) query.set('vessel', String(month.units[0].vesselId));
-    tasks.push({ id: 'exercise-' + category.id + '-' + month.personId + '-' + month.month,
-      title: category.label + ' · ' + String(month.month).padStart(2, '0') + '/' + snapshot.year,
-      context: month.personName + ' · ' + month.units.map((unit) => vesselName(snapshot.vessels, unit.vesselId)).join(' / '),
-      state: month.closed ? 'overdue' : 'unplanned', dueOn, scheduledOn: '', location: '', to: '/modules/emergencyExercises?' + query,
-    });
-  }
-  const fulfilled = categories.reduce((sum, category) => sum + closed.filter((month) => month[category.key] > 0).length, 0);
-  const upcoming = tasks.filter((task) => task.state === 'unplanned').length;
-  return result('emergencyExercises', fulfilled + '/' + (closed.length * 2) + ' objectifs échus couverts · ' + tasks.filter((task) => task.state === 'overdue').length + ' à régulariser · ' + upcoming + ' à organiser ce mois',
-    categories.map((category) => ({ id: category.id, label: category.label, weight: 50,
-      score: pct(closed.filter((month) => month[category.key] > 0).length, closed.length),
-      detail: '1 exercice par personne et par mois de présence en emploi. ' + closed.filter((month) => month[category.key] > 0).length + '/' + closed.length
-        + ' mois-personnes clos couverts ; ' + roster.filter((month) => !month.closed && month[category.key] === 0).length + ' à organiser avant la fin du mois courant. Les mois futurs et hors emploi/présence sont exclus. '
-        + (scope.kind === 'company' ? 'Une personne sur plusieurs navires ne compte qu’une fois par mois.' : 'Comptes et présence de l’unité sélectionnée uniquement.'),
-    })), tasks);
 }
 
 async function exercises(client: SupabaseClient, scope: ProcessPerformanceScope, today: string, cache?: RegisterPerformanceCache): Promise<ProcessPerformance> {

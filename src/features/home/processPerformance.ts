@@ -32,6 +32,15 @@ export interface ProcessPerformanceCriterion {
   score: number | null;
   detail: string;
 }
+export interface ExerciseCrewPresenceData {
+  year: number;
+  asOf: string;
+  vessels: Array<{ id: number; name: string }>;
+  days: Array<{ vesselId: number; on: string; count: number }>;
+  months: Array<{ vesselId: number; month: number; people: number; presenceDays: number }>;
+  /** Individual participations; these never satisfy a mandatory exercise objective. */
+  bonusTbt: number;
+}
 export interface ProcessPerformance {
   key: PerformanceProcessKey;
   label: string;
@@ -43,6 +52,7 @@ export interface ProcessPerformance {
   tasks: ProcessPerformanceTask[];
   unavailableSources: string[];
   scopeLabel?: string;
+  exercisePresence?: ExerciseCrewPresenceData;
 }
 export interface ProcessPerformanceOptions {
   includeReviews?: boolean;

@@ -91,6 +91,17 @@ for (const profile of profiles) {
       await rh.click();
       await expect(rh).toHaveAttribute('aria-pressed', 'false');
       await expect(radar.getByText('Vue globale des processus', { exact: true })).toBeVisible();
+      const exercises = radar.getByRole('group', { name: 'Sélectionner un processus', exact: true }).getByRole('button', { name: /Exercices d’urgence/ });
+      await exercises.click();
+      const presence = radar.getByRole('region', { name: 'Présence au planning', exact: true });
+      await expect(presence).toBeVisible();
+      await expect(presence.getByLabel('Date de présence')).toHaveValue(new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }));
+      await expect(presence).toContainText('CI VESSEL ASSIGNED');
+      await expect(presence).not.toContainText('CI VESSEL UNASSIGNED');
+      await expect(presence).not.toContainText('CI VESSEL FOREIGN');
+      await expect(presence).toContainText('hors score obligatoire');
+      await exercises.click();
+      await expect(radar.getByText('Vue globale des processus', { exact: true })).toBeVisible();
       await scope.click();
       await menu.getByRole('menuitem', { name: /^Votre périmètre/ }).click();
       await expect(scope).toContainText('Votre périmètre');
