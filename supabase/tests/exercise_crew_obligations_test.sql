@@ -21,6 +21,10 @@ declare
   captain_user uuid := 'eec20000-0000-4000-8000-000000000004';
   foreign_user uuid := 'eec20000-0000-4000-8000-000000000006';
 begin
+  -- RESET ROLE does not clear JWT settings. Privileged fixture setup must not
+  -- inherit an authenticated actor, including from an API-backed test session.
+  perform set_config('request.jwt.claim.sub','',true);
+  perform set_config('request.jwt.claims','{}',true);
   insert into public.companies(code,name) values('exercise-crew-test','Exercise crew fixture') returning id into company;
   insert into public.companies(code,name) values('exercise-crew-foreign','Foreign crew fixture') returning id into foreign_company;
   insert into public.vessels(company_id,name) values(company,'Crew unit A') returning id into unit_a;
@@ -231,6 +235,8 @@ begin
       assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'month')::integer>current_month),'Future month entered obligations';
     end if;
     execute 'reset role';
+    perform set_config('request.jwt.claim.sub','',true);
+    perform set_config('request.jwt.claims','{}',true);
   end loop;
   -- A separate real tenant may see only its own catalogue and personnel.
   insert into auth.users(id,email) values(foreign_user,'crew-foreign@example.invalid');
@@ -247,6 +253,8 @@ begin
   assert (select count(*) from jsonb_array_elements(payload->'vessels'))=1 and (payload->'vessels'->0->>'id')::bigint=foreign_unit,'Cross-tenant vessel exposure';
   assert not exists(select 1 from jsonb_array_elements(payload->'personMonths') p where (p->>'personId')::bigint<>foreign_person),'Cross-tenant crew exposure';
   execute 'reset role';
+  perform set_config('request.jwt.claim.sub','',true);
+  perform set_config('request.jwt.claims','{}',true);
   update public.role_module_permissions set is_visible=false where role_key='marin' and module_key='emergencyExercises';
   actor := 'eec20000-0000-4000-8000-000000000005';
   perform set_config('request.jwt.claim.sub',actor::text,true);
@@ -255,9 +263,12 @@ begin
   begin perform public.emergency_exercises_performance(year_value); raise exception 'Hidden module accepted'; exception when insufficient_privilege then null; end;
   execute 'reset role';
   perform set_config('request.jwt.claim.sub','',true);
+  perform set_config('request.jwt.claims','{}',true);
   execute 'set local role anon';
   begin perform public.emergency_exercises_performance(year_value); raise exception 'Anonymous access accepted'; exception when insufficient_privilege then null; end;
   execute 'reset role';
+  perform set_config('request.jwt.claim.sub','',true);
+  perform set_config('request.jwt.claims','{}',true);
 end;
 $test$;
 select 'PASS: two watches/eight people/four daily, exact onboard DPR/TBT, daily priorities, replacements/transfers, employment history, first-DPR absence and five real-profile/tenant/module/read-window scopes' as result;
