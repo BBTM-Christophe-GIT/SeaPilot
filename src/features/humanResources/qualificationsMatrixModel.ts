@@ -108,6 +108,70 @@ function emptyCategories(): QualificationsMatrixPerson['categories'] {
   return { deck: [], engine: [], safety_training: [], medical_visit: [], safety_induction: [], lifting: [] };
 }
 
+function nameWords(value: string): Array<{ value: string; end: number }> {
+  return [...value.matchAll(/[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu)].map((match) => ({
+    value: normalizePopulationLabel(match[0]), end: match.index + match[0].length,
+  }));
+}
+
+function withoutDocumentExtension(value: string): string {
+  return value.trim().replace(/\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|txt|csv|jpe?g|png|gif|webp|tiff?|bmp|heic)$/iu, '').trim();
+}
+
+function certificateNameWithoutPerson(title: string, document: HrDocumentRecord, person: PersonRecord): string {
+  const titleWords = nameWords(title);
+  const identities = [
+    { name: document.personName, requireDelimiter: false },
+    { name: formatPersonName(person), requireDelimiter: !person.firstName.trim() || !person.lastName.trim() },
+    { name: `${person.lastName} ${person.firstName}`, requireDelimiter: !person.firstName.trim() || !person.lastName.trim() },
+    { name: person.lastName, requireDelimiter: true },
+  ].map(({ name, requireDelimiter }) => ({ words: nameWords(name), requireDelimiter }))
+    .filter(({ words }) => words.length > 0 && words.length < titleWords.length)
+    .sort((left, right) => right.words.length - left.words.length);
+  for (const identity of identities) {
+    if (!identity.words.every((word, index) => word.value === titleWords[index].value)) continue;
+    const end = titleWords[identity.words.length - 1].end;
+    const remainder = title.slice(end);
+    // A surname alone needs an explicit delimiter, so a certificate beginning
+    // with the same single word is not treated as a person's file prefix.
+    if ((identity.requireDelimiter || identity.words.length === 1) && !/^\s*[-–—_:|]/u.test(remainder)) continue;
+    return remainder.replace(/^[-\s_–—:|]+/u, '').trim();
+  }
+  return title;
+}
+
+function withoutCertificateYear(value: string): string {
+  return value.replace(/[-\s_–—:|]+(?:19|20|21)\d{2}\s*$/u, '').trim();
+}
+
+function normalizeCertificateName(value: string): string {
+  const normalized = nameWords(value).map((word) => word.value).join(' ');
+  // Keep the historical aliases already recognized by the individual RH sheet.
+  if (normalized === 'cquali') return 'cqali';
+  if (normalized === 'hse induction') return 'lems hse induction';
+  return normalized;
+}
+
+function matrixCertificateTitle(document: HrDocumentRecord, person: PersonRecord, documentTypes: readonly HrDocumentTypeOption[]): string {
+  const rawTitle = withoutDocumentExtension(document.title);
+  const title = certificateNameWithoutPerson(rawTitle, document, person);
+  const withoutYear = withoutCertificateYear(title);
+  // Prefer a real complete catalogue label before interpreting any part of it
+  // as a person prefix or an annual filename suffix.
+  for (const candidate of [rawTitle, withoutCertificateYear(rawTitle), title, withoutYear]) {
+    const normalized = normalizeCertificateName(candidate);
+    if (!normalized) continue;
+    const names = new Set(documentTypes.filter((type) => type.id > 0 && type.categoryKey === document.categoryKey
+      && [withoutDocumentExtension(type.fileName), type.name].some((name) => normalizeCertificateName(name) === normalized))
+      .map((type) => type.name.trim()).filter(Boolean));
+    if (names.size === 1) return [...names][0];
+    if (names.size > 1) break;
+  }
+  // Unknown, ambiguous and synthetic fallback types do not establish a
+  // catalogue identity. Keep only the reliably cleaned document label.
+  return withoutYear || title || 'Non renseigné';
+}
+
 /** Project the authorized RH records into qualification metadata only; no network or document file is read. */
 export function buildQualificationsMatrix({
   people, documents, documentTypes = [], visibleCategoryKeys, asOf = parisDateKey(),
@@ -144,14 +208,14 @@ export function buildQualificationsMatrix({
       active: person.active, employmentStatusLabel: employmentStatusLabel(person, asOf), categories: emptyCategories(),
     };
     for (const document of documentsByPerson.get(person.id) || []) {
-      // Reuse the individual sheet's exact catalogue-name resolution, date format
-      // and saved status. Renewals replace a record; different record IDs remain distinct.
-      const certificateSections = buildCollaboratorSheetSections(person, [document], documentSections, documentTypes);
+      // Reuse the individual sheet's date format and saved status. Matrix titles
+      // also support historical person prefixes without changing stored records.
+      const certificateSections = buildCollaboratorSheetSections(person, [document], documentSections);
       const certificate = certificateSections[0]?.table?.rows[0];
       if (!certificate) continue;
       const hasExpiry = certificate.expiresOn !== 'Non renseigné';
       row.categories[document.categoryKey as QualificationsMatrixCategoryKey].push({
-        documentId: document.id, title: certificate.title,
+        documentId: document.id, title: matrixCertificateTitle(document, person, documentTypes),
         expiresOn: hasExpiry ? document.expiresOn.slice(0, 10) : '',
         expiresOnLabel: hasExpiry ? certificate.expiresOn : 'Non renseignée',
         status: document.status, statusLabel: certificate.status,

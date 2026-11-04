@@ -45,8 +45,12 @@ export async function buildQualificationsMatrixPdf(
   const dateKey = parisDateKey(generatedOn);
   pdf.setProperties({ title: 'Matrice des Qualifications', subject: 'Brevets et visites médicales des marins', author: 'BBTM', creator: 'SeaPilot' });
   pdf.setCreationDate(generatedOn);
+  const exportedCategories = matrix.categories.filter((category) => matrix.groups.some((group) =>
+    group.people.some((person) => person.categories[category.key].length > 0)));
+  const personCategories = (person: QualificationsMatrixPerson) => exportedCategories.filter((category) =>
+    person.categories[category.key].length > 0);
   setText(pdf, SLATE, 6.5);
-  const exportedCategoryLines = pdf.splitTextToSize(printable(`Catégories exportées : ${matrix.categories.map((category) => category.label).join(' · ') || 'Aucune'}`), WIDTH) as string[];
+  const exportedCategoryLines = pdf.splitTextToSize(printable(`Catégories exportées : ${exportedCategories.map((category) => category.label).join(' · ') || 'Aucune'}`), WIDTH) as string[];
   const bodyTop = TOP + Math.max(0, exportedCategoryLines.length - 1) * 2.8;
   let y = bodyTop, currentFunction = '', currentPerson: QualificationsMatrixPerson | null = null;
   let currentCategory = '';
@@ -125,7 +129,8 @@ export async function buildQualificationsMatrixPdf(
     currentFunction = printable(group.functionLabel);
     const personMinimum = (person: QualificationsMatrixPerson) => {
       const nameHeight = Math.max(8, split(person.personName, WIDTH - 63, 9.5, true).length * 4 + 3);
-      const category = matrix.categories[0];
+      const category = personCategories(person)[0];
+      if (!category) return nameHeight;
       const firstDocument = category ? person.categories[category.key][0] : undefined;
       const firstTitle = firstDocument ? split(firstDocument.title, DOCUMENT_WIDTH - 2 * PADDING) : [''];
       const firstHeight = Math.min(25, Math.max(7.5, firstTitle.length * LINE_HEIGHT + 2 * PADDING));
@@ -138,19 +143,17 @@ export async function buildQualificationsMatrixPdf(
       currentPerson = person; currentCategory = '';
       if (personIndex) y += 4;
       if (y + personMinimum(person) > BOTTOM) { newPage(); functionBand(true); }
-      personBand(); columns();
-      for (const category of matrix.categories) {
+      personBand();
+      const categories = personCategories(person);
+      if (categories.length) columns();
+      for (const category of categories) {
         currentCategory = printable(category.label);
         const documents = person.categories[category.key];
         const firstRow = documents[0];
-        const firstTitle = firstRow ? split(firstRow.title, DOCUMENT_WIDTH - 2 * PADDING) : ['Aucun document enregistré.'];
+        const firstTitle = split(firstRow.title, DOCUMENT_WIDTH - 2 * PADDING);
         const firstHeight = Math.min(25, Math.max(7.5, firstTitle.length * LINE_HEIGHT + 2 * PADDING));
         if (y + 7 + firstHeight > BOTTOM) newPage(true);
         categoryBand();
-        if (!documents.length) {
-          row(['Aucun document enregistré.'], ['Non renseignée'], ['Non renseigné'], 7.5);
-          continue;
-        }
         for (const document of documents) {
           const titleLines = split(document.title, DOCUMENT_WIDTH - 2 * PADDING);
           const dateLines = split(document.expiresOnLabel, DATE_WIDTH - 2 * PADDING);
