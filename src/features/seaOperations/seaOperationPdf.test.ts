@@ -155,6 +155,9 @@ function tableRectangles(body: string) {
     fill: [...body.slice(0, match.index).matchAll(/(?:^|\n)([\d.]+(?: [\d.]+){0,2}) (?:rg|g)\n/g)].at(-1)?.[1],
   }));
 }
+function routeMapBody(body: string) {
+  return body.slice(body.indexOf('(Carte du parcours) Tj'), body.indexOf('(Fond : Natural Earth'));
+}
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Sea operation PDF', () => {
@@ -181,7 +184,7 @@ describe('Sea operation PDF', () => {
     expect(record).toEqual(original);
   });
 
-  it('draws defined departure and arrival ports even without waypoints and preserves a manual frame', async () => {
+  it('fits defined departure and arrival ports even without waypoints while preserving the saved source frame', async () => {
     const record = voyageFixture(); record.draft.vessel.departurePort = 'Cherbourg'; record.draft.vessel.arrivalPort = 'Brest';
     record.draft.waypoints = [];
     const original = structuredClone(record.draft);
@@ -191,8 +194,72 @@ describe('Sea operation PDF', () => {
     record.draft.mapViewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .2 };
     const manual = await generateSeaOperationPdf(record, { templateBytes: await template() });
     const manualMap = (await landscapeBodies(manual.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!;
-    expect(manualMap).not.toContain('Brest'); expect(manualMap).toContain('W\nn');
+    expect(manualMap).toContain('Cherbourg'); expect(manualMap).toContain('Brest'); expect(manualMap).toContain('W\nn');
+    expect(routeMapBody(manualMap)).toBe(routeMapBody(autoMap));
     expect(record.draft).toEqual({ ...original, mapViewport: { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .2 } });
+  });
+
+  it.each([
+    { centerLatitude: 49.656, centerLongitude: -1.618, longitudeSpan: .02 },
+    { centerLatitude: 35, centerLongitude: -20, longitudeSpan: 60 },
+  ])('fits all six voyage points and both ports independently of the saved camera %o', async viewport => {
+    const record = voyageFixture(); record.draft.description = 'Transit Cherbourg - Le Havre';
+    record.draft.vessel.departurePort = 'Port de Cherbourg'; record.draft.vessel.arrivalPort = 'Port du Havre';
+    const coordinates = [[49.656, -1.618], [49.72, -1.45], [49.78, -1.1], [49.75, -.65], [49.65, -.25], [49.49, .1]];
+    record.draft.waypoints = coordinates.map(([latitude, longitude], index) => ({ ...record.draft.waypoints[0], id: `route-${index}`,
+      number: `ROUTE-${index + 1}`, descriptionVhf: `Point ${index + 1}`, latitude: String(latitude), longitude: String(longitude) }));
+    const automatic = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const autoMap = routeMapBody((await landscapeBodies(automatic.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!);
+    record.draft.mapViewport = viewport;
+    const original = structuredClone(record), generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const map = routeMapBody((await landscapeBodies(generated.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!);
+    expect(map).toBe(autoMap); expect(map).toContain('Cherbourg'); expect(map).toContain('Havre');
+    const frame = tableRectangles(map).find(rect => rect.x === 49 && rect.width > 700 && rect.height === -190)!;
+    expect(frame).toBeDefined();
+    for (let index = 1; index <= coordinates.length; index++) {
+      expect(textPositions(map, `ROUTE-${index}`)).toHaveLength(1);
+      const [marker] = textPositions(map, String(index));
+      expect(marker).toBeDefined(); expect(marker.x).toBeGreaterThan(frame.x + 8); expect(marker.x).toBeLessThan(frame.x + frame.width - 8);
+      expect(marker.y).toBeGreaterThan(frame.y + frame.height + 8); expect(marker.y).toBeLessThan(frame.y - 8);
+    }
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_ROUTE_FIT_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ROUTE_FIT_QA_OUTPUT, generated.bytes);
+  });
+
+  it('fits route points, ports, isolated points and complete zones together without changing signed data', async () => {
+    const record = voyageFixture(); record.draft.description = 'Transit et localisation complète';
+    record.draft.vessel.departurePort = 'Port de Cherbourg'; record.draft.vessel.arrivalPort = 'Port du Havre';
+    record.draft.waypoints = [{ ...record.draft.waypoints[0], number: 'ROUTE-A', latitude: '49.66', longitude: '-1.62' },
+      { ...record.draft.waypoints[1], number: 'ROUTE-B', latitude: '49.49', longitude: '0.1' }];
+    record.draft.locationOverlay = { version: 1,
+      points: [{ ...record.draft.waypoints[0], id: 'isolated-qa', number: 'ISOLE-QA', latitude: '49.2', longitude: '-2.1' }],
+      zones: [{ id: 'zone-qa', name: 'ZONE-QA', vertices: [{ latitude: '50.1', longitude: '-0.8' }, { latitude: '50.2', longitude: '-0.4' }, { latitude: '50', longitude: '-0.3' }] }],
+    };
+    const automatic = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const autoMap = routeMapBody((await landscapeBodies(automatic.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!);
+    record.draft.mapViewport = { centerLatitude: 49.656, centerLongitude: -1.618, longitudeSpan: .02 };
+    const original = structuredClone(record), generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const map = routeMapBody((await landscapeBodies(generated.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!);
+    expect(map).toBe(autoMap);
+    for (const label of ['1', '2', 'ISOLE-QA', 'ZONE-QA', 'Z1.1', 'Z1.2', 'Z1.3']) expect(textPositions(map, label), label).toHaveLength(1);
+    expect(map).toContain('Cherbourg'); expect(map).toContain('Havre');
+    const frame = tableRectangles(map).find(rect => rect.x === 49 && rect.width > 700 && rect.height === -190)!;
+    for (const label of ['1', '2', 'ISOLE-QA', 'Z1.1', 'Z1.2', 'Z1.3']) {
+      const [position] = textPositions(map, label);
+      expect(position.x).toBeGreaterThan(frame.x); expect(position.x).toBeLessThan(frame.x + frame.width);
+      expect(position.y).toBeGreaterThan(frame.y + frame.height); expect(position.y).toBeLessThan(frame.y);
+    }
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_ROUTE_OVERLAY_FIT_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_ROUTE_OVERLAY_FIT_QA_OUTPUT, generated.bytes);
+  });
+
+  it('retains an empty saved map when there is no valid content to fit', async () => {
+    const record = voyageFixture(); record.draft.waypoints = [];
+    record.draft.vessel.departurePort = ''; record.draft.vessel.arrivalPort = '';
+    record.draft.mapViewport = { centerLatitude: 49.656, centerLongitude: -1.618, longitudeSpan: .02 };
+    const original = structuredClone(record), generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
+    const map = routeMapBody((await landscapeBodies(generated.bytes)).find(body => body.includes('(Carte du parcours) Tj'))!);
+    expect(map).toContain('W\nn'); expect(map).toContain('(N) Tj'); expect(record).toEqual(original);
   });
   it('draws a vector vigilance eye only beside marked map positions, including one shared badge for coincident waypoints', async () => {
     const record = fixture(); record.draft.description = 'Recette des points de passage en zone maritime à trafic dense.';

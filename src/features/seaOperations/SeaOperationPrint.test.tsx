@@ -19,6 +19,74 @@ function recordedObservation(): ObservationResult {
 }
 
 describe('Opération en Mer printable content', () => {
+  it.each([
+    { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .02 },
+    { centerLatitude: 0, centerLongitude: 120, longitudeSpan: 100 },
+  ])('fits the whole Cherbourg–Le Havre voyage in the signed fiche independently of the saved editor frame %j', mapViewport => {
+    const draft = emptySeaOperation();
+    draft.mapViewport = mapViewport;
+    draft.vessel.departurePort = 'Cherbourg'; draft.vessel.arrivalPort = 'Le Havre';
+    draft.waypoints = [[49.65, -1.62], [49.72, -1.45], [49.78, -1.05], [49.75, -.65], [49.62, -.15], [49.48, .1]].map(([latitude, longitude], index) => ({
+      id: `route-${index}`, number: `WP${index + 1}`, descriptionVhf: '', latitude: String(latitude), longitude: String(longitude), eta: '', ukc: '', denseTraffic: false,
+    }));
+    draft.locationOverlay = { version: 1,
+      points: [{ ...draft.waypoints[0], id: 'isolated', descriptionVhf: 'Repère isolé', latitude: '49.3', longitude: '-0.7' }],
+      zones: [{ id: 'zone', name: 'Zone de mission', vertices: [{ latitude: '49.2', longitude: '-0.5' }, { latitude: '49.25', longitude: '-0.5' }, { latitude: '49.25', longitude: '-0.4' }] }],
+    };
+    const record: SeaOperationRecord = { id: 'route-fit', companyId: 1, version: 2, status: 'signed', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-11-04T14:25:00Z', updatedBy: 'captain', updatedByName: 'Capitaine', updatedAt: '2026-11-04T14:38:00Z',
+      signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-11-04T14:38:00Z', captainName: 'Capitaine', canEdit: false, canSign: false };
+    const original = structuredClone(record), { container, rerender } = render(<SeaOperationPrint record={record} />);
+    const assertMap = (waypointCount: number) => {
+      const map = container.querySelector('.so-print-route-map')!;
+      const svg = map.querySelector('svg')!;
+      const [, , width, height] = svg.getAttribute('viewBox')!.split(' ').map(Number);
+      expect(within(map as HTMLElement).getByRole('img', { name: /Départ : .*Cherbourg/ })).toBeInTheDocument();
+      expect(within(map as HTMLElement).getByRole('img', { name: /Arrivée : .*Havre/ })).toBeInTheDocument();
+      expect(map).not.toHaveTextContent('hors du cadre conservé');
+      const markers = [...map.querySelectorAll('.so-route-map-point, .so-route-map-isolated-points > g')];
+      expect(map.querySelectorAll('.so-route-map-point')).toHaveLength(waypointCount);
+      expect(map.querySelectorAll('.so-route-map-defined-ports > g')).toHaveLength(2);
+      for (const marker of markers) {
+        const [, x, y] = /translate\(([\d.-]+)[ ,]([\d.-]+)\)/.exec(marker.getAttribute('transform')!)!.map(Number);
+        expect(x).toBeGreaterThan(20); expect(x).toBeLessThan(width - 20);
+        expect(y).toBeGreaterThan(20); expect(y).toBeLessThan(height - 20);
+      }
+      for (const port of map.querySelectorAll('.so-route-map-defined-ports .so-route-map-port-dot')) {
+        const x = Number(port.getAttribute('cx')), y = Number(port.getAttribute('cy'));
+        expect(x).toBeGreaterThan(20); expect(x).toBeLessThan(width - 20);
+        expect(y).toBeGreaterThan(20); expect(y).toBeLessThan(height - 20);
+      }
+      return map;
+    };
+    const map = assertMap(6);
+    expect(map.querySelectorAll('.so-route-map-track line')).toHaveLength(5);
+    expect(map.querySelectorAll('.so-route-map-isolated-points > g')).toHaveLength(1);
+    const polygon = map.querySelector('.so-route-map-zones polygon')!;
+    const [, , width, height] = map.querySelector('svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+    for (const vertex of polygon.getAttribute('points')!.split(' ')) {
+      const [x, y] = vertex.split(',').map(Number);
+      expect(x).toBeGreaterThan(20); expect(x).toBeLessThan(width - 20);
+      expect(y).toBeGreaterThan(20); expect(y).toBeLessThan(height - 20);
+    }
+    expect(record).toEqual(original);
+    const portsOnly = structuredClone(record); portsOnly.draft.waypoints = []; delete portsOnly.draft.locationOverlay;
+    rerender(<SeaOperationPrint record={portsOnly} />);
+    assertMap(0);
+    expect(portsOnly.draft.mapViewport).toEqual(mapViewport);
+  });
+
+  it('retains the saved map as an empty fiche background when no position can be resolved', () => {
+    const draft = emptySeaOperation();
+    draft.waypoints = []; draft.mapViewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .02 };
+    const record: SeaOperationRecord = { id: 'empty-map', companyId: 1, version: 1, status: 'draft', draft,
+      createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-11-04T14:25:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-11-04T14:25:00Z',
+      signedBy: null, signedByName: null, signedAt: null, captainName: null, canEdit: true, canSign: false };
+    const { container } = render(<SeaOperationPrint record={record} />);
+    expect(within(container).getByRole('img', { name: 'Carte du parcours · 0 points géolocalisés' })).toBeInTheDocument();
+    expect(container.querySelector('.so-route-map-scale')).toHaveTextContent('0.05 NM');
+  });
+
   it('prints the saved Transit client and manually adapted voyage instead of project defaults', () => {
     const draft = emptySeaOperation();
     draft.project = 'Transit'; draft.transit = { date: '2026-10-27', captainPersonId: '3' };

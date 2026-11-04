@@ -17,6 +17,7 @@ import { resolveSeaOperationMapPorts } from './seaOperationMapPlaces';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from './seaOperationZonePdf';
 import { formatClientContactLines } from '../../lib/clientContact';
+import { seaWaypointPosition } from './seaOperationNavigation';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -177,12 +178,15 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   const overlay = form.locationOverlay;
   const definedPorts = resolveSeaOperationMapPorts(form.vessel.departurePort, form.vessel.arrivalPort);
   const extraPositions = [...(overlay ? projectLocationMapPositions(overlay) : []), ...definedPorts.ports.map(port => port.location)];
-  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190, form.mapViewport, extraPositions);
+  // The fiche shows the whole voyage independently of the editor's saved camera.
+  // A saved empty frame remains useful when there is no geolocated content to fit.
+  const mapViewport = extraPositions.length || form.waypoints.some(point => seaWaypointPosition(point) !== null) ? undefined : form.mapViewport;
+  const routeMap = buildSeaOperationRouteMap(form.waypoints, pageWidth() - LEFT - RIGHT, 190, mapViewport, extraPositions);
   const hasMap = Boolean(routeMap.points.length || extraPositions.length || form.mapViewport);
   page(hasMap ? routeMap.height + 65 : 65);
   heading('Carte du parcours', true);
   if (overlay && hasMap) {
-    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport: form.mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort, ensureZonesVisible: true });
+    drawProjectLocationMapPdf(document, { waypoints: form.waypoints, ...overlay, mapViewport }, { x: LEFT, y, width: routeMap.width, height: routeMap.height }, { departurePort: form.vessel.departurePort, arrivalPort: form.vessel.arrivalPort, ensureZonesVisible: true });
     y += routeMap.height + 12;
     paragraph('Fond : Natural Earth · Tracé indicatif. Points isolés et zones hors calcul de navigation.');
     if (overlay.zones.length) y = drawSeaOperationZoneLegendPdf(document, overlay.zones, { y, left: LEFT, right: RIGHT, top: TOP, bottom: BOTTOM, fontSize: 8 });
