@@ -62,6 +62,8 @@ describe('BBTM employment PDFs', () => {
     expect(pages.join(' ')).not.toMatch(/SPFIELD|Ancien représentant|2020-01-01/);
     expect(pages.join(' ')).not.toMatch(/l[’']employé/i);
     expect(pages.slice(1).join(' ')).not.toContain('« Éléonore & Alex D’EXEMPLE »');
+    expect(pages[1]).toContain('Entre Éléonore & Alex D’EXEMPLE et l’entreprise Benjamin Bon Travaux Maritimes');
+    expect(pages[1]).not.toContain('défini au 2,3,4,5');
     const clauses = EMPLOYMENT_CONTRACT_TEXT[type].slice(EMPLOYMENT_CONTRACT_TEXT[type].indexOf('CLAUSES GÉNÉRALES') + 1);
     for (const paragraph of clauses.filter((text) => text.length > 65 && !text.includes('{{') && !/l[’']employé|\((1a|1b|1|9|10|11|12|13|14)\)/i.test(text))) {
       // Word's preserved font runs may insert extraction-only spaces inside words.
@@ -84,19 +86,28 @@ describe('BBTM employment PDFs', () => {
     const pages = await pdfText(new Uint8Array(await blob.arrayBuffer()));
     expect(pages).toHaveLength(3);
     const clauses = pages.slice(1).join(' '), compact = clauses.replace(/\s+/g, '');
-    expect(compact).toContain(`${fullName} est embauché au poste Capitaine sur le(s) navire(s) définis au GOURY & THÉRÈSE correspondant à la fonction ENIM défini au AA01A et à la catégorie 12.`.replace(/\s+/g, ''));
-    expect(compact).toContain(`${fullName} percevra la rémunération mensuelle brute prévue au 3 250,50 €`.replace(/\s+/g, ''));
+    expect(compact).toContain(`${fullName} est embauché au poste Capitaine sur GOURY & THÉRÈSE correspondant à la fonction ENIM AA01A et à la catégorie 12.`.replace(/\s+/g, ''));
+    expect(compact).toContain(`${fullName} percevra la rémunération mensuelle brute de 3 250,50 €`.replace(/\s+/g, ''));
     expect(compact).toContain(`${fullName} est embauché à compter de la date stipulée au 04/11/2026`.replace(/\s+/g, ''));
-    if (type === 'CDD') expect(compact).toContain('se terminant au 03/05/2027'.replace(/\s+/g, ''));
+    if (type === 'CDD') {
+      expect(compact).toContain('se terminant au 03/05/2027'.replace(/\s+/g, ''));
+      expect(clauses).toContain('1 jour par semaine prévue au contrat dans la limite de');
+    }
     else expect(clauses).toContain('trois (3) mois de navigation effective');
     expect(clauses).not.toMatch(/\((1a|1b|1|9|10|11|12|13|14)\)|l[’']employé/i);
     expect(clauses).toContain(input.collectiveAgreement);
+    expect(compact).toContain('à l’occupation du poste défini au Capitaine au cours de cette période'.replace(/\s+/g, ''));
+    expect(clauses).not.toMatch(/le\(s\) navire\(s\) définis au|fonction ENIM défini au|brute prévue au|défini au 2,3,4,5/);
     expect(pages.at(-1)).toContain('Benjamin BON');
     expect(pages.at(-1)).toContain(fullName);
     const values = { ...employmentContractValues(input), fullName, grossMonthlySalary: '3 250,50 €' };
     const intro = employmentContractClauseRuns(type, values).find((clause) => clause.kind === 'intro')!;
-    expect(intro.runs.some((run) => run.bold && run.text === fullName)).toBe(true);
-    expect(intro.runs.some((run) => !run.bold && run.text === fullName)).toBe(true);
+    const nameRuns = intro.runs.filter((run) => run.text === fullName);
+    expect(nameRuns).toHaveLength(1);
+    expect(nameRuns[0].bold).toBe(true);
+    const introText = intro.runs.map((run) => run.text).join('');
+    expect(introText.startsWith(`Entre ${fullName} et l’entreprise Benjamin Bon Travaux Maritimes`)).toBe(true);
+    expect(introText.split(fullName)).toHaveLength(2);
   });
 
   it.each([
