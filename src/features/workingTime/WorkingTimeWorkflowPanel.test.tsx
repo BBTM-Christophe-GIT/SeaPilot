@@ -147,6 +147,13 @@ function workspace(status: WorkingTimeWorkspace['registers'][number]['status'], 
   };
 }
 
+function dayApproval(status: WorkingTimeWorkspace['dayApprovals'][number]['status'], personId = 10, day = '2026-08-03'): WorkingTimeWorkspace['dayApprovals'][number] {
+  return { id: 501, companyId: 1, registerId: 100, personId, localWorkDate: day, status,
+    planningAssignmentId: 1, vesselId: 7, watchGroup: 'Bordée 1', approverPersonId: 11,
+    submittedAt: null, validatedAt: null, validatedByPersonId: null,
+    subjectSignatureSnapshot: null, approverSignatureSnapshot: null };
+}
+
 function renderPanel(
   roles: Array<'capitaine' | 'marin' | 'armement' | 'admin' | 'direction'>,
   data: WorkingTimeWorkspace,
@@ -983,6 +990,101 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByText(/Journée validée et clôturée/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
+  });
+
+  it('saves a newly selected phase on a previous empty day with a retained draft approval', async () => {
+    const data = workspace('draft', 20);
+    data.intervals = [];
+    data.registers[0] = { ...data.registers[0], periodStart: '2026-11-01', periodEnd: '2026-11-30' };
+    data.dayApprovals = [dayApproval('draft', 20, '2026-11-02')];
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({ ...defaultDayContext, canEdit: true });
+    vi.mocked(useWorkingTimeWorkspace).mockReturnValue({ workspace: data, isLoading: false, errorMessage: null, reload });
+    render(<WorkingTimeWorkflowPanel client={client} currentPerson={currentPerson} roles={['admin']} previewMode
+      range={{ start: '2026-11-01', end: '2026-11-30' }} referenceDate="2026-11-04"
+      navigationTarget={{ personId: 20, date: '2026-11-02' }} />);
+
+    const grid = await screen.findByRole('grid', { name: 'Grille horaire du 2026-11-02' });
+    await waitFor(() => expect(grid).toHaveAttribute('aria-readonly', 'false'));
+    fireEvent.keyDown(screen.getAllByRole('gridcell')[16], { key: 'Enter' });
+    const save = screen.getByRole('button', { name: 'Enregistrer le brouillon' });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(saveWorkingTimePhases).toHaveBeenCalledWith(client, expect.objectContaining({
+      registerId: 100, phases: [{ startsAt: new Date('2026-11-02T08:00').toISOString(), endsAt: new Date('2026-11-02T08:30').toISOString() }],
+    })));
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
+    expect(saveWorkingTimeInterval).not.toHaveBeenCalled();
+  });
+
+  it('keeps a server-authorized validated-day correction usable after reset to draft and permits saving then resubmitting', async () => {
+    const user = userEvent.setup();
+    let data = workspace('validated');
+    data.intervals[0] = { ...data.intervals[0], startsAt: new Date('2026-08-03T08:00').toISOString(), endsAt: new Date('2026-08-03T16:00').toISOString() };
+    data.dayApprovals = [dayApproval('validated')];
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({ ...defaultDayContext, canEdit: true });
+    renderPanel(['admin'], data, currentPerson, '2026-08-03');
+    vi.mocked(useWorkingTimeWorkspace).mockImplementation(() => ({ workspace: data, isLoading: false, errorMessage: null, reload }));
+    reload.mockImplementationOnce(async () => {
+      const input = vi.mocked(saveWorkingTimeInterval).mock.calls[0][1];
+      data = { ...data, registers: [{ ...data.registers[0], status: 'reopened' }],
+        intervals: [{ ...data.intervals[0], startsAt: input.startsAt, endsAt: input.endsAt }],
+        dayApprovals: [dayApproval('draft')] };
+      return true;
+    });
+
+    await waitFor(() => expect(screen.getByRole('grid')).toHaveAttribute('aria-readonly', 'false'));
+    expect(screen.queryByText(/Journée validée et clôturée/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('button', { name: 'Corriger' }));
+    screen.getAllByRole('gridcell')[16].focus();
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    const correction = screen.getByRole('button', { name: 'Enregistrer la correction' });
+    await waitFor(() => expect(correction).toBeEnabled());
+    await user.click(correction);
+    expect(await screen.findByText('La correction a été enregistrée.')).toBeInTheDocument();
+    expect(saveWorkingTimeInterval).toHaveBeenCalledWith(client, expect.objectContaining({ registerId: 100, intervalId: 200 }));
+
+    const save = await screen.findByRole('button', { name: 'Enregistrer le brouillon' });
+    fireEvent.keyDown(screen.getAllByRole('gridcell')[36], { key: 'Enter' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+    expect(await screen.findByText('Le brouillon a été enregistré sans validation.')).toBeInTheDocument();
+    expect(saveWorkingTimePhases).toHaveBeenCalledOnce();
+    const submit = screen.getByRole('button', { name: 'Valider' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+    await waitFor(() => expect(submitWorkingTimeDay).toHaveBeenCalledExactlyOnceWith(client, { registerId: 100, localWorkDate: '2026-08-03' }));
+    expect(validateWorkingTimeDay).not.toHaveBeenCalled();
+  });
+
+  it('uses the guarded legacy permission fallback and signature guidance for a retained draft approval', async () => {
+    const data = workspace('draft');
+    data.intervals = [];
+    data.signatures = [];
+    data.dayApprovals = [dayApproval('draft')];
+    renderPanel(['marin'], data, { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+    expect(await screen.findByRole('button', { name: 'Enregistrer le brouillon' })).toBeInTheDocument();
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-readonly', 'false');
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
+    expect(screen.getByText('Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.')).toBeInTheDocument();
+  });
+
+  it.each((['admin', 'direction', 'armement', 'marin', 'capitaine'] as const).flatMap(role =>
+    (['draft', 'validated'] as const).map(status => ({ role, status }))))('keeps a $status approval read-only for a real $role profile when server permission is false', async ({ role, status }) => {
+    const data = workspace(status);
+    data.intervals = [];
+    data.dayApprovals = [dayApproval(status)];
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({ ...defaultDayContext, canEdit: false });
+    renderPanel([role], data, { ...currentPerson, functionLabel: role === 'marin' ? 'Matelot' : currentPerson.functionLabel }, '2026-08-03');
+    await screen.findByText('Cette journée est en lecture seule pour son statut actuel.');
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-readonly', 'true');
+    expect(screen.getAllByRole('gridcell').every(cell => (cell as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Enregistrer le brouillon' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Valider' })).not.toBeInTheDocument();
+    if (status === 'validated') expect(await screen.findByText(/Journée validée et clôturée/)).toBeInTheDocument();
+    expect(saveWorkingTimePhases).not.toHaveBeenCalled();
+    expect(saveWorkingTimeInterval).not.toHaveBeenCalled();
+    expect(submitWorkingTimeDay).not.toHaveBeenCalled();
   });
 
   it('preserves separate day drafts across the graphical month view without writing or changing official totals', async () => {

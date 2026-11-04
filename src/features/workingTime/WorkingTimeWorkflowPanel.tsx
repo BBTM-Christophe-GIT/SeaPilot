@@ -528,6 +528,7 @@ export function WorkingTimeWorkflowPanel({
   const selectedDayApproval = useMemo(() => workspace?.dayApprovals.find((approval) => (
     approval.registerId === selectedRegister?.id && approval.localWorkDate === selectedDay
   )) || null, [selectedDay, selectedRegister?.id, workspace?.dayApprovals]);
+  const isDraftDay = !selectedDayApproval || selectedDayApproval.status === 'draft';
   const entryWindowOpen = workingTimeEntryDateIsOpen(selectedDay, localToday);
   const entryWindowCutoff = workingTimeEntryCutoffDate(selectedDay);
   const entryWindowGracePeriod = workingTimeEntryIsInGracePeriod(selectedDay, localToday);
@@ -548,13 +549,14 @@ export function WorkingTimeWorkflowPanel({
     && (
       (selectedDayApproval?.status === 'submitted'
         && ((hasCaptainRole && selectedDayApproval.approverPersonId === currentPersonId) || canManageApproval(selectedDayApproval)))
-      || (!selectedDayApproval
+      || (isDraftDay
         && entryWindowOpen
         && (isOwnRegister || hasManagementValidationRole || isAssignedCaptainForSelectedDay)
         && visibleEditablePeople.some((person) => person.personId === selectedRegister.personId))
     ));
   const canEdit = Boolean(!isLoading && !errorMessage && activeDayContext && selectedRegister
     && (typeof activeDayContext.canEdit === 'boolean' ? activeDayContext.canEdit : legacyCanEdit));
+  const isDayLocked = Boolean(selectedRangeLoaded && activeDayContext && !canEdit);
 
   const nonCompliantDates = useMemo(() => {
     if (!selectedRegister) return [];
@@ -1026,8 +1028,8 @@ export function WorkingTimeWorkflowPanel({
                 <section className="working-time-intervals" aria-label="Créneaux de travail">
                   {registerView === 'daily' ? <>
                     <div className="working-time-subheading"><div><h4>{formatSelectedDay(selectedDay)}</h4><span>Journée de travail</span></div><span>{selectedDayIntervals.length} période{selectedDayIntervals.length > 1 ? 's' : ''} enregistrée{selectedDayIntervals.length > 1 ? 's' : ''}</span></div>
-                    {!selectedDayApproval && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
-                    {!selectedDayApproval && !entryWindowOpen ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {isDraftDay && entryWindowGracePeriod ? <p className="working-time-message is-success">Le registre {displayedMonthLabel} reste ouvert à la saisie jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
+                    {isDraftDay && !entryWindowOpen && isDayLocked ? <p className="working-time-message is-warning">Le registre {displayedMonthLabel} est clôturé pour la saisie. Il était modifiable jusqu’au {formatSelectedDay(entryWindowCutoff).toLocaleLowerCase('fr-FR')} inclus.</p> : null}
                     <WorkingTimeEntryBoard
                     allowPhaseResize
                     preserveDayDrafts
@@ -1064,9 +1066,9 @@ export function WorkingTimeWorkflowPanel({
                     rollingWindow={coverageByDay || assignmentAnalysisLoading || assignmentAnalysisError ? null : selectedRollingWindow}
                     startsAt={startsAt}
                     selectedDay={selectedDay}
-                    showSaveDraft={canEdit && !selectedDayApproval}
+                    showSaveDraft={canEdit && isDraftDay}
                     showSubmitToCaptain={canEdit
-                      && !selectedDayApproval
+                      && isDraftDay
                       && (isOwnRegister || isAssignedCaptainForSelectedDay)}
                     showValidate={selectedDayApproval?.status === 'submitted'
                       && !nonCompliantDates.includes(selectedDay)
@@ -1163,11 +1165,11 @@ export function WorkingTimeWorkflowPanel({
                 ) : null}
 
                 {missingCaptainComments.length > 0 && selectedDayApproval?.status === 'submitted' ? <p className="working-time-message is-error">Justification de non-conformité incomplète pour le {selectedDay}.</p> : null}
-                {!currentSignature && isOwnRegister && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
-                {!subjectSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
-                {!currentSignature && isAssignedCaptainForSelectedDay && !selectedDayApproval ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
+                {!currentSignature && isOwnRegister && isDraftDay ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
+                {!subjectSignature && isAssignedCaptainForSelectedDay && isDraftDay ? <p className="working-time-message is-error">Le titulaire doit disposer d’une signature de profil active avant que le capitaine puisse valider sa journée.</p> : null}
+                {!currentSignature && isAssignedCaptainForSelectedDay && isDraftDay ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.</p> : null}
                 {!currentSignature && selectedDayApproval?.status === 'submitted' && (hasCaptainRole || canManageApproval(selectedDayApproval)) ? <p className="working-time-message is-error">Ajoutez d’abord votre signature numérisée dans votre profil utilisateur.</p> : null}
-                {selectedDayApproval?.status === 'validated' ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
+                {selectedDayApproval?.status === 'validated' && isDayLocked ? <p className="working-time-validated-note"><BadgeCheck aria-hidden="true" size={18} />Journée validée et clôturée — les autres jours du mois restent ouverts.</p> : null}
               </article>
             ) : (
               <div className="working-time-register-detail working-time-empty">
