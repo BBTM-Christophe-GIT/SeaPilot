@@ -32,7 +32,9 @@ describe('pharmacy expiry notifications', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.roles = ['marin']; fixture.visible = true; vi.mocked(fetchPharmacyNotifications).mockResolvedValue(notices); });
   it.each(['admin', 'direction', 'armement', 'capitaine', 'marin'] as RoleKey[])('displays scoped server alerts for the real %s role', async (role) => {
     fixture.roles = [role]; const user = userEvent.setup(); renderShell();
-    await user.click(await screen.findByRole('button', { name: /Notifications, 1 élément/ }));
+    const notificationButton = await screen.findByRole('button', { name: /^Notifications(?:,|$)/ }, { timeout: 5_000 });
+    await waitFor(() => expect(notificationButton).toHaveAccessibleName(/Notifications, 1 élément/), { timeout: 5_000 });
+    await user.click(notificationButton);
     const link = screen.getByRole('link', { name: /SUROIT.*Contrôle Pharmacie/ });
     expect(link).toHaveAttribute('href', '/modules/pharmacy?vessel=4&filter=expiry');
     expect(screen.getByText('Échéance dépassée de 1 jour(s)')).toBeInTheDocument();

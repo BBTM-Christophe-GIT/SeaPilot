@@ -26,7 +26,9 @@ describe('confidential disciplinary bell notifications', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.roles = ['direction']; vi.mocked(fetchDisciplinaryNotifications).mockResolvedValue(notices); vi.mocked(markDisciplinaryNotificationRead).mockResolvedValue(undefined); });
   it.each(['admin', 'direction'] as RoleKey[])('notifies the real %s profile and opens the exact case review', async (role) => {
     fixture.roles = [role]; const user = userEvent.setup(); renderShell();
-    await user.click(await screen.findByRole('button', { name: /Notifications, 1 élément/ }));
+    const notificationButton = await screen.findByRole('button', { name: /^Notifications(?:,|$)/ }, { timeout: 5_000 });
+    await waitFor(() => expect(notificationButton).toHaveAccessibleName(/Notifications, 1 élément/), { timeout: 5_000 });
+    await user.click(notificationButton);
     const link = screen.getByRole('link', { name: /Courrier partagé pour relecture/ });
     expect(link).toHaveAttribute('href', '/modules/disciplinary?case=case-1&tab=review');
     await user.click(link);
