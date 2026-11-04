@@ -1,7 +1,6 @@
 import type { PlanningOverview, PlanningPerson } from './planningQueries';
 import { getAllPlanningCrewEvents } from './planningModel';
 import { planningEventFunctionOnDate } from './planningFunctions';
-import shipOwnerSignatureUrl from './assets/signature-benjamin-bon.png?inline';
 
 export type PlanningCrewListFormat = 'xlsx' | 'pdf';
 
@@ -226,14 +225,6 @@ function rowXml(index: number, cells: string[], height?: number): string {
   return `<row r="${index}"${height ? ` ht="${height}" customHeight="1"` : ''}>${cells.join('')}</row>`;
 }
 
-function shipOwnerSignatureBase64(): string {
-  const [, base64 = ''] = shipOwnerSignatureUrl.split(',', 2);
-  if (!shipOwnerSignatureUrl.startsWith('data:image/png;base64,') || !base64) {
-    throw new Error('La signature du ship owner ne peut pas être intégrée au document.');
-  }
-  return base64;
-}
-
 function signatureDrawingXml(signatureRow: number): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -305,7 +296,7 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
-async function crewListXlsxBlob(document: PlanningCrewListDocument): Promise<Blob> {
+async function crewListXlsxBlob(document: PlanningCrewListDocument, signature: Uint8Array): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const signatureRow = Math.max(20, document.rows.length + 7);
@@ -317,12 +308,12 @@ async function crewListXlsxBlob(document: PlanningCrewListDocument): Promise<Blo
   zip.folder('xl')!.folder('worksheets')!.folder('_rels')!.file('sheet1.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>');
   zip.folder('xl')!.folder('drawings')!.file('drawing1.xml', signatureDrawingXml(signatureRow));
   zip.folder('xl')!.folder('drawings')!.folder('_rels')!.file('drawing1.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/signature-benjamin-bon.png"/></Relationships>');
-  zip.folder('xl')!.folder('media')!.file('signature-benjamin-bon.png', shipOwnerSignatureBase64(), { base64: true });
+  zip.folder('xl')!.folder('media')!.file('signature-benjamin-bon.png', signature);
   zip.folder('xl')!.file('styles.xml', STYLES_XML);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
-async function crewListPdfBlob(document: PlanningCrewListDocument): Promise<Blob> {
+async function crewListPdfBlob(document: PlanningCrewListDocument, signature: Uint8Array): Promise<Blob> {
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const pdf = new jsPDF({ compress: false, orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -365,7 +356,7 @@ async function crewListPdfBlob(document: PlanningCrewListDocument): Promise<Blob
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.text(`Ship owner: ${document.shipOwnerName}`, 15, signatureY);
-  pdf.addImage(shipOwnerSignatureUrl, 'PNG', 15, signatureY + 5, 38, 25);
+  pdf.addImage(signature, 'PNG', 15, signatureY + 5, 38, 25);
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(7);
   pdf.setTextColor(0, 0, 0);
@@ -377,8 +368,9 @@ function safeFilePart(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
 }
 
-export async function generatePlanningCrewList(document: PlanningCrewListDocument, format: PlanningCrewListFormat): Promise<PlanningGeneratedCrewList> {
-  const blob = format === 'xlsx' ? await crewListXlsxBlob(document) : await crewListPdfBlob(document);
+export async function generatePlanningCrewList(document: PlanningCrewListDocument, format: PlanningCrewListFormat, signature: Uint8Array): Promise<PlanningGeneratedCrewList> {
+  if (!signature.length) throw new Error('La signature privée est indisponible.');
+  const blob = format === 'xlsx' ? await crewListXlsxBlob(document, signature) : await crewListPdfBlob(document, signature);
   const board = document.watchGroup ? `-${safeFilePart(document.watchGroup)}` : '';
   return { blob, fileName: `crew-list-${safeFilePart(document.vesselName)}${board}-${document.date}.${format}` };
 }

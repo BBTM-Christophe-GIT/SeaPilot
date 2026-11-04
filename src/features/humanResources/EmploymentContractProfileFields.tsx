@@ -11,11 +11,15 @@ import { downloadEmploymentContractSigner, saveEmploymentContract } from './empl
 import { saveEmploymentContractBlob } from './EmploymentContractsSection';
 import './employmentContracts.css';
 
-export function EmploymentContractProfileFields({ client, person, details, disabled = false }: {
+export function EmploymentContractProfileFields({ client, person, details, disabled = false, useSavedDuration = false, buttonLabel = 'Générer le contrat', onGenerated, onBusyChange }: {
   client: SupabaseClient;
   person: PersonRecord;
   details: Partial<EmploymentContractDetails>;
   disabled?: boolean;
+  useSavedDuration?: boolean;
+  buttonLabel?: string;
+  onGenerated?: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [duration, setDuration] = useState('');
   const [durationUnit, setDurationUnit] = useState<EmploymentContractDurationUnit>('months');
@@ -37,7 +41,7 @@ export function EmploymentContractProfileFields({ client, person, details, disab
     if (locked || !supported) return;
     setIssues([]); setNotice('');
     const draft = createEmploymentContractDraft(recordedPerson, contractType as EmploymentContractType, details);
-    if (draft.type === 'CDD') {
+    if (draft.type === 'CDD' && !useSavedDuration) {
       try { draft.endDate = calculateEmploymentContractEndDate(draft.startDate, duration, durationUnit); }
       catch (cause) {
         setIssues([cause instanceof Error ? cause.message : 'Renseignez une durée de CDD valide.']);
@@ -47,6 +51,7 @@ export function EmploymentContractProfileFields({ client, person, details, disab
     const validation = validateEmploymentContractDraft(draft);
     if (validation.length) { setIssues(validation); return; }
     setBusy(true);
+    onBusyChange?.(true);
     try {
       const { generateEmploymentContractPdf } = await import('./employmentContractPdf');
       const { signature, blob: signatureBlob } = await downloadEmploymentContractSigner(client);
@@ -56,17 +61,19 @@ export function EmploymentContractProfileFields({ client, person, details, disab
       const fileName = buildEmploymentContractFileName(draft);
       await saveEmploymentContract(client, { personId: person.id, contractType: draft.type,
         fileName, file: blob, inputData: { ...draft, employerRepresentative: signature.signerName,
+          salaryGridRowId: details.salaryGridRowId || '', annualGrossSalary: details.annualGrossSalary || '', salaryGridRevision: details.salaryGridRevision || '',
           employerSignatureId: signature.id, employerSignerPersonId: signature.personId,
           employerSignatureSha256: signature.sha256 } });
       setNotice(`Contrat ${draft.type} généré et enregistré dans Documents.`);
       saveEmploymentContractBlob(blob, fileName);
+      onGenerated?.();
     } catch (cause) {
       setIssues([cause instanceof Error ? cause.message : 'Impossible de générer et classer le contrat.']);
-    } finally { setBusy(false); }
+    } finally { setBusy(false); onBusyChange?.(false); }
   }
 
   return <section className="sp-panel hr-contract-profile" aria-label="Génération du contrat de travail">
-    {contractType === 'CDD' ? <div className="hr-contract-fields">
+    {contractType === 'CDD' && !useSavedDuration ? <div className="hr-contract-fields">
       <label><span>Durée du CDD</span><input type="number" inputMode="numeric" min="1" step="1"
         value={duration} disabled={locked} onChange={(event) => { setDuration(event.target.value); setNotice(''); }} /></label>
       <label><span>Unité de durée</span><select value={durationUnit} disabled={locked}
@@ -76,13 +83,13 @@ export function EmploymentContractProfileFields({ client, person, details, disab
     </div> : null}
     <div className="hr-contract-generate-row">
       <button className="sp-button sp-button--primary" type="button" disabled={locked || !supported} onClick={() => void generate()}>
-        <FileDown size={17} aria-hidden="true" /> {busy ? 'Génération…' : 'Générer le contrat'}
+        <FileDown size={17} aria-hidden="true" /> {busy ? 'Génération…' : buttonLabel}
       </button>
       <p className="hr-contract-help">{supported
         ? `Modèle ${contractType} BBTM · informations enregistrées dans la fiche RH · classement dans Documents.`
         : 'Renseignez un type de contrat CDI ou CDD dans la fiche RH.'}</p>
     </div>
-    {contractType === 'CDD' ? <p className="hr-contract-help">La date de fin est calculée depuis la date de début enregistrée, dernier jour inclus.</p> : null}
+    {contractType === 'CDD' ? <p className="hr-contract-help">{useSavedDuration ? 'La durée du CDD et ses dates proviennent de la fiche RH enregistrée.' : 'La date de fin est calculée depuis la date de début enregistrée, dernier jour inclus.'}</p> : null}
     {disabled ? <p className="hr-contract-help">Enregistrez la fiche RH avant de générer le contrat.</p> : null}
     {issues.length ? <div className="form-error" role="alert"><strong>Vérifiez les informations de la fiche RH.</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div> : null}
     {notice ? <p role="status">{notice}</p> : null}

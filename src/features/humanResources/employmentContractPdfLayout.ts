@@ -153,6 +153,16 @@ export const EMPLOYMENT_CONTRACT_PDF_LAYOUT = {
         "font": "regular"
       },
       {
+        "key": "employeeSignatureLabel",
+        "page": 0,
+        "x": 76.22,
+        "top": 603.74,
+        "width": 215.21,
+        "height": 23.68,
+        "size": 10,
+        "font": "bold"
+      },
+      {
         "key": "fullName",
         "page": 0,
         "x": 76.22,
@@ -193,63 +203,16 @@ export const EMPLOYMENT_CONTRACT_PDF_LAYOUT = {
         "font": "bold"
       },
       {
-        "key": "collectiveClause",
-        "page": 1,
-        "x": 316.13,
-        "top": 568.28,
-        "width": 207.87,
-        "height": 18,
-        "size": 8,
-        "font": "regular"
-      },
-      {
         "key": "headerDate",
         "page": 2,
         "x": 402.31,
         "top": 44.06,
-        "width": 116.19,
+        "width": 116.28,
         "height": 11.7,
         "size": 9,
         "font": "bold"
-      },
-      {
-        "key": "employerRepresentative",
-        "page": 2,
-        "x": 76.58,
-        "top": 251.72,
-        "width": 215.13,
-        "height": 13.0,
-        "size": 10,
-        "font": "italic"
-      },
-      {
-        "key": "fullName",
-        "page": 2,
-        "x": 303.17,
-        "top": 251.72,
-        "width": 215.33,
-        "height": 13.0,
-        "size": 10,
-        "font": "italic"
-      },
-      {
-        "key": "signatureDate",
-        "page": 2,
-        "x": 90.39,
-        "top": 263.26,
-        "width": 201.32,
-        "height": 13.0,
-        "size": 10,
-        "font": "regular"
       }
-    ],
-    "signature": {
-      "page": 2,
-      "x": 81.96,
-      "top": 282.72,
-      "width": 115,
-      "height": 64
-    }
+    ]
   },
   "CDD": {
     "slots": [
@@ -414,6 +377,16 @@ export const EMPLOYMENT_CONTRACT_PDF_LAYOUT = {
         "font": "regular"
       },
       {
+        "key": "employeeSignatureLabel",
+        "page": 0,
+        "x": 76.22,
+        "top": 603.74,
+        "width": 215.21,
+        "height": 23.68,
+        "size": 10,
+        "font": "bold"
+      },
+      {
         "key": "fullName",
         "page": 0,
         "x": 76.22,
@@ -458,48 +431,11 @@ export const EMPLOYMENT_CONTRACT_PDF_LAYOUT = {
         "page": 2,
         "x": 402.31,
         "top": 44.06,
-        "width": 116.19,
+        "width": 116.28,
         "height": 11.7,
         "size": 9,
         "font": "bold"
-      },
-      {
-        "key": "employerRepresentative",
-        "page": 2,
-        "x": 76.58,
-        "top": 353.72,
-        "width": 215.13,
-        "height": 13.0,
-        "size": 10,
-        "font": "italic"
-      },
-      {
-        "key": "fullName",
-        "page": 2,
-        "x": 303.17,
-        "top": 353.72,
-        "width": 215.33,
-        "height": 13.0,
-        "size": 10,
-        "font": "italic"
-      },
-      {
-        "key": "signatureDate",
-        "page": 2,
-        "x": 90.39,
-        "top": 365.26,
-        "width": 201.32,
-        "height": 13.0,
-        "size": 10,
-        "font": "regular"
       }
-    ],
-    "signature": {
-      "page": 2,
-      "x": 81.96,
-      "top": 384.72,
-      "width": 115,
-      "height": 64
-    }
+    ]
   }
 } as const;

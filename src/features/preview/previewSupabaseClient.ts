@@ -42,7 +42,7 @@ try {
   if (Array.isArray(saved) && saved.every((id) => Number.isSafeInteger(id) && id > 0)) previewOrgData.emergencyDefaultIds = saved;
 } catch { /* Storage can be unavailable in a restricted browser. */ }
 
-const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const PREVIEW_SIGNATURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==';
 
 function previewSignaturePng(): Blob {
   const bytes = Uint8Array.from(atob(PREVIEW_SIGNATURE_PNG_BASE64), (character) => character.charCodeAt(0));
@@ -62,7 +62,7 @@ function previewStorageAssetUrl(bucket: string, path: string): string {
   if (bucket === 'project-files' && ['projects/99101/attachments/sea-operation-demo.pdf', 'projects/99102/attachments/sea-operation-demo.pdf'].includes(path)) return '/demo/politique-qhse-demo.pdf';
   if (bucket === 'project-files' && path === 'projects/99101/attachments/sea-operation-demo.webp') return '/demo/action-plan-closure-proof.webp';
   if (bucket === 'qhse-policy-attachments') return Array.from(previewQhseUploads.values()).find((upload) => upload.path === path)?.url || '';
-  if (bucket === 'working-time-signatures') return '/templates/attestation-signature.png';
+  if (bucket === 'working-time-signatures') return `data:image/png;base64,${PREVIEW_SIGNATURE_PNG_BASE64}`;
   if (bucket === 'procedure-documents' && path === 'published/8102/pol-01-b.pdf') return '/demo/politique-qhse-demo.pdf';
   if (bucket === 'procedure-documents') return '/templates/attestation-embarquement.pdf';
   if (bucket === 'fleet-certificates') {

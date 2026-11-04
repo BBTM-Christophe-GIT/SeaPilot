@@ -1,12 +1,14 @@
 # Contrats de travail CDI et CDD
 
-Chaque fiche RH permet aux profils Administrateur et Direction de générer un contrat CDI ou CDD à partir des modèles BBTM. Les informations sont saisies et enregistrées dans la fiche RH, puis le bouton de création génère directement le contrat. Le document PDF généré et la saisie utilisée sont conservés pour le collaborateur concerné dans sa section Documents.
+Le module RH regroupe ses commandes dans un ruban commun sur une seule rangée : « Générer le contrat », « Grille de salaire », « Plan de formation » et « Ajouter un collaborateur ». Les deux premières commandes sont réservées aux profils Administrateur et Direction ; les autres conservent les droits de gestion RH existants.
 
-Les données s’enregistrent avec « Enregistrer la fiche ». Le CDI ne demande aucune ressaisie ; le CDD demande uniquement sa durée en jours, semaines ou mois, avec calcul de la fin au dernier jour inclus. Les trois pages et les clauses des modèles sont conservées. Le PDF porte la date du jour en Europe/Paris et, à la fin, le prénom NOM du salarié, « Benjamin BON » et sa signature privée.
+« Générer le contrat » ouvre le choix du collaborateur, puis « Générer le PDF » reprend directement ses données RH enregistrées. Aucun formulaire ne recopie les informations du salarié. Si des éléments manquent, le dialogue les indique et propose « Ouvrir la fiche RH » pour les compléter. Après génération, le PDF et la saisie utilisée sont conservés dans la section Documents du collaborateur.
+
+Les données s’enregistrent avec « Enregistrer la fiche ». Pour un CDD, la durée en jours, semaines ou mois se règle dans « Contrat et dates » en modifiant la fiche ; sa fin calculée, dernier jour inclus, est enregistrée avec les autres informations. La génération utilise cette durée enregistrée sans la demander à nouveau. Le PDF reprend les clauses des modèles, porte la date du jour en Europe/Paris et, à la fin, le prénom NOM du salarié, « Benjamin BON » et sa signature privée.
 
 La grille BBTM a été initialisée dans la base privée depuis les dix lignes et les huit colonnes du document fourni par l’utilisateur. Ses montants et libellés métier ne sont pas publiés dans le dépôt GitHub ni dans les fixtures de préversion. Le poste vient de la première colonne et le montant annuel de la dernière, « Total annuel de base ». Selon la règle confirmée par l’utilisateur, le montant mensuel est ce total divisé par 12, arrondi au centime. Les valeurs indépendantes de la source sont conservées sans recalculer le total depuis les autres colonnes.
 
-« Grille de salaires » permet d’ajouter, modifier, retirer ou désactiver les postes et de modifier les colonnes. Une révision protège les sauvegardes simultanées. Le poste choisi reste associé à la fiche ; les générations suivantes utilisent le montant courant de cette ligne. Les PDF déjà émis conservent leurs montants, leur révision salariale et la référence de signature utilisée.
+« Grille de salaire » ouvre la grille générale, indépendamment du collaborateur sélectionné, et permet d’ajouter, modifier, retirer ou désactiver les postes et de modifier les colonnes. Une révision protège les sauvegardes simultanées. Le poste choisi reste associé à la fiche ; les générations suivantes utilisent le montant courant de cette ligne. Les PDF déjà émis conservent leurs montants, leur révision salariale et la référence de signature utilisée.
 
 Appliquer `supabase/migrations/20261104081439_hr_employment_contracts.sql` avant de déployer le client.
 

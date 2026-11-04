@@ -20,6 +20,7 @@ import {
   Pencil,
   Ruler,
   SlidersHorizontal,
+  Table2,
   Trash2,
   Upload,
   Search,
@@ -32,8 +33,8 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useLocation, useOutletContext } from 'react-router-dom';
-import { createPortal } from 'react-dom';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
+import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
@@ -41,7 +42,8 @@ import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
 import { canManageEmploymentContracts, loadEmploymentContractDetails, saveEmploymentContractDetails } from './employmentContractQueries';
 import { createEmploymentContractDraft, parseEmploymentContractSalary, type EmploymentContractDetails } from './employmentContractModel';
 import { EmploymentContractsSection } from './EmploymentContractsSection';
-import { EmploymentContractProfileFields } from './EmploymentContractProfileFields';
+import { EmploymentContractCreationDialog } from './EmploymentContractCreationDialog';
+import { EmploymentContractDurationFields } from './EmploymentContractDurationFields';
 import { loadHrSalaryGrid, type HrSalaryGrid } from './salaryGridQueries';
 import { salaryGridMonthlyAmount, salaryGridConventionLabel } from './salaryGridModel';
 import { SalaryGridDialog } from './SalaryGridDialog';
@@ -769,6 +771,10 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
   const [filters, setFilters] = useState<HrFilterState>(EMPTY_FILTERS);
   const [form, setForm] = useState<PersonFormState>(EMPTY_FORM);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isContractCreationOpen, setIsContractCreationOpen] = useState(false);
+  const [isSalaryGridOpen, setIsSalaryGridOpen] = useState(false);
+  const [salaryGridRefresh, setSalaryGridRefresh] = useState(0);
+  const [profileSectionRequest, setProfileSectionRequest] = useState<{ personId: number; section: HrDetailsSectionKey; revision: number } | null>(null);
   const [isBulkSheetOpen, setIsBulkSheetOpen] = useState(false);
   // undefined follows the connected person's default; null is an explicit close.
   const [selectedPersonId, setSelectedPersonId] = useState<number | null | undefined>(initialPersonId);
@@ -1388,26 +1394,27 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
 
   return (
     <section className="hr-page">
-      <header className="hr-command-header">
+      <header className="hr-command-header sp-module-header">
         <div>
           <h1>Ressources humaines</h1>
           <p>{isMarinView ? 'Mon dossier RH' : isCaptainView ? 'Ma bordée' : 'Pilotage RH analytique'} · {visibleDocuments.length} documents suivis</p>
         </div>
-        <div className="hr-command-actions">
-          {isManager ? (
-            <button aria-label="Nouveau Collaborateur" className="hr-primary-button" onClick={() => setIsCreateOpen(true)} type="button">
-              <UserPlus aria-hidden="true" size={17} />
-              Ajouter un collaborateur
-            </button>
-          ) : null}
-          {isManager ? (
-            <button className="hr-secondary-button" disabled={isGeneratingTrainingPlan} onClick={handleTrainingPlanReport} type="button">
-              <FileDown aria-hidden="true" size={17} />
-              {isGeneratingTrainingPlan ? 'Génération du PDF...' : 'Plan de Formation'}
-            </button>
-          ) : null}
-        </div>
       </header>
+
+      {isManager ? <ModuleRibbon ariaLabel="Commandes du module Ressources humaines" singleRow>
+        {canManageEmploymentContracts(effectiveRoles) ? <ModuleRibbonGroup label="Contrats">
+          <ModuleRibbonCommand icon={<FileSignature aria-hidden="true" size={22} />} label="Générer le contrat" disabled={!roleVisiblePeople.length || isBusy}
+            onClick={() => setIsContractCreationOpen(true)} />
+          <ModuleRibbonCommand icon={<Table2 aria-hidden="true" size={22} />} label="Grille de salaire" disabled={isBusy}
+            onClick={() => setIsSalaryGridOpen(true)} />
+        </ModuleRibbonGroup> : null}
+        <ModuleRibbonGroup label="Collaborateurs">
+          <ModuleRibbonCommand icon={<FileDown aria-hidden="true" size={22} />} label="Plan de formation" disabled={isGeneratingTrainingPlan}
+            aria-busy={isGeneratingTrainingPlan || undefined} onClick={handleTrainingPlanReport} />
+          <ModuleRibbonCommand icon={<UserPlus aria-hidden="true" size={22} />} label="Ajouter un collaborateur" disabled={isBusy}
+            onClick={() => setIsCreateOpen(true)} />
+        </ModuleRibbonGroup>
+      </ModuleRibbon> : null}
 
       {!isRestrictedHrView ? <div className="hr-kpi-band" aria-label="Indicateurs RH">
         <MetricCluster
@@ -1635,8 +1642,10 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
 
         <div className="hr-profile-workspace">
         <PersonProfileCard
+          key={`${selectedPerson?.id || 'empty'}-${selectedPerson?.id === profileSectionRequest?.personId ? profileSectionRequest?.revision : 0}`}
           canManageContracts={canManageEmploymentContracts(effectiveRoles)}
-          initialSectionKey={selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
+          salaryGridRefresh={salaryGridRefresh}
+          initialSectionKey={profileSectionRequest && selectedPerson?.id === profileSectionRequest.personId ? profileSectionRequest.section : selectedPerson?.id === initialPersonId ? initialSectionKey : undefined}
           canCreateDocument={isManager || isCaptainView}
           canDelete={canDeletePerson}
           canEdit={Boolean(
@@ -1682,6 +1691,13 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         </div> : null}
         </div>
       </div>
+
+      {isContractCreationOpen && canManageEmploymentContracts(effectiveRoles) ? <EmploymentContractCreationDialog client={effectiveClient}
+        people={roleVisiblePeople} initialPersonId={selectedPerson?.id} onClose={() => setIsContractCreationOpen(false)}
+        onOpenProfile={(personId) => { setSelectedPersonId(personId); setProfileSectionRequest(current => ({ personId, section: 'contract', revision: (current?.revision || 0) + 1 })); setIsContractCreationOpen(false); }}
+        onGenerated={(personId) => { setSelectedPersonId(personId); setProfileSectionRequest(current => ({ personId, section: 'documents', revision: (current?.revision || 0) + 1 })); setIsContractCreationOpen(false); }} /> : null}
+      {isSalaryGridOpen && canManageEmploymentContracts(effectiveRoles) ? <SalaryGridDialog client={effectiveClient}
+        onClose={() => setIsSalaryGridOpen(false)} onSaved={() => setSalaryGridRefresh(value => value + 1)} /> : null}
 
       {isBulkSheetOpen && !isMarinView && visiblePeople.length ? (
         <CollaboratorSheetDialog
@@ -2147,6 +2163,7 @@ function PersonRow({ isSelected, onSelect, person }: { isSelected: boolean; onSe
 
 function PersonProfileCard({
   canManageContracts,
+  salaryGridRefresh,
   initialSectionKey,
   canDelete,
   canEdit,
@@ -2176,6 +2193,7 @@ function PersonProfileCard({
   visibleSectionKeys,
 }: {
   canManageContracts: boolean;
+  salaryGridRefresh: number;
   initialSectionKey?: HrDetailsSectionKey;
   canDelete: boolean;
   canEdit: boolean;
@@ -2227,6 +2245,7 @@ function PersonProfileCard({
   return (
     <aside aria-label={`Fiche RH de ${formatPersonName(person)}`} className="hr-profile-card">
       <PersonDetailsPanel
+        salaryGridRefresh={salaryGridRefresh}
         key={person.id}
         canManageContracts={canManageContracts}
         initialSectionKey={initialSectionKey}
@@ -2987,7 +3006,7 @@ function CreatePersonDialog({
   );
 }
 
-const PRIVATE_CONTRACT_FIELDS = ['socialSecurityNumber', 'grossMonthlySalary', 'vesselNames', 'collectiveAgreement', 'salaryGridRowId', 'annualGrossSalary', 'salaryGridRevision'] as const;
+const PRIVATE_CONTRACT_FIELDS = ['socialSecurityNumber', 'grossMonthlySalary', 'vesselNames', 'collectiveAgreement', 'salaryGridRowId', 'annualGrossSalary', 'salaryGridRevision', 'endDate'] as const;
 
 function formatHrSalaryAmount(value?: string): string {
   if (!value) return '';
@@ -2999,13 +3018,14 @@ function profileContractDetails(person: PersonRecord, input: Record<string, unkn
   const draft = createEmploymentContractDraft(person);
   return {
     socialSecurityNumber: '', grossMonthlySalary: '', vesselNames: '', collectiveAgreement: draft.collectiveAgreement,
-    salaryGridRowId: '', annualGrossSalary: '', salaryGridRevision: '',
+    salaryGridRowId: '', annualGrossSalary: '', salaryGridRevision: '', endDate: '',
     ...Object.fromEntries(Object.entries(input || {}).filter(([, value]) => typeof value === 'string')),
   };
 }
 
 function PersonDetailsPanel({
   canManageContracts,
+  salaryGridRefresh,
   initialSectionKey,
   canClose,
   canDelete,
@@ -3038,6 +3058,7 @@ function PersonDetailsPanel({
   visibleSectionKeys,
 }: {
   canManageContracts: boolean;
+  salaryGridRefresh: number;
   initialSectionKey?: HrDetailsSectionKey;
   canClose: boolean;
   canDelete: boolean;
@@ -3093,7 +3114,6 @@ function PersonDetailsPanel({
   const [salaryGrid, setSalaryGrid] = useState<HrSalaryGrid | null>(null);
   const [salaryGridError, setSalaryGridError] = useState('');
   const [salaryGridRevision, setSalaryGridRevision] = useState(0);
-  const [isSalaryGridOpen, setIsSalaryGridOpen] = useState(false);
   const isProfileSaving = isSaving || isPrivateSaving;
   const [medicalForms, setMedicalForms] = useState<Record<number, MedicalDetailsForm>>(() =>
     buildMedicalDetailsForms(documents),
@@ -3143,12 +3163,12 @@ function PersonDetailsPanel({
 
   useEffect(() => {
     let active = true;
-    setSalaryGrid(null); setSalaryGridError(''); setIsSalaryGridOpen(false);
+    setSalaryGrid(null); setSalaryGridError('');
     if (!canManageContracts || activeSectionKey !== 'contract') return;
     loadHrSalaryGrid(client).then((grid) => { if (active) setSalaryGrid(grid); })
       .catch(() => { if (active) setSalaryGridError('Impossible de charger la grille de salaires.'); });
     return () => { active = false; };
-  }, [client, canManageContracts, salaryGridRevision, activeSectionKey]);
+  }, [client, canManageContracts, salaryGridRevision, activeSectionKey, salaryGridRefresh]);
 
   function selectSalaryPosition(rowId: string) {
     const row = salaryGrid?.rows.find((item) => item.id === rowId && item.active);
@@ -3373,18 +3393,17 @@ function PersonDetailsPanel({
               {privateContractField('vesselNames', 'Navire(s) d’affectation', true)}
               {privateContractField('collectiveAgreement', 'Convention collective applicable', true)}
             </DetailsGrid>
-            <div className="hr-contract-actions">
-              <button className="sp-button sp-button--secondary" type="button" disabled={isProfileSaving}
-                onClick={() => setIsSalaryGridOpen(true)}>Grille de salaires</button>
-              <p className="hr-contract-help">Le salaire mensuel est calculé depuis la dernière colonne de la grille : total annuel de base ÷ 12.</p>
-            </div>
+            <p className="hr-contract-help">Le salaire mensuel est calculé depuis la dernière colonne de la grille : total annuel de base ÷ 12.</p>
             {salaryGridError ? <div><p className="form-error" role="alert">{salaryGridError}</p><button className="sp-button sp-button--secondary"
               type="button" onClick={() => setSalaryGridRevision((value) => value + 1)}>Recharger la grille</button></div> : null}
             {!salaryGrid && !salaryGridError ? <p className="hr-contract-help" role="status">Chargement de la grille de salaires…</p> : null}
             {salaryGrid && !contractSalaryReady && !isEditing ? <p className="hr-contract-help">Choisissez un poste actif dans la grille de salaires en modifiant la fiche, puis enregistrez-la avant de générer le contrat.</p> : null}
             <EmploymentPeriodsPanel key={`${person.id}-${isEditing}`} client={client} person={person} canEdit={isManager && !isEditing} onSaved={onEmploymentSaved} />
-            <EmploymentContractProfileFields key={person.id} client={client} person={person} details={currentContractDetails}
-              disabled={isEditing || isProfileSaving || contractDetailsLoading || contractDetailsUnavailable || !contractSalaryReady} />
+            {(isEditing ? form.contractType : person.contractType).toUpperCase() === 'CDD' ? isEditing
+              ? <EmploymentContractDurationFields key={`${person.id}-${form.hiredOn}-${contractDetailsLoading}`} startDate={form.hiredOn} endDate={contractDetailsDraft.endDate || ''}
+                disabled={isProfileSaving || contractDetailsLoading || contractDetailsUnavailable} onChange={(endDate) => setContractDetailsDraft(values => ({ ...values, endDate }))} />
+              : <FieldValue label="Date de fin du CDD" value={currentContractDetails.endDate || ''} /> : null}
+            <p className="hr-contract-help">La création du PDF se fait depuis « Générer le contrat » dans la barre de commandes.</p>
           </section>
         );
       case 'contact':
@@ -3712,9 +3731,6 @@ function PersonDetailsPanel({
         {contractDetailsUnavailable ? <button className="sp-button sp-button--secondary" type="button"
           onClick={() => setContractDetailsRevision((value) => value + 1)}>Réessayer le chargement</button> : null}
       </div> : null}
-      {canManageContracts && isSalaryGridOpen ? createPortal(<SalaryGridDialog client={client} onClose={() => setIsSalaryGridOpen(false)}
-        onSaved={(grid) => { setSalaryGrid(grid); setSalaryGridError(''); }} />, document.body) : null}
-
       <div className="hr-profile-body">
         <nav aria-label="Sections Fiche RH" className="hr-profile-section-nav">
           <p>Dossier collaborateur</p>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,11 +75,23 @@ describe('HR profile employment contracts access', () => {
   it.each<RoleKey>(['admin', 'direction'])('shows contracts for the selected real profile to %s', async role => {
     const user = userEvent.setup();
     const client = {} as SupabaseClient;
+    vi.mocked(loadEmploymentContractDetails).mockResolvedValue({ socialSecurityNumber: '2900676123456', vesselNames: 'Navire fictif', salaryGridRowId: 'post-grid' });
     render(<MemoryRouter><HumanResourcesPage client={client} currentPersonId={7} roles={[role]} /></MemoryRouter>);
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
-    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
-    expect(within(profile).getByRole('region', { name: 'Génération du contrat de travail' })).toHaveTextContent('Génération pour Alice MARTIN');
+    const ribbon = screen.getByRole('navigation', { name: 'Commandes du module Ressources humaines' });
+    expect(ribbon).toHaveClass('is-single-row');
+    expect(within(ribbon).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
+      'Générer le contrat', 'Grille de salaire', 'Plan de formation', 'Ajouter un collaborateur',
+    ]);
+    await user.click(within(ribbon).getByRole('button', { name: 'Générer le contrat' }));
+    const dialog = screen.getByRole('dialog', { name: 'Générer un contrat' });
+    expect(within(dialog).getByLabelText('Collaborateur')).toHaveValue('7');
+    expect(await within(dialog).findByRole('region', { name: 'Génération du contrat de travail' })).toHaveTextContent('Génération pour Alice MARTIN');
     expect(profileFieldsRender).toHaveBeenLastCalledWith(expect.objectContaining({ client, person }));
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    expect(within(profile).queryByRole('region', { name: 'Génération du contrat de travail' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: /Générer|Grille de salaire/ })).not.toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Documents' }));
 
     expect(within(profile).getByRole('region', { name: 'Contrats de travail confidentiels' })).toHaveTextContent('Contrats de Alice MARTIN');
@@ -95,6 +107,8 @@ describe('HR profile employment contracts access', () => {
     expect(profileFieldsRender).not.toHaveBeenCalled();
     expect(loadEmploymentContractDetails).not.toHaveBeenCalled();
     expect(loadHrSalaryGrid).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Générer le contrat' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Grille de salaire' })).not.toBeInTheDocument();
     expect(within(profile).queryByText('2900676123456')).not.toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
     expect(within(profile).queryByLabelText(/sécurité sociale/)).not.toBeInTheDocument();
@@ -143,33 +157,93 @@ describe('HR profile employment contracts access', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['armement']} /></MemoryRouter>);
     await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
-    await user.click(screen.getByRole('button', { name: 'Nouveau Collaborateur' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un collaborateur' }));
     const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
     expect(within(dialog).queryByRole('button', { name: 'Contrat et dates' })).not.toBeInTheDocument();
   });
 
   it.each(['pending', 'failed', 'missing', 'inactive'] as const)('blocks generation instead of reusing saved salary when the current grid is %s', async state => {
+    const user = userEvent.setup();
     vi.mocked(loadEmploymentContractDetails).mockResolvedValue({ socialSecurityNumber: '2900676123456',
       grossMonthlySalary: '3200,50', vesselNames: 'GOURY', salaryGridRowId: 'post-grid' });
     if (state === 'pending') vi.mocked(loadHrSalaryGrid).mockReturnValue(new Promise(() => {}));
     else if (state === 'failed') vi.mocked(loadHrSalaryGrid).mockRejectedValue(new Error('Unavailable'));
     else vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 4, updatedAt: '',
       rows: state === 'missing' ? [] : [{ ...activeSalaryRow, active: false }] });
-    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['admin']} initialPersonId={7} initialSectionKey="contract" /></MemoryRouter>);
-    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
-    await within(profile).findByText('GOURY');
-    if (state === 'failed') expect(await within(profile).findByText('Impossible de charger la grille de salaires.')).toBeInTheDocument();
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    const dialog = screen.getByRole('dialog', { name: 'Générer un contrat' });
+    if (state === 'pending') expect(await within(dialog).findByRole('status')).toHaveTextContent('Chargement des informations');
+    else expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(loadHrSalaryGrid).toHaveBeenCalledOnce();
-    expect(profileFieldsRender).toHaveBeenLastCalledWith(expect.objectContaining({ disabled: true }));
+    expect(profileFieldsRender).not.toHaveBeenCalled();
+    expect(within(dialog).queryByRole('button', { name: 'Générer le PDF' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Ouvrir la fiche RH' })).toBeInTheDocument();
   });
 
   it('enables generation only after resolving the saved position to an active current salary row', async () => {
+    const user = userEvent.setup();
     vi.mocked(loadEmploymentContractDetails).mockResolvedValue({ socialSecurityNumber: '2900676123456',
       grossMonthlySalary: '3200,50', vesselNames: 'GOURY', salaryGridRowId: 'post-grid' });
-    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['direction']} initialPersonId={7} initialSectionKey="contract" /></MemoryRouter>);
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['direction']} /></MemoryRouter>);
     await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
-    await waitFor(() => expect(profileFieldsRender).toHaveBeenLastCalledWith(expect.objectContaining({ disabled: false,
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    await waitFor(() => expect(profileFieldsRender).toHaveBeenLastCalledWith(expect.objectContaining({ useSavedDuration: true, buttonLabel: 'Générer le PDF',
       details: expect.objectContaining({ grossMonthlySalary: '4166.67', annualGrossSalary: '50000.01', salaryGridRevision: '3' }),
     })));
+  });
+
+  it('opens the selected profile to complete missing contract facts without copying them into a new form', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    const dialog = screen.getByRole('dialog', { name: 'Générer un contrat' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Complétez puis enregistrez la fiche RH');
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Ouvrir la fiche RH' }));
+    expect(screen.queryByRole('dialog', { name: 'Générer un contrat' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('complementary', { name: 'Fiche RH de Alice MARTIN' })).getByRole('button', { name: 'Contrat et dates' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('records the CDD duration in the RH profile and reuses its saved end date in the ribbon dialog', async () => {
+    const user = userEvent.setup();
+    const cddPerson = { ...person, contractType: 'CDD' };
+    let saved = { socialSecurityNumber: '2900676123456', vesselNames: 'Navire fictif', salaryGridRowId: 'post-grid', endDate: '' };
+    vi.mocked(fetchHumanResourcesData).mockResolvedValue({ people: [cddPerson], documents: [], documentTypes: [], visibilityRules: [] });
+    vi.mocked(loadEmploymentContractDetails).mockImplementation(async () => saved);
+    vi.mocked(updatePersonDetails).mockResolvedValue(cddPerson);
+    vi.mocked(saveEmploymentContractDetails).mockImplementation(async (_client, _personId, patch) => { saved = { ...saved, ...patch }; });
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['direction']} /></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    await user.type(within(profile).getByLabelText('Durée du CDD'), '6');
+    await user.selectOptions(within(profile).getByLabelText('Unité de durée'), 'months');
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await waitFor(() => expect(saveEmploymentContractDetails).toHaveBeenCalledWith(expect.anything(), 7, expect.objectContaining({ endDate: '2024-06-30' })));
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    await waitFor(() => expect(profileFieldsRender).toHaveBeenLastCalledWith(expect.objectContaining({ useSavedDuration: true,
+      details: expect.objectContaining({ endDate: '2024-06-30' }),
+    })));
+  });
+
+  it('returns to and reloads Documents after successive generations for the same collaborator', async () => {
+    const user = userEvent.setup();
+    vi.mocked(loadEmploymentContractDetails).mockResolvedValue({ socialSecurityNumber: 'DEMONSTRATION-001', vesselNames: 'Navire fictif', salaryGridRowId: 'post-grid' });
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    for (let generation = 0; generation < 2; generation += 1) {
+      if (generation) await user.click(within(screen.getByRole('complementary', { name: 'Fiche RH de Alice MARTIN' })).getByRole('button', { name: 'Contrat et dates' }));
+      profileFieldsRender.mockClear();
+      await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+      await screen.findByRole('region', { name: 'Génération du contrat de travail' });
+      const onGenerated = profileFieldsRender.mock.lastCall![0].onGenerated;
+      act(() => onGenerated());
+      const profile = screen.getByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+      await waitFor(() => expect(within(profile).getByRole('button', { name: 'Documents' })).toHaveAttribute('aria-current', 'page'));
+      expect(within(profile).getByRole('region', { name: 'Contrats de travail confidentiels' })).toBeInTheDocument();
+    }
   });
 });

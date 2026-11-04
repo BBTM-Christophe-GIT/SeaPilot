@@ -1,3 +1,4 @@
+import { planningPreviewSignature } from './planningDocumentSignature';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { createPlanningPreviewOverview, updatePlanningPreviewDayState } from './planningPreviewData';
@@ -56,7 +57,7 @@ describe('temporary planning functions across dated documents', () => {
     const document = buildPlanningCrewList(overview, { ...input, date: '2026-07-14' });
     expect(document.rows[0].rank).toBe('2nd Capitaine');
     expect(buildPlanningCrewList(overview, { ...input, date: '2026-07-16' }).rows[0].rank).toBe('Capitaine');
-    const workbook = await generatePlanningCrewList(document, 'xlsx');
+    const workbook = await generatePlanningCrewList(document, 'xlsx', planningPreviewSignature());
     const zip = await JSZip.loadAsync(await workbook.blob.arrayBuffer());
     expect(await zip.file('xl/worksheets/sheet1.xml')!.async('string')).toContain('2nd Capitaine');
     const certificate = buildBoardingCertificateData(overview, { personId: 101, vesselIds: [1], startsOn: '2026-07-10', endsOn: '2026-07-20', generatedOn: '2026-07-21' });

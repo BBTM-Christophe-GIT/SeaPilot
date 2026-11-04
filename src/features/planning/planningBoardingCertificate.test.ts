@@ -1,3 +1,4 @@
+import { planningPreviewSignature } from './planningDocumentSignature';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import JSZip from 'jszip';
@@ -161,9 +162,11 @@ describe('Attestation d’Embarquement', () => {
   it('patches the retained Word template while preserving its header, footer and images', async () => {
     const originalBytes = await template('attestation-embarquement.docx');
     const original = await JSZip.loadAsync(originalBytes);
-    const result = await generateBoardingCertificate('docx', overview, input, { docx: originalBytes });
+    const privateSignature = Uint8Array.from([...planningPreviewSignature(), 0]);
+    const result = await generateBoardingCertificate('docx', overview, input, { docx: originalBytes, signature: privateSignature.buffer as ArrayBuffer });
     expect(result.fileName).toBe("Attestation d'embarquement - Adrien BOIS - 31-12-2026.docx");
     const generated = await JSZip.loadAsync(await result.blob.arrayBuffer());
+    expect(await generated.file('word/media/image1.png')!.async('uint8array')).toEqual(privateSignature);
     const xml = await generated.file('word/document.xml')!.async('string');
     expect(xml).toContain('Adrien BOIS');
     expect(xml).toContain('20136866');
@@ -171,7 +174,7 @@ describe('Attestation d’Embarquement', () => {
     expect(xml).toContain('28/07/2026 au 11/08/2026');
     expect(xml).toContain('31/12/2026');
     expect(xml).not.toMatch(/<w:t>10<\/w:t>/);
-    const preserveOnlyParts = Object.keys(original.files).filter((part) => part !== 'word/document.xml' && !original.files[part].dir);
+    const preserveOnlyParts = Object.keys(original.files).filter((part) => part !== 'word/document.xml' && part !== 'word/media/image1.png' && !original.files[part].dir);
     for (const part of preserveOnlyParts) {
       await expect(generated.file(part)!.async('uint8array')).resolves.toEqual(await original.file(part)!.async('uint8array'));
     }
@@ -180,7 +183,7 @@ describe('Attestation d’Embarquement', () => {
   it('generates the PDF from the retained one-page template', async () => {
     const result = await generateBoardingCertificate('pdf', overview, input, {
       pdf: await template('attestation-embarquement.pdf'),
-      signature: await template('attestation-signature.png'),
+      signature: planningPreviewSignature().buffer as ArrayBuffer,
     });
     expect(result.fileName).toBe("Attestation d'embarquement - Adrien BOIS - 31-12-2026.pdf");
     const document = await PDFDocument.load(await result.blob.arrayBuffer());
@@ -204,7 +207,7 @@ describe('Attestation d’Embarquement', () => {
       endsOn: '2026-02-28',
     }, {
       pdf: await template('attestation-embarquement.pdf'),
-      signature: await template('attestation-signature.png'),
+      signature: planningPreviewSignature().buffer as ArrayBuffer,
     });
     const document = await PDFDocument.load(await result.blob.arrayBuffer());
     expect(document.getPageCount()).toBe(2);

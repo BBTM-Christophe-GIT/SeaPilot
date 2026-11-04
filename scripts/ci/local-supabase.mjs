@@ -101,6 +101,12 @@ const assertionTests = [
   'hr_document_captain_upload_test.sql',
   'exercise_monthly_performance_test.sql',
   'exercise_crew_obligations_test.sql',
+  'hr_employment_contracts_test.sql',
+  'hr_contract_section_permissions_test.sql',
+  'hr_employment_contract_pdf_signer_test.sql',
+  'hr_salary_grid_test.sql',
+  'hr_employment_periods_test.sql',
+  'public_catalogue_and_import_rpc_security_test.sql',
 ]
 
 function fail(message) {

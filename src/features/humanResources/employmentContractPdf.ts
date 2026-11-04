@@ -4,6 +4,7 @@ import {
   type EmploymentContractDraft,
 } from './employmentContractModel';
 import { EMPLOYMENT_CONTRACT_PDF_LAYOUT } from './employmentContractPdfLayout';
+import { renderEmploymentContractClauses } from './employmentContractClausesPdf';
 
 export interface EmploymentContractEmployerSignature {
   bytes: Uint8Array;
@@ -87,15 +88,17 @@ export async function generateEmploymentContractPdf(
   }
   const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
   if (pdf.getPageCount() !== 3) throw new Error('Le modèle PDF BBTM doit contenir ses trois pages.');
-  const [regular, bold, italic] = await Promise.all([
+  const [regular, bold, italic, symbol] = await Promise.all([
     pdf.embedFont(StandardFonts.Helvetica), pdf.embedFont(StandardFonts.HelveticaBold), pdf.embedFont(StandardFonts.HelveticaOblique),
+    pdf.embedFont(StandardFonts.Symbol),
   ]);
-  const fonts = { regular, bold, italic };
+  const fonts = { regular, bold, italic, symbol };
   const values: Record<string, string> = {
     ...employmentContractValues(signedDraft),
     fullName: `${draft.firstName.trim()} ${draft.lastName.trim().toLocaleUpperCase('fr-FR')}`,
     collectiveClause: `La ${draft.collectiveAgreement.trim()}.`,
   };
+  values.employeeSignatureLabel = `15. Signature de ${values.fullName}`;
   values.grossMonthlySalary += ' €';
   const layout = EMPLOYMENT_CONTRACT_PDF_LAYOUT[draft.type];
   for (const slot of layout.slots) {
@@ -103,12 +106,12 @@ export async function generateEmploymentContractPdf(
     if (slot.key === 'employerRepresentative' && slot.page === 0) value = 'Benjamin BON - Président';
     drawField(pdf.getPage(slot.page), slot, value, fonts[slot.font]);
   }
+  const box = await renderEmploymentContractClauses(pdf, signedDraft, values, fonts);
   let signature;
   try {
     signature = employerSignature.mimeType === 'image/png'
       ? await pdf.embedPng(employerSignature.bytes) : await pdf.embedJpg(employerSignature.bytes);
   } catch { throw new Error('La signature enregistrée de Benjamin BON est illisible.'); }
-  const box = layout.signature;
   const scaled = signature.scaleToFit(box.width, box.height);
   const page = pdf.getPage(box.page);
   page.drawImage(signature, { x: box.x + (box.width - scaled.width) / 2,

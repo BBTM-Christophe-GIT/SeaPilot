@@ -6,6 +6,8 @@ import { formatPlanningPerson } from './planningModel';
 import { planningErrorMessage } from './planningErrors';
 import type { BoardingCertificateFormat } from './planningBoardingCertificate';
 import type { PlanningOverview } from './planningQueries';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { downloadPlanningDocumentSignature, planningPreviewSignature } from './planningDocumentSignature';
 
 interface VesselOption {
   id: number;
@@ -65,9 +67,13 @@ function VesselMultiSelect({
 }
 
 export function PlanningBoardingCertificateDialog({
+  client,
+  previewMode = false,
   onClose,
   overview,
 }: {
+  client: SupabaseClient;
+  previewMode?: boolean;
   onClose: () => void;
   overview: PlanningOverview;
 }) {
@@ -89,10 +95,12 @@ export function PlanningBoardingCertificateDialog({
     setSaving(true);
     setFeedback(null);
     try {
+      const signature = previewMode ? planningPreviewSignature() : await downloadPlanningDocumentSignature(client);
       const result = await import('./planningBoardingCertificate').then(({ generateBoardingCertificate }) => generateBoardingCertificate(
         format,
         overview,
         { personId: Number(personId), vesselIds: selectedVesselIds },
+        { signature: signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer },
       ));
       downloadBlob(result.blob, result.fileName);
       setFeedback({ text: `Attestation ${format === 'docx' ? 'Word' : 'PDF'} générée.`, error: false });

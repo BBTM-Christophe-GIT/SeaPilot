@@ -647,7 +647,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByLabelText('Urgent')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents echus')).toHaveTextContent('1');
     expect(screen.getByLabelText('Documents manquants')).toHaveTextContent('0');
-    expect(screen.getByRole('button', { name: 'Plan de Formation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Plan de formation' })).toBeInTheDocument();
     expect(screen.getAllByText('Capitaine').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     expect(screen.queryByText('Paul DURAND')).not.toBeInTheDocument();
@@ -670,7 +670,7 @@ describe('HumanResourcesPage', () => {
 
     await screen.findByRole('heading', { name: 'Ressources humaines' });
     await user.selectOptions(screen.getByLabelText('Période du graphe des effectifs'), '2024');
-    await user.click(screen.getByRole('button', { name: 'Plan de Formation' }));
+    await user.click(screen.getByRole('button', { name: 'Plan de formation' }));
 
     await waitFor(() => expect(openReport).toHaveBeenCalledTimes(1));
     expect(openReport.mock.calls[0][0].indicatorYear).toBe(2024);
@@ -1621,7 +1621,7 @@ describe('HumanResourcesPage', () => {
     render(<HumanResourcesPage client={client as never} roles={['direction']} />);
 
     await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
-    await user.click(screen.getByRole('button', { name: 'Nouveau Collaborateur' }));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un collaborateur' }));
     const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
     expect(within(dialog).getAllByRole('button', { name: /Identité et poste|Contrat et dates|Coordonnées|Contact urgence|Documents administratifs|Santé et habilitations|Tenues et mensurations|Documents/ })).toHaveLength(8);
     fireEvent.change(within(dialog).getByLabelText('Prénom'), { target: { value: 'Marie' } });
@@ -1702,7 +1702,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.queryByText('Marins par fonction')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter un collaborateur' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Informations à jour').length).toBeGreaterThan(0);
     expect(screen.queryByLabelText('Documents a rattacher')).not.toBeInTheDocument();
     expect(screen.queryByText('Brevet pont a rattacher')).not.toBeInTheDocument();
@@ -1722,7 +1722,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByText('Marins par fonction')).toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Nouveau Collaborateur' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter un collaborateur' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Afficher la fiche de Paul DURAND' }));
     const watchMateProfile = screen.getByRole('complementary', { name: 'Fiche RH de Paul DURAND' });
     expect(within(watchMateProfile).queryByRole('button', { name: 'Modifier la fiche RH' })).not.toBeInTheDocument();
