@@ -98,6 +98,25 @@ describe('HR profile employment contracts access', () => {
     expect(sectionRender).toHaveBeenLastCalledWith(expect.objectContaining({ client, person }));
   });
 
+  it('limits the ribbon contract selector to current personnel while retaining office personnel and trainees', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchHumanResourcesData).mockResolvedValue({
+      people: [person,
+        { ...person, id: 8, firstName: 'Ancien', departedOn: '2000-01-01' },
+        { ...person, id: 9, firstName: 'Archive', active: false },
+        { ...person, id: 10, firstName: 'Futur', hiredOn: '2999-01-01' },
+        { ...person, id: 11, firstName: 'Stagiaire', functionLabel: 'Stagiaire', roleLabel: 'Stagiaire' },
+        { ...person, id: 12, firstName: 'Bureau', functionLabel: 'Direction', roleLabel: 'Sédentaire' },
+      ], documents: [], documentTypes: [], visibilityRules: [],
+    });
+    render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    const dialog = screen.getByRole('dialog', { name: 'Générer un contrat' });
+    expect(within(within(dialog).getByLabelText('Collaborateur')).getAllByRole('option')
+      .map(option => (option as HTMLOptionElement).value).sort()).toEqual(['', '11', '12', '7']);
+  });
+
   it.each<RoleKey>(['armement', 'marin', 'capitaine'])('never mounts confidential contracts for a real %s fixture', async role => {
     const user = userEvent.setup();
     render(<MemoryRouter><HumanResourcesPage client={{} as SupabaseClient} currentPersonId={7} roles={[role]} /></MemoryRouter>);

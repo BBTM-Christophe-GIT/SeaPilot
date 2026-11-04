@@ -663,12 +663,17 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getAllByText('2009574').length).toBeGreaterThan(0);
   });
 
-  it('exports the qualification matrix for all authorized seafarers regardless of list filters', async () => {
+  it('exports only current non-trainee seafarers regardless of list filters', async () => {
     const user = userEvent.setup();
     const open = vi.mocked(openQualificationsMatrix).mockClear().mockResolvedValue(true);
     const formerCertificate = { ...documents[1], id: 20, person_id: formerPerson.id, person_name: 'Paul DURAND',
+      category_key: 'safety_training', title: 'FORMER_CERTIFICATE_MUST_NOT_BE_EXPORTED' };
+    const currentMate = { ...formerPerson, id: 5, departed_on: null };
+    const trainee = { ...activePerson, id: 6, first_name: 'Camille', last_name: 'STAGE', function_label: 'Stagiaire' };
+    const futureHire = { ...activePerson, id: 7, first_name: 'Marie', last_name: 'FUTURE', hired_on: '2999-01-01' };
+    const currentCertificate = { ...documents[1], id: 21, person_id: currentMate.id,
       category_key: 'safety_training', title: 'CFBS', notes: 'PRIVATE_NOTE_MUST_NOT_BE_EXPORTED' };
-    render(<HumanResourcesPage client={createClient([activePerson, formerPerson, yardManagerPerson], [...documents, formerCertificate]) as never} roles={['admin']} />);
+    render(<HumanResourcesPage client={createClient([activePerson, formerPerson, yardManagerPerson, currentMate, trainee, futureHire, futureDeparturePerson], [...documents, formerCertificate, currentCertificate]) as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Ressources humaines' });
     await user.type(screen.getByRole('textbox', { name: 'Recherche RH' }), 'Aucun résultat');
     const ribbon = screen.getByRole('navigation', { name: 'Commandes du module Ressources humaines' });
@@ -679,9 +684,11 @@ describe('HumanResourcesPage', () => {
     expect(matrix.groups.map(group => group.functionLabel)).toEqual(['Capitaine', 'Matelot polyvalent']);
     expect(matrix.categories.map(category => category.key)).toEqual(['deck', 'engine', 'safety_training', 'medical_visit', 'safety_induction', 'lifting']);
     expect(matrix.groups[1].people[0].categories.safety_training[0]).toMatchObject({ title: 'CFBS', status: 'expired' });
+    expect(matrix.groups.flatMap(group => group.people.map(person => person.personId))).toEqual([1, 5]);
+    expect(JSON.stringify(matrix)).not.toContain('FORMER_CERTIFICATE_MUST_NOT_BE_EXPORTED');
     expect(JSON.stringify(matrix)).not.toContain('PRIVATE_NOTE_MUST_NOT_BE_EXPORTED');
     expect(JSON.stringify(matrix)).not.toContain('Lea BUREAU');
-    expect(await screen.findByText(/Matrice des Qualifications ouverte au format PDF : 2 marins/)).toBeInTheDocument();
+    expect(await screen.findByText(/Matrice des Qualifications ouverte au format PDF : 2 marins en poste, hors stagiaires/)).toBeInTheDocument();
   });
 
   it('omits hidden qualification categories and functions from the matrix', async () => {
@@ -691,7 +698,7 @@ describe('HumanResourcesPage', () => {
       { scope: 'document_type', item_key: 'medical_visit', item_label: 'Visite Médicale', visible_to_roles: ['admin'] },
       { scope: 'function', item_key: 'matelot-polyvalent', item_label: 'Matelot polyvalent', visible_to_roles: ['admin'] },
     ];
-    render(<HumanResourcesPage client={createClient([activePerson, formerPerson], documents, rules) as never} roles={['armement']} />);
+    render(<HumanResourcesPage client={createClient([activePerson, { ...formerPerson, departed_on: null }], documents, rules) as never} roles={['armement']} />);
     await screen.findByRole('heading', { name: 'Ressources humaines' });
     await user.click(screen.getByRole('button', { name: 'Matrice des Qualifications' }));
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
@@ -732,7 +739,7 @@ describe('HumanResourcesPage', () => {
     render(<HumanResourcesPage client={createClient([yardManagerPerson], []) as never} roles={['admin']} />);
     await screen.findByRole('heading', { name: 'Ressources humaines' });
     await user.click(screen.getByRole('button', { name: 'Matrice des Qualifications' }));
-    expect(await screen.findByText('Aucun marin accessible ne peut être inclus dans la matrice des qualifications.')).toBeInTheDocument();
+    expect(await screen.findByText('Aucun marin en poste, hors stagiaires, n’est accessible pour générer la matrice des qualifications.')).toBeInTheDocument();
     expect(open).not.toHaveBeenCalled();
   });
 

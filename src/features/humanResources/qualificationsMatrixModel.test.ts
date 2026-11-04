@@ -105,7 +105,47 @@ describe('qualifications matrix population', () => {
     expect(rows.find(({ personId }) => personId === 6)?.employmentStatusLabel).toBe('En poste');
     expect(matrix.peopleCount).toBe(6);
     const current = buildQualificationsMatrix({ people, documents: [], visibleCategoryKeys, asOf, population: 'current', includeTrainees: false });
-    expect(current.groups.flatMap(({ people: groupPeople }) => groupPeople.map(({ personId }) => personId))).toEqual([1, 6]);
+    expect(current.groups.flatMap(({ people: groupPeople }) => groupPeople.map(({ personId }) => personId))).toEqual([6]);
+  });
+
+  it('limits current population to unarchived employment intervals, including current rehires', () => {
+    const oldPeriod = { hiredOn: '2020-01-01', departedOn: '2021-01-01', contractType: 'CDD', departureReason: '' };
+    const people = [
+      person(1, { active: false }),
+      person(2, { departedOn: asOf }),
+      person(3, { departedOn: '2026-11-03' }),
+      person(4, { hiredOn: '2026-11-05' }),
+      person(5, { employmentPeriods: [oldPeriod,
+        { hiredOn: '2026-11-05', departedOn: '', contractType: 'CDI', departureReason: '' },
+      ] }),
+      person(6, { hiredOn: oldPeriod.hiredOn, departedOn: oldPeriod.departedOn, employmentPeriods: [oldPeriod,
+        { hiredOn: asOf, departedOn: '2026-12-01', contractType: 'CDD', departureReason: '' },
+      ] }),
+      person(7),
+      person(8, { active: false, employmentPeriods: [oldPeriod,
+        { hiredOn: asOf, departedOn: '', contractType: 'CDI', departureReason: '' },
+      ] }),
+      person(9, { hiredOn: '' }),
+      person(10, { hiredOn: '2027-01-01', employmentPeriods: [
+        { hiredOn: '2026-01-01', departedOn: '2026-12-01', contractType: 'CDD', departureReason: '' },
+        { hiredOn: '2027-01-01', departedOn: '', contractType: 'CDI', departureReason: '' },
+      ] }),
+    ];
+    const matrix = buildQualificationsMatrix({ people, documents: [], visibleCategoryKeys, asOf, population: 'current', includeTrainees: false });
+    expect(matrix.groups.flatMap(({ people: groupPeople }) => groupPeople.map(({ personId }) => personId))).toEqual([6, 7, 10]);
+    expect(matrix.peopleCount).toBe(3);
+  });
+
+  it.each([
+    ['role', { roleLabel: 'Stagiaire', functionLabel: 'Capitaine' }],
+    ['function', { roleLabel: 'Navigant', functionLabel: 'Stagiaire' }],
+    ['grade', { gradeLabel: 'STAGIAIRE', functionLabel: 'Capitaine' }],
+  ] as const)('excludes trainees identified by %s when the caller selects current staff without trainees', (_label, patch) => {
+    const people = [person(1), person(2, patch)];
+    const all = buildQualificationsMatrix({ people, documents: [], visibleCategoryKeys, asOf });
+    expect(all.peopleCount).toBe(2);
+    const current = buildQualificationsMatrix({ people, documents: [], visibleCategoryKeys, asOf, population: 'current', includeTrainees: false });
+    expect(current.groups.flatMap(({ people: groupPeople }) => groupPeople.map(({ personId }) => personId))).toEqual([1]);
   });
 });
 

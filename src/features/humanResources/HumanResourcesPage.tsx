@@ -1384,11 +1384,13 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         people: roleVisiblePeople,
         documents: roleVisibleDocuments,
         documentTypes,
+        population: 'current',
+        includeTrainees: false,
         visibleCategoryKeys: new Set(QUALIFICATIONS_MATRIX_CATEGORIES.filter(({ key }) =>
           isVisibilityItemAllowed(visibilityRules, 'document_type', key, effectiveRoles)).map(({ key }) => key)),
       });
       if (!matrix.peopleCount) {
-        setErrorMessage('Aucun marin accessible ne peut être inclus dans la matrice des qualifications.');
+        setErrorMessage('Aucun marin en poste, hors stagiaires, n’est accessible pour générer la matrice des qualifications.');
         return;
       }
       if (!matrix.categories.length) {
@@ -1396,7 +1398,7 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
         return;
       }
       if (await openQualificationsMatrix(matrix)) {
-        setStatusMessage(`Matrice des Qualifications ouverte au format PDF : ${matrix.peopleCount} marin${matrix.peopleCount > 1 ? 's' : ''}, classés par fonction.`);
+        setStatusMessage(`Matrice des Qualifications ouverte au format PDF : ${matrix.peopleCount} marin${matrix.peopleCount > 1 ? 's' : ''} en poste, hors stagiaires.`);
       } else {
         setErrorMessage('Le navigateur a bloqué l’ouverture du PDF. Autorisez les fenêtres contextuelles puis réessayez.');
       }

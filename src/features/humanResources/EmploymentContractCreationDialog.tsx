@@ -5,14 +5,17 @@ import { createEmploymentContractDraft, validateEmploymentContractDraft, type Em
 import { loadEmploymentContractDetails } from './employmentContractQueries';
 import { loadHrSalaryGrid } from './salaryGridQueries';
 import { salaryGridMonthlyAmount } from './salaryGridModel';
-import { formatPersonName, getPersonEmploymentPeriods, getHrEnimClassification, type PersonRecord } from './peopleQueries';
+import { formatPersonName, getPersonEmploymentPeriods, getHrEnimClassification, isPersonEmployedOn, type PersonRecord } from './peopleQueries';
+import { getParisDateKey } from './hrDocumentNotifications';
 import { EmploymentContractProfileFields } from './EmploymentContractProfileFields';
 
 export function EmploymentContractCreationDialog({ client, people, initialPersonId, onClose, onOpenProfile, onGenerated }: {
   client: SupabaseClient; people: PersonRecord[]; initialPersonId?: number;
   onClose: () => void; onOpenProfile: (personId: number) => void; onGenerated: (personId: number) => void;
 }) {
-  const [personId, setPersonId] = useState(initialPersonId && people.some(person => person.id === initialPersonId) ? String(initialPersonId) : '');
+  const today = getParisDateKey();
+  const currentPeople = people.filter(person => person.active && isPersonEmployedOn(person, today));
+  const [personId, setPersonId] = useState(initialPersonId && currentPeople.some(person => person.id === initialPersonId) ? String(initialPersonId) : '');
   const [details, setDetails] = useState<Partial<EmploymentContractDetails> | null>(null);
   const [loadedPersonId, setLoadedPersonId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,7 +23,7 @@ export function EmploymentContractCreationDialog({ client, people, initialPerson
   const [error, setError] = useState('');
   const [issues, setIssues] = useState<string[]>([]);
   const [attempt, setAttempt] = useState(0);
-  const person = people.find(candidate => candidate.id === Number(personId));
+  const person = currentPeople.find(candidate => candidate.id === Number(personId));
 
   useEffect(() => {
     let active = true;
@@ -54,9 +57,10 @@ export function EmploymentContractCreationDialog({ client, people, initialPerson
     description="Choisissez le collaborateur. Le PDF reprend les informations enregistrées dans sa fiche RH."
     footer={<div className="app-dialog__actions"><button className="sp-button sp-button--secondary" type="button" disabled={generating} onClick={onClose}>Annuler</button>
       {person ? <button className="sp-button sp-button--secondary" type="button" disabled={generating} onClick={() => onOpenProfile(person.id)}>Ouvrir la fiche RH</button> : null}</div>}>
-    <label className="hr-edit-field">Collaborateur<select value={personId} disabled={generating} onChange={event => setPersonId(event.target.value)}>
-      <option value="">Choisir un collaborateur</option>{people.map(person => <option value={person.id} key={person.id}>{formatPersonName(person)}</option>)}
+    <label className="hr-edit-field">Collaborateur<select value={person ? personId : ''} disabled={generating || !currentPeople.length} onChange={event => setPersonId(event.target.value)}>
+      <option value="">Choisir un collaborateur</option>{currentPeople.map(person => <option value={person.id} key={person.id}>{formatPersonName(person)}</option>)}
     </select></label>
+    {!currentPeople.length ? <p>Aucun collaborateur en poste disponible.</p> : null}
     {loading ? <p role="status">Chargement des informations de la fiche RH…</p> : null}
     {error ? <div><p className="form-error" role="alert">{error}</p><button className="sp-button sp-button--secondary" type="button" onClick={() => setAttempt(value => value + 1)}>Réessayer</button></div> : null}
     {!loading && issues.length ? <div role="alert" className="form-error"><strong>Complétez puis enregistrez la fiche RH avant de générer le contrat.</strong><ul>{issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul></div> : null}

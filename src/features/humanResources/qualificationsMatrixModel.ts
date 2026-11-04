@@ -117,7 +117,7 @@ export function buildQualificationsMatrix({
     .map(({ key, label }) => ({ key, label }));
   const categoryKeys = new Set<string>(categories.map(({ key }) => key));
   const seafarers = [...new Map(people.filter((person) => isQualificationsMatrixSeafarer(person)
-    && (population === 'all' || isPersonEmployedOn(person, asOf))
+    && (population === 'all' || (person.active && isPersonEmployedOn(person, asOf)))
     && (includeTrainees || !normalizePopulationLabel(`${person.roleLabel} ${person.gradeLabel} ${person.functionLabel}`).includes('stagiaire')))
     .map((person) => [person.id, person])).values()];
   const personIds = new Set(seafarers.map((person) => person.id));
