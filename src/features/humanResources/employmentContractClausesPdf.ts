@@ -37,10 +37,24 @@ export function employmentContractClauseRuns(type: EmploymentContractDraft['type
     '9': values.functionLabel, '10': values.vesselNames, '11': values.enimCategory,
     '12': values.enimFunctionCode, '13': values.collectiveAgreement, '14': values.grossMonthlySalary,
   };
+  let section = '';
   return EMPLOYMENT_CONTRACT_CLAUSES[type].map((clause) => {
+    const sourceText = clause.runs.map((run) => run.text).join('').trim();
+    if (clause.kind === 'heading') section = sourceText;
     let runs = replaceRuns(clause.runs, /\{\{([A-Za-z]+)\}\}/g, (match) => values[match[1]] || '');
+    // Keep the supplied source immutable; apply the requested wording only to
+    // these paragraphs, before replacing their numbered field references.
+    if (clause.kind === 'intro') {
+      runs = replaceRuns(runs, /\s+défini au\s+2,\s*3,\s*4,\s*5\s+ci-dessous\s+appelé\s+«\s*l[’']employé\s*»/giu, () => '');
+    } else if (section === 'Poste' && /^l[’']employé est embauché au poste\b/iu.test(sourceText)) {
+      runs = replaceRuns(runs, /le\(s\)\s+navire\(s\)\s+définis au\s+/giu, () => '');
+      runs = replaceRuns(runs, /défini au\s+(?=\(12\))/giu, () => '');
+    } else if (section === 'Rémunération' && /^l[’']employé percevra la rémunération mensuelle brute\b/iu.test(sourceText)) {
+      runs = replaceRuns(runs, /prévue au\s+(?=\(14\))/giu, () => 'de ');
+    }
     runs = replaceRuns(runs, /«\s*l[’']employé\s*»/giu, () => values.fullName);
     runs = replaceRuns(runs, /(?<!\p{L})l[’']employé(?!\p{L})/giu, () => values.fullName);
+    if (clause.kind === 'intro') runs = runs.map((run) => run.text === values.fullName ? { ...run, bold: true } : run);
     // The literal "trois (3) mois" is the trial duration, not a first-page reference.
     runs = replaceRuns(runs, /\((1a|1b|1|9|10|11|12|13|14)\)/g, (match) => references[match[1]]);
     return { ...clause, runs: runs.flatMap((run) => run.text.replace(/[\u00a0\u202f]/g, ' ').replace(/\u2011/g, '-').split(/([≤≥])/g)
