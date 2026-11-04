@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   ContactRound,
+  ClipboardList,
   FileDown,
   FilePlus2,
   FileSignature,
@@ -31,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { FocusEvent, FormEvent, ReactNode } from 'react';
 import { useLocation, useOutletContext } from 'react-router-dom';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
@@ -100,6 +101,8 @@ import {
   type WorkforceExitBreakdown,
 } from './peopleQueries';
 import { buildTrainingPlanReport, openTrainingPlanReport } from './trainingPlanReport';
+import { buildQualificationsMatrix, QUALIFICATIONS_MATRIX_CATEGORIES } from './qualificationsMatrixModel';
+import { openQualificationsMatrix } from './qualificationsMatrixExport';
 import { CollaboratorSheetDialog } from './CollaboratorSheetDialog';
 import { ProfileSignaturePanel } from '../workingTime/ProfileSignaturePanel';
 import { updateAnnualReviewDueDate } from '../annualReviews/annualReviewQueries';
@@ -268,6 +271,10 @@ function isVisibilityItemAllowed(
 
 function canManagePersonnel(roles: RoleKey[]): boolean {
   return roles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
+}
+
+function revealHrRibbonCommand(event: FocusEvent<HTMLButtonElement>) {
+  event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 }
 
 function sortPeople(people: PersonRecord[]): PersonRecord[] {
@@ -790,6 +797,8 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
   const isBusy = isSaving || isCreatingDocument;
   const [isDownloading, setIsDownloading] = useState(false);
   const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
+  const [isGeneratingQualificationsMatrix, setIsGeneratingQualificationsMatrix] = useState(false);
+  const qualificationsMatrixBusy = useRef(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -1364,6 +1373,43 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
     }
   }
 
+  async function handleQualificationsMatrix() {
+    if (!isManager || isBusy || qualificationsMatrixBusy.current) return;
+    qualificationsMatrixBusy.current = true;
+    setIsGeneratingQualificationsMatrix(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      const matrix = buildQualificationsMatrix({
+        people: roleVisiblePeople,
+        documents: roleVisibleDocuments,
+        documentTypes,
+        population: 'current',
+        includeTrainees: false,
+        visibleCategoryKeys: new Set(QUALIFICATIONS_MATRIX_CATEGORIES.filter(({ key }) =>
+          isVisibilityItemAllowed(visibilityRules, 'document_type', key, effectiveRoles)).map(({ key }) => key)),
+      });
+      if (!matrix.peopleCount) {
+        setErrorMessage('Aucun marin en poste, hors stagiaires, n’est accessible pour générer la matrice des qualifications.');
+        return;
+      }
+      if (!matrix.categories.length) {
+        setErrorMessage('Aucune des catégories de qualifications n’est accessible avec vos droits.');
+        return;
+      }
+      if (await openQualificationsMatrix(matrix)) {
+        setStatusMessage(`Matrice des Qualifications ouverte au format PDF : ${matrix.peopleCount} marin${matrix.peopleCount > 1 ? 's' : ''} en poste, hors stagiaires.`);
+      } else {
+        setErrorMessage('Le navigateur a bloqué l’ouverture du PDF. Autorisez les fenêtres contextuelles puis réessayez.');
+      }
+    } catch (cause) {
+      setErrorMessage(cause instanceof Error ? cause.message : 'Impossible de générer la matrice des qualifications.');
+    } finally {
+      qualificationsMatrixBusy.current = false;
+      setIsGeneratingQualificationsMatrix(false);
+    }
+  }
+
   async function handleTrainingPlanReport() {
     const report = buildTrainingPlanReport({
       documents: roleVisibleDocuments,
@@ -1404,14 +1450,22 @@ export function HumanResourcesPage({ client, currentPersonId, roles, initialPers
       {isManager ? <ModuleRibbon ariaLabel="Commandes du module Ressources humaines" singleRow>
         {canManageEmploymentContracts(effectiveRoles) ? <ModuleRibbonGroup label="Contrats">
           <ModuleRibbonCommand icon={<FileSignature aria-hidden="true" size={22} />} label="Générer le contrat" disabled={!roleVisiblePeople.length || isBusy}
+            onFocus={revealHrRibbonCommand}
             onClick={() => setIsContractCreationOpen(true)} />
           <ModuleRibbonCommand icon={<Table2 aria-hidden="true" size={22} />} label="Grille de salaire" disabled={isBusy}
+            onFocus={revealHrRibbonCommand}
             onClick={() => setIsSalaryGridOpen(true)} />
         </ModuleRibbonGroup> : null}
         <ModuleRibbonGroup label="Collaborateurs">
+          <ModuleRibbonCommand icon={<ClipboardList aria-hidden="true" size={22} />} label="Matrice des Qualifications"
+            onFocus={revealHrRibbonCommand}
+            disabled={isBusy || isGeneratingQualificationsMatrix || !roleVisiblePeople.length}
+            aria-busy={isGeneratingQualificationsMatrix || undefined} onClick={() => void handleQualificationsMatrix()} />
           <ModuleRibbonCommand icon={<FileDown aria-hidden="true" size={22} />} label="Plan de formation" disabled={isGeneratingTrainingPlan}
+            onFocus={revealHrRibbonCommand}
             aria-busy={isGeneratingTrainingPlan || undefined} onClick={handleTrainingPlanReport} />
           <ModuleRibbonCommand icon={<UserPlus aria-hidden="true" size={22} />} label="Ajouter un collaborateur" disabled={isBusy}
+            onFocus={revealHrRibbonCommand}
             onClick={() => setIsCreateOpen(true)} />
         </ModuleRibbonGroup>
       </ModuleRibbon> : null}

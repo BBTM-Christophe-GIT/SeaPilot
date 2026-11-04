@@ -13,10 +13,13 @@ vi.mock('./employmentContractPdf', () => ({ generateEmploymentContractPdf: vi.fn
 vi.mock('./EmploymentContractsSection', () => ({ saveEmploymentContractBlob: vi.fn() }));
 vi.mock('./salaryGridQueries', () => ({ loadHrSalaryGrid: vi.fn() }));
 vi.mock('./employmentContractQueries', () => ({ loadEmploymentContractDetails: vi.fn(), downloadEmploymentContractSigner: vi.fn(), saveEmploymentContract: vi.fn() }));
+vi.mock('./hrDocumentNotifications', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./hrDocumentNotifications')>(), getParisDateKey: () => '2026-11-04',
+}));
 const client = {} as SupabaseClient;
 const person = { id: 7, firstName: 'Alice', lastName: 'DEMO', hiredOn: '2026-01-01', departedOn: '',
   contractType: 'CDI', birthDate: '1990-01-01', birthPlace: 'Ville fictive', postalAddress: '1 rue de démonstration',
-  sailorNumber: 'DEMO-001', functionLabel: 'Capitaine', enimCategory: 15, enimFunctionCode: 'AA01A' } as PersonRecord;
+  sailorNumber: 'DEMO-001', functionLabel: 'Capitaine', enimCategory: 15, enimFunctionCode: 'AA01A', active: true } as PersonRecord;
 const details = { socialSecurityNumber: 'DEMONSTRATION-001', vesselNames: 'Navire fictif', salaryGridRowId: 'poste-a', endDate: '2026-12-31' };
 const blob = new Blob(['demo-pdf'], { type: 'application/pdf' });
 const record = { id: 1 } as EmploymentContractRecord;
@@ -35,6 +38,54 @@ beforeEach(() => {
 });
 
 describe('ribbon contract creation from recorded RH data', () => {
+  it('lists only current active staff while retaining future departures, current rehires, trainees and office staff', () => {
+    const people = [
+      person,
+      { ...person, id: 8, lastName: 'FUTUR_DEPART', departedOn: '2026-11-05' },
+      { ...person, id: 9, lastName: 'ANCIEN', departedOn: '2026-11-03' },
+      { ...person, id: 10, lastName: 'DEPART_AUJOURDHUI', departedOn: '2026-11-04' },
+      { ...person, id: 11, lastName: 'EMBAUCHE_FUTURE', hiredOn: '2026-11-05' },
+      { ...person, id: 12, lastName: 'ARCHIVE', active: false },
+      { ...person, id: 13, lastName: 'REEMBAUCHE', departedOn: '2025-01-01', employmentPeriods: [
+        { hiredOn: '2024-01-01', departedOn: '2025-01-01', contractType: 'CDI', departureReason: '' },
+        { hiredOn: '2026-11-01', departedOn: '', contractType: 'CDI', departureReason: '' },
+      ] },
+      { ...person, id: 14, lastName: 'STAGIAIRE', functionLabel: 'Stagiaire', roleLabel: 'Stagiaire' },
+      { ...person, id: 15, lastName: 'SEDENTAIRE', functionLabel: 'Président', roleLabel: 'Sédentaire' },
+    ];
+    render(<EmploymentContractCreationDialog client={client} people={people}
+      onClose={vi.fn()} onOpenProfile={vi.fn()} onGenerated={vi.fn()} />);
+    expect(within(screen.getByLabelText('Collaborateur')).getAllByRole('option').map(option => (option as HTMLOptionElement).value))
+      .toEqual(['', '7', '8', '13', '14', '15']);
+    expect(loadEmploymentContractDetails).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['former staff', { departedOn: '2026-11-03' }],
+    ['a departure today', { departedOn: '2026-11-04' }],
+    ['a future hire', { hiredOn: '2026-11-05' }],
+    ['an archived profile', { active: false }],
+  ] as const)('ignores an initial selection for %s without loading or generating a contract', (_label, patch) => {
+    render(<EmploymentContractCreationDialog client={client} people={[{ ...person, ...patch }, { ...person, id: 8, lastName: 'CURRENT' }]}
+      initialPersonId={7} onClose={vi.fn()} onOpenProfile={vi.fn()} onGenerated={vi.fn()} />);
+    expect(screen.getByLabelText('Collaborateur')).toHaveValue('');
+    expect(loadEmploymentContractDetails).not.toHaveBeenCalled();
+    expect(loadHrSalaryGrid).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Générer le PDF' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ouvrir la fiche RH' })).not.toBeInTheDocument();
+    expect(generateEmploymentContractPdf).not.toHaveBeenCalled();
+    expect(saveEmploymentContract).not.toHaveBeenCalled();
+  });
+
+  it('explains when no current active collaborator can be selected', () => {
+    render(<EmploymentContractCreationDialog client={client} people={[{ ...person, active: false }]} initialPersonId={7}
+      onClose={vi.fn()} onOpenProfile={vi.fn()} onGenerated={vi.fn()} />);
+    expect(screen.getByText('Aucun collaborateur en poste disponible.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Collaborateur')).toBeDisabled();
+    expect(loadEmploymentContractDetails).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Générer le PDF' })).not.toBeInTheDocument();
+  });
+
   it('chooses a collaborator and directly generates the saved profile without copying its fields', async () => {
     const user = userEvent.setup(), onGenerated = vi.fn();
     render(<EmploymentContractCreationDialog client={client} people={[person]} onClose={vi.fn()} onOpenProfile={vi.fn()} onGenerated={onGenerated} />);
