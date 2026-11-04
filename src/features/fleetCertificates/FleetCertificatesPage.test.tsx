@@ -1,7 +1,7 @@
-import { fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderTestingLibrary, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
 import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
@@ -75,12 +75,14 @@ function createClient(
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
   const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
   const attachmentInsert = vi.fn().mockResolvedValue({ error: null });
+  const certificateRead = vi.fn().mockImplementation(async () => ({ data: certificateRows, error: null }));
+  const versionRead = vi.fn().mockImplementation(async () => ({ data: versionRows, error: null }));
   const storageApi = { createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://signed.test/document' }, error: null }), download: vi.fn().mockResolvedValue({ data: new Blob(['document']), error: null }), upload: vi.fn().mockResolvedValue({ error: null }), remove: vi.fn().mockResolvedValue({ error: null }) };
   const client = {
     rpc, storage: { from: vi.fn().mockReturnValue(storageApi) },
     from: vi.fn().mockImplementation((table: string) => {
-      if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: certificateRows, error: null }) }) }) };
-      if (table === 'fleet_certificate_versions') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ order: vi.fn().mockImplementation(async () => ({ data: versionRows, error: null })) }) }) };
+      if (table === 'fleet_certificates') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order: certificateRead }) }) };
+      if (table === 'fleet_certificate_versions') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockImplementation((_column: string, certificateId: number) => ({ order: vi.fn().mockImplementation(() => versionRead(certificateId)) })) }) };
       if (table === 'fleet_certificate_findings') return { select: vi.fn().mockResolvedValue({ data: findingRows, error: null }), insert: vi.fn(), update: findingUpdate };
       if (table === 'fleet_certificate_finding_attachments') return { select: vi.fn().mockResolvedValue({ data: [], error: null }), insert: attachmentInsert };
       if (table === 'fleet_certificate_finding_events') return { select: vi.fn().mockResolvedValue({ data: [{ id: 91, finding_id: 81, event_type: 'created', note: 'Écart créé', author: { display_name: 'Arthur DEMO' }, created_at: '2026-07-16T09:14:00Z' }], error: null }), insert: vi.fn().mockResolvedValue({ error: null }) };
@@ -91,8 +93,206 @@ function createClient(
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { attachmentInsert, client, findingUpdate, findingUpdateEq, rpc, storageApi };
+  return { attachmentInsert, client, certificateRead, versionRead, findingUpdate, findingUpdateEq, rpc, storageApi };
 }
+
+function renewalFixture({ alreadyReceived = false, concurrent = false } = {}) {
+  const current = { ...certificates[0] };
+  const oldPath = current.storage_path;
+  const versionRows: Array<Record<string, unknown>> = [{ id: 501, version_no: 1, status: 'active', is_current: true,
+    original_file_name: 'ancien.pdf', normalized_file_name: current.file_name, storage_bucket: 'fleet-certificates', storage_path: oldPath,
+    mime_type: 'application/pdf', file_size_bytes: 20, issued_on: current.issued_on, expires_on: current.expires_on,
+    created_at: current.updated_at, validated_at: current.updated_at }];
+  function receive(path: string, name = 'nouveau.pdf') {
+    const received = { id: 7331, version_no: 2, status: 'pending_validation', is_current: false,
+      original_file_name: name, normalized_file_name: 'GOURY - Certificat de Franc-Bord - 2026.pdf',
+      storage_bucket: 'fleet-certificates', storage_path: path, mime_type: 'application/pdf', file_size_bytes: 30,
+      issued_on: '2026-11-01', expires_on: '2027-11-01', created_at: '2026-11-04T10:00:00Z', validated_at: null };
+    versionRows.push(received);
+    Object.assign(current, { status: 'pending_validation', workflow_status: 'pending_validation', updated_at: received.created_at });
+    return received;
+  }
+  if (alreadyReceived) receive('1/GRY/42/renewals/already-received.pdf');
+  const fixture = createClient(findings, [], [current, { ...certificates[1] }], versionRows);
+  fixture.storageApi.createSignedUrl.mockImplementation(async (path: string) => ({ data: { signedUrl: `https://signed.test/${encodeURIComponent(path)}` }, error: null }));
+  fixture.rpc.mockImplementation(async (name, args) => {
+    if (name === 'submit_fleet_certificate_renewal') {
+      receive(args.p_storage_path, args.p_original_file_name);
+      if (concurrent) versionRows.push({ ...versionRows[1], id: 8999, version_no: 3, storage_path: '1/GRY/42/renewals/another-deposit.pdf' });
+      return { data: 7331, error: null };
+    }
+    if (name === 'validate_fleet_certificate_renewal') {
+      const received = versionRows.find(version => version.id === args.p_version_id)!;
+      Object.assign(versionRows[0], { status: 'archived', is_current: false });
+      Object.assign(received, { status: 'active', is_current: true, validated_at: '2026-11-04T10:01:00Z' });
+      Object.assign(current, { storage_path: received.storage_path, file_name: received.normalized_file_name,
+        current_version_no: received.version_no, status: 'valid', workflow_status: 'validated', updated_at: received.validated_at });
+    }
+    return { data: 42, error: null };
+  });
+  return { ...fixture, current, oldPath, versionRows };
+}
+
+async function openRenewal(user: ReturnType<typeof userEvent.setup>) {
+  const library = (await screen.findByRole('heading', { name: 'Bibliothèque documentaire' })).closest('section')!;
+  const vessel = within(library).getByRole('button', { name: /GOURY/ });
+  if (vessel.getAttribute('aria-expanded') !== 'true') await user.click(vessel);
+  const category = within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ });
+  if (category.getAttribute('aria-expanded') !== 'true') await user.click(category);
+  await user.click(within(library).getByRole('button', { name: 'Renouveler Certificat de Franc-Bord' }));
+  const dialog = screen.getByRole('dialog', { name: 'Renouveler le certificat' });
+  fireEvent.change(within(dialog).getByLabelText('Date d’émission'), { target: { value: '2026-11-01' } });
+  await user.upload(within(dialog).getByLabelText('Nouveau certificat signé'), new File(['new certificate'], 'nouveau.pdf', { type: 'application/pdf' }));
+  return dialog;
+}
+
+describe('received fleet certificate previews', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('previews and downloads its exact new version before validation, then makes it official without losing history', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, storageApi, current, oldPath, versionRows } = renewalFixture({ concurrent: true });
+    const revoke = vi.fn();
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:certificate-download'); static revokeObjectURL = revoke; });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />, '/modules/certificates?certificate=42');
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(oldPath)}`);
+    const dialog = await openRenewal(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+    const receivedPath = String(versionRows[1].storage_path);
+    await waitFor(() => expect(screen.getByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(receivedPath)}`));
+    expect(current.storage_path).toBe(oldPath);
+    expect(current.current_version_no).toBe(1);
+    expect(screen.getByText('Informations de la version affichée')).toBeInTheDocument();
+    expect(screen.getByText('v2 · À valider', { selector: 'strong' })).toBeInTheDocument();
+    expect(rpc).not.toHaveBeenCalledWith('validate_fleet_certificate_renewal', expect.anything());
+    await user.click(screen.getByRole('button', { name: 'Télécharger le document' }));
+    await waitFor(() => expect(storageApi.download).toHaveBeenCalledWith(receivedPath));
+    await waitFor(() => expect(revoke).toHaveBeenCalled());
+    expect(storageApi.createSignedUrl).not.toHaveBeenCalledWith('1/GRY/42/renewals/another-deposit.pdf', 300);
+    await user.click(screen.getByRole('button', { name: 'Valider la version v2' }));
+    expect(await screen.findByText('Version validée et document disponible.')).toBeInTheDocument();
+    expect(current.storage_path).toBe(receivedPath);
+    expect(current.current_version_no).toBe(2);
+    expect(versionRows[0]).toMatchObject({ status: 'archived', is_current: false });
+    expect(await screen.findByText('v2 · Version actuelle', { selector: 'strong' })).toBeInTheDocument();
+    expect(storageApi.upload).toHaveBeenCalledOnce();
+  });
+
+  it('reopens an already received pending version without another upload, and preserves an explicit historical choice', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, storageApi, oldPath, versionRows, current } = renewalFixture({ alreadyReceived: true });
+    render(<FleetCertificatesPage client={client as never} roles={['capitaine']} />, '/modules/certificates?certificate=42');
+    const receivedPath = String(versionRows[1].storage_path);
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(receivedPath)}`);
+    expect(current.storage_path).toBe(oldPath);
+    expect(storageApi.upload).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalledWith('submit_fleet_certificate_renewal', expect.anything());
+    expect(screen.queryByRole('button', { name: /Valider la version/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Afficher la version v1' }));
+    await waitFor(() => expect(screen.getByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(oldPath)}`));
+    await user.click(screen.getByRole('tab', { name: 'Pilotage du traitement' }));
+    await user.click(screen.getByRole('tab', { name: 'Aperçu du document' }));
+    await waitFor(() => expect(screen.getByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(oldPath)}`));
+  });
+
+  it('confirms a successful deposit when its version cannot be read, then retries only the read', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, storageApi, versionRead, versionRows } = renewalFixture();
+    let readsAvailable = false;
+    versionRead.mockImplementation(async () => versionRows.length > 1 && !readsAvailable
+      ? { data: null, error: { message: 'Lecture temporairement indisponible' } } : { data: versionRows, error: null });
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const dialog = await openRenewal(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+    expect(await screen.findByText(/Le document a bien été reçu, mais sa version/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Renouveler le certificat' })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Aperçu de Certificat de Franc-Bord')).not.toBeInTheDocument();
+    expect(storageApi.upload).toHaveBeenCalledOnce();
+    expect(storageApi.remove).not.toHaveBeenCalled();
+    readsAvailable = true;
+    await user.click(screen.getByRole('button', { name: 'Réessayer l’aperçu' }));
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(String(versionRows[1].storage_path))}`);
+    expect(rpc.mock.calls.filter(([name]) => name === 'submit_fleet_certificate_renewal')).toHaveLength(1);
+    expect(storageApi.upload).toHaveBeenCalledOnce();
+  });
+
+  it('can show the committed version even if refreshing the surrounding certificate list fails', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, storageApi, certificateRead, versionRows, current } = renewalFixture();
+    certificateRead.mockImplementation(async () => versionRows.length > 1
+      ? { data: null, error: { message: 'Liste indisponible' } } : { data: [current], error: null });
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    const dialog = await openRenewal(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+    expect(await screen.findByText('Le document a été reçu, mais la liste des certificats n’a pas pu être actualisée.')).toBeInTheDocument();
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Valider la version v2' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(rpc.mock.calls.filter(([name]) => name === 'submit_fleet_certificate_renewal')).toHaveLength(1);
+    expect(storageApi.upload).toHaveBeenCalledOnce();
+  });
+
+  it('never switches back to a certificate when its submitted version resolves after navigation', async () => {
+    const user = userEvent.setup();
+    const { client, storageApi, versionRows, versionRead } = renewalFixture();
+    let finish!: (response: { data: Array<Record<string, unknown>>; error: null }) => void;
+    const delayed = new Promise<{ data: Array<Record<string, unknown>>; error: null }>(resolve => { finish = resolve; });
+    versionRead.mockImplementation(async (id: number) => id === 42 && versionRows.length > 1 ? delayed : { data: [], error: null });
+    render(<><Link to="?certificate=43">Autre certificat</Link><FleetCertificatesPage client={client as never} roles={['direction']} /></>);
+    const dialog = await openRenewal(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+    await screen.findByText('Document reçu. Chargement de sa nouvelle version…');
+    await user.click(screen.getByRole('link', { name: 'Autre certificat' }));
+    await screen.findByTitle('Aperçu de Certificat extincteurs');
+    await act(async () => { finish({ data: versionRows, error: null }); });
+    expect(screen.queryByTitle('Aperçu de Certificat de Franc-Bord')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Aperçu de Certificat extincteurs')).toBeInTheDocument();
+    expect(storageApi.createSignedUrl).not.toHaveBeenCalledWith(String(versionRows[1].storage_path), 300);
+  });
+
+  it('refreshes a deposit completed after navigation without closing another form, then reopens its received version', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, storageApi, certificateRead, versionRead, versionRows } = renewalFixture();
+    const commit = rpc.getMockImplementation()!;
+    let finish!: () => void;
+    const delayed = new Promise<void>(resolve => { finish = resolve; });
+    rpc.mockImplementation(async (name, args) => {
+      if (name === 'submit_fleet_certificate_renewal') await delayed;
+      return commit(name, args);
+    });
+    versionRead.mockImplementation(async (id: number) => ({ data: id === 42 ? versionRows : [], error: null }));
+    render(<><Link to="?certificate=43">Autre certificat</Link><Link to="?certificate=42">Retour au certificat déposé</Link>
+      <FleetCertificatesPage client={client as never} roles={['direction']} /></>);
+    const firstDialog = await openRenewal(user);
+    await user.click(within(firstDialog).getByRole('button', { name: 'Enregistrer la nouvelle version' }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('submit_fleet_certificate_renewal', expect.anything()));
+    await user.click(within(firstDialog).getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByRole('link', { name: 'Autre certificat' }));
+    await screen.findByTitle('Aperçu de Certificat extincteurs');
+    const library = screen.getByRole('heading', { name: 'Bibliothèque documentaire' }).closest('section')!;
+    const vessel = within(library).getByRole('button', { name: /SUROIT/ });
+    if (vessel.getAttribute('aria-expanded') !== 'true') await user.click(vessel);
+    const category = within(library).getByRole('button', { name: /06 - Incendie/ });
+    if (category.getAttribute('aria-expanded') !== 'true') await user.click(category);
+    await user.click(within(library).getByRole('button', { name: 'Renouveler Certificat extincteurs' }));
+    const otherDialog = screen.getByRole('dialog', { name: 'Renouveler le certificat' });
+    fireEvent.change(within(otherDialog).getByLabelText('Date d’émission'), { target: { value: '2026-11-02' } });
+    const reads = certificateRead.mock.calls.length;
+    await act(async () => { finish(); });
+    await waitFor(() => expect(certificateRead.mock.calls.length).toBeGreaterThan(reads));
+    expect(screen.getByRole('dialog', { name: 'Renouveler le certificat' })).toBe(otherDialog);
+    expect(within(otherDialog).getByLabelText('Date d’émission')).toHaveValue('2026-11-02');
+    expect(within(otherDialog).getByText('SUROIT · Certificat extincteurs')).toBeInTheDocument();
+    expect(screen.queryByTitle('Aperçu de Certificat de Franc-Bord')).not.toBeInTheDocument();
+    await user.click(within(otherDialog).getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByRole('link', { name: 'Retour au certificat déposé' }));
+    expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toHaveAttribute('src', `https://signed.test/${encodeURIComponent(String(versionRows[1].storage_path))}`);
+    expect(screen.getByText('v2 · À valider', { selector: 'strong' })).toBeInTheDocument();
+    expect(storageApi.upload).toHaveBeenCalledOnce();
+    expect(rpc.mock.calls.filter(([name]) => name === 'submit_fleet_certificate_renewal')).toHaveLength(1);
+  });
+});
 
 describe('FleetCertificatesPage', () => {
   it('opens the exact linked certificate preview and reacts to another certificate link', async () => {
@@ -609,7 +809,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Ajouter le document' }));
 
     expect(await screen.findByText('Document reçu, en attente de validation.')).toBeInTheDocument();
-    expect(await screen.findByText('v1 · À valider')).toBeInTheDocument();
+    expect(await screen.findByText('v1 · À valider', { selector: 'strong' })).toBeInTheDocument();
     expect(within(library).getByText('Document reçu · À valider')).toBeInTheDocument();
     expect(screen.queryByText('Cette ligne ne contient pas encore de document.')).not.toBeInTheDocument();
     expect(missing.storage_path).toBeNull();
@@ -642,7 +842,7 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: /GOURY/ }));
     await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
-    expect(await screen.findByText('v1 · À valider')).toBeInTheDocument();
+    expect(await screen.findByText('v1 · À valider', { selector: 'strong' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Valider la version/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Afficher la version v1' }));
     expect(await screen.findByTitle('Aperçu de Certificat de Franc-Bord')).toBeInTheDocument();

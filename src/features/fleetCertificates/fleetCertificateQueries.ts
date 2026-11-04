@@ -617,11 +617,19 @@ export async function planFleetCertificateRenewal(
   if (error) throw error;
 }
 
+/** The RPC committed the document, but its receipt could not identify the new version. */
+export class FleetCertificateRenewalReceiptError extends Error {
+  constructor() {
+    super('Le document a été reçu, mais son identifiant de version est indisponible. Consultez les versions du document avant tout nouveau dépôt.');
+    this.name = 'FleetCertificateRenewalReceiptError';
+  }
+}
+
 export async function submitFleetCertificateRenewal(
   client: SupabaseClient,
   certificate: FleetCertificateRecord,
   input: SubmitFleetCertificateRenewalInput,
-): Promise<void> {
+): Promise<number> {
   if (!input.file) throw new Error('Sélectionnez un document.');
   if (!input.issuedOn) throw new Error("Renseignez la date d'émission du document.");
   if (input.expiresOn && input.expiresOn < input.issuedOn) {
@@ -642,7 +650,7 @@ export async function submitFleetCertificateRenewal(
   });
   if (uploadError) throw uploadError;
 
-  const { error: metadataError } = await client.rpc('submit_fleet_certificate_renewal', {
+  const { data, error: metadataError } = await client.rpc('submit_fleet_certificate_renewal', {
     p_certificate_id: certificate.id,
     p_original_file_name: input.file.name,
     p_normalized_file_name: normalizedName,
@@ -657,6 +665,9 @@ export async function submitFleetCertificateRenewal(
     await client.storage.from(FLEET_CERTIFICATE_BUCKET).remove([storagePath]);
     throw metadataError;
   }
+  const versionId = typeof data === 'number' || typeof data === 'string' && /^\d+$/.test(data) ? Number(data) : 0;
+  if (!Number.isSafeInteger(versionId) || versionId <= 0) throw new FleetCertificateRenewalReceiptError();
+  return versionId;
 }
 
 export async function validateFleetCertificateRenewal(client: SupabaseClient, versionId: number): Promise<void> {
