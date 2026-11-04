@@ -56,10 +56,10 @@ begin
     select * into target_person from public.people where user_id = fixture.user_id;
     assert target_person.id is not null, 'Each role must read its own real linked person';
     assert jsonb_array_length(target_person.employment_periods) = 1, 'Legacy dates seed exactly one period';
-    if fixture.role_key in ('admin','direction','armement') then
+    if fixture.role_key in ('admin','direction') then
       update public.people set employment_periods = history, active = true where id = target_person.id;
       get diagnostics changed = row_count;
-      assert changed = 1, 'Managers can record a rehire';
+      assert changed = 1, 'Admin and Direction can record a rehire';
       select * into target_person from public.people where id = target_person.id;
       assert target_person.hired_on = '2026-04-01'::date and target_person.departed_on is null,
         'Legacy current-period columns mirror the rehire';
@@ -84,18 +84,32 @@ begin
       assert (select employment_periods->1->>'departedOn' = '2026-04-01' from public.people where id = target_person.id),
         'Same-day departure remains valid and legacy edits synchronize';
     else
-      update public.people set employment_periods = history where id = target_person.id;
-      get diagnostics changed = row_count;
-      assert changed = 0, 'Marin and Capitaine cannot directly mutate their employment periods';
+      if fixture.role_key = 'armement' then
+        begin
+          update public.people set employment_periods = history where id = target_person.id;
+          raise exception 'Armement changed protected employment history';
+        exception when insufficient_privilege then null;
+        end;
+      else
+        update public.people set employment_periods = history where id = target_person.id;
+        get diagnostics changed = row_count;
+        assert changed = 0, 'Marin and Capitaine cannot directly mutate their employment periods';
+      end if;
       begin
         perform public.hr_periods_test_definer_write(target_person.id, history);
         raise exception 'A privileged API allowed a restricted profile to replace employment history';
       exception when insufficient_privilege then null;
       end;
-      -- Existing self-profile permissions remain intact for legacy date fields.
-      perform public.update_own_hr_profile(target_person.id, to_jsonb(target_person) || '{"hired_on":"2024-02-01"}'::jsonb);
-      assert (select employment_periods->0->>'hiredOn' = '2024-02-01' from public.people where id = target_person.id),
-        'Previously authorized self-profile dates still synchronize without replacing history';
+      begin
+        perform public.update_own_hr_profile(target_person.id, to_jsonb(target_person) || '{"hired_on":"2024-02-01"}'::jsonb);
+        raise exception 'Restricted self-profile dates changed protected history';
+      exception when insufficient_privilege then null;
+      end;
+      if fixture.role_key in ('marin','capitaine') then
+        perform public.update_own_hr_profile(target_person.id, to_jsonb(target_person) || '{"phone":"fixture-phone"}'::jsonb);
+        assert (select employment_periods->0->>'hiredOn' = '2024-01-01' and phone='fixture-phone' from public.people where id = target_person.id),
+          'Self-profile contact edits preserve protected employment dates';
+      end if;
     end if;
     assert not exists (select 1 from public.people where id in (select id from hr_period_foreign)),
       'No profile reads another company employment history';

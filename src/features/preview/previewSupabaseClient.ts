@@ -15,6 +15,7 @@ import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix }
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
 import { configurePerformancePreviewAssets, performancePreviewRpc, performancePreviewTable, resolvePerformancePreviewDashboardLinks } from './previewProcessPerformanceFixtures';
+import { createEmploymentContractPreview } from './employmentContractPreview';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
@@ -2294,6 +2295,8 @@ function previewQhsePolicyRpc(functionName: string, args: Record<string, unknown
 }
 
 function previewRpc(functionName: string, args: Record<string, unknown> = {}): object {
+  const employmentResult = employmentContractPreview.rpc(functionName, args);
+  if (employmentResult) return createPreviewQuery(employmentResult);
   const performanceResult = performancePreviewRpc(functionName, args);
   if (performanceResult) return performanceResult;
   if (functionName === 'projects_document_deletion_snapshot' || functionName === 'projects_delete_document') {
@@ -3324,9 +3327,11 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   return createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR });
 }
 
+const employmentContractPreview = createEmploymentContractPreview({ people: () => PREVIEW_ROWS.people, signaturePng: previewSignaturePng });
+
 export const previewSupabaseClient = {
   resolveProcessPerformanceTaskLinks: resolvePerformancePreviewDashboardLinks,
-  from: (table: string) => performancePreviewTable(table) || (table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
+  from: (table: string) => employmentContractPreview.from(table) || performancePreviewTable(table) || (table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),
@@ -3353,7 +3358,7 @@ export const previewSupabaseClient = {
     },
   },
   storage: {
-    from: (bucket: string) => ({
+    from: (bucket: string) => employmentContractPreview.storage(bucket) || ({
       createSignedUrl: (path: string) => Promise.resolve(!seaOperationPreviewDocumentLocationVisible(bucket, path)
         ? { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } } : {
         data: {
@@ -3365,6 +3370,8 @@ export const previewSupabaseClient = {
         data: paths.map((path) => ({ path, signedUrl: path.startsWith('demo/') ? `/${path}` : '' })), error: null,
       }),
       download: async (path: string) => {
+        const employmentResult = employmentContractPreview.download(bucket, path);
+        if (employmentResult) return employmentResult;
         if (!seaOperationPreviewDocumentLocationVisible(bucket, path)) return { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } };
         if (bucket === 'qhse-policy-attachments') {
           const upload = Array.from(previewQhseUploads.values()).find((file) => file.path === path);

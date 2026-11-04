@@ -1,5 +1,18 @@
 # SeaPilot Vercel Production Notes
 
+Version `3.81.0`, build `2026-11-04.001`, ajoute le bouton « Générer le contrat »
+dans « Contrat et dates » des fiches RH. Le modèle PDF CDI ou CDD BBTM utilise
+les informations enregistrées dans la fiche, puis le contrat est classé dans
+Documents. La rémunération, le numéro de sécurité sociale et les autres données
+contractuelles complémentaires sont conservés dans la fiche avec un accès privé.
+La génération, les données confidentielles et les documents sont réservés à
+Administrateur et Direction, avec contrôle RLS sur les tables et le bucket privé.
+Le document porte la signature privée de Benjamin BON et la date du jour. La grille
+de salaires est modifiable ; le montant mensuel vient du total annuel de la dernière
+colonne divisé par douze. Appliquer les quatre migrations `20261104081439`,
+`20261104083615`, `20261104084334` et `20261104085011` avant le client. Voir
+[hr-employment-contracts.md](./hr-employment-contracts.md).
+
 Version `3.80.28`, build `2026-11-01.002`, corrige le double cadre de recherche
 dans les catalogues Projets, notamment la Liste des prestations ouverte depuis
 Facturation. Le cadre et le focus appartiennent au conteneur ; l'input interne
