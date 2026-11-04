@@ -1,0 +1,43 @@
+# Contrats de travail CDI et CDD
+
+Le module RH regroupe ses commandes dans un ruban commun sur une seule rangée : « Générer le contrat », « Grille de salaire », « Plan de formation » et « Ajouter un collaborateur ». Les deux premières commandes sont réservées aux profils Administrateur et Direction ; les autres conservent les droits de gestion RH existants.
+
+« Générer le contrat » ouvre le choix du collaborateur, puis « Générer le PDF » reprend directement ses données RH enregistrées. Aucun formulaire ne recopie les informations du salarié. Si des éléments manquent, le dialogue les indique et propose « Ouvrir la fiche RH » pour les compléter. Après génération, le PDF et la saisie utilisée sont conservés dans la section Documents du collaborateur.
+
+Les données s’enregistrent avec « Enregistrer la fiche ». Pour un CDD, la durée en jours, semaines ou mois se règle dans « Contrat et dates » en modifiant la fiche ; sa fin calculée, dernier jour inclus, est enregistrée avec les autres informations. La génération utilise cette durée enregistrée sans la demander à nouveau. Le PDF reprend les clauses des modèles, porte la date du jour en Europe/Paris et, à la fin, le prénom NOM du salarié, « Benjamin BON » et sa signature privée.
+
+La grille BBTM a été initialisée dans la base privée depuis les dix lignes et les huit colonnes du document fourni par l’utilisateur. Ses montants et libellés métier ne sont pas publiés dans le dépôt GitHub ni dans les fixtures de préversion. Le poste vient de la première colonne et le montant annuel de la dernière, « Total annuel de base ». Selon la règle confirmée par l’utilisateur, le montant mensuel est ce total divisé par 12, arrondi au centime. Les valeurs indépendantes de la source sont conservées sans recalculer le total depuis les autres colonnes.
+
+« Grille de salaire » ouvre la grille générale, indépendamment du collaborateur sélectionné, et permet d’ajouter, modifier, retirer ou désactiver les postes et de modifier les colonnes. Une révision protège les sauvegardes simultanées. Le poste choisi reste associé à la fiche ; les générations suivantes utilisent le montant courant de cette ligne. Les PDF déjà émis conservent leurs montants, leur révision salariale et la référence de signature utilisée.
+
+Appliquer `supabase/migrations/20261104081439_hr_employment_contracts.sql` avant de déployer le client.
+
+Appliquer également `supabase/migrations/20261104083615_hr_contract_details_patch_and_section_permissions.sql`. La section entière « Contrat et dates », dont le salaire brut, est réservée aux profils Administrateur et Direction. Le numéro de sécurité sociale figure dans « Identité et poste » avec les mêmes restrictions sur ce champ sensible. Les contrôles de visibilité RH ne peuvent pas accorder la section contractuelle à un autre profil.
+
+Appliquer ensuite `supabase/migrations/20261104084334_hr_employment_contract_pdf_and_company_signer.sql`. Toute nouvelle génération et tout nouvel envoi doivent être au format PDF. Les éventuels anciens fichiers Word restent téléchargeables ; ils ne peuvent plus être créés par ce parcours.
+
+Appliquer enfin `supabase/migrations/20261104085011_hr_salary_grid.sql` pour la grille salariale et le poste choisi. Les quatre migrations précèdent le déploiement du client.
+
+Cette dernière migration crée uniquement le schéma et les contrôles d’accès. Les données métier initiales ont été chargées séparément dans l’environnement BBTM privé ; sur un nouvel environnement, renseigner la grille par son interface protégée. La préversion utilise exclusivement des lignes et montants fictifs.
+
+Les métadonnées et les saisies confidentielles sont enregistrées dans `public.hr_employment_contracts`. Les fichiers PDF sont conservés dans le bucket privé `hr-employment-contracts`, avec une limite de 10 Mo par fichier. Un chemin contient l’identifiant de l’entreprise, celui du collaborateur et un identifiant aléatoire. La clé étrangère composée interdit le rattachement à un collaborateur d’une autre entreprise.
+
+La signature finale de Benjamin BON est chargée depuis sa signature numérisée active dans sa fiche RH, via le bucket privé existant `working-time-signatures`. La RPC `hr_employment_contract_signer` exige un rôle Administrateur ou Direction dans l’entreprise active et une fiche active unique correspondant exactement à Benjamin BON. Elle ne prend pas d’identifiant de signataire arbitraire et n’élargit pas les droits de consultation des signatures existantes. Une fiche ambiguë, inactive ou sans signature active bloque la génération. La date de signature est le jour de génération à Paris ; la référence de signature utilisée est enregistrée avec le contrat émis.
+
+Les informations contractuelles complémentaires de la fiche RH, dont la rémunération et le numéro de sécurité sociale, sont enregistrées séparément dans `public.hr_employment_contract_details`. Elles bénéficient des mêmes restrictions Administrateur et Direction. Elles ne sont pas ajoutées au catalogue général `people`, afin de ne pas exposer ces informations sensibles aux autres profils qui consultent certaines fiches RH.
+
+La RPC `patch_hr_employment_contract_details` applique une modification atomique des seuls champs contractuels connus. Une modification de salaire conserve le numéro de sécurité sociale enregistré séparément, et réciproquement. Les valeurs absentes de la modification sont préservées ; une chaîne vide efface uniquement le champ explicitement concerné.
+
+Les modifications du type de contrat, des dates d’emploi, du motif de départ et de l’historique d’emploi exigent aussi un rôle Administrateur ou Direction côté serveur, y compris lors d’un appel direct à la table ou à la RPC de modification personnelle. Armement conserve les modifications des autres champs RH. Les modifications personnelles de Marin et Capitaine préservent les champs contractuels lorsqu’ils sont absents de la saisie. Les dates déjà utilisées par les indicateurs RH et le Planning restent disponibles aux traitements opérationnels autorisés ; les salaires et numéros de sécurité sociale restent dans la table privée.
+
+La lecture, la création et la suppression nécessitent un rôle Administrateur ou Direction dans l’entreprise active et une adhésion active à cette entreprise. Armement, Capitaine et Marin ne disposent d’aucun accès, y compris lorsque le document concerne leur propre fiche RH. Les règles générales de visibilité RH et l’affectation à une bordée ne peuvent pas accorder l’accès aux contrats. Les fichiers restent séparés du bucket RH ordinaire ; aucun lien public ni pièce jointe SharePoint n’est créé. Les téléchargements utilisent la session authentifiée ; les éventuelles URL signées expirent après 60 secondes.
+
+Une génération enregistrée est immuable. Les corrections produisent un nouveau document. Le fichier est envoyé avant le classement des métadonnées et supprimé si le classement échoue. Les contrats existants sont présentés dans la section Documents du profil, indépendamment des filtres de la bibliothèque RH ordinaire.
+
+La vérification automatique couvre le préremplissage, la génération, le stockage privé et les erreurs de classement côté client. `supabase/tests/hr_employment_contracts_test.sql` utilise de véritables comptes synthétiques pour les cinq rôles et vérifie les autorisations de la table et de Storage dans une transaction annulée. Elle vérifie également l’isolation entre entreprises, la révocation d’adhésion, l’absence d’accès anonyme et l’immutabilité des saisies émises.
+
+Les tests complémentaires `hr_contract_section_permissions_test.sql`, `hr_employment_contract_pdf_signer_test.sql`, `hr_salary_grid_test.sql` et `hr_employment_periods_test.sql` couvrent les champs, la signature, les montants source, les sauvegardes simultanées et les droits des cinq profils. Les tests PDF relisent les clauses et contrôlent les dates, les champs et l’image privée ajoutée uniquement à la fin.
+
+Les modèles PDF peuvent être reconstruits avec `scripts/hr/build_employment_contract_pdfs.py` et les deux références DOCX BBTM ouvertes en lecture seule. Ce script emploie Word COM masqué et les outils PDF du runtime documentaire ; ses fichiers intermédiaires ne sont pas versionnés.
+
+Pour revenir à l’interface précédente, redéployer le client antérieur en conservant les tables et le bucket privés. Ne pas supprimer de contrats existants lors d’un retour arrière de l’application.

@@ -1,3 +1,4 @@
+import { planningPreviewSignature } from './planningDocumentSignature';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { createPlanningPreviewOverview } from './planningPreviewData';
@@ -44,7 +45,7 @@ describe('planning crew list', () => {
     const document = buildPlanningCrewList(createPlanningPreviewOverview('2026-07-14'), {
       vesselId: 1, date: '2026-07-14', watchGroup: 'Bordée 1',
     });
-    const generated = await generatePlanningCrewList(document, 'xlsx');
+    const generated = await generatePlanningCrewList(document, 'xlsx', planningPreviewSignature());
     const zip = await JSZip.loadAsync(await generated.blob.arrayBuffer());
     const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('string');
     const styles = await zip.file('xl/styles.xml')?.async('string');
@@ -66,7 +67,7 @@ describe('planning crew list', () => {
     const document = buildPlanningCrewList(createPlanningPreviewOverview('2026-07-14'), {
       vesselId: 1, date: '2026-07-14', watchGroup: 'Bordée 1',
     });
-    const generated = await generatePlanningCrewList(document, 'pdf');
+    const generated = await generatePlanningCrewList(document, 'pdf', planningPreviewSignature());
     const bytes = new Uint8Array(await generated.blob.arrayBuffer());
     const content = new TextDecoder('latin1').decode(bytes);
     expect(generated.fileName).toBe('crew-list-goury-bordee-1-2026-07-14.pdf');

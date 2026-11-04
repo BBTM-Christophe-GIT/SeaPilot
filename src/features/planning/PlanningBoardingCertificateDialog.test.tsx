@@ -28,7 +28,7 @@ describe('Planning boarding certificate dialog', () => {
 
   it('uses all recorded En Mer periods, all vessels by default and PDF by default', async () => {
     const user = userEvent.setup();
-    render(<PlanningBoardingCertificateDialog onClose={vi.fn()} overview={overview} />);
+    render(<PlanningBoardingCertificateDialog client={{} as never} previewMode onClose={vi.fn()} overview={overview} />);
 
     expect(screen.getByRole('dialog', { name: "Attestation d'armement" })).toBeInTheDocument();
     expect(screen.getByText(/Toutes les périodes « En Mer »/)).toBeInTheDocument();
@@ -46,6 +46,6 @@ describe('Planning boarding certificate dialog', () => {
     await waitFor(() => expect(generateBoardingCertificate).toHaveBeenCalledWith('docx', overview, {
       personId: 10,
       vesselIds: [1],
-    }));
+    }, { signature: expect.any(ArrayBuffer) }));
   });
 });

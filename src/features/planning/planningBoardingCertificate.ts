@@ -203,7 +203,7 @@ function periodLabel(period: BoardingCertificatePeriod): string {
   return `${formatPlanningDate(period.startsOn)} au ${formatPlanningDate(period.endsOn)}`;
 }
 
-async function buildDocx(template: ArrayBuffer, data: BoardingCertificateData): Promise<Blob> {
+async function buildDocx(template: ArrayBuffer, signature: ArrayBuffer, data: BoardingCertificateData): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const archive = await JSZip.loadAsync(template);
   const documentPart = archive.file('word/document.xml');
@@ -229,6 +229,8 @@ async function buildDocx(template: ArrayBuffer, data: BoardingCertificateData): 
   xml = replaceExactText(xml, '10', String(data.totalDays));
   xml = replaceExactText(xml, '11', formatPlanningDate(data.generatedOn));
   archive.file('word/document.xml', xml);
+  if (!archive.file('word/media/image1.png')) throw new Error('Emplacement de signature absent du modèle Word.');
+  archive.file('word/media/image1.png', signature);
   const bytes = await archive.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return new Blob([arrayBuffer(bytes)], { type: DOCX_MIME });
 }
@@ -362,11 +364,12 @@ export async function generateBoardingCertificate(
   templates: BoardingCertificateTemplates = {},
 ): Promise<GeneratedBoardingCertificate> {
   const data = buildBoardingCertificateData(overview, input);
+  if (!templates.signature?.byteLength) throw new Error('La signature privée est indisponible.');
   const blob = format === 'docx'
-    ? await buildDocx(templates.docx || await fetchTemplate('attestation-embarquement.docx'), data)
+    ? await buildDocx(templates.docx || await fetchTemplate('attestation-embarquement.docx'), templates.signature, data)
     : await buildPdf(
       templates.pdf || await fetchTemplate('attestation-embarquement.pdf'),
-      templates.signature || await fetchTemplate('attestation-signature.png'),
+      templates.signature,
       data,
     );
   return { blob, fileName: certificateFileName(data, format), data };

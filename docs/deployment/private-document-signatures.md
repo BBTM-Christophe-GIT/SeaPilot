@@ -1,0 +1,15 @@
+# Confidentialité des signatures et des déploiements
+
+Le 4 novembre 2026, le dépôt GitHub SeaPilot a été passé en privé par son propriétaire et son état `private: true` a été confirmé par l’API GitHub. Les copies précédemment téléchargées ne peuvent pas être révoquées par ce changement. Aucun historique Git n’a été réécrit.
+
+Les images de signature auparavant livrées dans les assets Planning, le PNG public et les modèles d’attestation Word/PDF ont été retirées. Le modèle Word conserve uniquement un emplacement synthétique transparent ; le PDF conserve le logo BBTM. Les documents générés reçoivent la signature active privée de Benjamin BON, sans modifier les autres éléments du modèle. Les préversions utilisent exclusivement une image synthétique.
+
+`GET /api/planning-document-signature` exige une session Supabase vérifiée et un rôle Planning dans l’entreprise active : Administrateur, Direction, Armement, Capitaine ou Marin. Ces deux derniers profils conservent ainsi leur génération de crew list. L’API recherche uniquement le signataire fixe actif dans cette entreprise ; elle n’accepte ni personne, ni chemin de stockage, ni entreprise en paramètre. Le client privilégié n’est construit qu’après ces contrôles. La réponse PNG est privée et non mise en cache ; aucun chemin de stockage ni secret n’est retourné.
+
+Le serveur réutilise les variables existantes `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (ou leurs variantes publiques déjà prises en charge), `SUPABASE_SECRET_KEY` ou `SUPABASE_SERVICE_ROLE_KEY` et `BLOB_READ_WRITE_TOKEN`. La clé privilégiée reste exclusivement côté serveur. Le mapping actif vers Vercel Blob privé est prioritaire, borné au bucket/chemin de la signature sélectionnée et vérifié par taille et SHA-256 ; seul un fichier non migré utilise encore Storage privé. Une absence de configuration ou de signature active fait échouer la génération explicitement, sans revenir à une image publique. Le client de démonstration ne contacte pas cette API.
+
+La protection Vercel standard a été activée pour les préversions et les URL générées des déploiements de production (`prod_deployment_urls_and_all_previews`). Elle protège également les anciens déploiements qui contenaient ces fichiers. Les domaines de production conservent leur accès habituel ; la connexion SeaPilot reste nécessaire pour les données applicatives.
+
+Supabase impose désormais SSL pour les connexions externes PostgreSQL (`database: true`, configuration appliquée et relue). Les APIs applicatives restent accessibles en HTTPS. Aucune plage IP arbitraire n’a été ajoutée : une restriction des connexions SQL directes doit utiliser l’inventaire réel des réseaux d’administration et d’import, afin de ne pas bloquer leurs traitements. Les règles RLS, les grants et les droits d’import sont décrits dans `supabase-public-access-hardening.md`.
+
+La recette automatisée contrôle le refus anonyme et hors origine, la validation identité/entreprise avant accès privilégié, le signataire fixe, la réponse sans cache, l’absence de signature dans les fichiers statiques et la conservation des exports Excel, PDF et Word.
