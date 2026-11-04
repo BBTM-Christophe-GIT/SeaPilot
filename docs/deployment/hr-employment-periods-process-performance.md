@@ -2,7 +2,7 @@
 
 ## Périodes d’emploi
 
-La rubrique **Contrat et dates → Parcours dans la compagnie → Gérer les périodes** permet de conserver plusieurs embauches et départs pour une même personne. Chaque période porte son contrat et son motif de départ. Clôturer la période précédente avant d’ajouter une réembauche ; les interruptions sont conservées et les chevauchements sont refusés côté application et côté base.
+La rubrique **Données contractuelles → Parcours dans la compagnie → Gérer les périodes** permet de conserver plusieurs embauches et départs pour une même personne. Chaque période porte son contrat et son motif de départ. Clôturer la période précédente avant d’ajouter une réembauche ; les interruptions sont conservées et les chevauchements sont refusés côté application et côté base.
 
 La migration `20261101215413_hr_employment_periods.sql` ajoute `people.employment_periods` et reprend les dates existantes sans créer de doublon de collaborateur. Le déclencheur synchronise les colonnes historiques `hired_on`, `departed_on`, `contract_type`, `departure_reason` avec la dernière période. Les éditions des anciens champs mettent à jour cette dernière période et conservent les périodes antérieures.
 

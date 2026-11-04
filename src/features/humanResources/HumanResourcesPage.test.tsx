@@ -328,7 +328,7 @@ describe('HumanResourcesPage', () => {
   it('opens a contract chip on the linked person’s contract section', async () => {
     render(<MemoryRouter initialEntries={['/modules/humanResources?person=1&section=contract']}><Routes><Route path="/modules/humanResources" element={<HumanResourcesRoute client={createClient() as never} currentPersonId={3} roles={['admin']} />} /></Routes></MemoryRouter>);
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
-    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Contrat et dates' })).toHaveAttribute('aria-current', 'page'));
+    await waitFor(() => expect(within(profile).getByRole('button', { name: 'Données contractuelles' })).toHaveAttribute('aria-current', 'page'));
   });
 
   it('opens the personal signature section from the medical register link', async () => {
@@ -930,7 +930,7 @@ describe('HumanResourcesPage', () => {
     const identitySection = within(profile).getByRole('button', { name: 'Identité et poste' });
     expect(within(profile).queryByText('Actif', { exact: true })).not.toBeInTheDocument();
     expect(within(profile).queryByText('Inactif', { exact: true })).not.toBeInTheDocument();
-    const contractSection = within(profile).getByRole('button', { name: 'Contrat et dates' });
+    const contractSection = within(profile).getByRole('button', { name: 'Données contractuelles' });
     const contactSection = within(profile).getByRole('button', { name: 'Coordonnées' });
     const emergencySection = within(profile).getByRole('button', { name: 'Contact urgence' });
     const administrativeSection = within(profile).getByRole('button', { name: 'Documents administratifs' });
@@ -1467,7 +1467,7 @@ describe('HumanResourcesPage', () => {
     const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
     await user.selectOptions(within(profile).getByLabelText('Fonction'), '2nd Mécanicien');
-    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    await user.click(within(profile).getByRole('button', { name: 'Données contractuelles' }));
 
     expect(within(profile).getByLabelText('Code Fonction ENIM')).toHaveValue('EB01A');
     expect(within(profile).getByLabelText('Catégorie')).toHaveValue('12');
@@ -1623,7 +1623,7 @@ describe('HumanResourcesPage', () => {
     fireEvent.change(within(profile).getByLabelText('Adresse postale'), {
       target: { value: '3 quai BBTM, 76600 Le Havre' },
     });
-    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    await user.click(within(profile).getByRole('button', { name: 'Données contractuelles' }));
     fireEvent.change(within(profile).getByLabelText('Type de contrat'), { target: { value: 'CDD' } });
     await user.selectOptions(within(profile).getByLabelText('Cause depart'), 'Retraite');
     await user.click(within(profile).getByRole('button', { name: 'Tenues et mensurations' }));
@@ -1645,7 +1645,7 @@ describe('HumanResourcesPage', () => {
     expect(await screen.findByText('Fiche collaborateur mise a jour.')).toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Coordonnées' }));
     expect(within(profile).getByText('+33 6 11 22 33 44')).toBeInTheDocument();
-    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    await user.click(within(profile).getByRole('button', { name: 'Données contractuelles' }));
     expect(within(profile).getByText('CDD')).toBeInTheDocument();
     expect(within(profile).getByText('Retraite')).toBeInTheDocument();
   });
@@ -1705,14 +1705,14 @@ describe('HumanResourcesPage', () => {
     await screen.findByRole('button', { name: 'Afficher la fiche de Jean MARTIN' });
     await user.click(screen.getByRole('button', { name: 'Ajouter un collaborateur' }));
     const dialog = screen.getByRole('dialog', { name: 'Nouveau collaborateur' });
-    expect(within(dialog).getAllByRole('button', { name: /Identité et poste|Contrat et dates|Coordonnées|Contact urgence|Documents administratifs|Santé et habilitations|Tenues et mensurations|Documents/ })).toHaveLength(8);
+    expect(within(dialog).getAllByRole('button', { name: /Identité et poste|Données contractuelles|Coordonnées|Contact urgence|Documents administratifs|Santé et habilitations|Tenues et mensurations|Documents/ })).toHaveLength(8);
     fireEvent.change(within(dialog).getByLabelText('Prénom'), { target: { value: 'Marie' } });
     fireEvent.change(within(dialog).getByLabelText('Nom'), { target: { value: 'LEGRAND' } });
     fireEvent.change(within(dialog).getByLabelText('Email'), { target: { value: 'marie@example.test' } });
     fireEvent.change(within(dialog).getByLabelText('Fonction'), { target: { value: 'Matelot Polyvalent' } });
     fireEvent.change(within(dialog).getByLabelText('Grade'), { target: { value: 'Pont' } });
     fireEvent.change(within(dialog).getByLabelText('Date naissance'), { target: { value: '1990-05-12' } });
-    await user.click(within(dialog).getByRole('button', { name: 'Contrat et dates' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Données contractuelles' }));
     expect(within(dialog).getByLabelText('Code Fonction ENIM')).toHaveValue('PA01A');
     expect(within(dialog).getByLabelText('Catégorie')).toHaveValue('5');
     await user.selectOptions(within(dialog).getByLabelText('Type de contrat'), 'CDI');
@@ -1779,7 +1779,7 @@ describe('HumanResourcesPage', () => {
       p_person_id: 1,
       p_details: expect.objectContaining({ phone: '+33 6 55 44 33 22' }),
     }));
-    expect(within(profile).queryByRole('button', { name: 'Contrat et dates' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Données contractuelles' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).not.toBeInTheDocument();
     expect(screen.queryByText('Marins par fonction')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
@@ -1800,7 +1800,7 @@ describe('HumanResourcesPage', () => {
     expect(screen.getByRole('button', { name: 'Afficher la fiche de Jean MARTIN' })).toBeInTheDocument();
     const profile = screen.getByRole('complementary', { name: 'Fiche RH de Jean MARTIN' });
     expect(within(profile).getByRole('button', { name: 'Modifier la fiche RH' })).toBeInTheDocument();
-    expect(within(profile).queryByRole('button', { name: 'Contrat et dates' })).not.toBeInTheDocument();
+    expect(within(profile).queryByRole('button', { name: 'Données contractuelles' })).not.toBeInTheDocument();
     expect(screen.getByText('Marins par fonction')).toBeInTheDocument();
     expect(screen.queryByLabelText('Indicateurs RH')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Effectifs par fonction')).not.toBeInTheDocument();

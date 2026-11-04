@@ -3,12 +3,14 @@ import { FileDown } from 'lucide-react';
 import { useState } from 'react';
 import { getPersonEmploymentPeriods, getHrEnimClassification, type PersonRecord } from './peopleQueries';
 import {
-  buildEmploymentContractFileName, calculateEmploymentContractEndDate, createEmploymentContractDraft,
+  buildEmploymentContractFileName, buildEmploymentContractSalarySnapshot, calculateEmploymentContractEndDate, createEmploymentContractDraft,
   validateEmploymentContractDraft, type EmploymentContractDetails, type EmploymentContractDurationUnit,
   type EmploymentContractType,
 } from './employmentContractModel';
 import { downloadEmploymentContractSigner, saveEmploymentContract } from './employmentContractQueries';
 import { saveEmploymentContractBlob } from './EmploymentContractsSection';
+import { calculateEmploymentSalary } from './employmentSeniority';
+import { loadHrSalaryGrid } from './salaryGridQueries';
 import './employmentContracts.css';
 
 export function EmploymentContractProfileFields({ client, person, details, disabled = false, useSavedDuration = false, buttonLabel = 'Générer le contrat', onGenerated, onBusyChange }: {
@@ -40,19 +42,20 @@ export function EmploymentContractProfileFields({ client, person, details, disab
   async function generate() {
     if (locked || !supported) return;
     setIssues([]); setNotice('');
-    const draft = createEmploymentContractDraft(recordedPerson, contractType as EmploymentContractType, details);
-    if (draft.type === 'CDD' && !useSavedDuration) {
-      try { draft.endDate = calculateEmploymentContractEndDate(draft.startDate, duration, durationUnit); }
-      catch (cause) {
-        setIssues([cause instanceof Error ? cause.message : 'Renseignez une durée de CDD valide.']);
-        return;
-      }
-    }
-    const validation = validateEmploymentContractDraft(draft);
-    if (validation.length) { setIssues(validation); return; }
     setBusy(true);
     onBusyChange?.(true);
     try {
+      const grid = await loadHrSalaryGrid(client);
+      const salaryGridRow = grid.rows.find((row) => row.id === details.salaryGridRowId && row.active);
+      if (!salaryGridRow) throw new Error('Choisissez un poste actif dans la grille de salaires des données contractuelles.');
+      const salary = calculateEmploymentSalary(person, salaryGridRow);
+      const draft = createEmploymentContractDraft(recordedPerson, contractType as EmploymentContractType,
+        { ...details, grossMonthlySalary: salary.grossMonthlySalary, annualGrossSalary: salary.annualGrossSalary });
+      if (draft.type === 'CDD' && !useSavedDuration) {
+        draft.endDate = calculateEmploymentContractEndDate(draft.startDate, duration, durationUnit);
+      }
+      const validation = validateEmploymentContractDraft(draft);
+      if (validation.length) { setIssues(validation); return; }
       const { generateEmploymentContractPdf } = await import('./employmentContractPdf');
       const { signature, blob: signatureBlob } = await downloadEmploymentContractSigner(client);
       const blob = await generateEmploymentContractPdf(draft, {
@@ -61,7 +64,7 @@ export function EmploymentContractProfileFields({ client, person, details, disab
       const fileName = buildEmploymentContractFileName(draft);
       await saveEmploymentContract(client, { personId: person.id, contractType: draft.type,
         fileName, file: blob, inputData: { ...draft, employerRepresentative: signature.signerName,
-          salaryGridRowId: details.salaryGridRowId || '', annualGrossSalary: details.annualGrossSalary || '', salaryGridRevision: details.salaryGridRevision || '',
+          ...buildEmploymentContractSalarySnapshot(salary, salaryGridRow.id, grid.revision),
           employerSignatureId: signature.id, employerSignerPersonId: signature.personId,
           employerSignatureSha256: signature.sha256 } });
       setNotice(`Contrat ${draft.type} généré et enregistré dans Documents.`);

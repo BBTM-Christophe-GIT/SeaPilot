@@ -25,13 +25,15 @@ describe('salary grid management dialog', () => {
     const onSaved = vi.fn(), onClose = vi.fn(), profileSubmit = vi.fn();
     render(<form onSubmit={profileSubmit}>{createPortal(<SalaryGridDialog client={client} onClose={onClose} onSaved={onSaved} />, document.body)}</form>);
     const total = await screen.findByLabelText('Total annuel de base · ligne 1');
-    for (const label of ['Poste', 'CCN', 'Catégorie ENIM', 'Salaire de base conventionnel', 'Taux indexation (%)', 'Annuel brut', 'Prime annuelle conventionnelle', 'Total annuel de base']) {
+    for (const label of ['Poste', 'CCN', 'Catégorie ENIM', 'Salaire de base conventionnel', 'Taux indexation (%)', 'Annuel brut', 'Prime annuelle conventionnelle', 'Total annuel de base', 'Mensuel brut hors ancienneté']) {
       expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument();
     }
     fireEvent.change(total, { target: { value: '51 900,00' } });
-    expect(screen.getByLabelText('Mensuel brut · ligne 1')).toHaveTextContent('4 325,00 €');
+    expect(screen.getByLabelText('Mensuel brut hors ancienneté · ligne 1')).toHaveTextContent('3 125,00 €');
+    fireEvent.change(screen.getByLabelText('Annuel brut · ligne 1'), { target: { value: '42 000,01' } });
+    expect(screen.getByLabelText('Mensuel brut hors ancienneté · ligne 1')).toHaveTextContent('3 501,00 €');
     await user.click(screen.getByRole('button', { name: 'Enregistrer la grille' }));
-    await waitFor(() => expect(saveHrSalaryGrid).toHaveBeenCalledWith(client, [{ ...grid.rows[0], totalAnnualBase: 51900 }], 7));
+    await waitFor(() => expect(saveHrSalaryGrid).toHaveBeenCalledWith(client, [{ ...grid.rows[0], totalAnnualBase: 51900, annualGross: 42000.01 }], 7));
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ revision: 8 }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(profileSubmit).not.toHaveBeenCalled();

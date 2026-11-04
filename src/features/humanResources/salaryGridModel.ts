@@ -1,4 +1,5 @@
 import type { HrSalaryGridRow } from './salaryGridQueries';
+import { monthlyGrossSalaryFromAnnual } from './employmentSeniority';
 
 export const SALARY_GRID_COLUMNS = [
   { key: 'positionLabel', label: 'Poste', numeric: false },
@@ -15,10 +16,9 @@ type NumericSalaryKey = Extract<typeof SALARY_GRID_COLUMNS[number], { numeric: t
 export type SalaryGridDraftRow = Omit<HrSalaryGridRow, NumericSalaryKey> & Record<NumericSalaryKey, string>;
 const numericColumns = SALARY_GRID_COLUMNS.filter(column => column.numeric);
 
-/** The final annual column is authoritative, independently of the other source amounts. */
-export function salaryGridMonthlyAmount(row: Pick<HrSalaryGridRow, 'totalAnnualBase'>): string {
-  if (!Number.isFinite(row.totalAnnualBase) || row.totalAnnualBase < 0) return '';
-  return (Math.round(Math.round(row.totalAnnualBase * 100) / 12) / 100).toFixed(2);
+/** The annual gross column is authoritative; the monthly base is rounded up to a whole euro. */
+export function salaryGridMonthlyAmount(row: Pick<HrSalaryGridRow, 'annualGross'>): string {
+  return monthlyGrossSalaryFromAnnual(row.annualGross);
 }
 
 export function salaryGridConventionLabel(row: Pick<HrSalaryGridRow, 'ccn'>): string {

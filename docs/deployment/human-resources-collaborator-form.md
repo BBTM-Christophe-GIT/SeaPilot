@@ -3,7 +3,7 @@
 La fenêtre **Ajouter un collaborateur** reprend les huit sections de la fiche RH :
 
 1. Identité et poste
-2. Contrat et dates
+2. Données contractuelles
 3. Coordonnées
 4. Contact urgence
 5. Documents administratifs

@@ -71,7 +71,7 @@ const FIELD_DEFINITIONS = {
 type SectionKey = keyof typeof FIELD_DEFINITIONS;
 
 const SECTION_LABELS: Record<SectionKey, string> = {
-  identity: 'Identité et poste', contract: 'Contrat et dates', contact: 'Coordonnées',
+  identity: 'Identité et poste', contract: 'Données contractuelles', contact: 'Coordonnées',
   emergency: 'Contact urgence', administrative: 'Documents administratifs',
   health: 'Santé et habilitations', clothing: 'Tenues et mensurations',
   annualReviews: 'Entretien Annuel', documents: 'Brevets et visites médicales',

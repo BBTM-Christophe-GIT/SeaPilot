@@ -4,7 +4,7 @@ import { AppDialog } from '../../components/AppDialog';
 import { createEmploymentContractDraft, validateEmploymentContractDraft, type EmploymentContractDetails } from './employmentContractModel';
 import { loadEmploymentContractDetails } from './employmentContractQueries';
 import { loadHrSalaryGrid } from './salaryGridQueries';
-import { salaryGridMonthlyAmount } from './salaryGridModel';
+import { calculateEmploymentSalary } from './employmentSeniority';
 import { formatPersonName, getPersonEmploymentPeriods, getHrEnimClassification, isPersonEmployedOn, type PersonRecord } from './peopleQueries';
 import { getParisDateKey } from './hrDocumentNotifications';
 import { EmploymentContractProfileFields } from './EmploymentContractProfileFields';
@@ -34,8 +34,9 @@ export function EmploymentContractCreationDialog({ client, people, initialPerson
       .then(([saved, grid]) => {
         if (!active) return;
         const row = grid.rows.find(row => row.id === saved?.salaryGridRowId && row.active);
+        const salary = row ? calculateEmploymentSalary(person, row, today) : null;
         const values: Partial<EmploymentContractDetails> = {
-          ...saved, ...(row ? { grossMonthlySalary: salaryGridMonthlyAmount(row), annualGrossSalary: row.totalAnnualBase.toFixed(2), salaryGridRevision: String(grid.revision) } : {}),
+          ...saved, ...(salary ? { grossMonthlySalary: salary.grossMonthlySalary, annualGrossSalary: salary.annualGrossSalary, salaryGridRevision: String(grid.revision) } : {}),
         };
         const period = getPersonEmploymentPeriods(person).at(-1);
         const classification = getHrEnimClassification(person.functionLabel);
@@ -46,12 +47,12 @@ export function EmploymentContractCreationDialog({ client, people, initialPerson
           ? validateEmploymentContractDraft(createEmploymentContractDraft(recorded, type, values))
           : ['Renseignez un type de contrat CDI ou CDD dans la fiche RH.'];
         if (!row) missing.unshift('Choisissez un poste actif dans la grille de salaires de la fiche RH.');
-        if (type === 'CDD' && !values.endDate) missing.unshift('Enregistrez la durée du CDD dans « Contrat et dates ».');
+        if (type === 'CDD' && !values.endDate) missing.unshift('Enregistrez la durée du CDD dans « Données contractuelles ».');
         setDetails(values); setLoadedPersonId(person.id); setIssues(missing);
       }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Impossible de charger les informations enregistrées de la fiche RH.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [client, person, attempt]);
+  }, [client, person, attempt, today]);
 
   return <AppDialog title="Générer un contrat" size="md" onClose={onClose} isBusy={generating}
     description="Choisissez le collaborateur. Le PDF reprend les informations enregistrées dans sa fiche RH."
@@ -65,6 +66,7 @@ export function EmploymentContractCreationDialog({ client, people, initialPerson
     {error ? <div><p className="form-error" role="alert">{error}</p><button className="sp-button sp-button--secondary" type="button" onClick={() => setAttempt(value => value + 1)}>Réessayer</button></div> : null}
     {!loading && issues.length ? <div role="alert" className="form-error"><strong>Complétez puis enregistrez la fiche RH avant de générer le contrat.</strong><ul>{issues.map((issue, index) => <li key={`${index}-${issue}`}>{issue}</li>)}</ul></div> : null}
     {person && loadedPersonId === person.id && details && !loading && !error && !issues.length ? <EmploymentContractProfileFields key={person.id} client={client} person={person}
-      details={details} useSavedDuration buttonLabel="Générer le PDF" onBusyChange={setGenerating} onGenerated={() => onGenerated(person.id)} /> : null}
+      details={details}
+      useSavedDuration buttonLabel="Générer le PDF" onBusyChange={setGenerating} onGenerated={() => onGenerated(person.id)} /> : null}
   </AppDialog>;
 }

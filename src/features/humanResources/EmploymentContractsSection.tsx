@@ -44,7 +44,7 @@ export function EmploymentContractsSection({ client, person }: { client: Supabas
 
   return <section aria-label="Contrats de travail" className="hr-contract-documents sp-panel">
     <div className="hr-profile-section-title"><h3><FileSignature size={18} aria-hidden="true" /> Contrats de travail</h3><span>{contracts.length}</span></div>
-    <p className="hr-contract-help">Accès réservé à Administrateur et Direction. La génération se fait depuis « Contrat et dates ».</p>
+    <p className="hr-contract-help">Accès réservé à Administrateur et Direction. La génération se fait depuis « Données contractuelles ».</p>
     {loading ? <p role="status">Chargement des contrats…</p> : contracts.length ? <ul className="hr-contract-list">
       {contracts.map((contract) => <li key={contract.id}>
         <div><strong>{contract.title}</strong><small>{contract.contractType} · {new Date(contract.createdAt).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })} · PDF</small></div>

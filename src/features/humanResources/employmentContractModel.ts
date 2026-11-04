@@ -1,4 +1,5 @@
 import type { PersonRecord } from './peopleQueries';
+import type { EmploymentSalaryCalculation } from './employmentSeniority';
 import { EMPLOYMENT_CONTRACT_TEXT } from './employmentContractText';
 
 export type EmploymentContractType = 'CDI' | 'CDD';
@@ -33,6 +34,21 @@ export type EmploymentContractDetails = Pick<EmploymentContractDraft,
   annualGrossSalary?: string;
   salaryGridRevision?: string;
 };
+
+/** Immutable evidence attached to an issued PDF, not a private-profile patch. */
+export function buildEmploymentContractSalarySnapshot(
+  salary: EmploymentSalaryCalculation,
+  salaryGridRowId: string,
+  salaryGridRevision: number,
+) {
+  return {
+    salaryGridRowId, salaryGridRevision: String(salaryGridRevision),
+    annualBaseSalary: salary.annualBaseSalary, annualGrossSalary: salary.annualGrossSalary,
+    seniorityRatePercent: salary.seniorityRatePercent, seniorityWorkedDays: salary.workedDays,
+    seniorityAsOf: salary.calculatedOn, seniorityFirstWorkedOn: salary.firstWorkedOn,
+    seniorityVirtualDate: salary.virtualDate, salaryCalculationVersion: salary.calculationVersion,
+  };
+}
 
 export interface EmploymentContractField {
   key: EmploymentContractFieldKey;

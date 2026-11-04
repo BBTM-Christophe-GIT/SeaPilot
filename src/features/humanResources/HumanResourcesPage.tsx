@@ -39,7 +39,7 @@ import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../comp
 import { supabase } from '../../lib/supabaseClient';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import type { RoleKey } from '../permissions/roles';
-import { notifyHrDocumentsChanged } from './hrDocumentNotifications';
+import { getParisDateKey, notifyHrDocumentsChanged } from './hrDocumentNotifications';
 import { canManageEmploymentContracts, loadEmploymentContractDetails, saveEmploymentContractDetails } from './employmentContractQueries';
 import { createEmploymentContractDraft, parseEmploymentContractSalary, type EmploymentContractDetails } from './employmentContractModel';
 import { EmploymentContractsSection } from './EmploymentContractsSection';
@@ -47,7 +47,8 @@ import { EmploymentContractCreationDialog } from './EmploymentContractCreationDi
 import { EmploymentContractDurationFields } from './EmploymentContractDurationFields';
 import { EmploymentContractVesselSelect } from './EmploymentContractVesselSelect';
 import { loadHrSalaryGrid, type HrSalaryGrid } from './salaryGridQueries';
-import { salaryGridMonthlyAmount, salaryGridConventionLabel } from './salaryGridModel';
+import { salaryGridConventionLabel } from './salaryGridModel';
+import { calculateEmploymentSalary, calculateEmploymentSeniority } from './employmentSeniority';
 import { SalaryGridDialog } from './SalaryGridDialog';
 import './hrDocumentActions.css';
 import './hrDashboard.css';
@@ -77,6 +78,7 @@ import {
   getHrDocumentCategoryLabel,
   getHrEnimClassification,
   getHrFunctionVisibilityKey,
+  getPersonEmploymentPeriods,
   HR_PRIMARY_FUNCTIONS,
   HR_DOCUMENT_CATEGORY_LABELS,
   HR_SEDENTARY_FUNCTIONS,
@@ -88,6 +90,7 @@ import {
   updateHrDocumentMedicalDetails,
   updateHrDocumentDetails,
   updatePersonDetails,
+  validateEmploymentPeriods,
   type HrDocumentRecord,
   type HrDocumentTypeOption,
   type HrVisibilityRule,
@@ -243,7 +246,7 @@ const HR_CATEGORY_ORDER = [
 
 const HR_DETAILS_SECTIONS = [
   { key: 'identity', label: 'Identité et poste' },
-  { key: 'contract', label: 'Contrat et dates' },
+  { key: 'contract', label: 'Données contractuelles' },
   { key: 'contact', label: 'Coordonnées' },
   { key: 'emergency', label: 'Contact urgence' },
   { key: 'administrative', label: 'Documents administratifs' },
@@ -440,7 +443,7 @@ function ProfileTabIcon({ tabKey }: { tabKey: HrDetailsSectionKey }) {
 function getProfileSectionLabel(tabKey: HrDetailsSectionKey): string {
   const labels: Record<HrDetailsSectionKey, string> = {
     identity: 'Identité & poste',
-    contract: 'Contrat & dates',
+    contract: 'Données contractuelles',
     contact: 'Coordonnées',
     emergency: 'Contact urgence',
     administrative: 'Administratif',
@@ -2878,7 +2881,7 @@ function CreatePersonDialog({
         if (!canManageContracts) return null;
         return (
           <section>
-            <h3>Contrat et dates</h3>
+            <h3>Données contractuelles</h3>
             <DetailsGrid isEditing>
               <ReadonlyField label="Code Fonction ENIM" value={enimClassification.functionCode} />
               <ReadonlyField label="Catégorie" value={enimClassification.category?.toString() || ''} />
@@ -3078,6 +3081,15 @@ function profileContractDetails(person: PersonRecord, input: Record<string, unkn
   };
 }
 
+function personWithContractDateDraft(person: PersonRecord, form: UpdatePersonDetailsInput): PersonRecord {
+  const periods = getPersonEmploymentPeriods(person);
+  const latest = periods.at(-1);
+  const drafted = { ...(latest || { contractType: person.contractType, departureReason: person.departureReason }),
+    hiredOn: form.hiredOn, departedOn: form.departedOn };
+  return { ...person, hiredOn: form.hiredOn, departedOn: form.departedOn,
+    employmentPeriods: [...periods.slice(0, -1), drafted] };
+}
+
 function PersonDetailsPanel({
   canManageContracts,
   salaryGridRefresh,
@@ -3166,6 +3178,9 @@ function PersonDetailsPanel({
   const [contractDetailsUnavailable, setContractDetailsUnavailable] = useState(false);
   const [contractDetailsRevision, setContractDetailsRevision] = useState(0);
   const [isPrivateSaving, setIsPrivateSaving] = useState(false);
+  // A successful public-profile save can rerender before its private patch.
+  // Keep this submission's draft until both writes succeed or it is cancelled.
+  const preservedContractDraft = useRef<{ personId: number; saved: boolean } | null>(null);
   const [salaryGrid, setSalaryGrid] = useState<HrSalaryGrid | null>(null);
   const [salaryGridError, setSalaryGridError] = useState('');
   const [salaryGridRevision, setSalaryGridRevision] = useState(0);
@@ -3183,6 +3198,8 @@ function PersonDetailsPanel({
     initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
 
   useEffect(() => {
+    if (preservedContractDraft.current?.personId === person.id) return;
+    preservedContractDraft.current = null;
     setForm(buildPersonDetailsForm(person));
     setActiveSectionKey(initialSectionKey && visibleSectionKeys.has(initialSectionKey) ? initialSectionKey : availableSections[0]?.key || 'identity');
     setIsEditing(false);
@@ -3201,6 +3218,10 @@ function PersonDetailsPanel({
   }, [documents]);
 
   useEffect(() => {
+    if (preservedContractDraft.current?.personId === person.id) {
+      if (!preservedContractDraft.current.saved) return;
+      preservedContractDraft.current = null;
+    }
     let active = true;
     const empty = profileContractDetails(person);
     setContractDetails(empty); setContractDetailsDraft(empty); setContractDetailsError(''); setContractDetailsUnavailable(false);
@@ -3228,19 +3249,35 @@ function PersonDetailsPanel({
   function selectSalaryPosition(rowId: string) {
     const row = salaryGrid?.rows.find((item) => item.id === rowId && item.active);
     if (!row || !salaryGrid) return;
+    const salary = calculateEmploymentSalary(personWithContractDateDraft(person, form), row, getParisDateKey());
     setContractDetailsDraft((values) => ({ ...values, salaryGridRowId: row.id,
-      grossMonthlySalary: salaryGridMonthlyAmount(row), annualGrossSalary: row.totalAnnualBase.toFixed(2),
+      grossMonthlySalary: salary.grossMonthlySalary, annualGrossSalary: salary.annualGrossSalary,
       salaryGridRevision: String(salaryGrid.revision), collectiveAgreement: salaryGridConventionLabel(row) }));
   }
 
-  function withCurrentSalaryGrid(values: Partial<EmploymentContractDetails>): Partial<EmploymentContractDetails> {
+  function withCurrentSalaryGrid(values: Partial<EmploymentContractDetails>, salaryPerson = person): Partial<EmploymentContractDetails> {
     const row = salaryGrid?.rows.find((item) => item.id === values.salaryGridRowId && item.active);
-    return row && salaryGrid ? { ...values, grossMonthlySalary: salaryGridMonthlyAmount(row),
-      annualGrossSalary: row.totalAnnualBase.toFixed(2), salaryGridRevision: String(salaryGrid.revision) } : values;
+    if (!row || !salaryGrid) return values;
+    const salary = calculateEmploymentSalary(salaryPerson, row, getParisDateKey());
+    return { ...values, grossMonthlySalary: salary.grossMonthlySalary,
+      annualGrossSalary: salary.annualGrossSalary, salaryGridRevision: String(salaryGrid.revision) };
   }
   const currentContractDetails = withCurrentSalaryGrid(contractDetails);
-  const currentContractDetailsDraft = withCurrentSalaryGrid(contractDetailsDraft);
+  const contractDateDraftPerson = personWithContractDateDraft(person, form);
+  const currentContractDetailsDraft = withCurrentSalaryGrid(contractDetailsDraft, contractDateDraftPerson);
   const contractSalaryReady = Boolean(salaryGrid?.rows.some((row) => row.id === contractDetails.salaryGridRowId && row.active));
+  const displayedContractDetails = isEditing ? contractDetailsDraft : contractDetails;
+  const displayedSalaryPerson = isEditing ? contractDateDraftPerson : person;
+  const displayedSalaryRow = salaryGrid?.rows.find((row) => row.id === displayedContractDetails.salaryGridRowId && row.active);
+  const displayedSalary = displayedSalaryRow ? calculateEmploymentSalary(displayedSalaryPerson, displayedSalaryRow, getParisDateKey()) : null;
+  const displayedSeniority = calculateEmploymentSeniority(getPersonEmploymentPeriods(displayedSalaryPerson), getParisDateKey());
+  const seniorityRateLabel = `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(displayedSeniority.seniorityRatePercent)} %`;
+  function currentSalaryLabel(value?: string): string {
+    if (contractDetailsUnavailable || salaryGridError) return 'Indisponible';
+    if (contractDetailsLoading || !salaryGrid) return 'Chargement…';
+    if (!displayedSalaryRow) return 'Indisponible';
+    return formatHrSalaryAmount(value) || 'Indisponible';
+  }
 
   function privateContractField(key: typeof PRIVATE_CONTRACT_FIELDS[number], label: string, multiline = false) {
     if (!canManageContracts) return null;
@@ -3287,24 +3324,39 @@ function PersonDetailsPanel({
       return [{ documentId: document.id, ...medicalDetailsInput(medicalForm) }];
     });
 
+    const patch = Object.fromEntries(PRIVATE_CONTRACT_FIELDS.flatMap((key) =>
+      currentContractDetailsDraft[key] !== contractDetails[key] ? [[key, (currentContractDetailsDraft[key] || '').trim()]] : []));
+    const hasPrivatePatch = canManageContracts && Object.keys(patch).length > 0;
+    if (canManageContracts && (form.hiredOn !== person.hiredOn || form.departedOn !== person.departedOn)) {
+      const periodsError = validateEmploymentPeriods(contractDateDraftPerson.employmentPeriods || []);
+      if (periodsError) { setContractDetailsError(periodsError); return; }
+    }
+    const salary = patch.grossMonthlySalary;
+    if (hasPrivatePatch && salary && (!Number.isFinite(parseEmploymentContractSalary(salary)) || parseEmploymentContractSalary(salary) <= 0)) {
+      setContractDetailsError('Le salaire brut doit être un montant positif avec deux décimales au maximum.');
+      return;
+    }
+
+    let personSaved = false;
     try {
-      const patch = Object.fromEntries(PRIVATE_CONTRACT_FIELDS.flatMap((key) =>
-        currentContractDetailsDraft[key] !== contractDetails[key] ? [[key, (currentContractDetailsDraft[key] || '').trim()]] : []));
-      if (canManageContracts && Object.keys(patch).length) {
-        const salary = patch.grossMonthlySalary;
-        if (salary && (!Number.isFinite(parseEmploymentContractSalary(salary)) || parseEmploymentContractSalary(salary) <= 0)) {
-          setContractDetailsError('Le salaire brut doit être un montant positif avec deux décimales au maximum.');
-          return;
-        }
+      if (hasPrivatePatch) {
+        preservedContractDraft.current = { personId: person.id, saved: false };
         setIsPrivateSaving(true);
-        await saveEmploymentContractDetails(client, person.id, patch);
-        setContractDetails((values) => ({ ...values, ...patch }));
       }
       await onSave(person.id, form, medicalUpdates);
+      personSaved = true;
+      if (hasPrivatePatch) {
+        await saveEmploymentContractDetails(client, person.id, patch);
+        setContractDetails((values) => ({ ...values, ...patch }));
+        setContractDetailsDraft((values) => ({ ...values, ...patch }));
+        preservedContractDraft.current = { personId: person.id, saved: true };
+        setContractDetailsRevision((value) => value + 1);
+      }
       setContractDetailsError('');
       setIsEditing(false);
     } catch (cause) {
-      setContractDetailsError(cause instanceof Error ? cause.message : 'Impossible d’enregistrer les données de la fiche RH.');
+      const message = cause instanceof Error ? cause.message : 'Impossible d’enregistrer les données de la fiche RH.';
+      setContractDetailsError(personSaved ? `La fiche est enregistrée, mais les données contractuelles restent à enregistrer : ${message}` : message);
       // The page-level notice already tells the user why the save failed.
     } finally {
       setIsPrivateSaving(false);
@@ -3402,7 +3454,7 @@ function PersonDetailsPanel({
         if (!canManageContracts) return null;
         return (
           <section>
-            <h3>Contrat et dates</h3>
+            <h3>Données contractuelles</h3>
             <DetailsGrid isEditing={isEditing}>
               {isEditing ? (
                 <>
@@ -3446,12 +3498,14 @@ function PersonDetailsPanel({
                 </select>
               </label> : <FieldValue label="Poste de la grille de salaires"
                 value={salaryGrid?.rows.find((row) => row.id === contractDetails.salaryGridRowId)?.positionLabel || ''} />}
-              <FieldValue label="Salaire brut (€ / mois)" value={formatHrSalaryAmount((isEditing ? currentContractDetailsDraft : currentContractDetails).grossMonthlySalary)} />
-              <FieldValue label="Total annuel de base (€)" value={formatHrSalaryAmount((isEditing ? currentContractDetailsDraft : currentContractDetails).annualGrossSalary)} />
+              <FieldValue label="Annuel brut de la grille (€)" value={currentSalaryLabel(displayedSalary?.annualBaseSalary)} />
+              <FieldValue label="Taux d’ancienneté applicable" value={seniorityRateLabel} />
+              <FieldValue label="Salaire annuel brut avec ancienneté (€)" value={currentSalaryLabel(displayedSalary?.annualGrossSalary)} />
+              <FieldValue label="Salaire brut (€ / mois)" value={currentSalaryLabel(displayedSalary?.grossMonthlySalary)} />
               {privateContractField('vesselNames', 'Navire(s) d’affectation', true)}
               {privateContractField('collectiveAgreement', 'Convention collective applicable', true)}
             </DetailsGrid>
-            <p className="hr-contract-help">Le salaire mensuel est calculé depuis la dernière colonne de la grille : total annuel de base ÷ 12.</p>
+            <p className="hr-contract-help">L’annuel brut de la grille est majoré selon les périodes travaillées cumulées. Le salaire mensuel correspond à cet annuel ÷ 12, arrondi à l’euro supérieur.</p>
             {salaryGridError ? <div><p className="form-error" role="alert">{salaryGridError}</p><button className="sp-button sp-button--secondary"
               type="button" onClick={() => setSalaryGridRevision((value) => value + 1)}>Recharger la grille</button></div> : null}
             {!salaryGrid && !salaryGridError ? <p className="hr-contract-help" role="status">Chargement de la grille de salaires…</p> : null}
@@ -3700,7 +3754,9 @@ function PersonDetailsPanel({
             <>
               <button
                 className="hr-secondary-button"
+                disabled={isProfileSaving}
                 onClick={() => {
+                  preservedContractDraft.current = null;
                   setForm(buildPersonDetailsForm(person));
                   setMedicalForms(buildMedicalDetailsForms(documents));
                   setContractDetailsDraft(contractDetails);

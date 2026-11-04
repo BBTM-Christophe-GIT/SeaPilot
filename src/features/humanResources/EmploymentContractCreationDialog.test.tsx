@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { EmploymentContractCreationDialog } from './EmploymentContractCreationDialog';
 import { generateEmploymentContractPdf } from './employmentContractPdf';
@@ -24,6 +24,8 @@ const details = { socialSecurityNumber: 'DEMONSTRATION-001', vesselNames: 'Navir
 const blob = new Blob(['demo-pdf'], { type: 'application/pdf' });
 const record = { id: 1 } as EmploymentContractRecord;
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-04T10:00:00Z'));
   vi.clearAllMocks();
   vi.mocked(loadEmploymentContractDetails).mockResolvedValue(details);
   vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 2, updatedAt: '', rows: [{
@@ -36,6 +38,7 @@ beforeEach(() => {
   vi.mocked(generateEmploymentContractPdf).mockResolvedValue(blob);
   vi.mocked(saveEmploymentContract).mockResolvedValue(record);
 });
+afterEach(() => { vi.useRealTimers(); });
 
 describe('ribbon contract creation from recorded RH data', () => {
   it('lists only current active staff while retaining future departures, current rehires, trainees and office staff', () => {
@@ -96,11 +99,38 @@ describe('ribbon contract creation from recorded RH data', () => {
     await user.click(generate);
     await waitFor(() => expect(onGenerated).toHaveBeenCalledWith(7));
     expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({ personId: 7, firstName: 'Alice',
-      grossMonthlySalary: '3000.00' }), expect.anything());
+      grossMonthlySalary: '2750.00' }), expect.anything());
     expect(saveEmploymentContract).toHaveBeenCalledWith(client, expect.objectContaining({ inputData: expect.objectContaining({
-      salaryGridRowId: 'poste-a', salaryGridRevision: '2', annualGrossSalary: '36000.00',
+      salaryGridRowId: 'poste-a', salaryGridRevision: '2', annualGrossSalary: '33000.00',
     }) }));
     expect(saveEmploymentContractBlob).toHaveBeenCalledWith(blob, expect.stringMatching(/\.pdf$/));
+  });
+
+  it('uses the current annual gross grid amount and cumulative seniority instead of saved salary or total annual base', async () => {
+    const user = userEvent.setup();
+    vi.mocked(loadEmploymentContractDetails).mockResolvedValue({ ...details,
+      grossMonthlySalary: '9999.00', annualGrossSalary: '119988.00' });
+    vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 9, updatedAt: '', rows: [{
+      id: 'poste-a', positionLabel: 'Poste de démonstration', ccn: 'Officier', enimCategory: '15',
+      conventionalAnnualBase: 30000, indexationPercent: 10, annualGross: 42000.01,
+      annualPremium: 3000, totalAnnualBase: 48000, active: true,
+    }] });
+    const rehired = { ...person, hiredOn: '2022-11-04', employmentPeriods: [
+      { hiredOn: '2020-01-01', departedOn: '2022-01-01', contractType: 'CDD', departureReason: '' },
+      { hiredOn: '2022-11-04', departedOn: '', contractType: 'CDI', departureReason: '' },
+    ] };
+    render(<EmploymentContractCreationDialog client={client} people={[rehired]} initialPersonId={7}
+      onClose={vi.fn()} onOpenProfile={vi.fn()} onGenerated={vi.fn()} />);
+    await user.click(await screen.findByRole('button', { name: 'Générer le PDF' }));
+    await waitFor(() => expect(saveEmploymentContract).toHaveBeenCalledOnce());
+    expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({
+      grossMonthlySalary: '3606.00', startDate: '2022-11-04',
+    }), expect.anything());
+    expect(saveEmploymentContract).toHaveBeenCalledWith(client, expect.objectContaining({
+      inputData: expect.objectContaining({ salaryGridRowId: 'poste-a', salaryGridRevision: '9',
+        annualBaseSalary: '42000.01', annualGrossSalary: '43260.01', grossMonthlySalary: '3606.00',
+        seniorityRatePercent: 3, seniorityAsOf: '2026-11-04' }),
+    }));
   });
 
   it('uses the saved CDD end date without asking for duration again', async () => {

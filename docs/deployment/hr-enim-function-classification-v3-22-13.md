@@ -2,7 +2,7 @@
 
 ## Résultat utilisateur
 
-La section **Contrat et dates** de chaque fiche RH affiche désormais deux informations en lecture seule :
+La section **Données contractuelles** de chaque fiche RH affiche désormais deux informations en lecture seule :
 
 - `Code Fonction ENIM` ;
 - `Catégorie`.
