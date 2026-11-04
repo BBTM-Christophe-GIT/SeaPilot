@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+Le correctif salarial utilise désormais la colonne « Annuel brut », majorée du taux
+d’ancienneté calculé sur toutes les périodes travaillées. Le mensuel est cet annuel
+divisé par douze, arrondi à l’euro supérieur. Le détail figure dans
+[hr-employment-contracts.md](./hr-employment-contracts.md). La section de fiche RH
+s’intitule « Données contractuelles » ; aucun changement de schéma n’est requis.
+
 Version `3.81.0`, build `2026-11-04.001`, ajoute le bouton « Générer le contrat »
 dans « Contrat et dates » des fiches RH. Le modèle PDF CDI ou CDD BBTM utilise
 les informations enregistrées dans la fiche, puis le contrat est classé dans

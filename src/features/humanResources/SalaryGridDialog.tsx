@@ -45,7 +45,7 @@ export function SalaryGridDialog({ client, onClose, onSaved }: {
 
   return <AppDialog title="Grille de salaires" eyebrow="Ressources humaines" size="xl" onClose={onClose}
     isBusy={saving} onSubmit={save}
-    description="Le salaire mensuel du contrat correspond au total annuel de base divisé par 12. Les contrats déjà générés conservent leurs montants."
+    description="L’annuel brut de la grille sert de référence. L’ancienneté s’applique individuellement ; le mensuel est arrondi à l’euro supérieur. Les contrats déjà générés conservent leurs montants."
     footer={<div className="hr-salary-grid-actions">
       <button className="sp-button sp-button--secondary" type="button" disabled={saving} onClick={onClose}>Annuler</button>
       <button className="sp-button sp-button--primary" type="submit" disabled={loading || saving || !grid}>{saving ? 'Enregistrement…' : 'Enregistrer la grille'}</button>
@@ -57,17 +57,17 @@ export function SalaryGridDialog({ client, onClose, onSaved }: {
       <div className="hr-salary-grid-scroll" tabIndex={0} role="region" aria-label="Grille de salaires modifiable">
         <table className="hr-salary-grid-table"><thead><tr>
           {SALARY_GRID_COLUMNS.map(column => <th key={column.key} scope="col">{column.label}</th>)}
-          <th scope="col">Mensuel brut du contrat</th><th scope="col">Actif</th><th scope="col">Actions</th>
+          <th scope="col">Mensuel brut hors ancienneté</th><th scope="col">Actif</th><th scope="col">Actions</th>
         </tr></thead><tbody>{rows.map((row, index) => {
           const rowLabel = row.positionLabel || `Ligne ${index + 1}`;
-          const monthly = salaryGridMonthlyAmount({ totalAnnualBase: parseSalaryGridAmount(row.totalAnnualBase) });
+          const monthly = salaryGridMonthlyAmount({ annualGross: parseSalaryGridAmount(row.annualGross) });
           return <tr key={row.id}>{SALARY_GRID_COLUMNS.map(column => <td key={column.key}>
             {column.key === 'positionLabel' ? <textarea aria-label={`${column.label} · ligne ${index + 1}`} rows={3} maxLength={500}
               value={row.positionLabel} disabled={saving} onChange={event => update(row.id, column.key, event.target.value)} />
               : <input aria-label={`${column.label} · ligne ${index + 1}`} inputMode={column.numeric ? 'decimal' : undefined}
                 maxLength={column.numeric ? 24 : 120}
                 value={row[column.key]} disabled={saving} onChange={event => update(row.id, column.key, event.target.value)} />}
-          </td>)}<td><output aria-label={`Mensuel brut · ligne ${index + 1}`}>{monthly ? `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2 }).format(Number(monthly))} €` : '—'}</output></td>
+          </td>)}<td><output aria-label={`Mensuel brut hors ancienneté · ligne ${index + 1}`}>{monthly ? `${new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(monthly))} €` : '—'}</output></td>
             <td><input type="checkbox" aria-label={`Poste actif · ligne ${index + 1}`} checked={row.active} disabled={saving} onChange={event => update(row.id, 'active', event.target.checked)} /></td>
             <td><button className="sp-button sp-button--secondary" type="button" disabled={saving} aria-label={`Retirer ${rowLabel}`}
               onClick={() => setRows(current => current.filter(item => item.id !== row.id))}><Trash2 size={16} aria-hidden="true" /></button></td>

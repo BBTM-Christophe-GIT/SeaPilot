@@ -7,6 +7,7 @@ import { generateEmploymentContractPdf } from './employmentContractPdf';
 import { saveEmploymentContractBlob } from './EmploymentContractsSection';
 import { downloadEmploymentContractSigner, saveEmploymentContract, type EmploymentContractRecord, type EmploymentContractSigner } from './employmentContractQueries';
 import type { PersonRecord } from './peopleQueries';
+import { loadHrSalaryGrid, type HrSalaryGridRow } from './salaryGridQueries';
 
 vi.mock('./employmentContractQueries', async () => ({
   ...await vi.importActual<typeof import('./employmentContractQueries')>('./employmentContractQueries'),
@@ -15,6 +16,10 @@ vi.mock('./employmentContractQueries', async () => ({
 }));
 vi.mock('./employmentContractPdf', () => ({ generateEmploymentContractPdf: vi.fn() }));
 vi.mock('./EmploymentContractsSection', () => ({ saveEmploymentContractBlob: vi.fn() }));
+vi.mock('./salaryGridQueries', async () => ({
+  ...await vi.importActual<typeof import('./salaryGridQueries')>('./salaryGridQueries'),
+  loadHrSalaryGrid: vi.fn(),
+}));
 
 const client = {} as SupabaseClient;
 const person: PersonRecord = {
@@ -32,7 +37,12 @@ const person: PersonRecord = {
 const savedDetails = {
   socialSecurityNumber: '2900676123456', vesselNames: 'GOURY', grossMonthlySalary: '3200,50',
   collectiveAgreement: 'Convention collective des personnels d’exécution',
-  employerRepresentative: 'Représentant BBTM', endDate: '2027-04-30',
+  employerRepresentative: 'Représentant BBTM', endDate: '2027-04-30', salaryGridRowId: 'synthetic-position',
+};
+const salaryGridRow: HrSalaryGridRow = {
+  id: 'synthetic-position', positionLabel: 'Poste de démonstration', ccn: 'Officier', enimCategory: '15',
+  conventionalAnnualBase: 30000, indexationPercent: 20, annualGross: 36000,
+  annualPremium: 3000, totalAnnualBase: 48000, active: true,
 };
 const generatedFile = new Blob(['contract'], { type: 'application/pdf' });
 const contract = { id: 21, personId: 7, fileName: 'contrat.pdf' } as EmploymentContractRecord;
@@ -48,6 +58,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-11-04T10:00:00Z'));
   vi.clearAllMocks();
+  vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 4, updatedAt: '', rows: [salaryGridRow] });
   vi.mocked(generateEmploymentContractPdf).mockResolvedValue(generatedFile);
   vi.mocked(saveEmploymentContract).mockResolvedValue(contract);
   vi.mocked(downloadEmploymentContractSigner).mockResolvedValue({ signature, blob: signatureBlob });
@@ -65,7 +76,7 @@ describe('direct contract generation from saved HR profile', () => {
     expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({
       type: 'CDI', personId: 7, firstName: 'Alice', lastName: 'MARTIN', birthDate: '1990-06-02', birthPlace: 'Rouen',
       postalAddress: '1 quai du Port, Rouen', sailorNumber: '2000007', functionLabel: 'Capitaine', startDate: '2026-01-01',
-      socialSecurityNumber: savedDetails.socialSecurityNumber, vesselNames: 'GOURY', grossMonthlySalary: '3200,50',
+      socialSecurityNumber: savedDetails.socialSecurityNumber, vesselNames: 'GOURY', grossMonthlySalary: '3000.00',
       signatureDate: '2026-11-04',
     }), { bytes: signatureBytes, mimeType: 'image/png' });
     expect(downloadEmploymentContractSigner).toHaveBeenCalledWith(client);
@@ -74,7 +85,9 @@ describe('direct contract generation from saved HR profile', () => {
       inputData: expect.objectContaining({ socialSecurityNumber: savedDetails.socialSecurityNumber,
         employerRepresentative: 'Benjamin BON', employerSignatureId: signature.id,
         employerSignerPersonId: signature.personId, employerSignatureSha256: signature.sha256,
-        signatureDate: '2026-11-04',
+        signatureDate: '2026-11-04', annualBaseSalary: '36000.00', annualGrossSalary: '36000.00',
+        seniorityRatePercent: 0, seniorityAsOf: '2026-11-04', salaryCalculationVersion: 'employment-seniority-v1',
+        salaryGridRowId: salaryGridRow.id, salaryGridRevision: '4',
       }),
     }));
     expect(saveEmploymentContractBlob).not.toHaveBeenCalled();
@@ -133,11 +146,78 @@ describe('direct contract generation from saved HR profile', () => {
     }), expect.objectContaining({ mimeType: 'image/png' })));
   });
 
+  it.each(['CDI', 'CDD'] as const)('recalculates %s salary at generation when an anniversary is reached, without increasing saved salary again', async type => {
+    vi.setSystemTime(new Date('2026-11-03T10:00:00Z'));
+    const user = userEvent.setup();
+    render(<EmploymentContractProfileFields client={client}
+      person={{ ...person, contractType: type, hiredOn: '2023-11-04' }} useSavedDuration
+      details={{ ...savedDetails, grossMonthlySalary: '3045.00', annualGrossSalary: '36540.00' }} />);
+    vi.setSystemTime(new Date('2026-11-04T10:00:00Z'));
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    await waitFor(() => expect(saveEmploymentContract).toHaveBeenCalledOnce());
+    expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({
+      type, grossMonthlySalary: '3045.00',
+    }), expect.anything());
+    expect(saveEmploymentContract).toHaveBeenCalledWith(client, expect.objectContaining({
+      inputData: expect.objectContaining({ annualBaseSalary: '36000.00', annualGrossSalary: '36540.00',
+        grossMonthlySalary: '3045.00', seniorityRatePercent: 1.5, seniorityAsOf: '2026-11-04',
+        salaryCalculationVersion: 'employment-seniority-v1' }),
+    }));
+  });
+
+  it('uses the full saved employment history for salary instead of restarting seniority at rehire', async () => {
+    const user = userEvent.setup();
+    render(<EmploymentContractProfileFields client={client}
+      person={{ ...person, hiredOn: '2022-11-04', employmentPeriods: [
+        { hiredOn: '2020-01-01', departedOn: '2022-01-01', contractType: 'CDD', departureReason: '' },
+        { hiredOn: '2022-11-04', departedOn: '', contractType: 'CDI', departureReason: '' },
+      ] }} details={savedDetails} />);
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    await waitFor(() => expect(saveEmploymentContract).toHaveBeenCalledOnce());
+    expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({
+      startDate: '2022-11-04', grossMonthlySalary: '3090.00',
+    }), expect.anything());
+    expect(saveEmploymentContract).toHaveBeenCalledWith(client, expect.objectContaining({
+      inputData: expect.objectContaining({ annualBaseSalary: '36000.00', annualGrossSalary: '37080.00',
+        seniorityRatePercent: 3, seniorityFirstWorkedOn: '2020-01-01', seniorityVirtualDate: '2026-01-01' }),
+    }));
+  });
+
+  it('reloads the raw salary grid and revision at the generation click instead of using the popup snapshot', async () => {
+    const user = userEvent.setup();
+    render(<EmploymentContractProfileFields client={client}
+      person={{ ...person, hiredOn: '2023-11-04' }}
+      details={{ ...savedDetails, grossMonthlySalary: '3045.00', annualGrossSalary: '36540.00' }} />);
+    vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 9, updatedAt: '',
+      rows: [{ ...salaryGridRow, annualGross: 42000.01, totalAnnualBase: 48000 }] });
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    await waitFor(() => expect(saveEmploymentContract).toHaveBeenCalledOnce());
+    expect(loadHrSalaryGrid).toHaveBeenCalledWith(client);
+    expect(generateEmploymentContractPdf).toHaveBeenCalledWith(expect.objectContaining({ grossMonthlySalary: '3553.00' }), expect.anything());
+    expect(saveEmploymentContract).toHaveBeenCalledWith(client, expect.objectContaining({
+      inputData: expect.objectContaining({ annualBaseSalary: '42000.01', annualGrossSalary: '42630.01',
+        grossMonthlySalary: '3553.00', seniorityRatePercent: 1.5, salaryGridRevision: '9' }),
+    }));
+  });
+
+  it('blocks generation if the selected salary position was archived after the popup opened', async () => {
+    const user = userEvent.setup();
+    render(<EmploymentContractProfileFields client={client}
+      person={person} details={savedDetails} />);
+    vi.mocked(loadHrSalaryGrid).mockResolvedValue({ companyId: 1, revision: 9, updatedAt: '',
+      rows: [{ ...salaryGridRow, active: false }] });
+    await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/poste|grille|inactif/i);
+    expect(generateEmploymentContractPdf).not.toHaveBeenCalled();
+    expect(saveEmploymentContract).not.toHaveBeenCalled();
+    expect(saveEmploymentContractBlob).not.toHaveBeenCalled();
+  });
+
   it('reports missing saved RH information without adding data inputs in generation', async () => {
     const user = userEvent.setup();
-    render(<EmploymentContractProfileFields client={client} person={person} details={{ ...savedDetails, grossMonthlySalary: '' }} />);
+    render(<EmploymentContractProfileFields client={client} person={person} details={{ ...savedDetails, socialSecurityNumber: '' }} />);
     await user.click(screen.getByRole('button', { name: 'Générer le contrat' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Salaire mensuel brut à l’embauche (€) : renseignez ce champ.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Numéro de sécurité sociale : renseignez ce champ.');
     expect(generateEmploymentContractPdf).not.toHaveBeenCalled();
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });

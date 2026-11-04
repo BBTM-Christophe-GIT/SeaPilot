@@ -6,10 +6,11 @@ const source: HrSalaryGridRow = { id: 'poste-a', positionLabel: 'Poste A', ccn: 
   conventionalAnnualBase: 30000, indexationPercent: 25, annualGross: 37500, annualPremium: 2500, totalAnnualBase: 43200, active: true };
 
 describe('editable salary grid source model', () => {
-  it('uses the final annual column divided by twelve, rounded to monthly cents', () => {
-    expect(salaryGridMonthlyAmount({ totalAnnualBase: 50000.01 })).toBe('4166.67');
-    expect(salaryGridMonthlyAmount({ totalAnnualBase: 30000.05 })).toBe('2500.00');
-    expect(salaryGridMonthlyAmount(source)).toBe('3600.00');
+  it('uses annual gross divided by twelve, rounded up directly to a whole monthly euro', () => {
+    expect(salaryGridMonthlyAmount({ annualGross: 12000 })).toBe('1000.00');
+    expect(salaryGridMonthlyAmount({ annualGross: 12000.01 })).toBe('1001.00');
+    expect(salaryGridMonthlyAmount({ annualGross: 11999.99 })).toBe('1000.00');
+    expect(salaryGridMonthlyAmount(source)).toBe('3125.00');
   });
   it('preserves all eight source columns without recalculating inconsistent source totals', () => {
     const draft = salaryGridDraftRows([source]);
@@ -17,7 +18,7 @@ describe('editable salary grid source model', () => {
     const parsed = salaryGridRowsFromDraft(draft);
     expect(parsed.errors).toEqual([]);
     expect(parsed.rows[0]).toEqual({ ...source, totalAnnualBase: 51900 });
-    expect(salaryGridMonthlyAmount(parsed.rows[0])).toBe('4325.00');
+    expect(salaryGridMonthlyAmount(parsed.rows[0])).toBe('3125.00');
   });
   it('accepts French decimals while rejecting malformed and overly precise amounts', () => {
     expect(parseSalaryGridAmount('1 234,56 €')).toBe(1234.56);
