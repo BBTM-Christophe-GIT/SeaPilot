@@ -1,5 +1,17 @@
 -- PDF-only issuance and the existing private Benjamin BON signature, no live data.
 begin;
+-- Historical project-file policies reference these metadata tables even for
+-- another bucket. Match the existing local Storage fixture prerequisites;
+-- their RLS stays enabled and these grants disappear at rollback.
+do $$
+declare reference_table text;
+begin
+  foreach reference_table in array array['project_billing_documents','project_generated_documents','contract_documents'] loop
+    assert (select relrowsecurity from pg_class where oid=('public.'||reference_table)::regclass),
+      'Project metadata RLS must remain enabled for the private signature fixture';
+  end loop;
+end $$;
+grant select on public.project_billing_documents,public.project_generated_documents,public.contract_documents to authenticated;
 -- A future broad upload policy still cannot re-enable Word issuance.
 create policy hr_contract_pdf_test_broad on storage.objects for insert to authenticated
 with check(bucket_id='hr-employment-contracts');
