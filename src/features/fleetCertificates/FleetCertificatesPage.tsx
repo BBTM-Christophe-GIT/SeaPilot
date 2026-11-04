@@ -13,7 +13,8 @@ import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import {
   buildFleetCertificateFileName, createFleetCertificateDocument, createFleetCertificateLine, deleteFleetCertificateDocuments,
-  downloadFleetCertificateDocuments, fetchFleetCertificateDocumentNames, fetchFleetCertificates,
+  downloadFleetCertificateDocuments, fetchFleetCertificateDocumentNames, fetchFleetCertificates, fetchFleetCertificateVersions,
+  FleetCertificateRenewalReceiptError,
   getDefaultFleetCertificateExpiryDate,
   getEffectiveFleetCertificateStatus, openFleetCertificateDocument, submitFleetCertificateRenewal,
   normalizeFleetCertificateDocumentName, updateFleetCertificateDocumentMetadata,
@@ -227,6 +228,8 @@ function DocumentForm({ certificates, documentNames, onClose, onSave }: { certif
 }
 
 function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCertificateRecord; onClose: () => void; onSave: (form: FormData) => Promise<void> }) {
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [issuedOn, setIssuedOn] = useState('');
@@ -240,10 +243,10 @@ function RenewalForm({ certificate, onClose, onSave }: { certificate: FleetCerti
       const form = new FormData(event.currentTarget);
       form.set('file', selectedFile);
       await onSave(form);
-      onClose();
+      if (mounted.current) onClose();
     }
-    catch (caught) { setFormError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer le document.'); }
-    finally { setSaving(false); }
+    catch (caught) { if (mounted.current) setFormError(caught instanceof Error ? caught.message : 'Impossible d’enregistrer le document.'); }
+    finally { if (mounted.current) setSaving(false); }
   }
   const finalFileName = issuedOn ? buildFleetCertificateFileName(certificate, issuedOn, fileName) : '';
   const firstDocument = !certificate.storagePath;
@@ -436,14 +439,30 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [previewError, setPreviewError] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [versionToPreview, setVersionToPreview] = useState<{ certificateId: number; version: FleetCertificateVersion } | null>(null);
+  const [renewalPreviewTarget, setRenewalPreviewTarget] = useState<{
+    client: SupabaseClient; certificateId: number; versionId: number | null; origin: 'submitted' | 'existing'; loading: boolean; error: string;
+  } | null>(null);
+  const [pendingPreviewRetry, setPendingPreviewRetry] = useState(0);
+  const [versionListRefresh, setVersionListRefresh] = useState(0);
+  const previewIntent = useRef({ version: versionToPreview, target: renewalPreviewTarget });
+  previewIntent.current = { version: versionToPreview, target: renewalPreviewTarget };
+  const previewRequest = useRef(0);
+  const pageMounted = useRef(true);
+  const previewContext = useRef({ client: effectiveClient, certificateId: selectedCertificateId });
+  previewContext.current = { client: effectiveClient, certificateId: selectedCertificateId };
+  useEffect(() => {
+    pageMounted.current = true;
+    return () => { pageMounted.current = false; previewRequest.current += 1; };
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploadKind, setUploadKind] = useState<FleetFindingAttachmentKind>('finding');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (shouldApply: () => boolean = () => true) => {
     const [loadedCertificates, loadedFindings, loadedResponsibles, loadedProviders, loadedVisits, loadedDocumentNames] = await Promise.all([
       fetchFleetCertificates(effectiveClient), fetchFleetCertificateFindings(effectiveClient), fetchFleetFindingResponsibles(effectiveClient),
       fetchFleetServiceProviders(effectiveClient), fetchFleetCertificateVisits(effectiveClient), fetchFleetCertificateDocumentNames(effectiveClient),
     ]);
+    if (!shouldApply()) return;
     setCertificates(loadedCertificates); setFindings(loadedFindings); setResponsibles(loadedResponsibles);
     setProviders(loadedProviders); setVisits(loadedVisits); setDocumentNames(loadedDocumentNames);
     setSelectedCertificateId((current) => current && loadedCertificates.some((item) => item.id === current) ? current : null);
@@ -460,6 +479,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     if (isLoading || openedCertificateLink.current === linkedCertificateId) return;
     openedCertificateLink.current = linkedCertificateId;
     const certificate = certificates.find((record) => record.id === linkedCertificateId);
+    previewRequest.current += 1;
+    setRenewalPreviewTarget(null);
     setSelectedCertificateId(certificate?.id || null);
     setSelectedFindingId(null);
     setVersionToPreview(null);
@@ -467,7 +488,10 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setActiveTab(certificate ? 'preview' : 'findings');
   }, [certificates, isLoading, linkedCertificateId]);
   const selectedCertificate = certificates.find((item) => item.id === selectedCertificateId) || null;
+  const renewalPreview = renewalPreviewTarget?.client === effectiveClient && renewalPreviewTarget.certificateId === selectedCertificateId
+    ? renewalPreviewTarget : null;
   const previewVersion = versionToPreview?.certificateId === selectedCertificateId ? versionToPreview.version : null;
+  const pendingPreviewUnresolved = selectedCertificate?.status === 'pending_validation' && !previewVersion;
   const previewCertificate = useMemo(() => selectedCertificate && previewVersion ? {
     ...selectedCertificate, storageBucket: previewVersion.storageBucket, storagePath: previewVersion.storagePath,
     fileName: previewVersion.normalizedFileName, originalFileName: previewVersion.originalFileName,
@@ -482,7 +506,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     setComment('');
   }, [selectedFinding?.id, selectedFinding?.progress]);
   useEffect(() => {
-    if (activeTab !== 'preview' || !previewCertificate || !previewCertificate.storageBucket || !previewCertificate.storagePath) {
+    if (renewalPreview || pendingPreviewUnresolved || activeTab !== 'preview' || !previewCertificate || !previewCertificate.storageBucket || !previewCertificate.storagePath) {
       setPreviewUrl('');
       setPreviewError('');
       setIsPreviewLoading(false);
@@ -497,7 +521,30 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       .catch((caught) => { if (!cancelled) setPreviewError(caught instanceof Error ? caught.message : 'Aperçu indisponible.'); })
       .finally(() => { if (!cancelled) setIsPreviewLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, effectiveClient, previewCertificate]);
+  }, [activeTab, effectiveClient, previewCertificate, renewalPreview, pendingPreviewUnresolved]);
+
+  const pendingCertificateId = selectedCertificate?.status === 'pending_validation' ? selectedCertificate.id : null;
+  const pendingCertificateRevision = selectedCertificate?.updatedAt;
+  useEffect(() => {
+    if (activeTab !== 'preview' || pendingCertificateId === null) return;
+    const intent = previewIntent.current;
+    if (intent.version?.certificateId === pendingCertificateId
+      || intent.target?.client === effectiveClient && intent.target.certificateId === pendingCertificateId) return;
+    const request = ++previewRequest.current;
+    const current = () => request === previewRequest.current && previewContext.current.client === effectiveClient
+      && previewContext.current.certificateId === pendingCertificateId;
+    setRenewalPreviewTarget({ client: effectiveClient, certificateId: pendingCertificateId, versionId: null, origin: 'existing', loading: true, error: '' });
+    void fetchFleetCertificateVersions(effectiveClient, pendingCertificateId).then(versions => {
+      if (!current()) return;
+      const pending = versions.filter(version => version.status === 'pending_validation').sort((left, right) => right.versionNo - left.versionNo)[0];
+      if (!pending) throw new Error('Version reçue indisponible.');
+      setVersionToPreview({ certificateId: pendingCertificateId, version: pending });
+      setRenewalPreviewTarget(null);
+    }).catch(() => {
+      if (current()) setRenewalPreviewTarget({ client: effectiveClient, certificateId: pendingCertificateId, versionId: null, origin: 'existing', loading: false,
+        error: 'La version reçue ne peut pas être affichée. Réessayez l’aperçu sans déposer à nouveau le fichier.' });
+    });
+  }, [activeTab, effectiveClient, pendingCertificateId, pendingCertificateRevision, pendingPreviewRetry, previewVersion]);
 
   const active = useMemo(() => certificates.filter((item) => item.isActiveFleet), [certificates]);
   const upcoming = useMemo(() => active.filter((item) => item.expiresOn && daysFromToday(item.expiresOn) >= 0 && daysFromToday(item.expiresOn) <= 90), [active]);
@@ -546,6 +593,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }
 
   function selectCertificate(certificate: FleetCertificateRecord, tab: FleetCertificateWorkspaceTab = 'preview') {
+    previewRequest.current += 1;
+    setRenewalPreviewTarget(null);
     setSelectedCertificateId(certificate.id);
     setVersionToPreview(null);
     setSelectedFindingId(null);
@@ -553,6 +602,8 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }
 
   function clearDocumentSelectionForScope() {
+    previewRequest.current += 1;
+    setRenewalPreviewTarget(null);
     setSelectedCertificateId(null);
     setSelectedFindingId(null);
     if (activeTab === 'preview') setActiveTab('findings');
@@ -604,8 +655,81 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   }
 
   function renewCertificate(certificate: FleetCertificateRecord) {
+    previewRequest.current += 1;
+    setRenewalPreviewTarget(null);
     setSelectedCertificateId(certificate.id);
     setModal('renewal');
+  }
+
+  function isPreviewContextCurrent(certificateId: number, request: number) {
+    return previewRequest.current === request && previewContext.current.client === effectiveClient
+      && previewContext.current.certificateId === certificateId;
+  }
+
+  async function showSubmittedVersion(certificateId: number, versionId: number, request: number) {
+    const current = () => isPreviewContextCurrent(certificateId, request);
+    if (!current()) return;
+    setError('');
+    setRenewalPreviewTarget({ client: effectiveClient, certificateId, versionId, origin: 'submitted', loading: true, error: '' });
+    setVersionToPreview(null); setPreviewUrl(''); setActiveTab('preview');
+    const [versions, refreshed] = await Promise.allSettled([
+      fetchFleetCertificateVersions(effectiveClient, certificateId), load(current),
+    ]);
+    if (!current()) return;
+    if (refreshed.status === 'rejected') setError('Le document a été reçu, mais la liste des certificats n’a pas pu être actualisée.');
+    const submitted = versions.status === 'fulfilled' ? versions.value.find(version => version.id === versionId) : null;
+    if (!submitted) {
+      setRenewalPreviewTarget({ client: effectiveClient, certificateId, versionId, origin: 'submitted', loading: false,
+        error: 'Le document a bien été reçu, mais sa version ne peut pas encore être affichée. Réessayez l’aperçu sans déposer à nouveau le fichier.' });
+      return;
+    }
+    setVersionToPreview({ certificateId, version: submitted });
+    setRenewalPreviewTarget(null);
+  }
+
+  async function submitRenewal(certificate: FleetCertificateRecord, form: FormData) {
+    const request = ++previewRequest.current;
+    let versionId: number;
+    try {
+      versionId = await submitFleetCertificateRenewal(effectiveClient, certificate, {
+        issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')),
+        notes: String(form.get('notes')), file: form.get('file') as File,
+      });
+    } catch (caught) {
+      if (!(caught instanceof FleetCertificateRenewalReceiptError)) throw caught;
+      if (isPreviewContextCurrent(certificate.id, request)) {
+        setVersionListRefresh(current => current + 1);
+        setModal(null); setActiveTab('preview'); setVersionToPreview(null); setPreviewUrl('');
+        setMessage('Document reçu, en attente de validation.');
+        setRenewalPreviewTarget({ client: effectiveClient, certificateId: certificate.id, versionId: null, origin: 'submitted', loading: false, error: caught.message });
+      } else await refreshReceivedCertificates();
+      return;
+    }
+    if (!isPreviewContextCurrent(certificate.id, request)) { await refreshReceivedCertificates(); return; }
+    setVersionListRefresh(current => current + 1);
+    setModal(null); setError('');
+    setMessage(certificate.storagePath ? 'Nouvelle version reçue, en attente de validation.' : 'Document reçu, en attente de validation.');
+    await showSubmittedVersion(certificate.id, versionId, request);
+  }
+
+  async function refreshReceivedCertificates() {
+    const current = () => pageMounted.current && previewContext.current.client === effectiveClient;
+    if (!current()) return;
+    try {
+      const receivedCertificates = await fetchFleetCertificates(effectiveClient);
+      // Refresh the cache after a background deposit without selecting its
+      // certificate, changing the active tab, or closing another open form.
+      if (current()) setCertificates(receivedCertificates);
+    } catch {
+      if (current()) setError('Le document a été reçu, mais la liste des certificats n’a pas pu être actualisée.');
+    }
+  }
+
+  function retrySubmittedPreview() {
+    if (!renewalPreview || renewalPreview.loading) return;
+    if (renewalPreview.origin === 'existing') { setRenewalPreviewTarget(null); setPendingPreviewRetry(current => current + 1); return; }
+    if (renewalPreview.versionId === null) return;
+    void showSubmittedVersion(renewalPreview.certificateId, renewalPreview.versionId, ++previewRequest.current);
   }
 
   async function generateReport(selection: FleetCertificateReportSelection) {
@@ -723,8 +847,17 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
           {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
-          {activeTab === 'preview' ? <><FleetCertificateDocumentPreview canEdit={manager && (!previewVersion || previewVersion.isCurrent)} certificate={previewCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} previewVersion={previewVersion} />
-            {selectedCertificate ? <FleetCertificateVersionsPanel key={selectedCertificate.id} canValidate={manager} certificate={selectedCertificate} client={effectiveClient} onPreview={(version) => setVersionToPreview({ certificateId: selectedCertificate.id, version })} onValidated={async () => { await load(); setVersionToPreview(null); setMessage('Version validée et document disponible.'); }} /> : null}
+          {activeTab === 'preview' ? <>{renewalPreview || pendingPreviewUnresolved ? <section className="fcx-preview-status" aria-label="Aperçu du document reçu">
+              {!renewalPreview || renewalPreview.loading ? <p role="status">Document reçu. Chargement de sa nouvelle version…</p> : <p role="alert">{renewalPreview.error}</p>}
+              {renewalPreview && !renewalPreview.loading && (renewalPreview.versionId !== null || renewalPreview.origin === 'existing') ? <button className="fcx-secondary" onClick={retrySubmittedPreview} type="button"><RefreshCw size={14} /> Réessayer l’aperçu</button> : null}
+            </section> : <FleetCertificateDocumentPreview canEdit={manager && (!previewVersion || previewVersion.isCurrent)} certificate={previewCertificate} error={previewError} isLoading={isPreviewLoading} onDownload={(certificate) => downloadDocuments([certificate])} onEdit={() => setModal('metadata')} onRenew={() => selectedCertificate && renewCertificate(selectedCertificate)} previewUrl={previewUrl} previewVersion={previewVersion} />}
+            {selectedCertificate ? <FleetCertificateVersionsPanel key={`${selectedCertificate.id}:${versionListRefresh}`} canValidate={manager} certificate={selectedCertificate} client={effectiveClient}
+              onPreview={(version) => { previewRequest.current += 1; setRenewalPreviewTarget(null); setVersionToPreview({ certificateId: selectedCertificate.id, version }); }}
+              onValidated={async () => { const certificateId = selectedCertificate.id; const request = ++previewRequest.current;
+                const current = () => isPreviewContextCurrent(certificateId, request);
+                await load(current);
+                if (current()) { setVersionToPreview(null); setRenewalPreviewTarget(null); setMessage('Version validée et document disponible.'); }
+              }} /> : null}
           </> : null}
         </div>
       </section>
@@ -787,7 +920,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     />}
     {modal === 'document' && <DocumentForm certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (form) => { const vessel = certificates.find((item) => item.vesselId === Number(form.get('vesselId')))!; const categoryKey = String(form.get('category')); const category = getFleetCertificateCategoryOptions(certificates).find((item) => item.key === categoryKey); const documentTitle = normalizeFleetCertificateDocumentName(String(form.get('title')), certificates.flatMap((item) => [item.vesselName, item.vesselAcronym])); const input = { companyId: vessel.companyId, vesselId: vessel.vesselId!, vesselName: vessel.vesselName, vesselAcronym: vessel.vesselAcronym, categoryKey, categoryLabel: category?.label || categoryKey, documentTitle, issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')) }; const selectedFile = form.get('file'); const attachment = typeof selectedFile !== 'string' && selectedFile?.size ? selectedFile : null; if (attachment) await createFleetCertificateDocument(effectiveClient, { ...input, file: attachment }); else await createFleetCertificateLine(effectiveClient, input); await load(); setMessage(attachment ? 'Document ajouté.' : 'Ligne de suivi ajoutée.'); }} />}
     {modal === 'metadata' && selectedCertificate && <DocumentMetadataForm certificate={selectedCertificate} certificates={certificates} documentNames={documentNames} onClose={() => setModal(null)} onSave={async (input) => { await updateFleetCertificateDocumentMetadata(effectiveClient, input); await load(); setMessage('Informations du document mises à jour.'); }} />}
-    {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={async (form) => { await submitFleetCertificateRenewal(effectiveClient, selectedCertificate, { issuedOn: String(form.get('issued')), expiresOn: String(form.get('expires')), notes: String(form.get('notes')), file: form.get('file') as File }); await load(); setVersionToPreview(null); setActiveTab('preview'); setMessage(selectedCertificate.storagePath ? 'Nouvelle version reçue, en attente de validation.' : 'Document reçu, en attente de validation.'); }} />}
+    {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => submitRenewal(selectedCertificate, form)} />}
     {modal === 'report' && <FleetCertificateReportDialog certificates={active} findings={findings} onClose={() => setModal(null)} onGenerate={generateReport} />}
     {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}
     {modal === 'visit' && certificates.find((certificate) => certificate.id === visitCertificateId) && <FleetCertificateVisitForm certificate={certificates.find((certificate) => certificate.id === visitCertificateId)!} providers={providers} onClose={() => setModal(null)} onExport={generateVisitReport} onSave={(input) => run(() => saveFleetCertificateVisit(effectiveClient, input).then(() => undefined), 'Visite prestataire programmée.')} />}
