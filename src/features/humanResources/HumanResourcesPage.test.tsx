@@ -7,6 +7,7 @@ import { connectHrDrive, readHrDriveFile, writeHrDriveFile } from './hrDocumentD
 vi.mock('../documents/documentBlobStorage', async original => ({ ...await original<typeof import('../documents/documentBlobStorage')>(), hasDocumentBlobFile: vi.fn().mockResolvedValue(false) }));
 vi.mock('./hrDocumentDrive', () => ({ connectHrDrive: vi.fn(), writeHrDriveFile: vi.fn(async (_client, id, name) => ({ storage_bucket: 'hr-documents', storage_path: `people/${id}/fixture-${name}`, drive_path: null, drive_sha256: null })), readHrDriveFile: vi.fn() }));
 import { openTrainingPlanReport } from './trainingPlanReport';
+import { openQualificationsMatrix } from './qualificationsMatrixExport';
 import { buildCollaboratorSheetPdf, buildCollaboratorSheetsExport } from './collaboratorSheet';
 
 vi.mock('./collaboratorSheet', async () => {
@@ -25,6 +26,7 @@ vi.mock('./trainingPlanReport', async () => {
     openTrainingPlanReport: vi.fn().mockResolvedValue(true),
   };
 });
+vi.mock('./qualificationsMatrixExport', () => ({ openQualificationsMatrix: vi.fn().mockResolvedValue(true) }));
 
 const activePerson = {
   id: 1,
@@ -659,6 +661,79 @@ describe('HumanResourcesPage', () => {
     expect(within(profile).getByRole('button', { name: 'Documents' })).toBeInTheDocument();
     expect(within(profile).getByText('Numéro de marin')).toBeInTheDocument();
     expect(within(profile).getAllByText('2009574').length).toBeGreaterThan(0);
+  });
+
+  it('exports the qualification matrix for all authorized seafarers regardless of list filters', async () => {
+    const user = userEvent.setup();
+    const open = vi.mocked(openQualificationsMatrix).mockClear().mockResolvedValue(true);
+    const formerCertificate = { ...documents[1], id: 20, person_id: formerPerson.id, person_name: 'Paul DURAND',
+      category_key: 'safety_training', title: 'CFBS', notes: 'PRIVATE_NOTE_MUST_NOT_BE_EXPORTED' };
+    render(<HumanResourcesPage client={createClient([activePerson, formerPerson, yardManagerPerson], [...documents, formerCertificate]) as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    await user.type(screen.getByRole('textbox', { name: 'Recherche RH' }), 'Aucun résultat');
+    const ribbon = screen.getByRole('navigation', { name: 'Commandes du module Ressources humaines' });
+    await user.click(within(ribbon).getByRole('button', { name: 'Matrice des Qualifications' }));
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    const matrix = open.mock.calls[0][0];
+    expect(matrix.peopleCount).toBe(2);
+    expect(matrix.groups.map(group => group.functionLabel)).toEqual(['Capitaine', 'Matelot polyvalent']);
+    expect(matrix.categories.map(category => category.key)).toEqual(['deck', 'engine', 'safety_training', 'medical_visit', 'safety_induction', 'lifting']);
+    expect(matrix.groups[1].people[0].categories.safety_training[0]).toMatchObject({ title: 'CFBS', status: 'expired' });
+    expect(JSON.stringify(matrix)).not.toContain('PRIVATE_NOTE_MUST_NOT_BE_EXPORTED');
+    expect(JSON.stringify(matrix)).not.toContain('Lea BUREAU');
+    expect(await screen.findByText(/Matrice des Qualifications ouverte au format PDF : 2 marins/)).toBeInTheDocument();
+  });
+
+  it('omits hidden qualification categories and functions from the matrix', async () => {
+    const user = userEvent.setup();
+    const open = vi.mocked(openQualificationsMatrix).mockClear().mockResolvedValue(true);
+    const rules: HrVisibilityRuleFixture[] = [
+      { scope: 'document_type', item_key: 'medical_visit', item_label: 'Visite Médicale', visible_to_roles: ['admin'] },
+      { scope: 'function', item_key: 'matelot-polyvalent', item_label: 'Matelot polyvalent', visible_to_roles: ['admin'] },
+    ];
+    render(<HumanResourcesPage client={createClient([activePerson, formerPerson], documents, rules) as never} roles={['armement']} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    await user.click(screen.getByRole('button', { name: 'Matrice des Qualifications' }));
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    const matrix = open.mock.calls[0][0];
+    expect(matrix.peopleCount).toBe(1);
+    expect(matrix.categories.map(category => category.key)).not.toContain('medical_visit');
+    expect(matrix.groups[0].people[0].categories.medical_visit).toEqual([]);
+    expect(JSON.stringify(matrix)).not.toContain('Visite medicale');
+    expect(JSON.stringify(matrix)).not.toContain('Paul DURAND');
+  });
+
+  it.each(['marin', 'capitaine'] as const)('does not offer the fleet-wide qualification matrix to the restricted %s account fixture', async role => {
+    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} currentPersonId={1} roles={[role]} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    expect(screen.queryByRole('button', { name: 'Matrice des Qualifications' })).not.toBeInTheDocument();
+  });
+
+  it('keeps matrix generation locked until completion and reports a blocked PDF window', async () => {
+    const user = userEvent.setup();
+    let finish!: (opened: boolean) => void;
+    const open = vi.mocked(openQualificationsMatrix).mockClear().mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    render(<HumanResourcesPage client={createClient([activePerson], documents) as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    const button = screen.getByRole('button', { name: 'Matrice des Qualifications' });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    await user.click(button);
+    expect(open).toHaveBeenCalledTimes(1);
+    finish(false);
+    expect(await screen.findByText(/Le navigateur a bloqué l’ouverture du PDF/)).toBeInTheDocument();
+    await waitFor(() => expect(button).toBeEnabled());
+  });
+
+  it('does not generate a misleading empty matrix when the roster contains only office personnel', async () => {
+    const user = userEvent.setup();
+    const open = vi.mocked(openQualificationsMatrix).mockClear();
+    render(<HumanResourcesPage client={createClient([yardManagerPerson], []) as never} roles={['admin']} />);
+    await screen.findByRole('heading', { name: 'Ressources humaines' });
+    await user.click(screen.getByRole('button', { name: 'Matrice des Qualifications' }));
+    expect(await screen.findByText('Aucun marin accessible ne peut être inclus dans la matrice des qualifications.')).toBeInTheDocument();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('uses the selected workforce year in the training plan PDF indicators', async () => {

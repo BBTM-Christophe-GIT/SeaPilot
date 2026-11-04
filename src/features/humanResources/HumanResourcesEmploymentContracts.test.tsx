@@ -81,7 +81,7 @@ describe('HR profile employment contracts access', () => {
     const ribbon = screen.getByRole('navigation', { name: 'Commandes du module Ressources humaines' });
     expect(ribbon).toHaveClass('is-single-row');
     expect(within(ribbon).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      'Générer le contrat', 'Grille de salaire', 'Plan de formation', 'Ajouter un collaborateur',
+      'Générer le contrat', 'Grille de salaire', 'Matrice des Qualifications', 'Plan de formation', 'Ajouter un collaborateur',
     ]);
     await user.click(within(ribbon).getByRole('button', { name: 'Générer le contrat' }));
     const dialog = screen.getByRole('dialog', { name: 'Générer un contrat' });
