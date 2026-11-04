@@ -21,11 +21,18 @@ permettre les ajouts successifs. Elle se recadre à la sortie du placement sans
 zoom et plein écran ; un clic sur le fond n’ajoute aucun waypoint lorsque le
 placement est désactivé.
 
-Le champ facultatif `mapViewport` est enregistré indépendamment des géométries,
-repris à la réouverture, dans l’aperçu et dans le PDF. Le projet en transmet une
-copie indépendante à une nouvelle opération en mer. Les fiches signées restent
-immuables ; les anciens enregistrements sans ce champ restent automatiques. Les
-dessins PDF sont découpés à la bordure de la carte en mode manuel.
+Le champ facultatif `mapViewport` est enregistré indépendamment des géométries
+et repris à la réouverture de l’éditeur. Le projet en transmet une copie
+indépendante à une nouvelle opération en mer. Les fiches signées restent
+immuables ; les anciens enregistrements sans ce champ restent automatiques.
+
+L’aperçu, l’impression et le PDF de la fiche Opération en Mer recadrent toujours
+la carte sur le parcours complet : ports de départ et d’arrivée géolocalisés,
+tous les waypoints valides, points isolés et sommets des zones. Un zoom manuel
+conservé dans l’éditeur ne peut donc plus masquer les éléments de la fiche.
+Le cadrage enregistré et les données signées ne sont pas modifiés. Si aucune
+position n’est disponible, le fond de carte conserve le cadrage enregistré.
+Cette règle ne change pas le cadrage des annexes de projet.
 
 La migration `20261027134541_sea_operation_map_viewport.sql` valide le centre
 géographique et une étendue de longitude comprise entre 0,02° et 360°. Elle ne
@@ -48,8 +55,9 @@ Lorsqu’un récapitulatif de voyage est superposé en bas à droite, le cadrage
 automatique lui réserve une colonne pour ne masquer aucun point.
 
 Le bouton **Cadrer le parcours** recalcule la vue ajustée en mode automatique.
-Les marges ci-dessus concernent ce mode ; le mode manuel conserve désormais la
-vue sélectionnée pour l’écran et les exports.
+Les marges ci-dessus concernent ce mode ; le mode manuel conserve la vue
+sélectionnée dans l’éditeur. La fiche Opération en Mer utilise le cadrage
+complet décrit ci-dessus pour ses aperçus et exports.
 
 La molette cumule les événements natifs et anime le zoom cible sur un court
 intervalle synchronisé avec `requestAnimationFrame`. Les unités pixel, ligne

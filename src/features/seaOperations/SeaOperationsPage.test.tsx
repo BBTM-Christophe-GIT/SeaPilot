@@ -1475,6 +1475,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     fireEvent.click(stepButton(2));
     expect(formQueries().getByRole('figure', { name: 'Carte du parcours' })).toBeVisible();
+    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
@@ -1599,6 +1600,72 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(saveSeaOperation).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { account: captainAccount, target: 'route' }, { account: sailorAccount, target: 'route' },
+    { account: captainAccount, target: 'isolated' }, { account: sailorAccount, target: 'isolated' },
+    { account: captainAccount, target: 'zone' }, { account: sailorAccount, target: 'zone' },
+  ])('imports GPX into $target with the actual $account.id profile while preserving existing data', async ({ account, target }) => {
+    const draft = waypointCaptureDraft();
+    draft.mapViewport = { centerLatitude: 49.65, centerLongitude: -1.62, longitudeSpan: .02 };
+    const record = recordFixture(account, { draft }), original = structuredClone(record);
+    const { client } = renderAccount(account, record);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...record, draft: structuredClone(payload), version: record.version + 1 }));
+    await openRecord(record); fireEvent.click(stepButton(2));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
+    const file = new File(['<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><rte><name>Parcours GPX</name><rtept lat="49.7" lon="-1.4"><name>GPX A</name><time>2000-01-01T00:00:00Z</time></rtept><rtept lat="49.75" lon="-0.8"><name>GPX B</name></rtept><rtept lat="49.5" lon="0.1"><name>GPX C</name></rtept></rte></gpx>'], 'parcours.gpx', { type: 'application/gpx+xml' });
+    await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), file);
+    expect(await panel.findByRole('table', { name: 'Aperçu des points à importer' })).toBeVisible();
+    expect(capturingWeatherPanel().waypoints).toEqual(draft.waypoints);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+    await userEvent.selectOptions(panel.getByLabelText('Contenu à importer'), target);
+    if (target === 'zone') fireEvent.change(panel.getByLabelText('Nom de la zone'), { target: { value: 'Zone importée GPX' } });
+    await userEvent.click(panel.getByRole('button', { name: target === 'route' ? 'Ajouter les 3 waypoints' : target === 'isolated' ? 'Ajouter les 3 points isolés' : 'Ajouter la zone' }));
+    expect(formQueries().queryByRole('region', { name: 'Import de waypoints GPX' })).not.toBeInTheDocument();
+    if (target === 'route') {
+      const points = capturingWeatherPanel().waypoints;
+      expect(points).toHaveLength(4); expect(points[0]).toEqual(draft.waypoints[0]);
+      expect(points[1]).toMatchObject({ descriptionVhf: 'GPX A', latitude: '49.7', longitude: '-1.4', eta: '', ukc: '', ukcMode: 'automatic' });
+      expect(points[1]).not.toHaveProperty('weather'); expect(points[1]).not.toHaveProperty('radio');
+    } else expect(capturingWeatherPanel().waypoints).toEqual(draft.waypoints);
+    await saveDraft();
+    await waitFor(() => expect(saveSeaOperation).toHaveBeenCalledTimes(1));
+    const saved = vi.mocked(saveSeaOperation).mock.calls[0][1];
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, saved, record);
+    expect(saved.mapViewport).toBeUndefined();
+    if (target === 'route') expect(saved.waypoints).toHaveLength(4);
+    else {
+      expect(saved.waypoints).toHaveLength(draft.waypoints.length);
+      saved.waypoints.forEach((point, index) => expect(point).toMatchObject(draft.waypoints[index]));
+      if (target === 'isolated') {
+        expect(saved.locationOverlay?.points).toHaveLength(3); expect(saved.locationOverlay?.zones).toEqual([]);
+        expect(saved.locationOverlay?.points[0]).toMatchObject({ descriptionVhf: 'GPX A', latitude: '49.7', longitude: '-1.4', eta: '', ukc: '' });
+      } else {
+        expect(saved.locationOverlay?.points).toEqual([]);
+        expect(saved.locationOverlay?.zones).toEqual([{ id: expect.any(String), name: 'Zone importée GPX', vertices: [
+          { latitude: '49.7', longitude: '-1.4' }, { latitude: '49.75', longitude: '-0.8' }, { latitude: '49.5', longitude: '0.1' },
+        ] }]);
+      }
+    }
+    expect(record).toEqual(original); expect(signSeaOperation).not.toHaveBeenCalled();
+  });
+
+  it('imports GPX into a new operation with the normal departure ETA default', async () => {
+    renderAccount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    fireEvent.click(stepButton(2));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
+    await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), new File(['<gpx><rte><rtept lat="49.65" lon="-1.62"><name>Départ importé</name></rtept></rte></gpx>'], 'nouveau.gpx'));
+    await panel.findByRole('table', { name: 'Aperçu des points à importer' });
+    await userEvent.selectOptions(panel.getByLabelText('Contenu à importer'), 'route');
+    await userEvent.click(panel.getByRole('button', { name: 'Ajouter le waypoint' }));
+    expect(capturingWeatherPanel().waypoints).toHaveLength(1);
+    expect(capturingWeatherPanel().waypoints[0]).toMatchObject({ number: '1', descriptionVhf: 'Départ importé', etaMode: 'manual' });
+    expect(capturingWeatherPanel().waypoints[0].eta).toMatch(new RegExp(`^${seaOperationToday()}T\\d{2}:\\d{2}$`));
+    expect(saveSeaOperation).not.toHaveBeenCalled();
+  });
+
   it('displays SMCP coordinates without rounding stored positions or invalidating captures on focus and blur', async () => {
     const draft = waypointCaptureDraft();
     draft.waypoints[0].latitude = '49.6500017';
@@ -1667,6 +1734,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
+    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé · 1 port défini' })).toBeVisible();
     const categoryToggle = within(map).getByRole('button', { name: 'Catégories de navigation' });
     expect(within(map).getAllByRole('button')).toEqual([categoryToggle]);

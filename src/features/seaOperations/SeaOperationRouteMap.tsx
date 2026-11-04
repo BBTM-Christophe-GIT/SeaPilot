@@ -96,9 +96,11 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderOverlay, fillAvailableSpace = false, showPlaces = false, showWaypointCoordinates = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
+  /** Document view only: fit every recorded position, keeping a saved frame only for an empty map. */
+  fitAllPositions?: boolean;
   /** Document view only: widen a saved frame when its zones would be cropped. */
   ensureZonesVisible?: boolean;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
@@ -143,9 +145,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, ens
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
   const definedPorts = useMemo(() => resolveSeaOperationMapPorts(departurePort, arrivalPort), [departurePort, arrivalPort]);
   const extraPositions = useMemo(() => [...seaOperationMapExtraPositions(isolatedPoints, zones), ...definedPorts.ports.map(port => port.location)], [isolatedPoints, zones, definedPorts]);
-  const displayViewport = useMemo(() => ensureZonesVisible
+  const displayViewport = useMemo(() => fitAllPositions && (extraPositions.length > 0 || waypoints.some(point => seaWaypointPosition(point) !== null)) ? undefined : ensureZonesVisible
     ? routeMapViewportContainingPositions(viewport, zones.flatMap(zone => seaOperationZonePositions(zone) ?? []), width, height)
-    : viewport, [ensureZonesVisible, viewport, zones, width, height]);
+    : viewport, [fitAllPositions, extraPositions, waypoints, ensureZonesVisible, viewport, zones, width, height]);
   // The voyage summary stays on the map; automatic fitting leaves it a clear column.
   const fitRightInset = !compact && showRouteLegs && waypoints.length > 1 && width >= 600 ? 264 : 0;
   const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, displayViewport, extraPositions, fitRightInset), [waypoints, width, height, displayViewport, extraPositions, fitRightInset]);

@@ -47,6 +47,8 @@ import type { ProjectLocationOverlay } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { formatClientContactLines } from '../../lib/clientContact';
 import { ProjectPortCombobox } from '../projects/ProjectPortCombobox';
+import { SeaOperationWaypointImportPanel } from './SeaOperationWaypointImportPanel';
+import { appendSeaOperationImportedWaypoints, appendSeaOperationImportedLocation, type SeaOperationImportedWaypoint, type SeaOperationWaypointImportTarget } from './seaOperationWaypointImport';
 
 const STEPS = ['Armement', 'Contrôles avant appareillage', 'Passage Plan', 'Décision du Capitaine'];
 const STEP_DETAILS = ['Mission, client et voyage', 'Préparation et sécurité du navire', 'Cartes et points de route', 'GO / NO GO et signature'];
@@ -507,6 +509,26 @@ export function SeaOperationsPage() {
       || Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) return;
     const patch = { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) };
     update(current => canEditMap() ? { waypoints: current.waypoints.map(point => point.id === id ? updateSeaOperationWaypoint(point, patch) : point) } : {});
+  };
+  const importWaypoints = (points: SeaOperationImportedWaypoint[], target: SeaOperationWaypointImportTarget, zoneName?: string) => {
+    if (!canEditMap() || !points.length) return false;
+    const current = weatherEditor.current.draft;
+    let imported: SeaOperationPayload;
+    if (target !== 'route') {
+      imported = { ...current, mapViewport: undefined,
+        locationOverlay: appendSeaOperationImportedLocation(current.locationOverlay, points, target, zoneName) };
+    } else {
+      const waypoints = appendSeaOperationImportedWaypoints(current.waypoints, points);
+      if (!current.waypoints.length) {
+        waypoints[0] = { ...waypoints[0], eta: initialSeaOperationDepartureEta(), etaMode: 'manual' };
+      }
+      imported = captureRouteEtas({ ...current, waypoints, mapViewport: undefined }, data?.vessels);
+    }
+    allowAutomaticMission.current = false; editRevision.current += 1;
+    setDraft(imported);
+    setDirty(true); setIssues([]); setNotice(target === 'zone' ? 'Zone ajoutée depuis le fichier GPX.'
+      : `${points.length} point${points.length > 1 ? 's' : ''} ${target === 'route' ? 'de passage' : 'isolé' + (points.length > 1 ? 's' : '')} ajouté${points.length > 1 ? 's' : ''} depuis le fichier GPX.`);
+    return true;
   };
   const removeWaypoint = (id: string) => {
     if (!canEditMap() || !weatherEditor.current.draft.waypoints.some(point => point.id === id)) return;
@@ -981,6 +1003,7 @@ export function SeaOperationsPage() {
             vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId}
             onChange={value => { if (canEditMap()) update({ locationOverlay: value }); }} />}
           <h3>Points de passage</h3>
+          {editable && !signed && <SeaOperationWaypointImportPanel key={`gpx:${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} disabled={busy || exporting} existingCount={draft.waypoints.length} onImport={importWaypoints} />}
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {

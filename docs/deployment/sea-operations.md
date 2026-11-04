@@ -1,5 +1,7 @@
 # Opération en Mer
 
+Le Passage Plan propose aussi un [import GPX avec choix Route, Points isolés ou Zone](./sea-operations-gpx-import.md).
+
 Le menu **Opérations → Opération en Mer** est disponible pour Administration,
 Direction, Armement, Capitaine et Marin. Le formulaire reprend le document
 `63-GO - NO GO - Opération en Mer.docx`, référence **OPE-FOR-10-C** : mission,
