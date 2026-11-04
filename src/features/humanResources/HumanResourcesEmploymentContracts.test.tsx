@@ -8,6 +8,7 @@ import { HumanResourcesPage } from './HumanResourcesPage';
 import { fetchHumanResourcesData, updatePersonDetails, type PersonRecord } from './peopleQueries';
 import { loadEmploymentContractDetails, saveEmploymentContractDetails } from './employmentContractQueries';
 import { loadHrSalaryGrid } from './salaryGridQueries';
+import { fetchFleetVessels, type FleetVessel } from '../fleet/fleetQueries';
 
 const { sectionRender, profileFieldsRender } = vi.hoisted(() => ({ sectionRender: vi.fn(), profileFieldsRender: vi.fn() }));
 
@@ -25,6 +26,10 @@ vi.mock('./employmentContractQueries', async () => ({
 vi.mock('./salaryGridQueries', async () => ({
   ...await vi.importActual<typeof import('./salaryGridQueries')>('./salaryGridQueries'),
   loadHrSalaryGrid: vi.fn(),
+}));
+vi.mock('../fleet/fleetQueries', async () => ({
+  ...await vi.importActual<typeof import('../fleet/fleetQueries')>('../fleet/fleetQueries'),
+  fetchFleetVessels: vi.fn(),
 }));
 
 vi.mock('./EmploymentContractsSection', () => ({
@@ -68,6 +73,10 @@ beforeEach(() => {
   vi.mocked(saveEmploymentContractDetails).mockReset().mockResolvedValue(undefined);
   vi.mocked(updatePersonDetails).mockReset().mockResolvedValue(person);
   vi.mocked(loadHrSalaryGrid).mockReset().mockResolvedValue({ companyId: 1, revision: 3, updatedAt: '', rows: [activeSalaryRow] });
+  vi.mocked(fetchFleetVessels).mockReset().mockResolvedValue([
+    { id: 1, name: 'NAVIRE COURT DEMO', assetKind: 'vessel', lengthOverall: '12', active: true },
+    { id: 2, name: 'NAVIRE LONG DEMO', assetKind: 'vessel', lengthOverall: '42', active: true },
+  ] as FleetVessel[]);
   vi.mocked(fetchHumanResourcesData).mockResolvedValue({ people: [person], documents: [], documentTypes: [], visibilityRules: [] });
 });
 
@@ -126,16 +135,39 @@ describe('HR profile employment contracts access', () => {
     expect(profileFieldsRender).not.toHaveBeenCalled();
     expect(loadEmploymentContractDetails).not.toHaveBeenCalled();
     expect(loadHrSalaryGrid).not.toHaveBeenCalled();
+    expect(fetchFleetVessels).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Générer le contrat' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Grille de salaire' })).not.toBeInTheDocument();
     expect(within(profile).queryByText('2900676123456')).not.toBeInTheDocument();
     await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
     expect(within(profile).queryByLabelText(/sécurité sociale/)).not.toBeInTheDocument();
     expect(within(profile).queryByLabelText(/Salaire brut/)).not.toBeInTheDocument();
+    expect(fetchFleetVessels).not.toHaveBeenCalled();
     await user.click(within(profile).getByRole('button', { name: 'Documents' }));
 
     expect(within(profile).queryByRole('region', { name: 'Contrats de travail confidentiels' })).not.toBeInTheDocument();
     expect(sectionRender).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['admin', 'NAVIRE LONG DEMO'],
+    ['direction', 'Ensemble de la flotte'],
+  ] as const)('saves the fleet assignment through the normal RH profile action for %s', async (role, assignment) => {
+    const user = userEvent.setup();
+    const client = {} as SupabaseClient;
+    render(<MemoryRouter><HumanResourcesPage client={client} currentPersonId={7} roles={[role]} /></MemoryRouter>);
+    const profile = await screen.findByRole('complementary', { name: 'Fiche RH de Alice MARTIN' });
+    expect(fetchFleetVessels).not.toHaveBeenCalled();
+    await user.click(within(profile).getByRole('button', { name: 'Contrat et dates' }));
+    expect(fetchFleetVessels).not.toHaveBeenCalled();
+    await user.click(within(profile).getByRole('button', { name: 'Modifier la fiche RH' }));
+    const select = await within(profile).findByRole('combobox', { name: 'Navire(s) d’affectation' });
+    await waitFor(() => expect(select).toBeEnabled());
+    await user.selectOptions(select, assignment);
+    await user.click(within(profile).getByRole('button', { name: 'Enregistrer la fiche' }));
+    await waitFor(() => expect(saveEmploymentContractDetails).toHaveBeenCalledWith(client, 7,
+      expect.objectContaining({ vesselNames: assignment })));
+    expect(await within(profile).findByText(assignment)).toBeInTheDocument();
   });
 
   it.each<RoleKey>(['admin', 'direction'])('saves private SSN in Identity and salary in Contract through the normal fiche action for %s', async role => {

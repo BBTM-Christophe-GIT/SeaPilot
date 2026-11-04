@@ -45,6 +45,7 @@ import { createEmploymentContractDraft, parseEmploymentContractSalary, type Empl
 import { EmploymentContractsSection } from './EmploymentContractsSection';
 import { EmploymentContractCreationDialog } from './EmploymentContractCreationDialog';
 import { EmploymentContractDurationFields } from './EmploymentContractDurationFields';
+import { EmploymentContractVesselSelect } from './EmploymentContractVesselSelect';
 import { loadHrSalaryGrid, type HrSalaryGrid } from './salaryGridQueries';
 import { salaryGridMonthlyAmount, salaryGridConventionLabel } from './salaryGridModel';
 import { SalaryGridDialog } from './SalaryGridDialog';
@@ -3243,6 +3244,9 @@ function PersonDetailsPanel({
 
   function privateContractField(key: typeof PRIVATE_CONTRACT_FIELDS[number], label: string, multiline = false) {
     if (!canManageContracts) return null;
+    if (key === 'vesselNames' && isEditing) return <EmploymentContractVesselSelect client={client}
+      value={contractDetailsDraft.vesselNames || ''} disabled={contractDetailsLoading || contractDetailsUnavailable || isProfileSaving}
+      onChange={(value) => setContractDetailsDraft((values) => ({ ...values, vesselNames: value }))} />;
     return isEditing ? <label className="hr-edit-field">
       {label}
       {multiline ? <textarea value={contractDetailsDraft[key] || ''} maxLength={1200} rows={2}
