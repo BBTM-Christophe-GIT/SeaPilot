@@ -163,7 +163,7 @@ describe('qualifications matrix documents', () => {
     expect(JSON.stringify(matrix)).not.toContain('Manquant');
   });
 
-  it('uses the individual sheet catalogue names, person-prefix/year removal and saved status', () => {
+  it('uses complete catalogue names, person-prefix/year removal and the individual sheet saved status', () => {
     const matrix = buildQualificationsMatrix({ people: [person(1)], documents: [
       document(1, { categoryKey: 'safety_training', title: 'Camille DEMO - CFBS 2025.pdf', status: 'valid', expiresOn: '2001-02-03' }),
       document(2, { categoryKey: 'medical_visit', title: 'Camille DEMO - Visite Médicale 2026.pdf', status: 'renew_due' }),
@@ -175,6 +175,111 @@ describe('qualifications matrix documents', () => {
     }]);
     expect(categories.medical_visit[0]).toMatchObject({ title: 'Visite médicale de navigation', statusLabel: 'À renouveler' });
     expect(categories.deck[0]).toMatchObject({ title: 'CFBS', statusLabel: 'Validation' });
+  });
+
+  it.each([
+    'Léa-Anne DU RIVAGE - CFBS - 2027.pdf',
+    'DU RIVAGE Léa-Anne - CFBS - 2027.pdf',
+    'lea anne du rivage–CFBS–2027.PDF',
+    'Léa-Anne DU RIVAGE–CFBS–2027.pdf'.normalize('NFD'),
+    'DU_RIVAGE_LEA_ANNE_CFBS_2027.pdf',
+    '  Léa-Anne   DU RIVAGE-CFBS-2027.pdf',
+    'DU RIVAGE - CFBS - 2027.pdf',
+    'CFBS - 2027.pdf',
+    'Léa-Anne DU RIVAGE - CFBS - Certificat de Formation de Base à la Sécurité - 2027.pdf',
+  ])('resolves the full same-category catalogue label for the historical title %s', (title) => {
+    const fullName = 'CFBS - Certificat de Formation de Base à la Sécurité';
+    const profile = person(1, { firstName: 'Léa-Anne', lastName: 'DU RIVAGE' });
+    const matrix = buildQualificationsMatrix({ people: [profile], documents: [
+      document(1, { personName: 'Léa-Anne DU RIVAGE', title, categoryKey: 'safety_training' }),
+    ], documentTypes: [{ ...catalogue[0], name: fullName }], visibleCategoryKeys, asOf });
+    expect(matrix.groups[0].people[0].categories.safety_training[0].title).toBe(fullName);
+  });
+
+  it('recognizes both the stored historical identity and the current profile without changing either record', () => {
+    const profile = person(1, { firstName: 'Léa-Anne', lastName: 'DU RIVAGE' });
+    const sourceDocuments = [
+      document(1, { personName: 'Alix DE LA PLAINE', title: 'Alix DE LA PLAINE – CFBS – 2027.pdf', categoryKey: 'safety_training' }),
+      document(2, { personName: 'Alix DE LA PLAINE', title: 'DU RIVAGE Léa-Anne-CFBS-2027.pdf', categoryKey: 'safety_training' }),
+    ];
+    const before = JSON.stringify({ profile, sourceDocuments, catalogue });
+    const matrix = buildQualificationsMatrix({ people: [profile], documents: sourceDocuments, documentTypes: catalogue, visibleCategoryKeys, asOf });
+    expect(matrix.groups[0].people[0].categories.safety_training.map(({ title }) => title)).toEqual([
+      catalogue[0].name, catalogue[0].name,
+    ]);
+    expect(JSON.stringify({ profile, sourceDocuments, catalogue })).toBe(before);
+  });
+
+  it('resolves every authorized person and all six categories while retaining legitimate years in catalogue labels', () => {
+    const types: HrDocumentTypeOption[] = QUALIFICATIONS_MATRIX_CATEGORIES.map(({ key, label }, index) => ({
+      id: index + 1, sourceItemId: index + 1, categoryKey: key, categoryLabel: label,
+      fileName: `QUAL-${index + 1}`, name: `Qualification complète ${label} STCW 2010`,
+    }));
+    const profiles = [
+      person(1, { firstName: 'Léa-Anne', lastName: 'DU RIVAGE' }),
+      person(2, { firstName: 'Noé', lastName: 'DE LA PLAINE' }),
+    ];
+    const documents = profiles.flatMap((profile) => types.map((type, index) => document(profile.id * 10 + index, {
+      personId: profile.id, personName: `${profile.firstName} ${profile.lastName}`, categoryKey: type.categoryKey,
+      title: `${profile.lastName}_${profile.firstName}–${index % 2 ? type.name : type.fileName}–2027.pdf`,
+    })));
+    documents.push(document(99, { personId: 2, personName: 'Noé DE LA PLAINE', categoryKey: 'deck',
+      title: `Noé DE LA PLAINE-${types[0].name}.pdf` }));
+    const matrix = buildQualificationsMatrix({ people: profiles, documents, documentTypes: types, visibleCategoryKeys, asOf });
+    expect(matrix.peopleCount).toBe(2);
+    for (const row of matrix.groups.flatMap(({ people }) => people)) {
+      for (const type of types) {
+        const category = row.categories[type.categoryKey as keyof typeof row.categories];
+        expect(category.length).toBeGreaterThan(0);
+        expect(category.every(({ title }) => title === type.name)).toBe(true);
+      }
+    }
+  });
+
+  it('keeps confirmed historical aliases limited to their own catalogue category', () => {
+    const types = [
+      { ...catalogue[0], id: 10, fileName: 'CQALI', name: 'CQALI - Qualification avancée de démonstration' },
+      { ...catalogue[0], id: 11, categoryKey: 'safety_induction', fileName: 'LEMS - HSE Induction', name: 'LEMS — HSE Induction complète' },
+    ];
+    const matrix = buildQualificationsMatrix({ people: [person(1)], documents: [
+      document(1, { categoryKey: 'safety_training', title: 'DEMO Camille-CQUALI-2027.pdf' }),
+      document(2, { categoryKey: 'safety_induction', title: 'Camille DEMO–HSE Induction–2027.pdf' }),
+      document(3, { categoryKey: 'deck', title: 'Camille DEMO-CQUALI-2027.pdf' }),
+    ], documentTypes: types, visibleCategoryKeys, asOf });
+    const categories = matrix.groups[0].people[0].categories;
+    expect(categories.safety_training[0].title).toBe(types[0].name);
+    expect(categories.safety_induction[0].title).toBe(types[1].name);
+    expect(categories.deck[0].title).toBe('CQUALI');
+  });
+
+  it.each([
+    ['Autorisation grue 2.5t', 'Autorisation grue 2.5t'],
+    ['Autorisation grue 2.5t.pdf', 'Autorisation grue 2.5t'],
+    ['Camille DEMO - Autorisation grue 2.5t - 2027.pdf', 'Autorisation grue 2.5t'],
+    ['Camille DEMO - Formation Niv. II - 2027.pdf', 'Formation Niv. II'],
+    ['Formation Niv. II', 'Formation Niv. II'],
+    ['Camille DEMO - Méthode de qualification', 'Camille DEMO - Méthode de qualification'],
+    ['Camille DEMO - Méthode de qualification.pdf', 'Camille DEMO - Méthode de qualification'],
+  ])('preserves the exact genuine catalogue label for %s', (title, expected) => {
+    const types = ['Autorisation grue 2.5t', 'Formation Niv. II', 'Camille DEMO - Méthode de qualification', 'Méthode de qualification']
+      .map((name, index) => ({ ...catalogue[0], id: index + 1, name, fileName: name, categoryKey: 'lifting' }));
+    const matrix = buildQualificationsMatrix({ people: [person(1)], documents: [
+      document(1, { categoryKey: 'lifting', title }),
+    ], documentTypes: types, visibleCategoryKeys, asOf });
+    expect(matrix.groups[0].people[0].categories.lifting[0].title).toBe(expected);
+  });
+
+  it('ignores synthetic fallback catalogue options and cleans unknown labels without guessing from other people', () => {
+    const matrix = buildQualificationsMatrix({ people: [person(1)], documents: [
+      document(1, { categoryKey: 'safety_training', title: 'DEMO Camille–CFBS–2027.pdf' }),
+      document(2, { categoryKey: 'engine', title: 'Camille DEMO_Qualification inconnue_2027.pdf' }),
+      document(3, { categoryKey: 'engine', title: 'Autre Identité - Qualification inconnue - 2027.pdf' }),
+    ], documentTypes: [{ ...catalogue[0], id: -1, sourceItemId: 0, name: 'Camille DEMO - CFBS - 2027' }], visibleCategoryKeys, asOf });
+    const categories = matrix.groups[0].people[0].categories;
+    expect(categories.safety_training[0].title).toBe('CFBS');
+    expect(categories.engine.map(({ title }) => title)).toEqual([
+      'Autre Identité - Qualification inconnue', 'Qualification inconnue',
+    ]);
   });
 
   it('retains unknown or ambiguous catalogue names instead of inventing a qualification', () => {

@@ -59,7 +59,7 @@ describe('qualification matrix PDF', () => {
     const result = await buildQualificationsMatrixPdf(matrix, generatedOn);
     expect(result.fileName).toBe('Matrice-des-Qualifications-2026-11-04.pdf');
     expect(result.blob.type).toBe('application/pdf');
-    const { pages, document: pdf } = await inspect(result.blob);
+    const { pages, bounds, document: pdf } = await inspect(result.blob);
     expect(pdf.getPage(0).getWidth()).toBeGreaterThan(pdf.getPage(0).getHeight());
     const text = pages.join(' ');
     expect(text).toContain('MATRICE DES QUALIFICATIONS');
@@ -68,28 +68,33 @@ describe('qualification matrix PDF', () => {
     expect(text.indexOf('Capitaine')).toBeLessThan(text.indexOf('Chef Mécanicien'));
     expect(text).toContain('Marin ALPHA'); expect(text).toContain('Marin BÊTA');
     expect(text).toContain('Ancien'); expect(text).toContain('Profil archivé');
-    for (const category of categories) expect(text).toContain(category.label);
+    for (const category of categories.filter(category => category.key !== 'safety_induction')) expect(text).toContain(category.label);
+    expect(text).not.toContain('Safety Induction');
+    expect(bounds.filter(item => item.text === 'Machine')).toHaveLength(2);
+    expect(bounds.filter(item => item.text === 'Pont')).toHaveLength(1);
     expect(text).toContain('Document'); expect(text).toContain('Échéance'); expect(text).toContain('Statut');
     expect(text).toContain('Brevet de capitaine de démonstration');
     expect(text).toContain('31/12/2027'); expect(text).toContain('Non renseignée');
     for (const label of Object.values(QUALIFICATIONS_MATRIX_STATUS_LABELS)) expect(text).toContain(label);
-    expect(text).toContain('Aucun document enregistré.');
+    expect(text).not.toContain('Aucun document enregistré.');
     pages.forEach((page, index) => expect(page).toContain(`Page ${index + 1} / ${pages.length}`));
     expect(matrix).toEqual(before);
   });
 
-  it('does not invent a missing qualification for an empty category or disclose a hidden category', async () => {
+  it('keeps all personnel listed without empty category bands, column headers or placeholders and never discloses hidden documents', async () => {
     const matrix = example();
     matrix.categories = [categories[0]];
     matrix.groups = [{ functionLabel: 'Capitaine', people: [person(1, 'Marin ALPHA', 'Capitaine', {
       medical_visit: [document(50, 'HIDDEN-MEDICAL-DOCUMENT', 'expired')],
-    })] }];
-    matrix.peopleCount = 1;
+    }), person(2, 'Marin BÊTA', 'Capitaine')] },
+    { functionLabel: 'Chef Mécanicien', people: [person(3, 'Marin GAMMA', 'Chef Mécanicien')] }];
+    matrix.peopleCount = 3;
     const { pages } = await inspect((await buildQualificationsMatrixPdf(matrix, generatedOn)).blob);
     const text = pages.join(' ');
-    expect(text).toContain('Catégories exportées : Pont');
-    expect(text).toContain('Aucun document enregistré.'); expect(text).toContain('Non renseigné');
-    expect(text).not.toMatch(/Manquant|Échu|HIDDEN-MEDICAL-DOCUMENT|Visite Médicale/);
+    expect(text).toContain('Catégories exportées : Aucune');
+    for (const name of ['Marin ALPHA', 'Marin BÊTA', 'Marin GAMMA', 'Capitaine', 'Chef Mécanicien']) expect(text).toContain(name);
+    expect(text).toContain('3 marin(s)');
+    expect(text).not.toMatch(/Aucun document enregistré|Non renseigné|Manquant|Échu|HIDDEN-MEDICAL-DOCUMENT|Visite Médicale|Pont|Document|Échéance|Statut/);
   });
 
   it('keeps two distinct records with the same title as separate rows', async () => {
@@ -104,9 +109,9 @@ describe('qualification matrix PDF', () => {
   it('repeats function, person, category and column headers while preserving a document longer than a whole page', async () => {
     const words = Array.from({ length: 800 }, (_, index) => `QUALIFICATION${String(index).padStart(4, '0')}`);
     const longTitle = `DÉBUT-DOCUMENT ${words.join(' ')} FIN-DOCUMENT`;
-    const matrix: QualificationsMatrix = { categories: [categories[0]], peopleCount: 1,
+    const matrix: QualificationsMatrix = { categories, peopleCount: 1,
       groups: [{ functionLabel: 'Capitaine', people: [person(1, 'Marin EXEMPLE AUX QUALIFICATIONS TRÈS DÉTAILLÉES', 'Capitaine', {
-        deck: [document(1, longTitle, 'expired', '')],
+        safety_induction: [document(1, longTitle, 'expired', '')],
       })] }] };
     const { pages, bounds } = await inspect((await buildQualificationsMatrixPdf(matrix, generatedOn)).blob);
     expect(pages.length).toBeGreaterThan(2);
@@ -115,10 +120,11 @@ describe('qualification matrix PDF', () => {
     for (const word of words) expect(text).toContain(word);
     for (const page of pages) {
       expect(page).toContain('Capitaine'); expect(page).toContain('Marin EXEMPLE');
-      expect(page).toContain('Pont'); expect(page).toContain('Document'); expect(page).toContain('Échéance'); expect(page).toContain('Statut');
+      expect(page).toContain('Safety Induction'); expect(page).toContain('Document'); expect(page).toContain('Échéance'); expect(page).toContain('Statut');
       expect(page).toContain('Non renseignée'); expect(page).toContain('Échu');
     }
-    expect(pages[1]).toContain('Pont (suite)');
+    expect(text).not.toMatch(/Pont|Machine|Formation de sécurité|Visite Médicale|Levage|Aucun document enregistré/);
+    expect(pages[1]).toContain('Safety Induction (suite)');
     for (const item of bounds) {
       expect(item.x, item.text).toBeGreaterThanOrEqual(32);
       expect(item.right, item.text).toBeLessThanOrEqual(item.pageWidth - 32);
