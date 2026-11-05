@@ -15,3 +15,15 @@ Appliquer la migration `20261105052516_qhse_work_permits.sql` avant la mise en s
 - Vérifier les droits avec des fixtures distinctes pour Marin, Capitaine affecté, Capitaine hors périmètre, Administration et Direction. Tester le refus de signature en l’absence d’une signature RH active et l’isolation entre entreprises.
 - Vérifier le parcours complet sur les plans du GOURY et du Yard Le Havre, de la création à la clôture. Contrôler le déplacement et le retrait du repère, les zones d’exclusion sur plusieurs ponts, la remise à signature d’un permis modifié, le décompte du temps de pause et l’archivage.
 - Exécuter les tests ciblés et la compilation de production, puis vérifier que Vercel a déployé le commit livré.
+
+
+## Plans complémentaires de la flotte
+
+Les vues vectorielles de LE ROZEL et LANDEMER sont consultables séparément dans le registre. Les vues isolent les tracés du navire et les noms de locaux disponibles. Les pictogrammes, flèches de sécurité et tableaux des plans de sécurité sont retirés.
+
+- **LE ROZEL** — pont principal, pont supérieur de passerelle, pont inférieur, pont de la passerelle et profil.
+- **LANDEMER** — pont principal, sous pont principal, vue de dessus de détail et profil. La vue de détail ne porte pas de libellé dans le document source.
+
+Les scans de KROKDUR et SUROIT nécessitent un plan technique sans annotations pour être intégrés. Le nettoyage des scans a modifié certains détails du dessin.
+
+Appliquer la migration `20261105063020_qhse_work_permit_fleet_plans.sql` avant le déploiement du client. Vérifier qu’un repère et une zone d’exclusion sont enregistrables sur chaque nouveau plan et qu’un plan propre à un autre navire est refusé.

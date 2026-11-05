@@ -41,6 +41,25 @@ describe('registre opérationnel des permis de travaux', () => {
     expect(within(timeline).getByText('En pause')).toBeInTheDocument();
   });
 
+  it.each([
+    ['LE ROZEL', 'Pont supérieur de passerelle', 'pont-superieur', 5],
+    ['LANDEMER', 'Vue de dessus · détail', 'vue-complementaire', 4],
+  ])('affiche les vues propres au navire %s dans le plan et dans la fiche', async (name, title, key, count) => {
+    queries.loadWorkPermits.mockResolvedValue({ locations: [{ ...location, name }], permits: [] });
+    setup();
+    const map = await screen.findByRole('region', { name: 'Plan des travaux' });
+    const picker = within(map).getByLabelText('Plan');
+    expect(within(picker).getAllByRole('option')).toHaveLength(count);
+    expect(within(map).getByRole('img', { name: 'Pont principal' })).toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: key } });
+    expect(within(map).getByRole('img', { name: title })).toHaveAttribute('src', expect.stringContaining(key));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nouveau permis' }));
+    fireEvent.change(screen.getByLabelText('Plan affiché'), { target: { value: key } });
+    expect(screen.getAllByRole('img', { name: title })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Dessiner une zone d’exclusion' })).toBeEnabled();
+  });
+
   it('trace plusieurs zones sur des plans différents et permet de retirer le repère seul', async () => {
     queries.loadWorkPermits.mockResolvedValue({ locations: [location], permits: [permit] });
     queries.saveWorkPermit.mockResolvedValue(permit);
