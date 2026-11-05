@@ -14,6 +14,8 @@ interface Props {
   onCancel: () => void;
 }
 
+const checklistChoices = ['Oui', 'Non', 'Sans objet'] as const;
+
 function Checklist({ type, phase, values, onChange }: {
   type: string;
   phase: 'opening' | 'closing';
@@ -28,27 +30,37 @@ function Checklist({ type, phase, values, onChange }: {
     {model.sections.map((section, index) => section.phase === phase && (
       <details key={index}>
         <summary>{section.title}</summary>
-        {section.items.map((question, item) => {
-          const key = `${index}-${item}`;
-          return <label key={key} className="work-permits-check">
-            <span>{question}</span>
-            <select disabled={!onChange} value={values[key] ?? ''} onChange={(event) => onChange?.({ ...values, [key]: event.target.value })}>
-              <option value="">À renseigner</option><option>Oui</option><option>Non</option><option>Sans objet</option>
-            </select>
-          </label>;
-        })}
+        <div className="work-permits-check-grid">
+          {section.items.map((question, item) => {
+            const key = `${index}-${item}`;
+            const answer = values[key] ?? '';
+            return <div key={key} className="work-permits-check">
+              <p>{question}</p>
+              {onChange ? <div className="work-permits-check-choices" role="group" aria-label={question}>
+                {checklistChoices.map((choice) => <button
+                  key={choice}
+                  type="button"
+                  aria-pressed={answer === choice}
+                  onClick={() => onChange({ ...values, [key]: answer === choice ? '' : choice })}
+                >{choice}</button>)}
+              </div> : <span className="work-permits-check-answer">{answer || 'À renseigner'}</span>}
+            </div>;
+          })}
+        </div>
       </details>
     ))}
     {phase === 'opening' && model.measurements && <details>
       <summary>Mesures d’atmosphère</summary>
       {model.measurementsNote && <p>{model.measurementsNote}</p>}
-      {model.measurements.map((measurement, index) => {
-        const key = `mesure-${index}`;
-        return <label className="work-permits-check" key={key}>
-          {measurement}
-          <input disabled={!onChange} value={values[key] ?? ''} onChange={(event) => onChange?.({ ...values, [key]: event.target.value })} />
-        </label>;
-      })}
+      <div className="work-permits-check-grid">
+        {model.measurements.map((measurement, index) => {
+          const key = `mesure-${index}`;
+          return <label className="work-permits-check" key={key}>
+            {measurement}
+            <input disabled={!onChange} value={values[key] ?? ''} onChange={(event) => onChange?.({ ...values, [key]: event.target.value })} />
+          </label>;
+        })}
+      </div>
     </details>}
   </>;
 }
@@ -95,7 +107,7 @@ export function WorkPermitEditor({ locations, initialLocation, permit, busy, onS
   }
 
   return (
-    <form className="work-permits-panel work-permits-editor" onSubmit={(event) => void submit(event)}>
+    <form className="sp-panel work-permits-panel work-permits-editor" onSubmit={(event) => void submit(event)}>
       <div className="work-permits-heading">
         <h2>{readOnly ? 'Permis clôturé' : permit ? 'Fiche du permis' : 'Nouveau permis'}</h2>
         <button type="button" onClick={onCancel}>{readOnly ? 'Fermer la fiche' : 'Annuler'}</button>

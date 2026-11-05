@@ -1,0 +1,16 @@
+.work-permits-module {
+  --lev-navy: var(--sp-primary);
+  --lev-muted: var(--sp-muted);
+  --lev-border: var(--sp-border);
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.work-permits-module > :is(.sp-module-header, .lifting-fleet) {
+  margin-bottom: 0;
+}
+
+.work-permits-module .work-permits-delete-command .planning-ribbon-command-icon {
+  color: var(--sp-danger);
+}

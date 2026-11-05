@@ -5,7 +5,9 @@ import type { VesselExpiryCounts } from '../fleet/vesselExpiryAlerts';
 import { VesselExpiryBadges, vesselExpiryDescription } from '../fleet/VesselExpiryBadges';
 import type { LiftingVessel } from './liftingModel';
 
-function VesselImage({ vessel }: { vessel: LiftingVessel }) {
+type VesselCard = Pick<LiftingVessel, 'id' | 'name' | 'illustration_thumbnail_url' | 'length_overall' | 'asset_kind'>;
+
+function VesselImage({ vessel }: { vessel: VesselCard }) {
   const [failedUrl, setFailedUrl] = useState('');
   const thumbnailUrl = vessel.illustration_thumbnail_url;
   return thumbnailUrl && failedUrl !== thumbnailUrl
@@ -14,7 +16,7 @@ function VesselImage({ vessel }: { vessel: LiftingVessel }) {
 }
 
 export function LiftingVesselFilter({ vessels, value, disabled, onChange, includeYard = true, contextLabel = 'Inventaire et rapports de contrôle', expiryCounts, expiryLoading = false, showScrollControls = true }: {
-  vessels: LiftingVessel[]; value: number; disabled: boolean; onChange: (id: number) => void; includeYard?: boolean; contextLabel?: string;
+  vessels: readonly VesselCard[]; value: number; disabled: boolean; onChange: (id: number) => void; includeYard?: boolean; contextLabel?: string;
   expiryCounts?: Record<number, VesselExpiryCounts> | null; expiryLoading?: boolean;
   showScrollControls?: boolean;
 }) {
