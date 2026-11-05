@@ -1,14 +1,20 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
 import { ProjectLocationOverlayFields } from './ProjectLocationOverlayFields';
-import { emptyProjectLocationPlan, parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
+import { emptyProjectLocationPlan, parseProjectLocationPlan, PROJECT_LOCATION_LIMITS, type ProjectLocationPlan } from './projectLocation';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import type { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
 import type { SeaOperationMapViewport } from '../seaOperations/seaOperationMapViewport';
 
 const mapMock = vi.hoisted(() => vi.fn());
-vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { mapMock(props); return <span data-testid="location-map" />; } }));
+vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({
+  SeaOperationWaypointMapEditor: (props: ComponentProps<typeof SeaOperationWaypointMapEditor>) => {
+    mapMock(props);
+    return <div data-testid="location-map">{props.waypointImport?.trigger}{props.waypointImport?.panel}</div>;
+  },
+}));
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 beforeEach(() => mapMock.mockClear());
 function Harness({ initial = emptyProjectLocationPlan(), disabled = false }: { initial?: ProjectLocationPlan; disabled?: boolean }) {
@@ -18,6 +24,17 @@ function Harness({ initial = emptyProjectLocationPlan(), disabled = false }: { i
 const current = () => JSON.parse(screen.getByTestId('plan').textContent!) as ProjectLocationPlan;
 const map = () => mapMock.mock.calls.at(-1)![0] as { onAddWaypoint: (position: { latitude: number; longitude: number }, port?: { name: string }) => void; drawingMode: string; waypoints: unknown[]; isolatedPoints: unknown[]; zones: unknown[]; etd?: string; eta?: string; maxSpeedKnots?: number | null;
   mapViewport?: SeaOperationMapViewport; onMapViewportChange: (viewport?: SeaOperationMapViewport) => void; departurePort?: string; arrivalPort?: string; disabled: boolean };
+
+async function previewGpx(target: 'route' | 'isolated' | 'zone') {
+  const controls = within(screen.getByTestId('location-map'));
+  fireEvent.click(controls.getByRole('button', { name: 'Importer les waypoints' }));
+  const file = new File(['<gpx version="1.1"><rte><name>Chantier</name><rtept lat="0" lon="0"><name>Départ</name></rtept><rtept lat="0" lon="0.1"/><rtept lat="0.1" lon="0.1"/></rte></gpx>'],
+    'chantier.gpx', { type: 'application/gpx+xml' });
+  fireEvent.change(controls.getByLabelText('Fichier GPX (.gpx)'), { target: { files: [file] } });
+  await controls.findByRole('table', { name: 'Aperçu des points à importer' });
+  fireEvent.change(controls.getByLabelText('Contenu à importer'), { target: { value: target } });
+  return controls;
+}
 
 describe('ProjectLocationEditor', () => {
   it.each(['map', 'table'])('prefills only a new route departure with the current Paris date and editable time (%s)', source => {
@@ -71,6 +88,49 @@ describe('ProjectLocationEditor', () => {
     expect(screen.getByLabelText('ETD de la localisation')).toHaveValue('');
     expect(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' })).not.toBeChecked();
     expect(document.querySelector('[required]')).toBeNull(); expect(changed).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('imports each GPX destination through the shared map without replacing existing layers or settings', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));
+    const retained = { ...emptySeaOperationWaypoint('existing-point'), number: '1', latitude: '49', longitude: '-1', isolatedPointIcon: 'platform' as const };
+    const initial = { ...emptyProjectLocationPlan(), points: [retained], charts: '7120', includeInPdf: true };
+    render(<Harness initial={initial} />);
+
+    const route = await previewGpx('route');
+    expect(current()).toEqual(initial);
+    fireEvent.click(route.getByRole('button', { name: 'Ajouter les 3 waypoints' }));
+    const afterRoute = current();
+    expect(afterRoute).toMatchObject({ etd: '2026-10-27T14:25', charts: '7120', includeInPdf: true, points: [retained] });
+    expect(afterRoute.waypoints[0]).toMatchObject({ descriptionVhf: 'Départ', eta: afterRoute.etd, etaMode: 'automatic' });
+    expect(afterRoute.waypoints[1].eta).toBe('2026-10-27T15:25');
+
+    const isolated = await previewGpx('isolated');
+    fireEvent.click(isolated.getByRole('button', { name: 'Ajouter les 3 points isolés' }));
+    expect(current().points).toHaveLength(4);
+    expect(current().points[0]).toEqual(retained);
+    expect(current().points[1]).toMatchObject({ number: '2', descriptionVhf: 'Départ', eta: '' });
+
+    const zone = await previewGpx('zone');
+    fireEvent.change(zone.getByLabelText('Nom de la zone'), { target: { value: 'Zone GPX' } });
+    fireEvent.click(zone.getByRole('button', { name: 'Ajouter la zone' }));
+    expect(current().zones[0]).toMatchObject({ name: 'Zone GPX', vertices: [
+      { latitude: '0', longitude: '0' }, { latitude: '0', longitude: '0.1' }, { latitude: '0.1', longitude: '0.1' },
+    ] });
+    expect(current().waypoints).toEqual(afterRoute.waypoints);
+    expect(parseProjectLocationPlan(current())).toEqual(current());
+  });
+
+  it('rejects an import that would exceed the total project location size before changing the plan', async () => {
+    const initial = emptyProjectLocationPlan();
+    initial.points = Array.from({ length: 60 }, (_, index) => ({ ...emptySeaOperationWaypoint(`point-${index}`), descriptionVhf: 'p'.repeat(4000) }));
+    initial.charts = 'c'.repeat(PROJECT_LOCATION_LIMITS.bytes - JSON.stringify(initial).length - 100);
+    expect(parseProjectLocationPlan(initial)).toEqual(initial);
+    render(<Harness initial={initial} />);
+
+    const controls = await previewGpx('isolated');
+    fireEvent.click(controls.getByRole('button', { name: 'Ajouter les 3 points isolés' }));
+    expect(controls.getByRole('alert')).toHaveTextContent('dépasse les limites autorisées');
+    expect(current()).toEqual(initial);
   });
   it('prepares a route, isolated points and a draft zone simultaneously while retaining exact port names and ETA propagation', () => {
     render(<Harness />);

@@ -9,7 +9,10 @@ import type { ProjectRecord } from './projectQueries';
 
 const map = vi.hoisted(() => vi.fn());
 vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({
-  SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { map(props); return <div data-testid="project-map" />; },
+  SeaOperationWaypointMapEditor: (props: ComponentProps<typeof SeaOperationWaypointMapEditor>) => {
+    map(props);
+    return <div data-testid="project-map">{props.waypointImport?.trigger}{props.waypointImport?.panel}</div>;
+  },
 }));
 beforeEach(() => map.mockClear());
 const project = (patch: Partial<ProjectRecord> = {}): ProjectRecord => ({
@@ -68,7 +71,27 @@ describe('ProjectDetailMap', () => {
   it.each([{}, { canManage: false }, { canManage: true }])('keeps browsing read-only without both permission and save capability (%j)', props => {
     render(<ProjectDetailMap project={project()} {...props} />);
     expect(screen.queryByRole('button', { name: 'Modifier la carte' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
     expect(currentMap().readOnly).toBe(true);
+  });
+
+  it('offers GPX import in map edit mode and saves the imported points only on request', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined), source = project();
+    render(<ProjectDetailMap project={source} canManage onSave={onSave} />);
+    expect(screen.queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
+    edit();
+    const mapControls = within(screen.getByTestId('project-map'));
+    fireEvent.click(mapControls.getByRole('button', { name: 'Importer les waypoints' }));
+    const file = new File(['<gpx version="1.1"><wpt lat="49.65" lon="-1.62"><name>Balise GPX</name></wpt></gpx>'], 'balise.gpx', { type: 'application/gpx+xml' });
+    fireEvent.change(mapControls.getByLabelText('Fichier GPX (.gpx)'), { target: { files: [file] } });
+    await mapControls.findByRole('table', { name: 'Aperçu des points à importer' });
+    fireEvent.change(mapControls.getByLabelText('Contenu à importer'), { target: { value: 'isolated' } });
+    fireEvent.click(mapControls.getByRole('button', { name: 'Ajouter le point isolé' }));
+    expect(onSave).not.toHaveBeenCalled();
+    await act(async () => save());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      waypoints: [], points: [expect.objectContaining({ descriptionVhf: 'Balise GPX', latitude: '49.65', longitude: '-1.62' })],
+    }), source);
   });
 
   it('starts editing explicitly without saving or changing the original plan', () => {

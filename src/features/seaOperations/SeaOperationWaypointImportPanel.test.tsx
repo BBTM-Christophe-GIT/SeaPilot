@@ -29,7 +29,7 @@ describe('GPX waypoint import panel', () => {
     expect(screen.getByRole('button', { name: 'Ajouter à la fiche' })).toBeDisabled();
     expect(onImport).not.toHaveBeenCalled();
     await userEvent.selectOptions(screen.getByLabelText('Contenu à importer'), 'route');
-    expect(screen.getByText(/à la suite des 4 waypoints existants/)).toBeVisible();
+    expect(screen.getByText(/4 waypoints déjà présents/)).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Ajouter les 12 waypoints' }));
     expect(onImport).toHaveBeenCalledOnce();
     const [imported, target, zoneName] = onImport.mock.calls[0] as unknown as [Array<{ latitude: string; longitude: string; name: string; description: string }>, string, undefined];

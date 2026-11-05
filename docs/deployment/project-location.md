@@ -15,6 +15,15 @@ Opération en mer ; ils ne constituent pas des validations dans le projet.
 Un tracé incomplet peut être conservé en brouillon. Une zone n’est dessinée
 comme polygone qu’avec au moins trois sommets valides et distincts.
 
+Dans **Localisation** ou **Carte du projet > Modifier la carte**, le bouton
+**Importer les waypoints** se trouve à côté de **Placer les waypoints**. Le
+lecteur GPX permet de choisir une route, des points isolés ou une zone, puis de
+vérifier les points avant de les ajouter.
+L’import complète la localisation existante dans les limites du plan Projet.
+Les ajouts sont enregistrés avec le formulaire ou le bouton **Enregistrer la
+carte**, selon le point d’entrée. La commande est réservée aux comptes qui
+peuvent modifier le projet. Voir [les formats et limites de l’import GPX](./sea-operations-gpx-import.md).
+
 La localisation n’apparaît pas dans le contrat PDF par défaut. Le bouton
 **Joindre la localisation au PDF** ajoute une annexe en paysage, avec carte,
 récapitulatif de navigation et tableaux. Les pages contractuelles existantes
