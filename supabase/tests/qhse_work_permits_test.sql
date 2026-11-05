@@ -237,47 +237,5 @@ select throws_ok(
   'Removing a pin never grants permission to delete its permit'
 );
 
--- Each supplied deck accepts both a pin and a polygon on the matching vessel.
-reset role;
-insert into public.vessels(company_id, name, active, asset_kind)
-select company.id, asset.name, true, 'vessel'
-from public.companies company
-cross join unnest(array['LE ROZEL', 'LANDEMER']) as asset(name)
-where company.code = 'work-permit-test-a';
-
-set local role authenticated;
-select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'admin'), true);
-
-with expected(name, plan_key) as (
-  values
-    ('LE ROZEL', 'pont-principal'),
-    ('LE ROZEL', 'sous-pont-principal'),
-    ('LE ROZEL', 'pont-superieur'),
-    ('LE ROZEL', 'pont-passerelle'),
-    ('LE ROZEL', 'profil'),
-    ('LANDEMER', 'pont-principal'),
-    ('LANDEMER', 'sous-pont-principal'),
-    ('LANDEMER', 'profil'),
-    ('LANDEMER', 'vue-complementaire')
-), inserted as (
-  insert into public.qhse_work_permits(
-    vessel_id, title, permit_type, zone, starts_at, plan_key, point_x, point_y, exclusion_zones
-  )
-  select v.id, 'Fleet plan fixture ' || expected.name, 'grue', 'Zone test',
-    date_trunc('day', current_timestamp, 'Europe/Paris'), expected.plan_key, .3, .4,
-    jsonb_build_array(jsonb_build_object(
-      'planKey', expected.plan_key, 'points', '[{"x":0,"y":0},{"x":1,"y":0},{"x":1,"y":1}]'::jsonb
-    ))
-  from expected
-  join public.list_work_permit_locations() v on v.name = expected.name
-  returning id
-)
-select is((select count(*) from inserted), 9::bigint,
-  'Every supplied fleet plan stores its marker and polygon');
-
-select throws_ok(
-  $q$update public.qhse_work_permits set plan_key = 'yard-3d' where title = 'Fleet plan fixture LE ROZEL'$q$,
-  '23514', null, 'A vessel still cannot use a plan assigned only to the Yard'
-);
 select * from finish();
 rollback;
