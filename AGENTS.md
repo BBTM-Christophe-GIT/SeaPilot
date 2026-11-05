@@ -20,6 +20,9 @@ After completing any coding request in this repository, unless the user explicit
 
 Never include unrelated local changes, secrets, or generated credentials in a commit.
 
+Before every production release, update the version in `package.json` and
+`src/config/appVersion.ts` together, including the dated build identifier.
+
 ## Shared module design
 
 For every module design change or new module, follow `docs/design/design-system.md`.

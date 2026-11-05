@@ -30,26 +30,41 @@ export function drawSeaOperationIsolatedPointPdf(document: jsPDF, point: Pick<Se
   const complete = seaOperationIsolatedPointLabel(point, index);
   const label = complete.length > 18 ? `${complete.slice(0, 17)}…` : complete;
   const printable = label.replace(/[′’]/g, "'").replace(/[–—−]/g, '-').replace(/…/g, '...').replace(/\u00a0|\u202f/g, ' ');
+  const { x, y, left, right, top, bottom } = bounds;
+  const crossRadius = unit(4);
+  const symbolRadius = unit(definition ? 9 : 4);
+  const symbolInset = symbolRadius + unit(1);
+  const symbolOffset = symbolRadius + crossRadius + unit(2);
+  const labelOnRight = x <= left + (right - left) * .7;
+  const sideX = x + (labelOnRight ? -symbolOffset : symbolOffset);
+  const fitsBeside = sideX >= left + symbolInset && sideX <= right - symbolInset
+    && (top === undefined || y >= top + symbolInset) && (bottom === undefined || y <= bottom - symbolInset);
+  const symbolX = fitsBeside ? sideX : Math.max(left + symbolInset, Math.min(x, right - symbolInset));
+  const verticalOffset = top !== undefined && y - symbolOffset - symbolInset < top ? symbolOffset : -symbolOffset;
+  const symbolY = fitsBeside ? y : y + verticalOffset;
   document.saveGraphicsState();
   document.setDrawColor(...GREEN); document.setFillColor(...GREEN);
-  document.setLineWidth(unit(definition ? 1.125 : .8)); document.setLineCap('round'); document.setLineJoin('round');
+  document.setLineCap('round'); document.setLineJoin('round');
+  document.setLineWidth(unit(.7));
+  document.line(x - crossRadius, y, x + crossRadius, y);
+  document.line(x, y - crossRadius, x, y + crossRadius);
+  document.setLineWidth(unit(definition ? 1.125 : .8));
   if (definition) {
     for (const path of definition.paths) {
-      document.path(iconPath(path.d, bounds.x, bounds.y, unit(18 / 24)));
+      document.path(iconPath(path.d, symbolX, symbolY, unit(18 / 24)));
       if (path.fill) document.fillStroke(); else document.stroke();
     }
   } else {
     document.setFillColor(255, 255, 255);
-    document.rect(bounds.x - unit(4), bounds.y - unit(4), unit(8), unit(8), 'FD');
+    document.rect(symbolX - symbolRadius, symbolY - symbolRadius, symbolRadius * 2, symbolRadius * 2, 'FD');
   }
   document.setFont('helvetica', 'normal'); document.setFontSize(7); document.setTextColor(...GREEN);
   const textWidth = document.getTextWidth(printable);
-  const rightSide = bounds.x <= bounds.left + (bounds.right - bounds.left) * .7;
   const offset = unit(definition ? 14 : 7);
-  const labelX = rightSide ? Math.min(bounds.right - textWidth - unit(2), bounds.x + offset)
-    : Math.max(bounds.left + textWidth + unit(2), bounds.x - offset);
-  const labelY = Math.max(bounds.top === undefined ? -Infinity : bounds.top + unit(8),
-    Math.min(bounds.y + unit(2.4), bounds.bottom === undefined ? Infinity : bounds.bottom - unit(2)));
-  document.text(printable, labelX, labelY, { align: rightSide ? 'left' : 'right' });
+  const labelX = labelOnRight ? Math.min(right - textWidth - unit(2), x + offset)
+    : Math.max(left + textWidth + unit(2), x - offset);
+  const labelY = Math.max(top === undefined ? -Infinity : top + unit(8),
+    Math.min(y + unit(2.4), bottom === undefined ? Infinity : bottom - unit(2)));
+  document.text(printable, labelX, labelY, { align: labelOnRight ? 'left' : 'right' });
   document.restoreGraphicsState();
 }

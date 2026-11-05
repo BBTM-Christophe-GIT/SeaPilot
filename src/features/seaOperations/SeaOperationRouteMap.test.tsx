@@ -49,13 +49,22 @@ describe('SeaOperationRouteMap', () => {
     expect(marker().querySelector('title')).toHaveTextContent(longNumber); expect(marker()).toHaveAttribute('aria-label', expect.stringContaining(longNumber));
   });
 
-  it('changes only isolated marker rendering when an icon is selected, preserving the route, zones and port symbols', () => {
+  it('keeps the exact isolated point cross when an icon is selected, preserving the route, zones and port symbols', () => {
     const route = channelRoute(), isolated = { ...point(4, '49.7', '-1.4'), number: 'B04' };
     const zones = [{ id: 'zone', name: 'Zone conservée', vertices: [{ latitude: '49.7', longitude: '-1.4' }, { latitude: '49.8', longitude: '-1.4' }, { latitude: '49.75', longitude: '-1.3' }] }];
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={route} isolatedPoints={[isolated]} zones={zones} departurePort="Cherbourg" />);
     const layers = () => ['.so-route-map-track', '.so-route-map-points', '.so-route-map-zones', '.so-route-map-zone-vertices', '.so-route-map-defined-ports'].map(selector => container.querySelector(selector)!.innerHTML);
     const before = layers();
+    const marker = () => container.querySelector('[data-isolated-point-id="point-4"]')!;
+    const cross = () => container.querySelector('[data-isolated-cross-id="point-4"]')!;
+    const projectedPosition = marker().getAttribute('transform');
+    expect(cross()).toHaveAttribute('d', 'M -7 0 H 7 M 0 -7 V 7');
+    expect(cross()).toHaveAttribute('vector-effect', 'non-scaling-stroke');
+    expect(cross()).toHaveAttribute('transform', projectedPosition);
+    const originalCross = cross().outerHTML;
     rerender(<SeaOperationRouteMap waypoints={route} isolatedPoints={[{ ...isolated, isolatedPointIcon: 'platform' }]} zones={zones} departurePort="Cherbourg" />);
+    expect(cross().outerHTML).toBe(originalCross);
+    expect(marker()).toHaveAttribute('transform', projectedPosition);
     expect(layers()).toEqual(before);
   });
 

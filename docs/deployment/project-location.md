@@ -7,6 +7,10 @@ segments, distances, durées et ETA calculées. La vitesse de référence reste
 `ceil(vitesse maximale du navire × 0,60)` ; aucune vitesse n’est inventée si
 le navire n’en possède pas.
 
+Une croix fine marque la position exacte de chaque point isolé sur la carte et
+dans l’annexe PDF. Son numéro et son pictogramme éventuel figurent à côté du
+repère.
+
 L’ETD est une saisie distincte des dates commerciales de livraison. Les
 waypoints reprennent les champs d’Opérations en mer : numéro, description,
 position WGS84 affichée en degrés/minutes, ETA, UKC et trafic dense. Les
