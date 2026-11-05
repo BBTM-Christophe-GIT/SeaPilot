@@ -2,7 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { FileText, FolderCog, Plus, Trash2, Upload } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
-import { inferredDocumentMimeType } from '../documents/documentBlobStorage';
 import {
   DEFAULT_PROJECT_DOCUMENT_CATEGORIES,
   fetchProjectDocumentCategories,
@@ -10,7 +9,7 @@ import {
   saveProjectDocumentCategories,
   type ProjectDocumentCategory,
 } from './projectDocumentCategories';
-import { storeProjectAttachment, type ProjectAttachmentDraft } from './projectDocumentStorage';
+import { projectAttachmentMimeType, storeProjectAttachment, type ProjectAttachmentDraft } from './projectDocumentStorage';
 import type { ProjectDocumentRecord, ProjectOperationDocumentRecord } from './projectQueries';
 import { ProjectSeaOperationDocuments } from './ProjectSeaOperationDocuments';
 import { ProjectDocumentClassificationEditor, type ClassificationDocument } from './ProjectDocumentClassificationEditor';
@@ -183,7 +182,7 @@ export function ProjectDocumentLibrary({
       onStored({
         categoryKey: draft.categoryKey, createdAt: new Date().toISOString(), documentType: 'project_attachment',
         expiresOn: draft.expiresOn, fileName: stored.fileName, fileSizeBytes: draft.file.size, id: stored.id,
-        mimeType: (draft.file.type || inferredDocumentMimeType(draft.file.name)).split(';')[0].trim().toLowerCase(), planningOccurrenceId: null, projectId,
+        mimeType: projectAttachmentMimeType(draft.file), planningOccurrenceId: null, projectId,
         sharePointFolderPath: stored.folderPath, sharePointWebUrl: stored.webUrl,
         storageBucket: stored.storageBucket || '', storagePath: stored.storagePath || '', subcategoryKey: draft.subcategoryKey || '',
       });

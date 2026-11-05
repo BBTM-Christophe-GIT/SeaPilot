@@ -44,6 +44,11 @@ function bytesToHex(bytes: Uint8Array): string {
 const PROJECT_FILES_BUCKET = 'project-files';
 export const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 
+export function projectAttachmentMimeType(file: File): string {
+  const mimeType = (file.type || inferredDocumentMimeType(file.name)).split(';')[0].trim().toLowerCase();
+  return mimeType === 'application/x-zip-compressed' ? 'application/zip' : mimeType;
+}
+
 function storageSafeSegment(value: string, fallback: string): string {
   const normalized = value
     .normalize('NFD')
@@ -293,7 +298,7 @@ export async function storeProjectAttachment(
   const buffer = await input.draft.file.arrayBuffer();
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
   const hash = bytesToHex(digest);
-  const mimeType = (input.draft.file.type || inferredDocumentMimeType(input.draft.file.name)).split(';')[0].trim().toLowerCase();
+  const mimeType = projectAttachmentMimeType(input.draft.file);
   const categoryPath = storageSafeSegment(input.draft.categoryKey, 'categorie');
   const subcategoryPath = storageSafeSegment(input.draft.subcategoryKey || 'documents', 'documents');
   const fileName = storageSafeSegment(input.draft.file.name, 'document');

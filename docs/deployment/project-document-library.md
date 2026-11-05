@@ -22,6 +22,8 @@ Le client confirme une réponse d’enregistrement perdue par une lecture RLS du
 
 L’ancien éditeur de projet respecte aussi un catalogue confirmé vide. Les catégories ne sont pas recréées implicitement lors de la consultation. Les offres et contrats émis directement au niveau d’un projet restent visibles même sans opération liée.
 
+Les archives ZIP déclarées par Windows avec le type MIME `application/x-zip-compressed` utilisent le type standard `application/zip` pour l’envoi et le rattachement au projet. Le fichier conserve son nom et son contenu.
+
 ## Supprimer un document
 
 Chaque chip propose une corbeille aux gestionnaires du projet (Admin et Direction). Elle est absente pour les profils lecteurs et les projets archivés. La confirmation **Supprimer le document ?** charge d’abord la version actuelle du document auprès du serveur ; le bouton de suppression reste désactivé tant que cette lecture n’est pas confirmée. **Annuler** ne modifie rien. Une lecture refusée peut être relancée avec **Réessayer**, sans déclencher de suppression.
