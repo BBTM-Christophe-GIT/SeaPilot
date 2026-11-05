@@ -92,6 +92,7 @@ const apiSessionTests = new Set([
   'working_time_actor_scope_test.sql',
   'working_time_assignment_profiles_test.sql',
   'working_time_signed_entry_flow_test.sql',
+  'pharmacy_vessel_read_scope_test.sql',
 ])
 
 // These integration tests use PL/pgSQL ASSERT rather than TAP output. Running
@@ -108,6 +109,7 @@ const assertionTests = [
   'hr_salary_grid_test.sql',
   'hr_employment_periods_test.sql',
   'public_catalogue_and_import_rpc_security_test.sql',
+  'pharmacy_vessel_read_scope_test.sql',
 ]
 
 function fail(message) {
@@ -255,7 +257,10 @@ function sql(file) {
   // ASSERT must remain active even if a local PostgreSQL setting disabled it.
   // CLI 2.109.1's db query uses a prepared statement and rejects multi-statement
   // files. psql streams the complete transaction to this exact local container.
-  run('docker', ['exec', '-i', `supabase_db_${projectId}`, 'psql', '--username', 'postgres', '--dbname', 'postgres', '--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1'], {
+  // These fixtures change SESSION AUTHORIZATION to the PostgREST login before
+  // exercising the authenticated role. Only setup needs the local superuser.
+  const login = apiSessionTests.has(path.basename(source)) ? 'supabase_admin' : 'postgres'
+  run('docker', ['exec', '-i', `supabase_db_${projectId}`, 'psql', '--username', login, '--dbname', 'postgres', '--no-psqlrc', '--quiet', '--set', 'ON_ERROR_STOP=1'], {
     input: `set plpgsql.check_asserts = on;\n${readFileSync(source, 'utf8')}`,
     capture: true,
   })
@@ -276,6 +281,7 @@ function permissions() {
   })
   cli(['db', 'query', '--local', 'create extension if not exists pgtap with schema extensions;'])
   cli(['test', 'db', '--local', ...tests.filter((file) => !apiSessionTests.has(path.basename(file)))])
+  const apiTapTests = tests.filter((file) => apiSessionTests.has(path.basename(file)))
   // These suites must change SESSION AUTHORIZATION to authenticator before
   // exercising authenticated actors. The CLI's postgres login cannot do that.
   // Only fixture setup uses the local superuser; tests assert the API identity.
@@ -286,11 +292,11 @@ function permissions() {
     'public.ecr.aws/supabase/pg_prove:3.36', 'pg_prove', '--norc', '--nocolor',
     '--host', `supabase_db_${projectId}`, '--port', '5432',
     '--username', 'supabase_admin', '--dbname', 'postgres',
-    ...[...apiSessionTests].map((file) => `/tests/${file}`),
+    ...apiTapTests.map((file) => `/tests/${path.basename(file)}`),
   ], { capture: true })
   process.stdout.write(apiResults)
   const apiSummary = /Files=(\d+),\s*Tests=(\d+)/.exec(apiResults)
-  if (!apiSummary || Number(apiSummary[1]) !== apiSessionTests.size || Number(apiSummary[2]) === 0 || !/Result:\s+PASS\b/.test(apiResults)) {
+  if (!apiSummary || Number(apiSummary[1]) !== apiTapTests.length || Number(apiSummary[2]) === 0 || !/Result:\s+PASS\b/.test(apiResults)) {
     fail('The real API-session suites did not report a complete, nonempty passing TAP run.')
   }
   for (const file of assertionTests) {

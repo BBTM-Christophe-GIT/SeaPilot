@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { projectDriveCategory, projectDriveStorage } from './projectDriveStorage';
 import { connectLocalDrive, localDriveRequest } from '../documents/localDriveLauncher';
 import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
@@ -33,7 +33,49 @@ beforeEach(() => {
   vi.mocked(connectLocalDrive).mockReset().mockResolvedValue({ url: 'http://localhost', expiresAt: 1, version: '2.5.0' });
   vi.mocked(localDriveRequest).mockReset();
 });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe('project Drive routing', () => {
+  it('opens a hosted project Blob with a single authorization call before consulting historical copies', async () => {
+    vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+    const path = 'projects/12/attachments/hse/file.pdf';
+    const url = 'https://test.private.blob.vercel-storage.com/documents/uploads/verified';
+    const { client } = fixture({ id: 71, drive_file_id: 'older-file', path: 'Projet/file.pdf' });
+    Object.assign(client, { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: {
+      user: { id: 'profile' }, access_token: 'profile-token',
+    } }, error: null }) } });
+    installDocumentDriveStorage(client as never);
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ signedUrl: url, document: {
+      blob_pathname: 'documents/uploads/verified', bytes: 3, sha256: 'a'.repeat(64), file_name: 'file.pdf', mime_type: 'application/pdf',
+    } })).mockResolvedValueOnce(Response.json({ error: 'DOCUMENT_ACCESS_DENIED' }, { status: 403 }));
+    vi.stubGlobal('fetch', fetcher);
+    const storage = projectDriveStorage(client as never, 'project-files');
+    expect(await storage.createSignedUrl(path, 60)).toEqual({ data: { signedUrl: url }, error: null });
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/documents', expect.objectContaining({
+      body: JSON.stringify({ operation: 'url', bucket: 'project-files', path, expiresIn: 60 }),
+    }));
+    await expect(storage.download(path)).rejects.toMatchObject({ status: 403 });
+    expect(hasDocumentBlobFile).not.toHaveBeenCalled();
+    expect(client.rpc).not.toHaveBeenCalled();
+    expect(client.from).not.toHaveBeenCalled();
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+  });
+
+  it('uses the retained project storage after one authenticated unmapped result', async () => {
+    vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+    const path = 'projects/12/attachments/hse/legacy.pdf';
+    const { client, download } = fixture();
+    Object.assign(client, { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: {
+      user: { id: 'profile' }, access_token: 'profile-token',
+    } }, error: null }) } });
+    installDocumentDriveStorage(client as never);
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ error: 'DOCUMENT_NOT_FOUND' }, { status: 404 }));
+    vi.stubGlobal('fetch', fetcher);
+    expect(await (await projectDriveStorage(client as never, 'project-files').download(path)).data?.text()).toBe('legacy');
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(download).toHaveBeenCalledExactlyOnceWith(path, undefined, undefined);
+    expect(client.rpc.mock.calls.every(([name]) => name === 'document_drive_lookup')).toBe(true);
+    expect(connectLocalDrive).not.toHaveBeenCalled();
+  });
   it.each(['application/pdf', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])('uploads a project document of type %s without Windows', async contentType => {
     const blob = new Blob(['document'], { type: contentType });
     const { client, upload, insert } = fixture();

@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Link, MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
 import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { PHARMACY_ALERT_FOCUS_MS } from './usePharmacyAlertPolling';
 
 vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
@@ -236,6 +237,21 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 2);
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 3);
   });
+  it('uses the shell alerts for expiry badges and manual refresh without a separate poll', async () => {
+    const refresh = vi.fn();
+    const context = { client, roles: ['capitaine'], previewMode: false, pharmacyAlerts: {
+      data: [{ id: 'item-2', kind: 'item', item_id: 2, vessel_id: 2, days_until_expiry: -1 }],
+      loading: false, error: '', refresh,
+    } };
+    render(<MemoryRouter><Routes><Route element={<Outlet context={context} />}>
+      <Route index element={<PharmacyPage />} />
+    </Route></Routes></MemoryRouter>);
+    expect(await screen.findByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'SUROIT' })).getByRole('img', { name: '1 article périmé' })).toBeInTheDocument();
+    expect(fetchPharmacyVesselExpiryCounts).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
+    expect(refresh).toHaveBeenCalledOnce();
+  });
   it('refreshes all vessel counts when reloading and saving the selected inventory', async () => {
     const user = userEvent.setup(); page();
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
@@ -264,10 +280,11 @@ describe('PharmacyPage', () => {
     expect(screen.queryAllByText('Comptages indisponibles')).toHaveLength(0);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
-  it('refreshes vessel badges after focus and a pharmacy change event', async () => {
+  it('refreshes stale vessel badges after focus and immediately after a pharmacy change', async () => {
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue({ ...vesselExpiryCounts, 2: { due: 6, expired: 0 } });
-    fireEvent(window, new Event('focus'));
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + PHARMACY_ALERT_FOCUS_MS);
+    try { fireEvent(window, new Event('focus')); } finally { now.mockRestore(); }
     expect(await within(screen.getByRole('button', { name: 'SUROIT' })).findByRole('img', { name: '6 articles à échéance sous 30 jours' })).toBeInTheDocument();
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue({ ...vesselExpiryCounts, 2: { due: 4, expired: 0 } });
     fireEvent(window, new Event('pharmacy:changed'));

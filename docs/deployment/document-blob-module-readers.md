@@ -1,9 +1,14 @@
 # Document readers and mobile uploads
 
 The application uses the shared authenticated `/api/documents` storage adapter for
-verified private Vercel Blob copies. It checks the current user's business scope
-through `document_blob_lookup` before choosing a retained desktop reader. A refused
-lookup or a failed cloud download stops the action; it never opens an older copy.
+verified private Vercel Blob copies. On Vercel production and preview builds, the
+gateway checks the current user's business scope and signs the private object in
+one operation. The browser skips its separate lookup for individual reads and
+signed URL lists. A retained reader is tried only when the gateway confirms that
+the logical address has no Blob mapping. A refusal or cloud failure stops the
+action. Standalone Vite builds still use the Supabase lookup for retained readers
+because they do not host the gateway. The Vercel build command enables gateway
+reads with `VITE_SEAPILOT_DOCUMENT_GATEWAY=true`.
 
 Legacy desktop references use these logical addresses:
 

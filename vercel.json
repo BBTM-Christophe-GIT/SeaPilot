@@ -1,6 +1,6 @@
 {
   "installCommand": "corepack pnpm install --frozen-lockfile",
-  "buildCommand": "corepack pnpm build",
+  "buildCommand": "VITE_SEAPILOT_DOCUMENT_GATEWAY=true corepack pnpm build",
   "framework": "vite",
   "outputDirectory": "dist",
   "functions": {

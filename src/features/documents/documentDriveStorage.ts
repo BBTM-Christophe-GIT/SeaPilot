@@ -84,7 +84,7 @@ async function downloadDriveDocument(client: SupabaseClient, bucket: string, pat
 
 // Photos and signatures keep using their existing Storage policies and APIs.
 const DOCUMENT_EXTENSION = /\.(?:pdf|docx?|docm|dotx?|dotm|xlsx?|xlsm|xlsb|xltx?|xltm|xlam|xla)$/i;
-const installedClients = new WeakSet<SupabaseClient>();
+const retainedStorageByClient = new WeakMap<SupabaseClient['storage'], SupabaseClient['storage']['from']>();
 
 async function lookupDocumentDriveFile(client: SupabaseClient, bucket: string, path: string): Promise<DriveReference | null> {
   if (!DOCUMENT_EXTENSION.test(path)) return null;
@@ -208,9 +208,15 @@ export function documentDriveStorage(client: SupabaseClient, bucket: string, leg
   return proxy;
 }
 
+export function retainedDocumentStorage(client: SupabaseClient) {
+  return retainedStorageByClient.get(client.storage);
+}
+
 export function installDocumentDriveStorage(client: SupabaseClient): void {
-  if (installedClients.has(client)) return;
-  const originalFrom = client.storage.from.bind(client.storage);
-  client.storage.from = (bucket: string) => documentBlobStorage(client, bucket, documentDriveStorage(client, bucket, originalFrom(bucket)));
-  installedClients.add(client);
+  const storage = client.storage;
+  if (retainedStorageByClient.has(storage)) return;
+  const originalFrom = storage.from.bind(storage);
+  const retainedFrom = (bucket: string) => documentDriveStorage(client, bucket, originalFrom(bucket));
+  storage.from = (bucket: string) => documentBlobStorage(client, bucket, retainedFrom(bucket));
+  retainedStorageByClient.set(storage, retainedFrom);
 }

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Folders, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
@@ -6,8 +6,9 @@ import { AppDialog } from '../../components/AppDialog';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDotationKey, pharmacyDotationLabel, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyStockStatus, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel, type PharmacyVesselExpiryCounts } from './pharmacyModel';
+import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDotationKey, pharmacyDotationLabel, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { PHARMACY_NOTIFICATIONS_CHANGED, usePharmacyAlertPolling } from './usePharmacyAlertPolling';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
 import { PharmacyControlForm, PharmacyItemForm } from './PharmacyForms';
 import { PharmacyVesselStrip } from './PharmacyVesselStrip';
@@ -53,9 +54,13 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [categoryScope, setCategoryScope] = useState<{ client: SupabaseClient; vessel: PharmacyVessel; medicalDotation: string; medicalSection: 'all' | PharmacyMedicalSection } | null>(null);
   const categoryInFlight = useRef(false);
   const categoryContextId = useRef(0);
-  const [vesselExpiryCounts, setVesselExpiryCounts] = useState<Record<number, PharmacyVesselExpiryCounts> | null>(null);
-  const [countsLoading, setCountsLoading] = useState(true);
-  const [countsError, setCountsError] = useState('');
+  const sharedAlerts = !client && !preview ? context?.pharmacyAlerts : undefined;
+  const standaloneScope = !sharedAlerts && (!preview || previewClient) ? context?.userId ?? 'standalone' : undefined;
+  const standaloneCounts = usePharmacyAlertPolling(db, standaloneScope, fetchPharmacyVesselExpiryCounts);
+  const sharedRows = sharedAlerts?.data;
+  const sharedCounts = useMemo(() => sharedRows ? pharmacyVesselExpiryCounts(sharedRows) : null, [sharedRows]);
+  const vesselExpiryCounts = sharedAlerts ? sharedCounts : standaloneCounts.data;
+  const { loading: countsLoading, error: countsError, refresh: refreshVesselCounts } = sharedAlerts ?? standaloneCounts;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -74,7 +79,6 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [removalError, setRemovalError] = useState('');
   const removalInFlight = useRef(false);
   const requestId = useRef(0);
-  const countsRequestId = useRef(0);
   const lastItemLink = useRef<{ client: SupabaseClient; vesselId: number; itemId: number } | null>(null);
   const vessel = vessels.find((entry) => entry.id === vesselId);
   const manager = !!vessel?.can_manage && canManagePharmacy(roles || context?.roles || []);
@@ -99,37 +103,6 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const filtered = sectionItems.filter((item) => (showInactive || item.active) && (!category || item.category === category) && `${item.designation} ${item.brand} ${item.lot_number} ${item.notes} ${item.category}`.toLocaleLowerCase('fr').includes(normalizedQuery) && (filter === 'all' || (filter === 'attention' && isAttention(item)) || (filter === 'expiry' && ['expired', 'due'].includes(pharmacyExpiryStatus(item.expires_on))) || (filter === 'low' && pharmacyStockStatus(item) === 'low') || (filter === 'unknown' && (pharmacyExpiryStatus(item.expires_on) === 'unknown' || pharmacyStockStatus(item) === 'unknown')) || (filter === 'expired' && pharmacyExpiryStatus(item.expires_on) === 'expired') || (filter === 'due' && pharmacyExpiryStatus(item.expires_on) === 'due')));
   const visibleCatalogue = !normalizedQuery && filter === 'all' ? sectionCategories.filter((entry) => !category || entry.name === category) : [];
   const groups = groupPharmacyItems(filtered, visibleCatalogue);
-  const refreshVesselCounts = useCallback(async () => {
-    const id = ++countsRequestId.current;
-    setCountsLoading(true);
-    try {
-      const loaded = await fetchPharmacyVesselExpiryCounts(db);
-      if (id === countsRequestId.current) { setVesselExpiryCounts(loaded); setCountsError(''); }
-    } catch (reason) {
-      if (id === countsRequestId.current) { setVesselExpiryCounts(null); setCountsError(messageOf(reason)); }
-    } finally {
-      if (id === countsRequestId.current) setCountsLoading(false);
-    }
-  }, [db]);
-
-  useEffect(() => {
-    if (preview && !previewClient) return;
-    setVesselExpiryCounts(null);
-    const refresh = () => { void refreshVesselCounts(); };
-    const refreshVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-    refresh();
-    const timer = window.setInterval(refreshVisible, 30_000);
-    window.addEventListener('focus', refresh);
-    window.addEventListener('pharmacy:changed', refresh);
-    document.addEventListener('visibilitychange', refreshVisible);
-    return () => {
-      countsRequestId.current += 1;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('pharmacy:changed', refresh);
-      document.removeEventListener('visibilitychange', refreshVisible);
-    };
-  }, [refreshVesselCounts, preview, previewClient]);
 
   useEffect(() => {
     if (!preview) return;
@@ -179,7 +152,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
 
   async function reload(refreshCounts = true) {
     if (!vesselId) return;
-    if (refreshCounts) void refreshVesselCounts();
+    if (refreshCounts) refreshVesselCounts();
     const id = ++requestId.current; setLoading(true); setError('');
     let handedToVesselLoad = false;
     try {
@@ -203,7 +176,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   async function saveItem(draft: PharmacyItemDraft) {
     if (busy || !vessel) return;
     setBusy(true); setFormError('');
-    try { await savePharmacyItem(db, vessel.id, draft, editor?.item); setEditor(null); await reload(false); setNotice('Article enregistré.'); window.dispatchEvent(new Event('pharmacy:changed')); }
+    try { await savePharmacyItem(db, vessel.id, draft, editor?.item); setEditor(null); await reload(false); setNotice('Article enregistré.'); window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED)); }
     catch (reason) { setFormError(messageOf(reason)); }
     finally { setBusy(false); }
   }
@@ -252,7 +225,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         }
         setNotice(success);
       }
-      window.dispatchEvent(new Event('pharmacy:changed'));
+      window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED));
       if (contextId === categoryContextId.current) {
         const refreshId = ++requestId.current;
         try {
@@ -294,7 +267,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         setSelected((previous) => previous?.id === target.id ? null : previous);
         setRemoval(null); setNotice(success);
       }
-      window.dispatchEvent(new Event('pharmacy:changed'));
+      window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED));
       if (viewId === requestId.current) {
         const refreshId = ++requestId.current;
         try {
@@ -311,7 +284,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   async function saveControl(file: File, expiresOn: string, issuedOn: string) {
     if (busy || !vessel) return;
     setBusy(true); setFormError('');
-    try { await uploadPharmacyControl(db, vessel, file, expiresOn, issuedOn, currentControl?.id || null); setControlOpen(false); await reload(false); setNotice('Contrôle pharmacie enregistré. Son échéance est surveillée à J−30.'); window.dispatchEvent(new Event('pharmacy:changed')); }
+    try { await uploadPharmacyControl(db, vessel, file, expiresOn, issuedOn, currentControl?.id || null); setControlOpen(false); await reload(false); setNotice('Contrôle pharmacie enregistré. Son échéance est surveillée à J−30.'); window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED)); }
     catch (reason) { setFormError(messageOf(reason)); }
     finally { setBusy(false); }
   }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { abortableLocalDrive, connectLocalDrive, localDriveRequest, supportsLocalDriveVersion, type LocalDriveConnection } from '../documents/localDriveLauncher';
-import { hasDocumentDriveFile } from '../documents/documentDriveStorage';
-import { hasDocumentBlobFile } from '../documents/documentBlobStorage';
+import { hasDocumentDriveFile, retainedDocumentStorage } from '../documents/documentDriveStorage';
+import { hasDocumentBlobFile, hostedDocumentBlobReaders } from '../documents/documentBlobStorage';
 
 interface DriveReceipt { path: string; bytes: number; sha256: string; base64?: string }
 interface DriveFile { id: number; path: string; bytes: number; sha256: string; mime_type: string; drive_file_id?: string | null }
@@ -36,6 +36,13 @@ async function sha256(blob: Blob): Promise<string> {
 
 /** Logical legacy addresses stay stable. Drive receipts route reads without rewriting historical rows. */
 export function projectDriveStorage(client: SupabaseClient, bucket: string) {
+  const retainedFrom = bucket === 'local-demo' ? undefined : retainedDocumentStorage(client);
+  const canonicalBlob = retainedFrom ? hostedDocumentBlobReaders(client, bucket) : null;
+  const desktopBlob = retainedFrom ? hostedDocumentBlobReaders(client, 'project-drive') : null;
+  // Called only after the hosted canonical lookup confirmed no mapping.
+  const historicalStorage = (targetBucket: string) => targetBucket === bucket && canonicalBlob && retainedFrom
+    ? retainedFrom(targetBucket)
+    : client.storage.from(targetBucket);
   const lookup = async (path: string): Promise<DriveFile | null> => {
     const { data, error } = await client.from('project_drive_files').select('id,path,bytes,sha256,mime_type,drive_file_id').eq('source_bucket', bucket).eq('source_path', path).maybeSingle();
     if (error) throw error;
@@ -63,11 +70,14 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
     async download(path: string, signal?: AbortSignal, options?: { allowLocalDrive?: boolean }) {
       signal?.throwIfAborted();
       const downloadStored = (targetBucket: string, targetPath: string) => signal
-        ? client.storage.from(targetBucket).download(targetPath, {}, { signal })
-        : client.storage.from(targetBucket).download(targetPath);
+        ? historicalStorage(targetBucket).download(targetPath, {}, { signal })
+        : historicalStorage(targetBucket).download(targetPath);
       // Migrated documents use the same authorized gateway as the browser's
       // other libraries, before consulting a historical desktop receipt.
-      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) {
+      const canonical = await canonicalBlob?.download(path, signal);
+      if (canonical) return { data: canonical, error: null };
+      if (bucket !== 'local-demo' && ((!canonicalBlob && await hasDocumentBlobFile(client, bucket, path))
+        || await hasDocumentDriveFile(client, bucket, path))) {
         signal?.throwIfAborted();
         return downloadStored(bucket, path);
       }
@@ -78,7 +88,9 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
         if (bucket === 'sharepoint') throw new Error('Cette référence SharePoint ne possède pas de copie privée téléchargeable. Ouvrez le document dans SharePoint.');
         return downloadStored(bucket, path);
       }
-      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) {
+      const desktop = await desktopBlob?.download(String(file.id), signal);
+      if (desktop) return { data: desktop, error: null };
+      if (!desktopBlob && await hasDocumentBlobFile(client, 'project-drive', String(file.id))) {
         signal?.throwIfAborted();
         return downloadStored('project-drive', String(file.id));
       }
@@ -89,10 +101,15 @@ export function projectDriveStorage(client: SupabaseClient, bucket: string) {
       return { data, error: null };
     },
     async createSignedUrl(path: string, seconds: number) {
-      if (bucket !== 'local-demo' && (await hasDocumentBlobFile(client, bucket, path) || await hasDocumentDriveFile(client, bucket, path))) return client.storage.from(bucket).createSignedUrl(path, seconds);
+      const canonicalUrl = await canonicalBlob?.createSignedUrl(path, seconds);
+      if (canonicalUrl) return { data: { signedUrl: canonicalUrl }, error: null };
+      if (bucket !== 'local-demo' && ((!canonicalBlob && await hasDocumentBlobFile(client, bucket, path))
+        || await hasDocumentDriveFile(client, bucket, path))) return historicalStorage(bucket).createSignedUrl(path, seconds);
       const file = await lookup(path);
-      if (!file) return bucket === 'sharepoint' ? { data: { signedUrl: path }, error: null } : client.storage.from(bucket).createSignedUrl(path, seconds);
-      if (await hasDocumentBlobFile(client, 'project-drive', String(file.id))) return client.storage.from('project-drive').createSignedUrl(String(file.id), seconds);
+      if (!file) return bucket === 'sharepoint' ? { data: { signedUrl: path }, error: null } : historicalStorage(bucket).createSignedUrl(path, seconds);
+      const desktopUrl = await desktopBlob?.createSignedUrl(String(file.id), seconds);
+      if (desktopUrl) return { data: { signedUrl: desktopUrl }, error: null };
+      if (!desktopBlob && await hasDocumentBlobFile(client, 'project-drive', String(file.id))) return client.storage.from('project-drive').createSignedUrl(String(file.id), seconds);
       if (file.drive_file_id && /^[a-zA-Z0-9_-]+$/.test(file.drive_file_id)) return { data: { signedUrl: `https://drive.google.com/file/d/${file.drive_file_id}/view` }, error: null };
       const signedUrl = URL.createObjectURL(await read(file));
       window.setTimeout(() => URL.revokeObjectURL(signedUrl), seconds * 1000);

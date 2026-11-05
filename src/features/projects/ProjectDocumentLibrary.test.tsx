@@ -14,7 +14,10 @@ vi.mock('./projectDocumentCategories', async (original) => ({
   fetchProjectDocumentCategories: mocks.fetch,
   saveProjectDocumentCategories: mocks.save,
 }));
-vi.mock('./projectDocumentStorage', () => ({ storeProjectAttachment: mocks.store }));
+vi.mock('./projectDocumentStorage', async (original) => ({
+  ...await original<typeof import('./projectDocumentStorage')>(),
+  storeProjectAttachment: mocks.store,
+}));
 vi.mock('./projectSeaOperationDocumentsQueries', () => ({
   fetchProjectSeaOperationDocuments: mocks.selectionFetch,
   saveProjectSeaOperationDocument: mocks.selectionSave,

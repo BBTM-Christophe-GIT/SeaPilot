@@ -87,11 +87,11 @@ export function createDocumentBlobGateway(deps: Dependencies) {
       const userId = await backend.user();
       if (!userId || !UUID.test(userId)) throw new DocumentError(401, 'DOCUMENT_AUTHENTICATION_REQUIRED');
       const storeId = deps.getEnv('BLOB_STORE_ID');
-      if (!storeId) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
       if (body.operation === 'url') {
         const key = location(body);
         const mapping = await backend.rpc('document_blob_lookup', { target_bucket: key.bucket, target_path: key.path });
         if (mapping === null) throw new DocumentError(404, 'DOCUMENT_NOT_FOUND');
+        if (!storeId) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
         const seconds = typeof body.expiresIn === 'number' && Number.isFinite(body.expiresIn) ? body.expiresIn : 120;
         return response(await signed(document(mapping), seconds, Boolean(body.download)));
       }
@@ -106,6 +106,10 @@ export function createDocumentBlobGateway(deps: Dependencies) {
           if (!Array.isArray(found) || found.length !== batch.length) throw new DocumentError(502, 'INVALID_DOCUMENT_BATCH');
           values.push(...found);
         }
+        if (!storeId && values.some(value => {
+          const entry = object(value);
+          return !entry.error && entry.document !== null;
+        })) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
         const entries: Json[] = [];
         const seconds = typeof body.expiresIn === 'number' && Number.isFinite(body.expiresIn) ? body.expiresIn : 120;
         // Bound control-plane concurrency even when a large document list is requested.
@@ -123,6 +127,7 @@ export function createDocumentBlobGateway(deps: Dependencies) {
         }));
         return response({ entries });
       }
+      if (!storeId) throw new DocumentError(503, 'DOCUMENT_STORE_NOT_CONFIGURED');
       if (body.operation === 'prepare') {
         const key = location(body);
         if (typeof body.bytes !== 'number' || !Number.isSafeInteger(body.bytes) || body.bytes < 1 || body.bytes > MAX_BYTES
