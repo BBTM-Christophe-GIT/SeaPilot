@@ -1,0 +1,35 @@
+.work-permits-page,.work-permits-panel,.work-permits-editor fieldset{display:grid;gap:1rem;min-width:0}
+.work-permits-page :is(h1,h2,h3,p){margin:0}
+.work-permits-page h2{font-size:1.15rem}
+.work-permits-page h3{font-size:1rem}
+.work-permits-eyebrow,.work-permits-map-legend{font-size:.82rem;color:#445971}
+.work-permits-panel{padding:1rem;border:1px solid #d8e2ec;background:#fff;border-radius:.75rem}
+.work-permits-heading,.work-permits-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem}
+.work-permits-heading{justify-content:space-between}
+.work-permits-page :is(button,input,select){font:inherit;border:1px solid #b8c8d9;border-radius:.45rem;background:#fff;color:#193550;padding:.42rem .65rem;max-width:100%}
+.work-permits-page button:enabled:hover{border-color:#156082}
+.work-permits-page :is(button,input,select):disabled{opacity:.6}
+.work-permits-page button.work-permits-primary{color:#fff;background:#156082;border-color:#156082}
+.work-permits-page :is(button,select,summary):focus-visible{outline:2px solid #156082;outline-offset:2px}
+.work-permits-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:.7rem}
+.work-permits-fields label{display:grid;gap:.25rem}
+.work-permits-editor fieldset{border:0;margin:0;padding:0}
+.work-permits-map{display:grid;gap:.55rem}
+.work-permits-map-image{position:relative;isolation:isolate;border:1px solid #d8e2ec;background:#fff;border-radius:.5rem;overflow:hidden}
+.work-permits-map-image img{display:block;width:100%;height:auto}
+.work-permits-map-image svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.work-permits-map-image polygon{fill:#bc222934;stroke:#b11b24;stroke-width:2}
+.work-permits-map-image polyline{fill:none;stroke:#b11b24;stroke-width:2;stroke-dasharray:4 3}
+.work-permits-map-image circle{fill:#b11b24}
+.work-permits-map-image .work-permits-pin{display:grid;place-items:center;position:absolute;transform:translate(-50%,-50%);padding:0;width:1.8rem;height:1.8rem;border:2px solid #fff;border-radius:50%;background:#156082;color:#fff}
+.work-permits-map-image .work-permits-pin[aria-pressed=true]{outline:2px solid #156082;outline-offset:2px}
+.work-permits-map-image button.work-permits-placement{position:absolute;inset:0;width:100%;border:0;border-radius:0;background:transparent;cursor:crosshair}
+.work-permits-map input{width:6rem}
+.work-permits-zone-list,.work-permits-records{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.work-permits-zone-list li,.work-permits-records li{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.work-permits-check{display:grid;grid-template-columns:minmax(0,1fr) minmax(8rem,22%);gap:.6rem;align-items:center;padding:.5rem 0;border-top:1px solid #d8e2ec;white-space:pre-line}
+.work-permits-editor details{padding:.45rem .65rem;border:1px solid #d8e2ec;border-radius:.45rem}
+.work-permits-editor summary{font-weight:600}
+.work-permits-error,.work-permits-editor [role=alert]{color:#9f1d25}
+.work-permits-confirm{display:grid;gap:.5rem;border-top:1px solid #d8e2ec;padding-top:.75rem}
+@media(max-width:480px){.work-permits-check{grid-template-columns:1fr}}

@@ -140,6 +140,17 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       'Dans les nouvelles fiches, les rubriques Remorquage, Chargement de marchandise, Navire de support de plongeur et Approvisionnement / Avitaillement sont réglées sur Non au départ. Passez une rubrique sur Oui pour afficher et compléter ses contrôles.',
     ],
   },
+  {
+    id: '3.81.0-qhse-work-permits',
+    version: '3.81.0',
+    publishedOn: '2026-11-05',
+    title: 'Permis de Travaux dans le menu QHSE',
+    changes: [
+      'Préparez un permis avec l’une des huit checklists. Sur les plans du GOURY et du Yard Le Havre, placez un repère et dessinez plusieurs zones d’exclusion.',
+      'Le Capitaine affecté signe pour ouvrir le permis. La frise affiche les travaux en cours et en pause et déduit les pauses de la durée de travail. La clôture enregistre l’heure de fin et archive le permis.',
+      'Les bordées accèdent aux permis de leur navire ou site d’affectation. Administration et Direction disposent de la vue globale de leur entreprise.',
+    ],
+  },
 ];
 
 export function chronologicalNotes(notes: readonly ReleaseNote[]): ReleaseNote[] {

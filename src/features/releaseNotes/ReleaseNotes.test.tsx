@@ -27,14 +27,15 @@ describe('ReleaseNotes', () => {
     const dialog = await screen.findByRole('dialog');
     const medicalAccess = role === 'admin' || role === 'capitaine';
     const seaOperationNote = RELEASE_NOTES.find((note) => note.id === '3.77.4-sea-operations')!;
-    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(seaOperationNote.title);
+    const permitNote = RELEASE_NOTES.find((note) => note.id === '3.81.0-qhse-work-permits')!;
+    expect(within(dialog).getAllByRole('heading', { level: 3 })[0]).toHaveTextContent(permitNote.title);
     if (!medicalAccess) expect(within(dialog).queryByText('Registre médical : saisie directe et signature personnelle')).not.toBeInTheDocument();
     if (role === 'armement') {
       expect(within(dialog).queryByText('Personnalisez vos organigrammes et vos listes de contacts')).not.toBeInTheDocument();
       expect(within(dialog).queryByText('Projets : modifier, retrouver et clôturer vos dossiers')).not.toBeInTheDocument();
     }
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ok' }));
-    expect(store.save.mock.calls[0][0]).toContain(seaOperationNote.id);
+    expect(store.save.mock.calls[0][0]).toEqual(expect.arrayContaining([permitNote.id, seaOperationNote.id]));
     if (medicalAccess) expect(store.save.mock.calls[0][0]).toContain('3.73.0-medical-logbook');
     else expect(store.save.mock.calls[0][0]).not.toContain('3.73.0-medical-logbook');
     if (role !== 'capitaine' && role !== 'marin') expect(store.save).toHaveBeenCalledWith(expect.arrayContaining(['3.56.0-planning-generic-crew']), true);

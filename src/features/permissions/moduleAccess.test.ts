@@ -46,6 +46,7 @@ describe('module access', () => {
     expect(navigation).toEqual([
       ['Accueil', 'Accueil', 'direct'],
       ['QHSE', 'Politique QHSE', 'submenu'],
+      ['QHSE', 'Permis de Travaux', 'submenu'],
       ['QHSE', 'KPI', 'submenu'],
       ['Registres', 'Produits Chimiques', 'submenu'],
       ['Registres', 'Registre des Exercices', 'submenu'],

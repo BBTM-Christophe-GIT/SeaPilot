@@ -37,6 +37,17 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     ],
     reminders: ['Les échéances apparaissent à J−30 dans le module, les notifications et l’accueil, et restent signalées après expiration.', 'Les stocks avec des unités ou des conditionnements différents restent à vérifier ; aucune conversion automatique n’est supposée.', 'Les dates au mois gardent la date interne du fichier comme repère des alertes. Une date inconnue ne crée aucune échéance fictive.', 'Si un autre utilisateur a enregistré une modification, actualisez avant de reprendre votre correction.'],
   },
+  workPermits: {
+    purpose: 'Préparer, localiser et suivre les travaux soumis à permis à bord et à quai.',
+    access: 'Les profils affectés accèdent aux permis de leur navire ou site. Administration et Direction voient tous les permis de leur entreprise. Seul le Capitaine affecté peut valider avec sa signature RH active.',
+    steps: [
+      { title: 'Préparer le permis', detail: 'Dans QHSE → Permis de Travaux, choisissez Nouveau permis. Saisissez l’heure de début, indiquez le lieu et remplissez la checklist du type de travaux.' },
+      { title: 'Délimiter les travaux', detail: 'Placez un repère et dessinez les zones d’exclusion sur les plans disponibles. Un même permis peut avoir des zones sur plusieurs ponts.' },
+      { title: 'Signer et suivre', detail: 'Le Capitaine valide le permis. La frise affiche les permis ouverts, y compris pendant une pause, et déduit les pauses de la durée de travail.' },
+      { title: 'Clôturer', detail: 'Complétez la checklist de fermeture puis clôturez le permis. SeaPilot enregistre l’heure de fin et conserve la fiche dans les archives.' },
+    ],
+    reminders: ['Une modification du périmètre signé remet le permis en attente de signature. Après la première pause, ce périmètre est verrouillé.'],
+  },
   qhsePolicy: {
     purpose: 'Consulter la politique de sécurité et de protection de l’environnement et suivre les objectifs de la société par Processus.',
     access: 'Tous les profils autorisés consultent la politique, les objectifs, leur historique et leurs pièces jointes. Marin et Capitaine consultent tous les objectifs et suivis de leur société. Seuls Administration et Direction peuvent modifier la politique, les Processus, les objectifs et ajouter un suivi.',
