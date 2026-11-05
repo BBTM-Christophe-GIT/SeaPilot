@@ -39,8 +39,8 @@ begin
 end $$;
 
 with locations as (
-  insert into public.vessels(company_id, name, active, asset_kind)
-  select c.id, v.name, true, v.asset_kind
+  insert into public.vessels(company_id, name, active, asset_kind, length_overall)
+  select c.id, v.name, true, v.asset_kind, case when v.name = 'GOURY' then '31.45 m' end
   from (values
     ('work-permit-test-a', 'GOURY', 'vessel'),
     ('work-permit-test-a', 'YARD - Le Havre', 'quay'),
@@ -237,5 +237,62 @@ select throws_ok(
   'Removing a pin never grants permission to delete its permit'
 );
 
+-- A caller knowing a permit UUID and revision still needs the real company admin role.
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'admin'), true);
+select set_config('test.delete_permit_id', id::text, true),
+  set_config('test.delete_permit_updated_at', updated_at::text, true)
+from public.qhse_work_permits where title = 'Permit fixture GOURY';
+
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'marin'), true);
+select throws_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz)$q$,
+  '42501', null, 'Marin cannot delete a permit'
+);
+select is(
+  (select array_agg(name || ':' || length_overall) from public.list_work_permit_locations_with_lengths()),
+  array['GOURY:31.45 m'], 'Length metadata remains restricted to the assigned vessel'
+);
+
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'capitaine'), true);
+select throws_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz)$q$,
+  '42501', null, 'Capitaine cannot delete a permit'
+);
+
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'direction'), true);
+select throws_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz)$q$,
+  '42501', null, 'Direction cannot delete a permit despite fleet visibility'
+);
+
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'foreign-admin'), true);
+select throws_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz)$q$,
+  '42501', null, 'An admin cannot delete a permit in another company'
+);
+
+select set_config('request.jwt.claim.sub', (select actor::text from permit_test_actors where label = 'admin'), true);
+select throws_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz - interval '1 microsecond')$q$,
+  '40001', null, 'An admin cannot delete an outdated revision'
+);
+select throws_ok(
+  $q$delete from public.qhse_work_permits$q$, '42501', null,
+  'Admin deletion still requires the controlled RPC'
+);
+select lives_ok(
+  $q$select public.delete_work_permit(current_setting('test.delete_permit_id')::uuid,
+    current_setting('test.delete_permit_updated_at')::timestamptz)$q$,
+  'An admin can delete a permit in their company'
+);
+select is((select count(*) from public.qhse_work_permits where title = 'Permit fixture GOURY'), 0::bigint,
+  'The deleted permit no longer appears in archives');
+select is((select count(*) from public.qhse_work_permits where title = 'Permit fixture Yard'), 1::bigint,
+  'The other permit is preserved');
 select * from finish();
 rollback;

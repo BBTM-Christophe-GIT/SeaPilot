@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FleetAssetKind } from '../fleet/fleetDisplay';
 
 export interface PermitLocation {
   id: number;
   name: string;
-  asset_kind: string;
+  asset_kind: FleetAssetKind;
+  length_overall?: string | null;
   can_sign: boolean;
 }
 
@@ -43,7 +45,7 @@ const columns = 'id,vessel_id,status,title,permit_type,plan_key,zone,point_x,poi
 
 export async function loadWorkPermits(client: SupabaseClient) {
   const [locations, permits] = await Promise.all([
-    client.rpc('list_work_permit_locations'),
+    client.rpc('list_work_permit_locations_with_lengths'),
     client.from('qhse_work_permits').select(columns).order('starts_at').order('id').range(0, 499),
   ]);
   if (locations.error) throw new Error(locations.error.message);
@@ -71,6 +73,14 @@ export async function saveWorkPermit(client: SupabaseClient, locationId: number,
 
 export async function transitionWorkPermit(client: SupabaseClient, permit: WorkPermit, action: PermitAction) {
   const { error } = await client.rpc(`${action}_work_permit`, {
+    p_permit_id: permit.id,
+    p_expected_updated_at: permit.updated_at,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteWorkPermit(client: SupabaseClient, permit: WorkPermit) {
+  const { error } = await client.rpc('delete_work_permit', {
     p_permit_id: permit.id,
     p_expected_updated_at: permit.updated_at,
   });

@@ -15,3 +15,12 @@ Appliquer la migration `20261105052516_qhse_work_permits.sql` avant la mise en s
 - Vérifier les droits avec des fixtures distinctes pour Marin, Capitaine affecté, Capitaine hors périmètre, Administration et Direction. Tester le refus de signature en l’absence d’une signature RH active et l’isolation entre entreprises.
 - Vérifier le parcours complet sur les plans du GOURY et du Yard Le Havre, de la création à la clôture. Contrôler le déplacement et le retrait du repère, les zones d’exclusion sur plusieurs ponts, la remise à signature d’un permis modifié, le décompte du temps de pause et l’archivage.
 - Exécuter les tests ciblés et la compilation de production, puis vérifier que Vercel a déployé le commit livré.
+
+
+## Ruban, checklists et suppression
+
+Le ruban du module regroupe les commandes du registre et celles du permis sélectionné. Le bandeau illustré sélectionne le navire ou site affiché sur le plan. Les navires sont classés du plus long au plus court.
+
+Les checklists proposent les choix Oui, Non et Sans objet par question. Un clic sur le choix actif retire la réponse. Les catégories s’affichent sur une à trois colonnes selon l’espace disponible.
+
+Seul le profil Administration de l’entreprise peut supprimer définitivement un permis après confirmation, y compris depuis les archives. Appliquer la migration `20261105072407_qhse_work_permit_admin_delete.sql` avant de déployer cette version. Elle contrôle les droits de suppression et expose la longueur des navires accessibles pour le classement.
