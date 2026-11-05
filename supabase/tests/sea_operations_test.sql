@@ -111,6 +111,14 @@ select lives_ok($$select sea_operation_private.validate_draft(jsonb_set((select 
   'numeric JSON 1.0 remains compatible with strict JavaScript schema version 1');
 select lives_ok($$insert into sea_fixture(kind,id) select 'record',(public.sea_operation_save(null,null,(select payload from sea_fixture where kind = 'go'))->>'id')::uuid$$,
   'a real Marin creates a persistent draft');
+select lives_ok($$insert into sea_fixture(kind,id) select 'dapaq-client',(public.sea_operation_save(null,null,
+  jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq}','{"method":"not_applicable","preparedBy":"client","agentName":"","agentContact":""}'))->>'id')::uuid$$,
+  'a real Marin saves a client-prepared DAPAQ with the Not applicable mode');
+select is((public.sea_operation_detail((select id from sea_fixture where kind = 'dapaq-client')) #> '{draft,dapaq}'),
+  '{"method":"not_applicable","preparedBy":"client","agentName":"","agentContact":""}'::jsonb,
+  'the saved draft returns both DAPAQ choices');
+select throws_ok($$select public.sea_operation_save(null,null,jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq,preparedBy}','"client"'))$$,
+  '22023',null,'a client-prepared DAPAQ requires the Not applicable mode even in a draft');
 select is((select created_by::text from public.sea_operations where id = (select id from sea_fixture where kind = 'record')),
   'a6300000-0000-0000-0000-000000000005','the author is taken from auth.uid');
 select is((select created_by_name from public.sea_operations where id = (select id from sea_fixture where kind = 'record')),'Sea Test 5','author name comes from the real HR profile');
@@ -179,6 +187,12 @@ select lives_ok($$select sea_operation_private.validate_draft(jsonb_set((select 
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq}','{"method":"s_wing","preparedBy":"agent","agentName":"Agent de test","agentContact":""}'),true)$$,'22023',null,'S-WING still requires consignee coordinates');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq}','{"method":"nomade","preparedBy":"agent","agentName":"Agent de test","agentContact":"agent@example.invalid"}'),true)$$,'22023',null,'NOMADE remains forbidden for a consignee even with complete coordinates');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq,method}','"s-wing"'),false)$$,'22023',null,'only the canonical S-WING value is accepted');
+select lives_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq,method}','"not_applicable"'),true)$$,
+  'Not applicable is also a valid mode for a Captain-prepared DAPAQ');
+select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{dapaq,preparedBy}','"client"'),true)$$,
+  '22023',null,'a client-prepared DAPAQ requires the Not applicable mode for GO');
+select lives_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'partial'),'{dapaq}','{"method":"","preparedBy":"","agentName":"","agentContact":""}'),true)$$,
+  'an interrupted NO GO still accepts an unanswered DAPAQ');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{portServices}','["none","pilotage"]'),false)$$,'22023',null,'contradictory services are rejected even in drafts');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{vessel,eta}',to_jsonb((now() at time zone 'Europe/Paris')::date::text||'T01:00')),false)$$,'22023',null,'arrival cannot precede departure');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from sea_fixture where kind = 'go'),'{vessel,eta}','"infinity"'),false)$$,'22023',null,'non-finite PostgreSQL date values are not accepted as operation dates');
@@ -189,6 +203,8 @@ select lives_ok($$insert into sea_fixture(kind,id) select 'blocked',(public.sea_
 select throws_ok($$select public.sea_operation_sign((select id from sea_fixture where kind = 'blocked'),1,'Sea Test 4',true)$$,'22023',null,'the signing RPC itself rejects a forged GO with a blocker');
 
 select lives_ok($$select public.sea_operation_sign((select id from sea_fixture where kind = 'record'),4,'Sea Test 4',true)$$,'complete GO is signed by the actual assigned captain');
+select lives_ok($$select public.sea_operation_sign((select id from sea_fixture where kind = 'dapaq-client'),1,'Sea Test 4',true)$$,
+  'the actual assigned Captain signs GO with a client-prepared DAPAQ');
 select is((select version from public.sea_operations where id = (select id from sea_fixture where kind = 'record')),5,'signing advances the exact persisted revision');
 select is((select signed_by::text from public.sea_operations where id = (select id from sea_fixture where kind = 'record')),'a6300000-0000-0000-0000-000000000004','the actual authenticated captain identity is captured');
 select is((select signed_by_name from public.sea_operations where id = (select id from sea_fixture where kind = 'record')),'Sea TEST 4','the actual captain HR name is captured');

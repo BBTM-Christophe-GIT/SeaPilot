@@ -1,7 +1,8 @@
 # Import GPX dans le Passage Plan
 
 Dans la fenêtre de saisie d’une Opération en Mer, la section **Passage Plan**
-propose **Importer des waypoints** aux comptes autorisés à modifier la fiche.
+propose **Importer les waypoints** à côté de **Placer les waypoints** aux comptes
+autorisés à modifier la fiche.
 Le panneau précise **Fichier GPX (.gpx)** et exige de choisir le contenu :
 
 - **Route** : ajoute les points à la suite des waypoints du Passage Plan.

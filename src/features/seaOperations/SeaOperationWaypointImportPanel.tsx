@@ -1,5 +1,5 @@
 import { Upload } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { parseSeaOperationWaypointImport, SEA_OPERATION_WAYPOINT_IMPORT_MAX_BYTES,
   type SeaOperationImportedWaypoint, type SeaOperationWaypointImportSource, type SeaOperationWaypointImportTarget,
@@ -10,6 +10,7 @@ interface Props {
   disabled: boolean;
   existingCount: number;
   onImport: (points: SeaOperationImportedWaypoint[], target: SeaOperationWaypointImportTarget, zoneName?: string) => boolean;
+  children?: (controls: { trigger: ReactNode; panel: ReactNode }) => ReactNode;
 }
 interface ImportState {
   open: boolean; loading: boolean; filename: string; sources: SeaOperationWaypointImportSource[];
@@ -28,7 +29,7 @@ function readGpxFile(file: File): Promise<string> {
   });
 }
 
-export function SeaOperationWaypointImportPanel({ disabled, existingCount, onImport }: Props) {
+export function SeaOperationWaypointImportPanel({ disabled, existingCount, onImport, children }: Props) {
   const [state, setState] = useState<ImportState>(emptyState);
   const panelId = useId();
   const readVersion = useRef(0);
@@ -80,10 +81,9 @@ export function SeaOperationWaypointImportPanel({ disabled, existingCount, onImp
   const confirmLabel = !source || !state.target ? 'Ajouter à la fiche' : state.target === 'zone' ? 'Ajouter la zone' : state.target === 'isolated'
     ? `Ajouter ${count === 1 ? 'le point isolé' : `les ${count} points isolés`}`
     : `Ajouter ${count === 1 ? 'le waypoint' : `les ${count} waypoints`}`;
-  return <div className="so-waypoint-import">
-    <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={disabled} aria-expanded={state.open} aria-controls={panelId}
-      onClick={() => state.open ? close() : setState({ ...emptyState, open: true })}><Upload size={16} aria-hidden="true" />Importer des waypoints</button>
-    {state.open && <section id={panelId} className="so-waypoint-import-panel" aria-label="Import de waypoints GPX">
+  const trigger = <button type="button" className="sp-button sp-button--secondary" disabled={disabled} aria-expanded={state.open} aria-controls={panelId}
+    onClick={() => state.open ? close() : setState({ ...emptyState, open: true })}><Upload size={16} aria-hidden="true" />Importer les waypoints</button>;
+  const panel = state.open && <section id={panelId} className="so-waypoint-import-panel" aria-label="Import de waypoints GPX">
       <h3>Importer un fichier GPX</h3>
       <p className="so-help">Sélectionnez un fichier GPX (.gpx), puis indiquez le contenu à ajouter à la fiche. Taille maximale : 5 Mo.</p>
       <div className="so-waypoint-import-fields">
@@ -110,6 +110,6 @@ export function SeaOperationWaypointImportPanel({ disabled, existingCount, onImp
           <tbody>{source.points.slice(0, 10).map((point, index) => <tr key={index}><td>{point.name || `Point ${index + 1}`}</td><td>{formatSeaLatitude(point.latitude)}</td><td>{formatSeaLongitude(point.longitude)}</td></tr>)}</tbody></table>
       </div>}
       <footer><button type="button" className="sp-button sp-button--secondary so-secondary" onClick={close}>Annuler</button><button type="button" className="sp-button sp-button--primary" disabled={!ready} onClick={confirm}>{confirmLabel}</button></footer>
-    </section>}
-  </div>;
+    </section>;
+  return children ? children({ trigger, panel }) : <>{trigger}{panel}</>;
 }

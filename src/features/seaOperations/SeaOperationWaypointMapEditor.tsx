@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, LocateFixed, MapPin, Maximize, Minimize, Minus, Plus, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import type { SeaOperationWaypoint } from './seaOperationModel';
@@ -115,7 +115,7 @@ function groupOverlayTargets(targets: OverlayTarget[]) {
 }
 
 /** Only this wrapper accepts gestures. Moving its viewport never modifies the recorded route. */
-export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort }: {
+export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort, waypointImport }: {
   waypoints: readonly SeaOperationWaypoint[];
   onAddWaypoint: (position: SeaPosition, port?: { name: string; portKey?: string }) => void;
   onMoveWaypoint?: (id: string, position: SeaPosition) => void;
@@ -137,6 +137,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   onMapViewportChange?: ViewportChange;
   departurePort?: string;
   arrivalPort?: string;
+  waypointImport?: { trigger: ReactNode; panel: ReactNode };
 }) {
   const instructionsId = useId();
   const [placementRequested, setPlacing] = useState(false);
@@ -565,6 +566,10 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (placing && !event.repeat) addAtCentre(); }
   }
 
+  const placementButton = !readOnly && <button type="button" className={`sp-button ${placing ? 'sp-button--primary' : 'sp-button--secondary'}`} ref={toggleRef} aria-pressed={placing} onClick={togglePlacement} disabled={disabled}>
+    {placing ? <Check aria-hidden="true" size={16} /> : <MapPin aria-hidden="true" size={16} />}{placing ? 'Terminer le placement' : 'Placer les waypoints'}
+  </button>;
+
   return <section aria-label="Placement des waypoints" ref={editorRef} tabIndex={fullscreen.isFullscreen ? -1 : undefined} className={`so-waypoint-map-editor${placing ? ' is-placing' : ''}${grabbing ? ' is-grabbing' : ''}${fullscreen.isFullscreen ? ' is-fullscreen' : ''}${fullscreen.isFallbackFullscreen ? ' is-fallback-fullscreen' : ''}`} onPointerDownCapture={() => {
     const zoom = wheelZoomRef.current;
     cancelWheelZoom(!zoom);
@@ -584,9 +589,9 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     }
   }}>
     <div className="so-waypoint-map-toolbar">
-      {!readOnly && <button type="button" className={`sp-button ${placing ? 'sp-button--primary' : 'sp-button--secondary'}`} ref={toggleRef} aria-pressed={placing} onClick={togglePlacement} disabled={disabled}>
-        {placing ? <Check aria-hidden="true" size={16} /> : <MapPin aria-hidden="true" size={16} />}{placing ? 'Terminer le placement' : 'Placer les waypoints'}
-      </button>}
+      {!readOnly && waypointImport
+        ? <div className="so-waypoint-map-edit-actions">{placementButton}{waypointImport.trigger}</div>
+        : placementButton}
       <select className="so-waypoint-map-framing" aria-label="Mode de cadrage de la carte" tabIndex={disabled ? -1 : 0} disabled={disabled}
         value={viewport || wheelPreviewActive || panPreviewActive ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
         <option value="automatic">Cadrage automatique</option><option value="manual">Cadrage manuel</option>
@@ -599,6 +604,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
         if (fullscreen.isFullscreen) fullscreen.exitFullscreen(); else if (!disabled) fullscreen.enterFullscreen();
       }}>{fullscreen.isFullscreen ? <Minimize aria-hidden="true" size={16} /> : <Maximize aria-hidden="true" size={16} />}{fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}</button>
     </div>
+    {!readOnly && waypointImport?.panel}
     <>
       <p id={instructionsId} className="so-waypoint-map-instructions">{placing ? <>Cliquez pour ajouter, maintenez et glissez un waypoint pour le déplacer. Clic sur un waypoint : supprimer. Glissez le fond pour naviguer, molette pour zoomer. Clavier : flèches, Entrée ; Alt+flèches sur un waypoint. {fullscreen.isFullscreen ? 'Échap : quitter le plein écran.' : 'Échap : fermer le menu ou terminer.'}{!viewport && ' Le cadrage automatique s’ajuste en fin de placement.'}</> : <>Glissez pour déplacer la carte, utilisez la molette ou les boutons pour zoomer. Clavier : flèches.{!readOnly && ' Activez « Placer les waypoints » pour ajouter des points.'}</>}</p>
       <div className="so-waypoint-map-navigation" aria-label="Déplacement et zoom de la carte">

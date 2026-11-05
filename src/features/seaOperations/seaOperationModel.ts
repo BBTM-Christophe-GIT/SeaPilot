@@ -81,8 +81,8 @@ export interface SeaOperationPayload {
   description: string;
   specialPersonnel: SeaOperationContact[];
   dapaq: {
-    method: '' | 'nomade' | 'email' | 's_wing';
-    preparedBy: '' | 'armament' | 'captain' | 'agent';
+    method: '' | 'nomade' | 'email' | 's_wing' | 'not_applicable';
+    preparedBy: '' | 'armament' | 'captain' | 'agent' | 'client';
     agentName: string;
     agentContact: string;
   };
@@ -305,8 +305,9 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   if (value.vessel.weatherMatrix !== undefined && value.vessel.weatherMatrix !== null && !isVesselWeatherMatrix(value.vessel.weatherMatrix)) return false;
   if (value.vessel.draftMeters !== undefined && value.vessel.draftMeters !== null
     && (typeof value.vessel.draftMeters !== 'number' || !Number.isFinite(value.vessel.draftMeters) || value.vessel.draftMeters <= 0 || value.vessel.draftMeters > 50)) return false;
-  if (!hasStringFields(value.dapaq, ['agentName', 'agentContact']) || !['', 'nomade', 'email', 's_wing'].includes(value.dapaq.method as string)
-    || !['', 'armament', 'captain', 'agent'].includes(value.dapaq.preparedBy as string)) return false;
+  if (!hasStringFields(value.dapaq, ['agentName', 'agentContact']) || !['', 'nomade', 'email', 's_wing', 'not_applicable'].includes(value.dapaq.method as string)
+    || !['', 'armament', 'captain', 'agent', 'client'].includes(value.dapaq.preparedBy as string)
+    || (value.dapaq.preparedBy === 'client' && value.dapaq.method !== 'not_applicable')) return false;
   if (!isObject(value.applicability) || !['towing', 'cargo', 'divingSupport', 'supplies'].every((key) => isAnswer(value.applicability && (value.applicability as Record<string, unknown>)[key]))) return false;
   if (!isObject(value.checks) || !SEA_OPERATION_CHECKS.every((check) => isAnswer((value.checks as Record<string, unknown>)[check.id]))) return false;
   if (!hasStringFields(value.justifications, SEA_OPERATION_CHECKS.map((check) => check.id))) return false;

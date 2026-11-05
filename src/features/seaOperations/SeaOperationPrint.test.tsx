@@ -87,17 +87,22 @@ describe('Opération en Mer printable content', () => {
     expect(container.querySelector('.so-route-map-scale')).toHaveTextContent('0.05 NM');
   });
 
-  it('prints the saved Transit client and manually adapted voyage instead of project defaults', () => {
+  it.each([
+    { method: 's_wing', preparedBy: 'captain', methodLabel: 'S-WING', preparerLabel: 'Le Capitaine' },
+    { method: 'not_applicable', preparedBy: 'client', methodLabel: 'Non applicable', preparerLabel: 'Le Client' },
+  ] as const)('prints the saved Transit voyage with DAPAQ mode $method and preparer $preparedBy', ({ method, preparedBy, methodLabel, preparerLabel }) => {
     const draft = emptySeaOperation();
     draft.project = 'Transit'; draft.transit = { date: '2026-10-27', captainPersonId: '3' };
-    draft.dapaq.method = 's_wing';
+    draft.dapaq = { ...draft.dapaq, method, preparedBy };
     draft.clientId = '7'; draft.client = 'Client Transit'; draft.clientContact = 'Contact adapté · client@example.test · Agence\n12 quai du Port, 76600 Le Havre'; draft.description = 'Convoyage saisi manuellement';
     Object.assign(draft.vessel, { id: '1', name: 'Navire sélectionné', registrationImo: 'FR-123', departurePort: 'Départ adapté', arrivalPort: 'Arrivée adaptée', departureQuay: 'Quai A', arrivalQuay: 'Quai B', etd: '2026-10-27T08:00', eta: '2026-10-28T10:00' });
     const record: SeaOperationRecord = { id: 'transit-print', companyId: 1, version: 1, status: 'draft', draft,
       createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
       signedBy: null, signedByName: null, signedAt: null, captainName: '', canEdit: true, canSign: false };
     const original = structuredClone(record), { container } = render(<SeaOperationPrint record={record} />);
-    for (const value of ['Transit', 'Client Transit', 'Contact adapté', 'Convoyage saisi manuellement', 'Navire sélectionné', 'FR-123', 'Départ adapté', 'Arrivée adaptée', 'Quai A', 'Quai B', 'S-WING']) expect(container).toHaveTextContent(value);
+    for (const value of ['Transit', 'Client Transit', 'Contact adapté', 'Convoyage saisi manuellement', 'Navire sélectionné', 'FR-123', 'Départ adapté', 'Arrivée adaptée', 'Quai A', 'Quai B']) expect(container).toHaveTextContent(value);
+    expect(within(container).getByText('Mode de réalisation').nextElementSibling).toHaveTextContent(methodLabel);
+    expect(within(container).getByText('Responsable').nextElementSibling).toHaveTextContent(preparerLabel);
     const contact = within(container).getByText('Coordonnées du client – informations opérationnelles').closest('div')!;
     expect(contact.querySelector('dd')?.textContent).toBe('Contact adapté\nclient@example.test\nAgence\n12 quai du Port, 76600 Le Havre');
     expect(container).toHaveTextContent('27/10/2026'); expect(container).toHaveTextContent('28/10/2026');

@@ -212,7 +212,7 @@ const businessStepButtons = () => preparationButtons().filter(button => /^sea-op
 const stepButton = (index: number) => businessStepButtons()[index];
 const documentsButton = () => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getByRole('button', { name: /^Documents$/ });
 const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
-const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
+const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', not_applicable: 'Non applicable', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', client: 'Client', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
 const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
 const answerInput = (label: string) => formQueries().getByRole('switch', { name: label });
 const etaGroup = (index = 1) => formQueries().getByRole('group', { name: `ETA · date et heure · point ${index}` });
@@ -1475,7 +1475,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     fireEvent.click(stepButton(2));
     expect(formQueries().getByRole('figure', { name: 'Carte du parcours' })).toBeVisible();
-    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
@@ -1611,7 +1611,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(account, record);
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...record, draft: structuredClone(payload), version: record.version + 1 }));
     await openRecord(record); fireEvent.click(stepButton(2));
-    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    const importButton = formQueries().getByRole('button', { name: 'Importer les waypoints' });
+    expect(importButton.previousElementSibling).toBe(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    await userEvent.click(importButton);
     const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
     const file = new File(['<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><rte><name>Parcours GPX</name><rtept lat="49.7" lon="-1.4"><name>GPX A</name><time>2000-01-01T00:00:00Z</time></rtept><rtept lat="49.75" lon="-0.8"><name>GPX B</name></rtept><rtept lat="49.5" lon="0.1"><name>GPX C</name></rtept></rte></gpx>'], 'parcours.gpx', { type: 'application/gpx+xml' });
     await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), file);
@@ -1654,7 +1656,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     fireEvent.click(stepButton(2));
-    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Importer les waypoints' }));
     const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
     await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), new File(['<gpx><rte><rtept lat="49.65" lon="-1.62"><name>Départ importé</name></rtept></rte></gpx>'], 'nouveau.gpx'));
     await panel.findByRole('table', { name: 'Aperçu des points à importer' });
@@ -1734,7 +1736,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
-    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé · 1 port défini' })).toBeVisible();
     const categoryToggle = within(map).getByRole('button', { name: 'Catégories de navigation' });
     expect(within(map).getAllByRole('button')).toEqual([categoryToggle]);
@@ -2718,6 +2720,29 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ dapaq: expect.objectContaining({ method: 's_wing', preparedBy: 'captain' }) }), undefined);
+  });
+
+  it.each([captainAccount, sailorAccount])('saves Client and its automatic DAPAQ mode for the real $id profile', async account => {
+    const { client } = renderAccount(account);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(account, { draft, version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const notApplicable = choiceInput('Mode de déclaration', 'not_applicable');
+    await userEvent.click(notApplicable);
+    expect(notApplicable).toBeChecked();
+    await selectChoice('Mode de déclaration', 'nomade');
+    await selectChoice('Préparée par', 'client');
+    expect(notApplicable).toBeChecked();
+    expect(notApplicable).toBeDisabled();
+    expect(choiceInput('Mode de déclaration', 'nomade')).not.toBeChecked();
+    await userEvent.click(choiceInput('Préparée par', 'client'));
+    expect(notApplicable).toBeEnabled();
+    expect(notApplicable).toBeChecked();
+    await selectChoice('Préparée par', 'client');
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
+      dapaq: expect.objectContaining({ method: 'not_applicable', preparedBy: 'client' }),
+    }), undefined);
   });
 
   it('keeps explicit DAPAQ and safety choices clearable while binary boarding and shipchandler switches stay Oui or Non', async () => {
