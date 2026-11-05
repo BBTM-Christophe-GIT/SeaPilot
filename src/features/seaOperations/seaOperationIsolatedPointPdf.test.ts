@@ -16,19 +16,39 @@ describe('isolated-point symbols in PDF', () => {
   it.each(SEA_OPERATION_ISOLATED_POINT_ICONS)('renders $label as green vectors with the entered number', ({ value }) => {
     const document = new jsPDF({ unit: 'pt' }), point = { number: ' B04 ', isolatedPointIcon: value }, original = structuredClone(point);
     const color = vi.spyOn(document, 'setDrawColor');
+    const line = vi.spyOn(document, 'line'), path = vi.spyOn(document, 'path');
     drawSeaOperationIsolatedPointPdf(document, point, 1, { x: 100, y: 100, left: 30, right: 550 });
     expect(document.output()).toContain('(B04) Tj'); expect(document.output()).not.toContain('(P1) Tj');
     expect(document.output()).not.toContain('/Subtype /Image'); expect(color).toHaveBeenCalledWith(37, 129, 95);
+    expect(line.mock.calls).toEqual([[96, 100, 104, 100], [100, 96, 100, 104]]);
+    const coordinates = path.mock.calls.flatMap(([operations]) => (operations ?? []) as { c: number[] }[]).flatMap(({ c }) => c);
+    expect(coordinates.length).toBeGreaterThan(0);
+    expect(coordinates.filter((_, index) => index % 2 === 0).every(x => x < 96)).toBe(true);
     expect(point).toEqual(original);
   });
 
   it('keeps the legacy square, falls back only for an empty number and bounds long visual labels without changing them', () => {
     const document = new jsPDF({ unit: 'pt' });
+    const line = vi.spyOn(document, 'line'), rect = vi.spyOn(document, 'rect');
     drawSeaOperationIsolatedPointPdf(document, { number: '   ' }, 7, { x: 540, y: 100, left: 30, right: 550 });
     expect(document.output()).toContain('(P7) Tj');
+    expect(line.mock.calls).toEqual([[536, 100, 544, 100], [540, 96, 540, 104]]);
+    expect(rect).toHaveBeenCalledWith(536, 86, 8, 8, 'FD');
     const point = { number: 'ABCDEFGH'.repeat(10) }, original = structuredClone(point);
     drawSeaOperationIsolatedPointPdf(document, point, 8, { x: 500, y: 200, left: 30, right: 550 });
     expect(document.output()).toContain(`(${point.number.slice(0, 17)}...) Tj`); expect(point).toEqual(original);
+  });
+
+  it('keeps the pictogram inside the top edge without shifting the position cross', () => {
+    const document = new jsPDF({ unit: 'pt' });
+    const line = vi.spyOn(document, 'line'), path = vi.spyOn(document, 'path');
+    drawSeaOperationIsolatedPointPdf(document, { number: 'B04', isolatedPointIcon: 'buoy' }, 1,
+      { x: 32, y: 62, left: 30, right: 550, top: 60, bottom: 250 });
+    expect(line.mock.calls).toEqual([[28, 62, 36, 62], [32, 58, 32, 66]]);
+    const coordinates = path.mock.calls.flatMap(([operations]) => (operations ?? []) as { c: number[] }[]).flatMap(({ c }) => c);
+    expect(coordinates.length).toBeGreaterThan(0);
+    expect(coordinates.filter((_, index) => index % 2).every(y => y > 66)).toBe(true);
+    expect(coordinates.filter((_, index) => index % 2 === 0).every(x => x > 30)).toBe(true);
   });
 
   it('keeps every selected icon in the appendix and preserves route, zones, coordinates and voyage data', async () => {

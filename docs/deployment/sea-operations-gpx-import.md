@@ -14,6 +14,8 @@ Le panneau précise **Fichier GPX (.gpx)** et exige de choisir le contenu :
 Les points isolés et les zones ne créent ni segments de navigation, ni distance,
 ni ETA de parcours. GPX ne définit pas de polygone : le choix explicite **Zone**
 donne cette signification à la liste de positions sélectionnée.
+Une croix fine matérialise la position de chaque point isolé sur la carte et
+dans le PDF.
 
 Le lecteur accepte GPX 1.0/1.1, ses routes (`rtept`), points (`wpt`) et tracés
 (`trkpt`). Si le fichier contient plusieurs jeux de points, l’utilisateur choisit
