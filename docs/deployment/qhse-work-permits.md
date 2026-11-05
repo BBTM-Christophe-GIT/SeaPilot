@@ -24,3 +24,6 @@ Le ruban du module regroupe les commandes du registre et celles du permis sélec
 Les checklists proposent les choix Oui, Non et Sans objet par question. Un clic sur le choix actif retire la réponse. Les catégories s’affichent sur une à trois colonnes selon l’espace disponible.
 
 Seul le profil Administration de l’entreprise peut supprimer définitivement un permis après confirmation, y compris depuis les archives. Appliquer la migration `20261105072407_qhse_work_permit_admin_delete.sql` avant de déployer cette version. Elle contrôle les droits de suppression et expose la longueur des navires accessibles pour le classement.
+
+
+Dans la fiche d’un permis modifiable, le repère, le contour complet et chaque sommet peuvent être déplacés par glisser-déposer. La zone se ferme au troisième sommet valide et porte le libellé « Zone d’exclusion » sur le plan. Vous pouvez agrandir le contour avec un sommet supplémentaire pendant le tracé ou depuis la liste des zones. Enregistrez le permis pour conserver les déplacements.

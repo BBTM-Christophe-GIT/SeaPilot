@@ -42,3 +42,14 @@
 .work-permits-editor summary{font-weight:600}
 .work-permits-error,.work-permits-editor [role=alert]{color:var(--sp-danger)}
 .work-permits-confirm{display:grid;gap:.5rem;border-top:1px solid var(--sp-border);padding-top:12px}
+
+.work-permits-map-image svg{z-index:1}
+.work-permits-map-image svg:has(polygon[data-draggable]){touch-action:none}
+.work-permits-map-image polygon[data-draggable]{pointer-events:auto;cursor:grab;touch-action:none}
+.work-permits-map-image .work-permits-drag-handle{cursor:grab;touch-action:none;z-index:3}
+.work-permits-map-image .work-permits-drag-handle:active,.work-permits-map-image polygon[data-draggable]:active{cursor:grabbing}
+.work-permits-map-image .work-permits-pin{z-index:3}
+.work-permits-map-image .work-permits-vertex{position:absolute;display:grid;place-items:center;transform:translate(-50%,-50%);width:24px;height:24px}
+.work-permits-vertex::after{content:"";width:10px;height:10px;border:2px solid var(--sp-surface);border-radius:50%;background:var(--sp-danger)}
+.work-permits-zone-label{position:absolute;z-index:2;transform:translate(-50%,-50%);pointer-events:none;padding:2px 4px;border-radius:var(--sp-control-radius);background:var(--sp-surface);color:var(--sp-danger);font-size:.75rem;font-weight:600;white-space:nowrap}
+@media(pointer:coarse){.work-permits-map-image .work-permits-vertex{width:36px;height:36px}}
