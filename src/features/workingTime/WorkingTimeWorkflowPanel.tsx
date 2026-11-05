@@ -21,6 +21,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppConfirmDialog } from '../../components/AppDialog';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
 import { todayPlanningDate } from '../planning/planningDates';
@@ -330,7 +331,6 @@ export function WorkingTimeWorkflowPanel({
   const setEditingIntervalId = (value: number | null) => updateEntryDraft({ editingIntervalId: value });
   const setPendingPhases = (value: WorkingTimePhaseInput[]) => updateEntryDraft({ pending: value });
   const [voidCandidateId, setVoidCandidateId] = useState<number | null>(null);
-  const [voidReason, setVoidReason] = useState('');
   const [dayResponses, setDayResponses] = useState<Record<string, NonComplianceDraft>>({});
   const [signatureUrls, setSignatureUrls] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -418,6 +418,7 @@ export function WorkingTimeWorkflowPanel({
     () => workspace?.intervals.filter((interval) => interval.personId === selectedPersonId) || [],
     [selectedPersonId, workspace?.intervals],
   );
+  const voidCandidate = selectedIntervals.find((interval) => interval.id === voidCandidateId);
   const selectedDayIntervals = useMemo(
     () => selectedIntervals.filter((interval) => interval.localWorkDate === selectedDay),
     [selectedDay, selectedIntervals],
@@ -651,7 +652,7 @@ export function WorkingTimeWorkflowPanel({
     setIsSaving(false);
     setActionMessage(null);
     setActionError(null);
-    setVoidCandidateId(null); setVoidReason(''); setIsExporting(false);
+    setVoidCandidateId(null); setIsExporting(false);
     return () => { if (actionContextRef.current === actionContext) actionContextRef.current = null; };
   }, [actionContext]);
 
@@ -899,6 +900,18 @@ export function WorkingTimeWorkflowPanel({
     setSelectedDay(interval.localWorkDate);
   }
 
+  function removeInterval(interval: WorkingTimeInterval) {
+    if (!canEdit) return;
+    void runAction(async () => {
+      try {
+        await voidWorkingTimeInterval(client, interval.id);
+        if (actionContextRef.current === actionContext && editingIntervalId === interval.id) resetIntervalForm();
+      } finally {
+        if (actionContextRef.current === actionContext) setVoidCandidateId(null);
+      }
+    }, 'Le créneau a été retiré sans effacer son historique.');
+  }
+
   function handleEntryAction(phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') {
     if (!selectedRegister) return;
     if (!phases.length && (intent === 'save-draft' || intent === 'save-correction')) return;
@@ -1092,7 +1105,7 @@ export function WorkingTimeWorkflowPanel({
                     onEndsAtChange={setEndsAt}
                     onEditInterval={editInterval}
                     onPendingPhasesChange={setPendingPhases}
-                    onRequestVoid={(interval) => { setVoidCandidateId(interval.id); setVoidReason(''); }}
+                    onRequestVoid={(interval) => setVoidCandidateId(interval.id)}
                     onSelectedDayChange={setSelectedDay}
                     onStartsAtChange={setStartsAt}
                     onTimelineGestureChange={handleTimelineGestureChange}
@@ -1121,17 +1134,16 @@ export function WorkingTimeWorkflowPanel({
                     />
                     {!selectedIntervals.some((interval) => interval.localWorkDate >= range.start && interval.localWorkDate <= range.end) ? <p className="working-time-empty">Aucune heure saisie.</p> : null}
 
-                    {voidCandidateId ? (
-                    <div className="working-time-void-form">
-                      <label>Motif du retrait<input onChange={(event) => setVoidReason(event.target.value)} value={voidReason} /></label>
-                      <button disabled={isSaving || voidReason.trim().length < 2} onClick={() => void runAction(async () => {
-                        await voidWorkingTimeInterval(client, voidCandidateId, voidReason);
-                        if (actionContextRef.current !== actionContext) return;
-                        setVoidCandidateId(null);
-                        setVoidReason('');
-                      }, 'Le créneau a été retiré sans effacer son historique.')} type="button">Confirmer</button>
-                      <button onClick={() => setVoidCandidateId(null)} type="button">Annuler</button>
-                    </div>
+                    {voidCandidate && canEdit ? (
+                    <AppConfirmDialog
+                      confirmLabel="Retirer"
+                      description={`Le créneau du ${entryBounds(voidCandidate)} sera retiré du registre. Son historique restera consultable.`}
+                      isBusy={isSaving}
+                      onCancel={() => setVoidCandidateId(null)}
+                      onConfirm={() => removeInterval(voidCandidate)}
+                      title="Retirer le créneau"
+                      tone="danger"
+                    />
                     ) : null}
                   </> : <WorkingTimeMonthlyView
                     pendingPhases={monthPendingPhases}

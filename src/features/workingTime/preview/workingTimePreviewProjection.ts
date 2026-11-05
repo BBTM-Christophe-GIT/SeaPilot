@@ -250,20 +250,31 @@ function amplitudeSequences(work: readonly TimeRange[], bounds: TimeRange, restH
     .map(({ startMs, endMs }) => ({ startMs, endMs }));
 }
 
-/** Longest loaded work sequence affected by the entry, including short breaks. */
-export function projectedEntryAmplitudeSeconds(
-  history: readonly PreviewWorkPhase[],
-  phases: readonly PreviewWorkPhase[],
+/** Longest loaded sequence affected by the draft or containing work on the displayed day. */
+export function workingTimeEntryAmplitude({
+  history,
+  phases = [],
   restHours = PREVIEW_DEMO_POLICY.minContinuousRestHours,
-): number {
+  recordedDay,
+}: {
+  history: readonly PreviewWorkPhase[];
+  phases?: readonly PreviewWorkPhase[];
+  restHours?: number;
+  recordedDay?: TimeRange;
+}): (TimeRange & { seconds: number }) | null {
   const validRanges = (items: readonly PreviewWorkPhase[]) => items.map(parseWorkRange).filter((range) => range !== null);
   const entered = validRanges(phases);
-  if (!entered.length) return 0;
-  const work = mergeRanges([...validRanges(history), ...entered]);
-  const sequences = amplitudeSequences(work, { startMs: Math.min(...entered.map((range) => range.startMs)), endMs: Infinity }, restHours);
-  return sequences.reduce((longest, sequence) => entered.some((phase) => intersect(phase, sequence))
-    ? Math.max(longest, (sequence.endMs - sequence.startMs) / 1000)
-    : longest, 0);
+  if (!entered.length && !recordedDay) return null;
+  const recorded = validRanges(history);
+  const focus = entered.length ? entered : recordedDay ? recorded.filter((range) => intersect(range, recordedDay)) : [];
+  if (!focus.length) return null;
+  const work = mergeRanges([...recorded, ...entered]);
+  const sequences = amplitudeSequences(work, { startMs: Math.min(...focus.map((range) => range.startMs)), endMs: Infinity }, restHours);
+  return sequences.reduce<(TimeRange & { seconds: number }) | null>((longest, sequence) => {
+    const seconds = (sequence.endMs - sequence.startMs) / 1000;
+    return (!longest || seconds > longest.seconds) && focus.some((phase) => intersect(phase, sequence))
+      ? { ...sequence, seconds } : longest;
+  }, null);
 }
 
 function latestOperationalPeriod(

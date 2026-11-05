@@ -1,6 +1,6 @@
 import { deferred } from './workingTimeTestHelpers';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkingTimeEntryRecommendation, WorkingTimeWorkspace } from './workingTimeQueries';
@@ -14,6 +14,7 @@ import {
   submitWorkingTimeDay,
   validateWorkingTimeDay,
   validateWorkingTimeDayWithComment,
+  voidWorkingTimeInterval,
 } from './workingTimeQueries';
 import { useWorkingTimeWorkspace } from './useWorkingTimeWorkspace';
 import { WorkingTimeWorkflowPanel, workingTimeInitialDay } from './WorkingTimeWorkflowPanel';
@@ -432,7 +433,6 @@ describe('WorkingTimeWorkflowPanel', () => {
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     await screen.findByText(/Affectation Planning appliquée/);
     await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
-    await user.click(screen.getByRole('button', { name: 'Corriger' }));
     screen.getAllByRole('gridcell')[16].focus();
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer la correction' })).toBeEnabled());
@@ -483,11 +483,11 @@ describe('WorkingTimeWorkflowPanel', () => {
     const user = userEvent.setup(); renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' });
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
     await screen.findByText(/Affectation Planning appliquée/);
-    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
-    await user.click(screen.getByRole('button', { name: 'Retirer' }));
-    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Retirer' }));
+    expect(screen.getByRole('dialog', { name: 'Retirer le créneau' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /mar 04 août/ }));
-    expect(screen.queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Retirer le créneau' })).not.toBeInTheDocument();
   });
 
   it('removes manual register and refresh commands when no HR person is editable', () => {
@@ -988,7 +988,7 @@ describe('WorkingTimeWorkflowPanel', () => {
     await user.click(screen.getByRole('tab', { name: /lun 03 août/ }));
 
     expect(screen.getByText(/Journée validée et clôturée/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Corriger' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réouvrir' })).not.toBeInTheDocument();
   });
 
@@ -1035,7 +1035,6 @@ describe('WorkingTimeWorkflowPanel', () => {
     await waitFor(() => expect(screen.getByRole('grid')).toHaveAttribute('aria-readonly', 'false'));
     expect(screen.queryByText(/Journée validée et clôturée/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
-    await user.click(screen.getByRole('button', { name: 'Corriger' }));
     screen.getAllByRole('gridcell')[16].focus();
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}');
     const correction = screen.getByRole('button', { name: 'Enregistrer la correction' });
@@ -1067,6 +1066,29 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(screen.getByRole('grid')).toHaveAttribute('aria-readonly', 'false');
     expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
     expect(screen.getByText('Ajoutez d’abord votre signature numérisée dans votre profil utilisateur pour valider cette journée.')).toBeInTheDocument();
+  });
+
+  it('lets the assigned Capitaine confirm a Marin period withdrawal without entering a reason', async () => {
+    const user = userEvent.setup();
+    const data = workspace('draft', 20);
+    data.intervals[0] = {
+      ...data.intervals[0],
+      startsAt: new Date('2026-08-03T08:00').toISOString(),
+      endsAt: new Date('2026-08-03T16:00').toISOString(),
+    };
+    vi.mocked(fetchWorkingTimeDayContext).mockResolvedValue({ ...defaultDayContext, approverPersonId: 10, canEdit: true });
+    renderPanel(['capitaine'], data, currentPerson, '2026-08-03', { personId: 20, date: '2026-08-03' });
+
+    const cell = await screen.findByRole('gridcell', { name: /08:00, travail enregistré/ });
+    await waitFor(() => expect(cell).toBeEnabled());
+    fireEvent.contextMenu(cell);
+    await user.click(await screen.findByRole('menuitem', { name: 'Retirer' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Retirer le créneau' });
+    expect(within(dialog).queryByRole('textbox')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Retirer' }));
+    expect(voidWorkingTimeInterval).toHaveBeenCalledExactlyOnceWith(client, 200);
+    expect(await screen.findByText('Le créneau a été retiré sans effacer son historique.')).toBeInTheDocument();
   });
 
   it.each((['admin', 'direction', 'armement', 'marin', 'capitaine'] as const).flatMap(role =>

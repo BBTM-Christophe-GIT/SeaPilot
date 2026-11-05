@@ -14686,34 +14686,6 @@ button.planning-p12-conflict-card {
 .working-time-timeline button.is-selected { background: #17a6b8; box-shadow: inset 0 0 0 1px #087789; }
 .working-time-timeline button:disabled { cursor: default; opacity: 1; }
 .working-time-timeline button.is-occupied:not(:disabled) { cursor: pointer; }
-.working-time-recorded-period-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 9px 10px;
-  border-top: 1px solid #d8e4e9;
-  color: #274b5f;
-  background: #eef7f8;
-  font-size: .72rem;
-}
-
-.working-time-recorded-period-actions > div { display: flex; gap: 6px; }
-.working-time-recorded-period-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 31px;
-  padding: 0 9px;
-  border: 1px solid #a9c5cf;
-  border-radius: 6px;
-  color: #0d5669;
-  background: #fff;
-  font: inherit;
-  font-weight: 800;
-  cursor: pointer;
-}
-.working-time-recorded-period-actions button:last-child { min-width: 31px; padding: 0; justify-content: center; }
 .working-time-timeline time {
   position: absolute;
   top: -19px;

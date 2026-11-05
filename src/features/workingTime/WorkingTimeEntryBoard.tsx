@@ -7,10 +7,13 @@ import {
   Send,
   Trash2,
   UserCheck,
+  X,
 } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import type { WorkingTimeInterval } from './workingTimeModel';
-import { projectedEntryAmplitudeSeconds } from './preview/workingTimePreviewProjection';
+import { workingTimeEntryAmplitude } from './preview/workingTimePreviewProjection';
 import {
   fetchWorkingTimePhasesRecommendation,
   workingTimeErrorMessage,
@@ -108,6 +111,13 @@ function slotLocalValue(day: string, slot: number): string {
   return `${day}T${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
 }
 
+function timelinePosition(timestamp: number, day: { startMs: number; endMs: number }): number {
+  if (timestamp <= day.startMs) return 0;
+  if (timestamp >= day.endMs) return 100;
+  const local = new Date(timestamp);
+  return (local.getHours() * 60 + local.getMinutes() + local.getSeconds() / 60) / MINUTES_PER_DAY * 100;
+}
+
 function formatDuration(seconds: number): string {
   const safeSeconds = Math.max(0, Math.round(seconds));
   const hours = Math.floor(safeSeconds / 3600);
@@ -200,6 +210,10 @@ export function WorkingTimeEntryBoard({
   const days = useMemo(() => periodDays(periodStart, periodEnd), [periodEnd, periodStart]);
   const nonCompliantDaySet = useMemo(() => new Set(nonCompliantDates), [nonCompliantDates]);
   const selectedDay = controlledSelectedDay || startsAt.slice(0, 10) || days[0] || periodStart;
+  const dayBounds = useMemo(() => ({
+    startMs: Date.parse(slotLocalValue(selectedDay, 0)),
+    endMs: Date.parse(slotLocalValue(selectedDay, 48)),
+  }), [selectedDay]);
   const [recommendation, setRecommendation] = useState<WorkingTimeEntryRecommendation | null>(null);
   const [resolvedRecommendationKey, setResolvedRecommendationKey] = useState('');
   const [recommendationClient, setRecommendationClient] = useState<SupabaseClient | null>(null);
@@ -208,8 +222,8 @@ export function WorkingTimeEntryBoard({
   const [recommendationAttempt, setRecommendationAttempt] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
   const [activePendingIndex, setActivePendingIndex] = useState<number | null>(null);
-  const [selectedRecordedIntervalId, setSelectedRecordedIntervalId] = useState<number | null>(null);
-  const drag = useRef<{ pointerId: number; first: number; last: number; startsAt: string; endsAt: string } | null>(null);
+  const [recordedMenu, setRecordedMenu] = useState<{ intervalId: number; position: AppContextMenuPosition; slot: number } | null>(null);
+  const drag = useRef<{ pointerId: number; first: number; last: number; startsAt: string; endsAt: string; preserveOnClick: boolean } | null>(null);
   const resizeDrag = useRef<{
     pointerId: number;
     index: number;
@@ -235,18 +249,30 @@ export function WorkingTimeEntryBoard({
     return activePhase ? [activePhase] : [];
   }, [activePhase, editingIntervalId, pendingPhases]);
   const amplitudeHistory = useMemo(() => intervals.filter((interval) => interval.id !== editingIntervalId), [editingIntervalId, intervals]);
-  const submissionAmplitudeSeconds = useMemo(() => canEdit
-    ? projectedEntryAmplitudeSeconds(amplitudeHistory, combinedPhases, minimumRestHours) : 0,
-  [amplitudeHistory, canEdit, combinedPhases, minimumRestHours]);
-  const amplitudeSeconds = useMemo(() => {
+  const submissionAmplitude = useMemo(() => canEdit
+    ? workingTimeEntryAmplitude({ history: amplitudeHistory, phases: combinedPhases, restHours: minimumRestHours }) : null,
+    [amplitudeHistory, canEdit, combinedPhases, minimumRestHours]);
+  const projectedAmplitude = useMemo(() => {
     // The live selection is visible before a drag or keyboard selection is committed.
     return canEdit && activePhase && !combinedPhases.some((phase) => phase.startsAt <= activePhase.startsAt && phase.endsAt >= activePhase.endsAt)
-      ? projectedEntryAmplitudeSeconds(amplitudeHistory, [...combinedPhases, activePhase], minimumRestHours) : submissionAmplitudeSeconds;
-  }, [activePhase, amplitudeHistory, canEdit, combinedPhases, minimumRestHours, submissionAmplitudeSeconds]);
-  const amplitudeCommentRequired = submissionAmplitudeSeconds > NORMAL_AMPLITUDE_SECONDS;
-  const amplitudeCommentPrompt = amplitudeSeconds > NORMAL_AMPLITUDE_SECONDS;
+      ? workingTimeEntryAmplitude({ history: amplitudeHistory, phases: [...combinedPhases, activePhase], restHours: minimumRestHours })
+      : submissionAmplitude;
+  }, [activePhase, amplitudeHistory, canEdit, combinedPhases, minimumRestHours, submissionAmplitude]);
+  const recordedAmplitude = useMemo(() => projectedAmplitude ? null
+    : workingTimeEntryAmplitude({ history: intervals, recordedDay: dayBounds, restHours: minimumRestHours }),
+    [dayBounds, intervals, minimumRestHours, projectedAmplitude]);
+  const amplitude = projectedAmplitude ?? recordedAmplitude;
+  const amplitudeSeconds = amplitude?.seconds ?? 0;
+  const amplitudeCommentRequired = !editingIntervalId && (submissionAmplitude?.seconds ?? 0) > NORMAL_AMPLITUDE_SECONDS;
+  const amplitudeCommentPrompt = !editingIntervalId && (projectedAmplitude?.seconds ?? 0) > NORMAL_AMPLITUDE_SECONDS;
   const amplitudeLimitExceeded = amplitudeSeconds > MAXIMUM_AMPLITUDE_SECONDS;
   const amplitudeLabel = formatDuration(Math.ceil(amplitudeSeconds / 60) * 60);
+  const amplitudeSourceLabel = recordedAmplitude ? 'Amplitude enregistrée' : 'Amplitude prévue';
+  const amplitudeStart = amplitude ? timelinePosition(amplitude.startMs, dayBounds) : 0;
+  const amplitudeEnd = amplitude ? timelinePosition(amplitude.endMs, dayBounds) : 0;
+  const normalThreshold = amplitude ? amplitude.startMs + NORMAL_AMPLITUDE_SECONDS * 1000 : null;
+  const maximumThreshold = amplitude ? amplitude.startMs + MAXIMUM_AMPLITUDE_SECONDS * 1000 : null;
+  const isOnTimeline = (timestamp: number) => timestamp >= dayBounds.startMs && timestamp <= dayBounds.endMs;
   const phasesOverlap = combinedPhases.some((phase, index) => index > 0
     && new Date(phase.startsAt).getTime() < new Date(combinedPhases[index - 1].endsAt).getTime());
   const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
@@ -310,14 +336,6 @@ export function WorkingTimeEntryBoard({
     });
   }, [endsAt, selectedDay, startsAt]);
 
-  const occupiedSlots = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
-    const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
-    const slotEnd = new Date(slotLocalValue(selectedDay, slot + 1)).getTime();
-    return intervals.some((interval) => interval.id !== editingIntervalId
-      && slotStart < new Date(interval.endsAt).getTime()
-      && slotEnd > new Date(interval.startsAt).getTime());
-  }), [editingIntervalId, intervals, selectedDay]);
-
   const recordedIntervalBySlot = useMemo(() => Array.from({ length: 48 }, (_, slot) => {
     const slotStart = new Date(slotLocalValue(selectedDay, slot)).getTime();
     const slotEnd = new Date(slotLocalValue(selectedDay, slot + 1)).getTime();
@@ -325,9 +343,17 @@ export function WorkingTimeEntryBoard({
       && slotStart < new Date(interval.endsAt).getTime()
       && slotEnd > new Date(interval.startsAt).getTime()) || null;
   }), [editingIntervalId, intervals, selectedDay]);
-  const selectedRecordedInterval = intervals.find((interval) => interval.id === selectedRecordedIntervalId) || null;
+  const menuInterval = recordedMenu && intervals.find((interval) => interval.id === recordedMenu.intervalId);
+  const editedInterval = editingIntervalId && intervals.find((interval) => interval.id === editingIntervalId);
+  const editedRange = activePhase ?? editedInterval;
+  const editedRangeStart = editedRange ? timelinePosition(Date.parse(editedRange.startsAt), dayBounds) : 0;
+  const editedRangeEnd = editedRange ? timelinePosition(Date.parse(editedRange.endsAt), dayBounds) : 0;
+  const closeRecordedMenu = useCallback(() => {
+    setRecordedMenu(null);
+    if (recordedMenu) slotRefs.current[recordedMenu.slot]?.focus({ preventScroll: true });
+  }, [recordedMenu]);
 
-  useEffect(() => { setSelectedRecordedIntervalId(null); }, [client, personId, selectedDay]);
+  useEffect(() => { setRecordedMenu(null); }, [canEdit, client, editingIntervalId, isSaving, personId, selectedDay]);
   useEffect(() => {
     const clearGesture = () => {
       if (!drag.current && !resizeDrag.current) return;
@@ -511,13 +537,39 @@ export function WorkingTimeEntryBoard({
     onEndsAtChange(`${crossesMidnight ? addDays(day, 1) : day}T${endTime}`);
   }
 
-  function handleSlotKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, slot: number) {
+  function openRecordedMenu(interval: WorkingTimeInterval, slot: number, position: AppContextMenuPosition) {
+    if (!canEdit || isSaving || drag.current || resizeDrag.current) return;
+    setRecordedMenu({ intervalId: interval.id, slot, position });
+  }
+
+  function selectRecordedInterval(interval: WorkingTimeInterval) {
+    if (canEdit && !isSaving && interval.id !== editingIntervalId && !drag.current && !resizeDrag.current) onEditInterval(interval);
+  }
+
+  function handleSlotKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, slot: number, recordedInterval: WorkingTimeInterval | null) {
+    const activation = event.key === 'Enter' || event.key === ' ';
+    const contextInterval = recordedInterval ?? (selectedSlots[slot] ? editedInterval : null);
+    if (contextInterval && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+      event.preventDefault();
+      const bounds = event.currentTarget.getBoundingClientRect();
+      openRecordedMenu(contextInterval, slot, { x: bounds.left, y: bounds.bottom });
+      return;
+    }
+    if (recordedInterval && activation) {
+      event.preventDefault();
+      selectRecordedInterval(recordedInterval);
+      return;
+    }
+    if (activation && editedInterval && selectedSlots[slot]) {
+      event.preventDefault();
+      return;
+    }
     let target: number;
     if (event.key === 'ArrowDown' || event.key === 'ArrowRight') target = Math.min(47, slot + 1);
     else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') target = Math.max(0, slot - 1);
     else if (event.key === 'Home') target = 0;
     else if (event.key === 'End') target = 47;
-    else if (event.key === 'Enter' || event.key === ' ') {
+    else if (activation) {
       event.preventDefault();
       const selectionStart = selectedSlots.findIndex(Boolean);
       const selectionEnd = selectedSlots.lastIndexOf(true);
@@ -538,7 +590,7 @@ export function WorkingTimeEntryBoard({
     ? currentRecommendationError ? 'Analyse indisponible' : combinedPhases.length ? 'Analyse en cours' : 'Sélectionnez une période'
     : status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
   const maxRecommended = currentRecommendation?.alreadyNonCompliant ? 0 : currentRecommendation?.maxAdditionalSeconds || 0;
-  const commentRequired = amplitudeCommentRequired || (combinedPhases.length > 0 && (externalAnalysis
+  const commentRequired = amplitudeCommentRequired || (!editingIntervalId && combinedPhases.length > 0 && (externalAnalysis
     ? currentRecommendation?.assignmentCoverage?.some((scope) => scope.status === 'uncovered')
     : status === 'alerte' || status === 'non_conforme'));
   const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(currentRecommendationError)
@@ -568,31 +620,6 @@ export function WorkingTimeEntryBoard({
         })}
       </div>
 
-      {canEdit ? (
-        <div aria-label="Amplitude de travail" className="working-time-amplitude" role="group">
-          <div className="working-time-amplitude-labels">
-            <span>Amplitude normale <strong>12h00</strong><small>Sans commentaire d’amplitude</small></span>
-            <span>Amplitude maximale <strong>14h00</strong><small>Situation d’urgence</small></span>
-          </div>
-          <div
-            aria-label="Amplitude prévue"
-            aria-valuemax={MAXIMUM_AMPLITUDE_SECONDS / 60}
-            aria-valuemin={0}
-            aria-valuenow={Math.min(MAXIMUM_AMPLITUDE_SECONDS, amplitudeSeconds) / 60}
-            aria-valuetext={amplitudeLabel}
-            className={`working-time-amplitude-rail${amplitudeLimitExceeded ? ' is-exceeded' : amplitudeCommentPrompt ? ' is-emergency' : ''}`}
-            role="meter"
-          >
-            <span aria-hidden="true" style={{ width: `${Math.min(100, amplitudeSeconds / MAXIMUM_AMPLITUDE_SECONDS * 100)}%` }} />
-          </div>
-          {amplitudeSeconds > 0 ? <p className="working-time-amplitude-reading"><strong>Amplitude prévue {amplitudeLabel}</strong></p> : null}
-          {amplitudeCommentPrompt ? <p className={`working-time-amplitude-prompt${amplitudeLimitExceeded ? ' is-exceeded' : ''}`} id={amplitudePromptId} role="status">
-            {amplitudeLimitExceeded ? 'Amplitude maximale de 14h00 dépassée. ' : null}
-            Renseignez un commentaire pour justifier le dépassement de 12h00.
-          </p> : null}
-        </div>
-      ) : null}
-
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
           <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>{allowPhaseResize ? 'Glissez pour ajouter · ajustez les bords des périodes · pas de 30 min' : 'Glissez plusieurs fois pour ajouter des périodes · pas de 30 min'}</small>}</div>
@@ -602,47 +629,63 @@ export function WorkingTimeEntryBoard({
               {Array.from({ length: 48 }, (_, slot) => {
                 const label = slotLocalValue(selectedDay, slot).slice(11);
                 const recordedInterval = recordedIntervalBySlot[slot];
-                const className = [occupiedSlots[slot] ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
+                const contextInterval = recordedInterval ?? (selectedSlots[slot] ? editedInterval : null);
+                const className = [recordedInterval ? 'is-occupied' : '', pendingSlots[slot] ? 'is-pending' : '', selectedSlots[slot] ? 'is-selected' : '', slot % 2 === 0 ? 'is-hour' : ''].filter(Boolean).join(' ');
                 return (
                   <button
-                    aria-label={`${label}, ${occupiedSlots[slot] ? 'travail enregistré, cliquer pour corriger ou retirer' : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
+                    aria-expanded={contextInterval && canEdit ? recordedMenu?.slot === slot : undefined}
+                    aria-haspopup={contextInterval && canEdit ? 'menu' : undefined}
+                    aria-keyshortcuts={contextInterval && canEdit ? 'Shift+F10' : undefined}
+                    aria-label={`${label}, ${recordedInterval ? `travail enregistré${canEdit ? ', actions de la plage' : ''}` : pendingSlots[slot] ? 'période à enregistrer' : 'repos'}${selectedSlots[slot] ? ', sélectionné' : ''}`}
                     aria-selected={selectedSlots[slot]}
                     className={className}
                     disabled={!canEdit || isSaving}
                     key={slot}
-                    onKeyDown={(event) => handleSlotKeyDown(event, slot)}
-                    onClick={() => { if (recordedInterval) setSelectedRecordedIntervalId(recordedInterval.id); }}
+                    onKeyDown={(event) => handleSlotKeyDown(event, slot, recordedInterval)}
+                    onClick={() => { if (recordedInterval) selectRecordedInterval(recordedInterval); }}
+                    onContextMenu={(event) => {
+                      if (!contextInterval || !canEdit || isSaving) return;
+                      event.preventDefault();
+                      openRecordedMenu(contextInterval, slot, { x: event.clientX, y: event.clientY });
+                    }}
                     onPointerDown={(event) => {
                       if (resizeDrag.current) return;
                       if (!canEdit || isSaving || event.button > 0 || drag.current) return;
-                      if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
-                      drag.current = { pointerId: event.pointerId, first: slot, last: slot, startsAt, endsAt };
+                      if (recordedInterval) return;
+                      const preserveOnClick = Boolean(editedInterval && selectedSlots[slot]);
+                      drag.current = { pointerId: event.pointerId, first: slot, last: slot, startsAt, endsAt, preserveOnClick };
                       onTimelineGestureChange?.(true);
                       event.currentTarget.setPointerCapture?.(event.pointerId);
-                      setActivePendingIndex(null); selectSlots(slot, slot);
+                      setActivePendingIndex(null);
+                      if (!preserveOnClick) selectSlots(slot, slot);
                     }}
                     onPointerEnter={(event) => {
-                      if (drag.current && drag.current.pointerId === event.pointerId) {
+                      if (drag.current && drag.current.pointerId === event.pointerId && drag.current.last !== slot) {
                         drag.current.last = slot; selectSlots(drag.current.first, slot);
                       }
                     }}
                     onPointerMove={(event) => {
                       if (!drag.current || drag.current.pointerId !== event.pointerId) return;
                       const target = pointedSlot(event, slot);
-                      if (target !== null) { drag.current.last = target; selectSlots(drag.current.first, target); }
+                      if (target !== null && target !== drag.current.last) { drag.current.last = target; selectSlots(drag.current.first, target); }
                     }}
                     onPointerUp={(event) => {
                       const current = drag.current;
                       if (!current || current.pointerId !== event.pointerId) return;
                       const target = pointedSlot(event, slot);
                       drag.current = null;
-                      commitSlots(current.first, target ?? current.last);
+                      const last = target ?? current.last;
+                      if (current.preserveOnClick && last === current.first) {
+                        onStartsAtChange(current.startsAt);
+                        onEndsAtChange(current.endsAt);
+                      } else commitSlots(current.first, last);
                       onTimelineGestureChange?.(false);
                     }}
                     onPointerCancel={cancelDrag}
                     onLostPointerCapture={cancelDrag}
                     ref={(element) => { slotRefs.current[slot] = element; }}
                     role="gridcell"
+                    title={contextInterval && canEdit ? 'Clic droit ou Maj+F10 pour ouvrir les actions' : undefined}
                     type="button"
                   >
                     <time>{slot % 2 === 0 ? `${label.slice(0, 2)}h` : ''}</time><span />
@@ -696,7 +739,46 @@ export function WorkingTimeEntryBoard({
                 ><span aria-hidden="true" /><span className="sr-only">{edge === 'start' ? 'Début' : 'Fin'}</span></button>;
               }))}
             </div> : null}
+            {canEdit && editedInterval && editedRangeEnd > editedRangeStart ? (
+              <button
+                aria-label="Retirer la période sélectionnée"
+                className="working-time-selected-period-remove"
+                disabled={isSaving}
+                onClick={() => onRequestVoid(editedInterval)}
+                style={{ left: `max(26px, ${editedRangeEnd}%)` }}
+                title="Retirer la période sélectionnée"
+                type="button"
+              ><X aria-hidden="true" size={18} /></button>
+            ) : null}
             </div>
+            {canEdit || recordedAmplitude ? (
+              <div aria-label="Amplitude de travail" className="working-time-amplitude" role="group">
+                <div
+                  aria-label={amplitudeSourceLabel}
+                  aria-valuemax={MAXIMUM_AMPLITUDE_SECONDS / 60}
+                  aria-valuemin={0}
+                  aria-valuenow={Math.min(MAXIMUM_AMPLITUDE_SECONDS, amplitudeSeconds) / 60}
+                  aria-valuetext={amplitudeLabel}
+                  className={`working-time-amplitude-rail${amplitudeLimitExceeded ? ' is-exceeded' : amplitudeSeconds > NORMAL_AMPLITUDE_SECONDS ? ' is-emergency' : ''}`}
+                  role="meter"
+                >
+                  {amplitudeEnd > amplitudeStart ? <span aria-hidden="true" className="working-time-amplitude-band" style={{ left: `${amplitudeStart}%`, width: `${amplitudeEnd - amplitudeStart}%` }} /> : null}
+                  {normalThreshold !== null && isOnTimeline(normalThreshold) ? <span aria-hidden="true" className="working-time-amplitude-marker is-normal" style={{ left: `${timelinePosition(normalThreshold, dayBounds)}%` }} title="Amplitude normale · 12h00" /> : null}
+                  {maximumThreshold !== null && isOnTimeline(maximumThreshold) ? <span aria-hidden="true" className="working-time-amplitude-marker is-maximum" style={{ left: `${timelinePosition(maximumThreshold, dayBounds)}%` }} title="Amplitude maximale · 14h00" /> : null}
+                </div>
+                <div className="working-time-amplitude-labels">
+                  {amplitude ? <strong aria-label={recordedAmplitude ? amplitudeSourceLabel : undefined} className="working-time-amplitude-reading" role={recordedAmplitude ? 'status' : undefined}>{amplitudeSourceLabel} {amplitudeLabel}</strong> : null}
+                  <span className="is-normal">Amplitude normale <strong>12h00</strong><small>Sans commentaire d’amplitude</small></span>
+                  <span className="is-maximum">Amplitude maximale <strong>14h00</strong><small>Situation d’urgence</small></span>
+                </div>
+                {amplitudeCommentPrompt || amplitudeLimitExceeded ? (
+                  <p className={`working-time-amplitude-prompt${amplitudeLimitExceeded ? ' is-exceeded' : ''}`} id={amplitudePromptId} role="status">
+                    {amplitudeLimitExceeded ? 'Amplitude maximale de 14h00 dépassée.' : null}
+                    {amplitudeCommentPrompt ? `${amplitudeLimitExceeded ? ' ' : ''}Renseignez un commentaire pour justifier le dépassement de 12h00.` : null}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {previewGraph ? (
               <div
                 aria-label={`${previewGraph.isProjected ? 'Projection en cours de saisie' : 'Analyse des périodes enregistrées'}. ${previewGraph.windowLabel}. ${previewGraph.workTotalLabel}. ${previewGraph.excessLabel || previewGraph.summaryLabel || 'Aucun dépassement du seuil de travail sur cette fenêtre.'}${previewGraph.workLimitMarkerMinute !== null ? ` Seuil atteint à ${minuteLabel(previewGraph.workLimitMarkerMinute)}.` : ''}${previewGraph.ruleAlerts?.length ? ` ${previewGraph.ruleAlerts.join('. ')}.` : ''}${previewGraph.contextNotes?.length ? ` ${previewGraph.contextNotes.join('. ')}.` : ''}`}
@@ -741,7 +823,6 @@ export function WorkingTimeEntryBoard({
               </div>
             ) : null}
           </div>
-          {selectedRecordedInterval ? <div className="working-time-recorded-period-actions" role="group" aria-label="Actions de la plage enregistrée"><span><strong>{formatDateTime(selectedRecordedInterval.startsAt)}</strong> → {formatDateTime(selectedRecordedInterval.endsAt)}</span><div><button disabled={!canEdit || isSaving} onClick={() => { setSelectedRecordedIntervalId(null); onEditInterval(selectedRecordedInterval); }} type="button"><PenLine size={15} />Corriger</button><button disabled={!canEdit || isSaving} onClick={() => { setSelectedRecordedIntervalId(null); onRequestVoid(selectedRecordedInterval); }} type="button"><Trash2 size={15} />Retirer</button><button aria-label="Fermer les actions" disabled={isSaving} onClick={() => setSelectedRecordedIntervalId(null)} type="button">×</button></div></div> : null}
         </div>
 
         <div className="working-time-recommendation-panel" aria-live="polite">
@@ -792,6 +873,20 @@ export function WorkingTimeEntryBoard({
         <p className="working-time-lock-note">Cette journée est en lecture seule pour son statut actuel.</p>
         {showValidate ? <div className="working-time-form-actions is-readonly"><button disabled={isSaving || validateDisabled} onClick={() => onSubmit([], 'validate-day')} type="button"><UserCheck aria-hidden="true" size={16}/>Valider la journée</button></div> : null}
       </>}
+      {recordedMenu && menuInterval && canEdit && !isSaving ? createPortal(
+        <div onKeyDown={(event) => { if (event.key === 'Tab') closeRecordedMenu(); }}>
+          <AppContextMenu label="Actions de la plage enregistrée" onClose={closeRecordedMenu} position={recordedMenu.position}>
+            <span className="app-context-menu__label">{formatDateTime(menuInterval.startsAt)} → {formatDateTime(menuInterval.endsAt)}</span>
+            <AppContextMenuItem onSelect={() => { closeRecordedMenu(); selectRecordedInterval(menuInterval); }}>
+              <PenLine aria-hidden="true" size={15} />Corriger
+            </AppContextMenuItem>
+            <AppContextMenuItem danger onSelect={() => { closeRecordedMenu(); onRequestVoid(menuInterval); }}>
+              <Trash2 aria-hidden="true" size={15} />Retirer
+            </AppContextMenuItem>
+          </AppContextMenu>
+        </div>,
+        document.body,
+      ) : null}
     </section>
   );
 }

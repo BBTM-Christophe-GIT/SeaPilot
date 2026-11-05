@@ -94,6 +94,38 @@ cross join (values
 where person.sailor_number in ('CI-BROWSER-1', 'CI-BROWSER-2')
 on conflict do nothing;
 
+-- The editing guard also applies to fixture inserts. Seed with each owner's identity.
+do $fixture$
+declare actor record;
+begin
+  for actor in select id, user_id, company_id, sailor_number from public.people
+    where sailor_number in ('CI-BROWSER-1', 'CI-BROWSER-2')
+  loop
+    perform set_config('request.jwt.claim.sub', actor.user_id::text, true);
+    insert into public.working_time_intervals (
+      company_id, register_id, person_id, local_work_date, starts_at, ends_at,
+      timezone_name, utc_offset_minutes, vessel_id, watch_group, source_type, source_record_key
+    )
+    select actor.company_id, register.id, actor.id, entry.work_date,
+      instant.starts_at, instant.ends_at,
+      'Europe/Paris', (extract(epoch from ((instant.starts_at at time zone 'Europe/Paris')
+        - (instant.starts_at at time zone 'UTC'))) / 60)::smallint,
+      vessel.id, 'CI Bordée', 'migration', concat_ws(':', 'ci-amplitude', actor.id, entry.work_date, phase.starts_at)
+    from (values (0), (1), (2), (3)) fixture_day(days_ago)
+    cross join lateral (select current_date - fixture_day.days_ago work_date) entry
+    join public.working_time_registers register on register.person_id = actor.id
+      and register.period_kind = 'monthly' and entry.work_date between register.period_start and register.period_end
+    join public.vessels vessel on vessel.company_id = actor.company_id and vessel.acronym = 'CI-A'
+    cross join (values (time '08:00', time '12:00'), (time '16:00', time '19:30')) phase(starts_at, ends_at)
+    cross join lateral (select (entry.work_date + phase.starts_at) at time zone 'Europe/Paris' starts_at,
+      (entry.work_date + phase.ends_at) at time zone 'Europe/Paris' ends_at) instant
+    where fixture_day.days_ago < 2 or actor.sailor_number = 'CI-BROWSER-1'
+    on conflict do nothing;
+  end loop;
+  perform set_config('request.jwt.claim.sub', '', true);
+end;
+$fixture$;
+
 insert into public.dpr_reports (
   company_id, vessel_id, report_date, unlisted_project_name, issuer_user_id,
   issuer_name_snapshot, description, created_by, source_label
