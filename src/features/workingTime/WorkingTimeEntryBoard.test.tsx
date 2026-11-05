@@ -53,6 +53,8 @@ function Harness({
   planningContextLoading = false,
   planningVesselId = 7,
   approverName = 'Camille CAPITAINE',
+  initialEnd = '12:00',
+  onTimelineGestureChange,
 }: {
   onSubmit?: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   saveDraft?: boolean;
@@ -66,28 +68,32 @@ function Harness({
   planningContextLoading?: boolean;
   planningVesselId?: number | null;
   approverName?: string | null;
+  initialEnd?: string;
+  onTimelineGestureChange?: (active: boolean) => void;
 }) {
   const [startsAt, setStartsAt] = useState('2026-08-03T08:00');
-  const [endsAt, setEndsAt] = useState('2026-08-03T12:00');
+  const [endsAt, setEndsAt] = useState(`2026-08-03T${initialEnd}`);
+  const [comment, setComment] = useState('');
   const [pendingPhases, setPendingPhases] = useState<WorkingTimePhaseInput[]>([]);
   return (
     <WorkingTimeEntryBoard
       approverName={approverName}
       canEdit
       client={fixtureClient}
-      comment=""
+      comment={comment}
       editingIntervalId={editingIntervalId}
       endsAt={endsAt}
       intervals={intervals}
       isSaving={isSaving}
       onCancelEdit={onCancelEdit}
-      onCommentChange={vi.fn()}
+      onCommentChange={setComment}
       onEndsAtChange={setEndsAt}
       onEditInterval={onEditInterval}
       onPendingPhasesChange={setPendingPhases}
       onRequestVoid={onRequestVoid}
       onStartsAtChange={setStartsAt}
       onSubmit={onSubmit}
+      onTimelineGestureChange={onTimelineGestureChange}
       periodEnd="2026-08-09"
       periodStart="2026-08-03"
       personId={42}
@@ -123,6 +129,41 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByText('Conformité repos')).toBeInTheDocument();
     expect(screen.getByText('Conforme', { selector: '.working-time-analysis-bar dd' })).toBeInTheDocument();
   });
+
+  it.each([
+    ['20:00', '12 h 00', false, false],
+    ['20:01', '12 h 01', true, false],
+    ['22:00', '14 h 00', true, false],
+    ['22:01', '14 h 01', true, true],
+  ] as const)('displays the projected amplitude for a phase ending at %s', (initialEnd, label, required, exceeded) => {
+    render(<Harness initialEnd={initialEnd} />);
+
+    expect(screen.getByRole('group', { name: 'Amplitude de travail' })).toHaveTextContent('Amplitude normale 12h00');
+    expect(screen.getByRole('group', { name: 'Amplitude de travail' })).toHaveTextContent('Amplitude maximale 14h00');
+    expect(screen.getByRole('meter', { name: 'Amplitude prévue' })).toHaveAttribute('aria-valuetext', label);
+    expect(screen.getByRole('textbox', { name: required ? 'Commentaire obligatoire' : 'Commentaire' }))
+      .toHaveAttribute('aria-required', String(required));
+    expect(Boolean(screen.queryByText(/Amplitude maximale de 14h00 dépassée/))).toBe(exceeded);
+  });
+
+  it('requires a nonblank amplitude comment before saving a draft even with a conforming server result', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness initialEnd="20:01" onSubmit={onSubmit} saveDraft />);
+    const save = screen.getByRole('button', { name: 'Enregistrer le brouillon' });
+    const comment = screen.getByRole('textbox', { name: 'Commentaire obligatoire' });
+    await waitFor(() => expect(save).toBeEnabled());
+
+    await user.type(comment, '   ');
+    await user.click(save);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(comment).toHaveFocus();
+
+    await user.type(comment, 'Intervention de sécurité');
+    await user.click(save);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
   it('blocks saving and submitting before the current recommendation is available', async () => {
     const pending = deferred<typeof recommendation>();
     vi.mocked(fetchWorkingTimePhasesRecommendation).mockReturnValue(pending.promise);
@@ -169,12 +210,16 @@ describe('WorkingTimeEntryBoard', () => {
   });
 
   it('selects a continuous interval by pointer drag', () => {
-    render(<Harness />);
+    const onTimelineGestureChange = vi.fn();
+    render(<Harness onTimelineGestureChange={onTimelineGestureChange} />);
     const cells = screen.getAllByRole('gridcell');
 
     fireEvent.pointerDown(cells[16]);
+    expect(onTimelineGestureChange).toHaveBeenLastCalledWith(true);
     fireEvent.pointerEnter(cells[19]);
+    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuetext', '2 h 00');
     fireEvent.pointerUp(cells[19]);
+    expect(onTimelineGestureChange).toHaveBeenLastCalledWith(false);
 
     expect(screen.getByText('08:00–10:00')).toBeInTheDocument();
   });

@@ -1,10 +1,13 @@
 .working-time-workflow .working-time-live-compliance { display: grid; grid-column: 1 / -1; gap: 12px; min-width: 0; color: var(--sp-text); font-size: 12px; }
 .working-time-workflow .working-time-live-status { display: flex; align-items: start; gap: 6px; margin: 0; padding: 12px; border-radius: var(--sp-control-radius); color: var(--sp-muted); background: var(--sp-canvas); }
 .working-time-workflow .working-time-live-status svg { flex-shrink: 0; }
-.working-time-workflow .working-time-live-status.is-deviation { color: #9d2638; background: #fff0f2; }
+.working-time-workflow .working-time-live-status.is-deviation { padding: 6px 8px; color: #9d2638; background: #fff0f2; }
 .working-time-workflow .working-time-live-status.is-ok { color: #23663f; background: #e9f7ee; }
 .working-time-workflow .working-time-compatible-window { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); line-height: 1.5; }
 .working-time-workflow .working-time-compatible-window ol, .working-time-workflow .working-time-compatible-window ul { max-height: 240px; overflow-y: auto; padding-left: 18px; margin: 8px 0; }
+.working-time-workflow .working-time-compatible-window.is-uncovered { gap: 3px; padding: 5px 7px; line-height: 1.3; }
+.working-time-workflow .working-time-compatible-window.is-uncovered ol,
+.working-time-workflow .working-time-compatible-window.is-uncovered ul { margin: 2px 0; padding-left: 15px; }
 .working-time-workflow .working-time-live-policy { display: grid; gap: 8px; }
 .working-time-workflow .working-time-live-policy strong { overflow-wrap: anywhere; }
 .working-time-workflow .working-time-live-rule { display: flex; gap: 8px; min-width: 0; padding: 12px 0; border-top: 1px solid var(--sp-border); }
@@ -16,6 +19,72 @@
 .working-time-workflow .working-time-live-rule strong { display: block; font-size: 16px; }
 .working-time-workflow .working-time-live-rule small, .working-time-workflow .working-time-live-rule b { display: block; margin-top: 4px; overflow-wrap: anywhere; }
 .working-time-workflow .working-time-live-compliance > small { color: var(--sp-muted); line-height: 1.5; }
+.working-time-workflow .working-time-amplitude {
+  display: grid;
+  gap: var(--sp-space-1);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  color: var(--sp-text);
+  font-size: .75rem;
+}
+.working-time-workflow .working-time-amplitude-labels { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.working-time-workflow .working-time-amplitude-labels strong { margin-inline-start: 3px; color: var(--sp-success); }
+.working-time-workflow .working-time-amplitude-labels > :last-child strong { color: var(--sp-warning); }
+.working-time-workflow .working-time-amplitude-labels small { display: block; color: var(--sp-muted); font-size: inherit; }
+.working-time-workflow .working-time-amplitude-rail {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sp-success) 14%, var(--sp-surface)) 85.714%, var(--sp-warning-soft) 85.714%);
+}
+.working-time-workflow .working-time-amplitude-rail::after {
+  position: absolute;
+  inset: 0 auto 0 85.714%;
+  border-left: 1px solid var(--sp-warning);
+  content: '';
+}
+.working-time-workflow .working-time-amplitude-rail > span { display: block; height: 100%; background: var(--sp-success); }
+.working-time-workflow .working-time-amplitude-rail.is-emergency > span { background: var(--sp-warning); }
+.working-time-workflow .working-time-amplitude-rail.is-exceeded > span { background: var(--sp-danger); }
+.working-time-workflow .working-time-amplitude-reading,
+.working-time-workflow .working-time-amplitude-prompt { margin: 0; }
+.working-time-workflow .working-time-amplitude-prompt { color: var(--sp-warning); }
+.working-time-workflow .working-time-amplitude-prompt.is-exceeded { color: var(--sp-danger); }
+.working-time-workflow .working-time-non-compliance { gap: 6px; padding: 8px; }
+.working-time-workflow .working-time-non-compliance-card { gap: 6px; padding: 6px 8px; }
+.working-time-workflow .working-time-non-compliance-card > header span { padding: 2px 6px; }
+.working-time-workflow .working-time-non-compliance-reasons {
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 4px;
+}
+.working-time-workflow .working-time-non-compliance-reasons p { padding: 4px 6px; overflow-wrap: anywhere; }
+.working-time-workflow .working-time-non-compliance-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 7px; }
+.working-time-workflow .working-time-non-compliance-fields .is-wide { grid-column: span 2; }
+.working-time-workflow .working-time-non-compliance-fields label { gap: 2px; min-width: 0; }
+.working-time-workflow .working-time-non-compliance-fields select,
+.working-time-workflow .working-time-non-compliance-fields textarea { width: 100%; min-height: var(--sp-control-height); padding: 3px 6px; }
+.working-time-workflow .working-time-non-compliance-fields textarea { height: var(--sp-control-height); }
+.working-time-workflow .working-time-non-compliance-card > button { min-height: var(--sp-control-height); padding: 4px 9px; }
+@container app-content (min-width: 721px) {
+  .working-time-workflow .working-time-non-compliance-card { grid-template-columns: auto minmax(0, 1fr); }
+  .working-time-workflow .working-time-non-compliance-card > header { align-self: start; }
+  .working-time-workflow .working-time-non-compliance-fields,
+  .working-time-workflow .working-time-non-compliance-card > button { grid-column: 1 / -1; }
+}
+@container app-content (max-width: 720px) {
+  .working-time-workflow .working-time-non-compliance-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container app-content (max-width: 360px) {
+  .working-time-workflow .working-time-non-compliance-fields { grid-template-columns: minmax(0, 1fr); }
+  .working-time-workflow .working-time-non-compliance-fields .is-wide { grid-column: 1; }
+}
+@media (pointer: coarse) {
+  .working-time-workflow .working-time-non-compliance-card > button,
+  .working-time-workflow .working-time-non-compliance-fields select,
+  .working-time-workflow .working-time-non-compliance-fields textarea { min-height: 44px; }
+}
 .working-time-workflow .working-time-timeline-track { min-width: 616px; padding-right: 16px; }
 .working-time-workflow .working-time-timeline-frame { position: relative; }
 .working-time-workflow .working-time-timeline { padding-left: 0; padding-right: 0; padding-bottom: 0; }

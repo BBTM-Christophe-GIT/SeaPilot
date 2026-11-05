@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeWorkingTimePreview,
   PREVIEW_DEMO_POLICY,
+  projectedEntryAmplitudeSeconds,
 } from './workingTimePreviewProjection';
 import type { PreviewWorkPhase, WorkingTimePreviewInput } from './workingTimePreviewProjection';
 
@@ -16,6 +17,24 @@ function project(overrides: Partial<WorkingTimePreviewInput> = {}) {
     ...overrides,
   });
 }
+
+describe('amplitude affected by an entry', () => {
+  it('includes short breaks and retained work across midnight, excluding an unrelated long sequence', () => {
+    const history = [
+      phase('2026-10-11', '00:00', '18:00'),
+      phase('2026-10-12', '19:00', '23:00'),
+      phase('2026-10-13', '03:00', '07:01'),
+    ];
+    expect(projectedEntryAmplitudeSeconds(history, [phase('2026-10-13', '01:00', '02:00')])).toBe(12 * 3600 + 60);
+  });
+
+  it('restarts at exactly the applicable rest threshold', () => {
+    const history = [phase('2026-10-13', '02:00', '06:00')];
+    const pending = [phase('2026-10-13', '12:00', '20:00')];
+    expect(projectedEntryAmplitudeSeconds(history, pending, 6)).toBe(8 * 3600);
+    expect(projectedEntryAmplitudeSeconds(history, pending, 7)).toBe(18 * 3600);
+  });
+});
 
 describe('working time entry preview projection', () => {
   it('keeps raw rolling totals while applying the legacy work threshold to calculation days', () => {

@@ -1195,6 +1195,55 @@ describe('WorkingTimeWorkflowPanel', () => {
     expect(saveWorkingTimePhases).not.toHaveBeenCalled();
   });
 
+  it('waits for the drag to finish and sends only the latest draft behind an in-flight analysis', async () => {
+    vi.useFakeTimers();
+    try {
+      const firstResponse = deferred<WorkingTimeEntryRecommendation>();
+      const analysis = vi.mocked(fetchWorkingTimeAssignmentAnalysis);
+      analysis.mockReturnValueOnce(firstResponse.promise);
+      renderPanel(['marin'], workspace('draft'), { ...currentPerson, functionLabel: 'Matelot' }, '2026-08-03');
+      await act(async () => {});
+      const cells = screen.getAllByRole('gridcell');
+
+      fireEvent.pointerDown(cells[36]);
+      fireEvent.pointerEnter(cells[37]);
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(analysis).toHaveBeenCalledTimes(1);
+
+      fireEvent.pointerCancel(cells[37]);
+      await act(async () => {
+        firstResponse.resolve(analysisResult({}));
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(analysis).toHaveBeenCalledTimes(1);
+
+      const firstDraftResponse = deferred<WorkingTimeEntryRecommendation>();
+      analysis.mockReturnValueOnce(firstDraftResponse.promise);
+      fireEvent.pointerDown(cells[36]);
+      fireEvent.pointerEnter(cells[37]);
+      fireEvent.pointerUp(cells[37]);
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(analysis).toHaveBeenCalledTimes(2);
+
+      fireEvent.keyDown(cells[40], { key: 'Enter' });
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      fireEvent.keyDown(cells[44], { key: 'Enter' });
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(analysis).toHaveBeenCalledTimes(2);
+
+      await act(async () => firstDraftResponse.resolve(analysisResult({})));
+      expect(analysis).toHaveBeenCalledTimes(3);
+      expect(analysis).toHaveBeenLastCalledWith(client, expect.objectContaining({
+        phases: [['18:00', '19:00'], ['20:00', '20:30'], ['22:00', '22:30']].map(([start, end]) => ({
+          startsAt: new Date(`2026-08-03T${start}`).toISOString(),
+          endsAt: new Date(`2026-08-03T${end}`).toISOString(),
+        })),
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows the effective vessel policy instead of an older policy stored on the register', async () => {
     const data = workspace('draft');
     const legacy = data.policies[0];
