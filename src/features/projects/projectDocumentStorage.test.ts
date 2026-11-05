@@ -179,6 +179,34 @@ describe('projectDocumentStorage', () => {
     expect(rpc).toHaveBeenCalledWith('projects_register_storage_attachment', expect.objectContaining({ target_mime_type: 'application/pdf' }));
   });
 
+  it.each(['application/x-zip-compressed', 'application/zip', ''])(
+    'uploads and registers a ZIP with the standard MIME type when the browser reports "%s"',
+    async (browserMimeType) => {
+      const upload = vi.fn().mockResolvedValue({ error: null });
+      const rpc = vi.fn().mockResolvedValue({ data: 93, error: null });
+      const client = { rpc, storage: { from: vi.fn(() => ({ upload })) } };
+      const archive = new JSZip().file('Vetting.txt', 'Contractor requirements');
+      const bytes = await archive.generateAsync({ type: 'arraybuffer' });
+      const file = new File([bytes], 'Contractor Required Information.ZIP', { type: browserMimeType });
+
+      await expect(storeProjectAttachment(client as never, {
+        projectId: 144,
+        draft: { id: 'vetting', categoryKey: 'hse', subcategoryKey: 'hse_vetting', expiresOn: '', file },
+      })).resolves.toMatchObject({ id: 93 });
+
+      expect(upload).toHaveBeenCalledWith(
+        expect.stringContaining('projects/144/attachments/hse/hse_vetting/'),
+        file,
+        expect.objectContaining({ contentType: 'application/zip', upsert: false }),
+      );
+      expect(rpc).toHaveBeenCalledWith('projects_register_storage_attachment', expect.objectContaining({
+        target_file_name: file.name,
+        target_file_size_bytes: file.size,
+        target_mime_type: 'application/zip',
+      }));
+    },
+  );
+
   it('rejects files above the existing project limit before reading or sending their bytes', async () => {
     const file = new File(['%PDF'], 'Trop grand.pdf', { type: 'application/pdf' });
     Object.defineProperty(file, 'size', { value: PROJECT_ATTACHMENT_MAX_BYTES + 1 });
