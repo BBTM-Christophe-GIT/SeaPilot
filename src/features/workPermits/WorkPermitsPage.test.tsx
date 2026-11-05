@@ -128,7 +128,7 @@ describe('registre opérationnel des permis de travaux', () => {
       fireEvent.change(screen.getByLabelText('Horizontal (%)'), { target: { value: 20 } });
       fireEvent.change(screen.getByLabelText('Vertical (%)'), { target: { value: 42 } });
       fireEvent.click(screen.getByRole('button', { name: 'Ajouter le sommet' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Terminer le tracé' }));
+      expect(screen.queryByRole('button', { name: 'Terminer le tracé' })).not.toBeInTheDocument();
     }
     drawTriangle();
     fireEvent.change(screen.getByLabelText('Plan affiché'), { target: { value: 'pont-superieur' } });
