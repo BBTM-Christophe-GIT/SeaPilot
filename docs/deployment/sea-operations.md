@@ -435,6 +435,13 @@ d’une référence.
 Armement utilise une grille compacte de deux colonnes lorsque son propre panneau
 est assez large ; les champs et les boutons gardent une cible tactile de 44 px.
 Les consignes DAPAQ restent consultables dans un détail repliable.
+Dans la DAPAQ, **Préparée par** est à gauche et **Mode de déclaration** à droite
+sur deux colonnes. Choisir **Client** sélectionne automatiquement **Non applicable**.
+Cette combinaison est requise dès l’enregistrement du brouillon. Le mode reste
+sélectionné après avoir décoché **Client** et peut alors être modifié.
+Les deux choix sont enregistrés dans la fiche et figurent dans l’aperçu et le PDF.
+Appliquer la migration `20261105154323_sea_operation_dapaq_client.sql` avant de
+déployer le formulaire mis à jour.
 
 Le panneau repliable Documents du projet suit le projet sélectionné et permet
 la consultation des documents opérationnels, y compris sur une fiche signée.
@@ -602,6 +609,8 @@ point à la fin du tableau avec un nouvel identifiant et un numéro disponible ;
 latitude et longitude WGS84 sont reportées en degrés décimaux. Le tableau reste
 modifiable pour affiner ces positions et compléter description, ETA et UKC.
 Aucune ETA, UKC, météo ou validation n’est copiée d’un autre waypoint.
+La commande **Importer les waypoints** figure à côté de **Placer les waypoints** dans le
+Passage Plan.
 
 Le cadrage est conservé pendant le placement pour éviter qu’il saute après chaque
 ajout. Les boutons permettent de zoomer, déplacer la vue ou **Cadrer le parcours**.

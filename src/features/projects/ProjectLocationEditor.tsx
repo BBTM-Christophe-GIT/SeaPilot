@@ -2,10 +2,13 @@ import { MapPin, Route, Shapes } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
+import { SeaOperationWaypointImportPanel } from '../seaOperations/SeaOperationWaypointImportPanel';
+import { appendSeaOperationImportedLocation, appendSeaOperationImportedWaypoints,
+  type SeaOperationImportedWaypoint, type SeaOperationWaypointImportTarget } from '../seaOperations/seaOperationWaypointImport';
 import { updateSeaOperationWaypoint } from '../seaOperations/seaOperationWaypointSnapshots';
 import type { SeaPosition } from '../seaOperations/seaOperationNavigation';
 import { ProjectLocationOverlayFields, ProjectLocationPointFields, type ProjectLocationVessel } from './ProjectLocationOverlayFields';
-import { emptyProjectLocationPlan, PROJECT_LOCATION_LIMITS, type ProjectLocationPlan } from './projectLocation';
+import { emptyProjectLocationPlan, parseProjectLocationPlan, PROJECT_LOCATION_LIMITS, type ProjectLocationPlan } from './projectLocation';
 import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
 import { initialSeaOperationDepartureEta } from '../seaOperations/seaOperationRouteEta';
@@ -55,21 +58,44 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     const current = latest.current.plan;
     emit({ ...current, zones: current.zones.map(zone => zone.id === zoneId ? { ...zone, vertices: zone.vertices.map((vertex, vertexIndex) => vertexIndex === index ? { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) } : vertex) } : zone) });
   }
+  function importWaypoints(points: SeaOperationImportedWaypoint[], target: SeaOperationWaypointImportTarget, zoneName?: string) {
+    if (disabled || latest.current.disabled || latest.current.projectId !== projectId || !points.length) return false;
+    const current = latest.current.plan;
+    const next = target === 'route'
+      ? {
+          ...current,
+          etd: !current.waypoints.length && !current.etd.trim() ? initialSeaOperationDepartureEta() : current.etd,
+          waypoints: appendSeaOperationImportedWaypoints(current.waypoints, points),
+        }
+      : {
+          ...current,
+          ...appendSeaOperationImportedLocation({ version: 1, points: current.points, zones: current.zones }, points, target, zoneName),
+        };
+    const validated = parseProjectLocationPlan(projectLocationRouteEtas(next, vessel?.maxSpeedKnots));
+    if (!validated) return false;
+    onChange(validated);
+    return true;
+  }
   return <fieldset className="project-location-editor" disabled={disabled}>
     <legend>Localisation facultative</legend>
     <p className="project-location-help">Préparez une route, des points isolés et des zones sur la même carte. Cette rubrique n’est pas obligatoire pour enregistrer le projet.</p>
     <div className="project-location-settings"><label>ETD · départ prévu<input type="datetime-local" aria-label="ETD de la localisation" value={plan.etd} onChange={event => emit({ ...plan, etd: event.target.value })} /></label><label>Numéro des cartes marines<input value={plan.charts} maxLength={20000} onChange={event => emit({ ...plan, charts: event.target.value })} /></label></div>
     <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>
     <div className="project-location-modes" role="group" aria-label="Mode de dessin"><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'route'} onClick={() => setMode('route')}><Route size={16} aria-hidden="true" />Route</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'point'} onClick={() => setMode('point')}><MapPin size={16} aria-hidden="true" />Point isolé</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'zone'} onClick={() => startZone()}><Shapes size={16} aria-hidden="true" />Zone</button>{mode === 'zone' && plan.zones.length > 0 && <label>Zone à compléter<select value={activeZoneId || ''} onChange={event => setActiveZoneId(event.target.value)}>{plan.zones.map((zone, index) => <option key={zone.id} value={zone.id}>{zone.name || `Zone ${index + 1}`}</option>)}</select></label>}</div>
-    <SeaOperationWaypointMapEditor waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} drawingMode={mode} maxSpeedKnots={vessel?.maxSpeedKnots} etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
-      departurePort={departurePort} arrivalPort={arrivalPort} mapViewport={plan.mapViewport}
-      onMapViewportChange={mapViewport => { const current = latest.current.plan; const next = { ...current }; if (mapViewport) next.mapViewport = { ...mapViewport }; else delete next.mapViewport; emit(next); }}
-      onAddWaypoint={(position, port) => { if (position) addOnMap(position, port); }}
-      onMoveWaypoint={(id, position) => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
-      onDeleteWaypoint={id => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.filter(point => point.id !== id) }); }}
-      onMoveIsolatedPoint={(id, position) => { const current = latest.current.plan; emit({ ...current, points: current.points.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
-      onDeleteIsolatedPoint={id => { const current = latest.current.plan; emit({ ...current, points: current.points.filter(point => point.id !== id) }); }}
-      onMoveZoneVertex={moveVertex} onDeleteZoneVertex={(id, index) => { const current = latest.current.plan; emit({ ...current, zones: current.zones.map(zone => zone.id === id ? { ...zone, vertices: zone.vertices.filter((_vertex, vertexIndex) => vertexIndex !== index) } : zone) }); }} />
+    <SeaOperationWaypointImportPanel key={projectId} disabled={disabled} existingCount={plan.waypoints.length} destinationLabel="la carte" onImport={importWaypoints}>
+      {waypointImport => <SeaOperationWaypointMapEditor
+        waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} drawingMode={mode} maxSpeedKnots={vessel?.maxSpeedKnots}
+        etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
+        departurePort={departurePort} arrivalPort={arrivalPort} mapViewport={plan.mapViewport}
+        waypointImport={waypointImport}
+        onMapViewportChange={mapViewport => { const current = latest.current.plan; const next = { ...current }; if (mapViewport) next.mapViewport = { ...mapViewport }; else delete next.mapViewport; emit(next); }}
+        onAddWaypoint={(position, port) => { if (position) addOnMap(position, port); }}
+        onMoveWaypoint={(id, position) => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
+        onDeleteWaypoint={id => { const current = latest.current.plan; emit({ ...current, waypoints: current.waypoints.filter(point => point.id !== id) }); }}
+        onMoveIsolatedPoint={(id, position) => { const current = latest.current.plan; emit({ ...current, points: current.points.map(point => point.id === id ? updateSeaOperationWaypoint(point, { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) }) : point) }); }}
+        onDeleteIsolatedPoint={id => { const current = latest.current.plan; emit({ ...current, points: current.points.filter(point => point.id !== id) }); }}
+        onMoveZoneVertex={moveVertex} onDeleteZoneVertex={(id, index) => { const current = latest.current.plan; emit({ ...current, zones: current.zones.map(zone => zone.id === id ? { ...zone, vertices: zone.vertices.filter((_vertex, vertexIndex) => vertexIndex !== index) } : zone) }); }} />}
+    </SeaOperationWaypointImportPanel>
     <section aria-label="Route à compléter"><div className="project-location-subheading"><h3>Route</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || plan.waypoints.length >= PROJECT_LOCATION_LIMITS.waypoints} onClick={() => emit({ ...plan, etd: !plan.waypoints.length && !plan.etd.trim() ? initialSeaOperationDepartureEta() : plan.etd, waypoints: [...plan.waypoints, { ...emptySeaOperationWaypoint(), number: String(plan.waypoints.length + 1), etaMode: 'automatic' }] })}>Ajouter un waypoint</button></div>
       <div role="table" aria-label="Waypoints de la route">{plan.waypoints.map((point, index) => <ProjectLocationPointFields key={point.id} point={point} index={index} disabled={disabled} vessel={vessel} projectId={projectId}
         onChange={patch => emit({ ...plan, waypoints: plan.waypoints.map(item => item.id === point.id ? updateSeaOperationWaypoint(item, patch) : item) })} onDelete={() => emit({ ...plan, waypoints: plan.waypoints.filter(item => item.id !== point.id) })} />)}</div>

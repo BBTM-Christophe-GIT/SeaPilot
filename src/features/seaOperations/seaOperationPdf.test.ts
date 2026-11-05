@@ -176,11 +176,18 @@ describe('Sea operation PDF', () => {
     if (process.env.SEAPILOT_SEA_NAMED_ZONE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_SEA_NAMED_ZONE_QA_OUTPUT, generated.bytes);
   });
 
-  it('exports the saved S-WING declaration method without altering the signed record', async () => {
-    const record = fixture(); record.draft.description = 'Déclaration DAPAQ S-WING'; record.draft.dapaq.method = 's_wing';
+  it.each([
+    { method: 's_wing', preparedBy: 'captain', methodLabel: 'S-WING', preparerLabel: 'Le Capitaine' },
+    { method: 'not_applicable', preparedBy: 'client', methodLabel: 'Non applicable', preparerLabel: 'Le Client' },
+  ] as const)('exports the saved DAPAQ mode $method and preparer $preparedBy without altering the signed record', async ({ method, preparedBy, methodLabel, preparerLabel }) => {
+    const record = fixture();
+    record.draft.description = 'Déclaration DAPAQ';
+    record.draft.dapaq = { ...record.draft.dapaq, method, preparedBy };
     const original = structuredClone(record);
     const generated = await generateSeaOperationPdf(record, { templateBytes: await template() });
-    expect((await generatedBodies(generated.bytes)).join('\n')).toContain('(S-WING) Tj');
+    const body = (await generatedBodies(generated.bytes)).join('\n');
+    expect(body).toContain(`(${methodLabel}) Tj`);
+    expect(body).toContain(`(${preparerLabel}) Tj`);
     expect(record).toEqual(original);
   });
 

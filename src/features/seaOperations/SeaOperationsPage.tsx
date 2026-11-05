@@ -959,7 +959,45 @@ export function SeaOperationsPage() {
           {linkedToPlanning && <p className="so-help">Données du projet et du planning sélectionnés. Les informations du voyage restent modifiables. Un changement de mission réinitialise les contrôles et la décision.</p>}
           {draft.transit && <p className="so-help">Transit : renseignez librement le client, le navire et le voyage.</p>}
           <div className="so-armament-personnel-heading"><h3>Personnel spécial à embarquer</h3><button className="so-secondary sp-button sp-button--secondary" onClick={() => update({ specialPersonnel: [...draft.specialPersonnel, { name: '', phone: '' }] })}><Plus size={15} />Ajouter une personne</button></div>{draft.specialPersonnel.map((person, index) => <div className="so-contact" key={index}><Field label={`Prénom NOM ${index + 1}`}><input value={person.name} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, name: event.target.value } : row) })} /></Field><Field label={`Téléphone ${index + 1}`}><input type="tel" value={person.phone} onChange={(event) => update({ specialPersonnel: draft.specialPersonnel.map((row, i) => i === index ? { ...row, phone: event.target.value } : row) })} /></Field><button type="button" className="so-secondary sp-button sp-button--secondary" aria-label={`Retirer la personne ${index + 1}`} onClick={() => update({ specialPersonnel: draft.specialPersonnel.filter((_, i) => i !== index) })}><Trash2 size={16} /></button></div>)}
-          <h3>Demande d’attribution de poste à quai (DAPAQ)</h3><details className="so-armament-help"><summary>Consignes DAPAQ</summary><p className="so-help">Caen, Le Havre, Dieppe et Rouen : préparation dans NOMADE par l’Armement ou le Capitaine. Autres ports : transmission par mail à la Capitainerie.</p></details><div className="so-grid so-armament-grid"><Field label="Mode de déclaration"><ChoiceControl label="Mode de déclaration" value={draft.dapaq.method} onChange={(method) => update({ dapaq: { ...draft.dapaq, method: method as SeaOperationPayload['dapaq']['method'], preparedBy: method === 'nomade' && draft.dapaq.preparedBy === 'agent' ? '' : draft.dapaq.preparedBy } })} options={[{ value: 'nomade', label: 'NOMADE' }, { value: 'email', label: 'Mail à la Capitainerie' }, { value: 's_wing', label: 'S-WING' }]} /></Field><Field label="Préparée par"><ChoiceControl label="Préparée par" value={draft.dapaq.preparedBy} onChange={(preparedBy) => update({ dapaq: { ...draft.dapaq, preparedBy: preparedBy as SeaOperationPayload['dapaq']['preparedBy'] } })} options={[{ value: 'armament', label: 'Armement' }, { value: 'captain', label: 'Capitaine' }, ...(draft.dapaq.method !== 'nomade' ? [{ value: 'agent', label: 'Agent consignataire' }] : [])]} /></Field>{draft.dapaq.preparedBy === 'agent' && <><Field label="Nom de l’agent consignataire"><input value={draft.dapaq.agentName} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentName: event.target.value } })} /></Field><Field label="Coordonnées de l’agent"><input value={draft.dapaq.agentContact} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentContact: event.target.value } })} /></Field></>}</div>
+          <h3>Demande d’attribution de poste à quai (DAPAQ)</h3>
+          <details className="so-armament-help">
+            <summary>Consignes DAPAQ</summary>
+            <p className="so-help">Caen, Le Havre, Dieppe et Rouen : préparation dans NOMADE par l’Armement ou le Capitaine. Autres ports : transmission par mail à la Capitainerie.</p>
+          </details>
+          <div className="so-grid so-armament-grid">
+            <Field label="Préparée par">
+              <ChoiceControl label="Préparée par" value={draft.dapaq.preparedBy} onChange={preparedBy => update(current => ({
+                dapaq: {
+                  ...current.dapaq,
+                  preparedBy: preparedBy as SeaOperationPayload['dapaq']['preparedBy'],
+                  method: preparedBy === 'client' ? 'not_applicable' : current.dapaq.method,
+                },
+              }))} options={[
+                { value: 'armament', label: 'Armement' },
+                { value: 'captain', label: 'Capitaine' },
+                ...(draft.dapaq.method !== 'nomade' ? [{ value: 'agent', label: 'Agent consignataire' }] : []),
+                { value: 'client', label: 'Client' },
+              ]} />
+            </Field>
+            <Field label="Mode de déclaration">
+              <ChoiceControl label="Mode de déclaration" value={draft.dapaq.method} onChange={method => update(current => ({
+                dapaq: {
+                  ...current.dapaq,
+                  method: method as SeaOperationPayload['dapaq']['method'],
+                  preparedBy: method === 'nomade' && current.dapaq.preparedBy === 'agent' ? '' : current.dapaq.preparedBy,
+                },
+              }))} options={[
+                { value: 'nomade', label: 'NOMADE' },
+                { value: 'email', label: 'Mail à la Capitainerie' },
+                { value: 's_wing', label: 'S-WING' },
+                { value: 'not_applicable', label: 'Non applicable' },
+              ].map(option => ({ ...option, disabled: draft.dapaq.preparedBy === 'client' }))} />
+            </Field>
+            {draft.dapaq.preparedBy === 'agent' && <>
+              <Field label="Nom de l’agent consignataire"><input value={draft.dapaq.agentName} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentName: event.target.value } })} /></Field>
+              <Field label="Coordonnées de l’agent"><input value={draft.dapaq.agentContact} onChange={(event) => update({ dapaq: { ...draft.dapaq, agentContact: event.target.value } })} /></Field>
+            </>}
+          </div>
           <h3>Navire et voyage</h3><div className="so-grid so-armament-grid">
             <Field label="Navire"><select value={draft.vessel.id ?? ''} onChange={event => { const vessel = data?.vessels.find(item => String(item.id) === event.target.value); vesselUpdate({ id: vessel ? String(vessel.id) : '', name: vessel?.name || '', registrationImo: vessel?.registrationImo || '' }); }}><option value="">Choisir un navire</option>{sortedVessels.map(vessel => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}</select></Field>
             <Field label="Immatriculation / IMO"><input readOnly={Boolean(draft.vessel.id && data?.vessels.some(item => String(item.id) === draft.vessel.id))} value={draft.vessel.registrationImo} onChange={event => vesselUpdate({ registrationImo: event.target.value })} /></Field>
@@ -995,15 +1033,41 @@ export function SeaOperationsPage() {
           <div className="so-section-title"><b aria-hidden="true">3</b><div><h2 tabIndex={-1}>Passage Plan</h2><p>Cartes, points de route et conditions de navigation.</p></div></div>
           <Field label="Tirant d’eau de référence (m)"><input type="number" readOnly value={referenceDraft ?? ''} /></Field>{referenceDraft == null && <p className="so-help">{signed ? 'Tirant d’eau de référence non enregistré dans cette version : indicateur UKC indisponible.' : 'Renseignez le tirant d’eau du navire dans le module Navires.'}</p>}
           <SeaOperationHydroSources />
-          {step === 2 && (editable && !signed
-            ? <SeaOperationWaypointMapEditor key={`${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} onMoveIsolatedPoint={moveIsolatedPoint} onDeleteIsolatedPoint={deleteIsolatedPoint} onMoveZoneVertex={moveZoneVertex} onDeleteZoneVertex={deleteZoneVertex} maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots} etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} mapViewport={draft.mapViewport} onMapViewportChange={mapViewport => { if (canEditMap()) update({ mapViewport: mapViewport ? { ...mapViewport } : undefined }); }} onAddWaypoint={addWaypoint} onMoveWaypoint={moveWaypoint} onDeleteWaypoint={removeWaypoint} disabled={busy || exporting} />
-            : <SeaOperationRouteMap allowNavigationCategories waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />)}
+          {editable && !signed
+            ? <SeaOperationWaypointImportPanel
+                key={`${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`}
+                disabled={busy || exporting}
+                existingCount={draft.waypoints.length}
+                onImport={importWaypoints}
+              >
+                {waypointImport => step === 2 && <SeaOperationWaypointMapEditor
+                  waypoints={draft.waypoints}
+                  isolatedPoints={draft.locationOverlay?.points}
+                  zones={draft.locationOverlay?.zones}
+                  onMoveIsolatedPoint={moveIsolatedPoint}
+                  onDeleteIsolatedPoint={deleteIsolatedPoint}
+                  onMoveZoneVertex={moveZoneVertex}
+                  onDeleteZoneVertex={deleteZoneVertex}
+                  maxSpeedKnots={data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots}
+                  etd={draft.waypoints[0]?.eta || draft.vessel.etd}
+                  eta={seaOperationRouteArrivalEta(draft)}
+                  departurePort={draft.vessel.departurePort}
+                  arrivalPort={draft.vessel.arrivalPort}
+                  mapViewport={draft.mapViewport}
+                  onMapViewportChange={mapViewport => { if (canEditMap()) update({ mapViewport: mapViewport ? { ...mapViewport } : undefined }); }}
+                  onAddWaypoint={addWaypoint}
+                  onMoveWaypoint={moveWaypoint}
+                  onDeleteWaypoint={removeWaypoint}
+                  disabled={busy || exporting}
+                  waypointImport={waypointImport}
+                />}
+              </SeaOperationWaypointImportPanel>
+            : step === 2 && <SeaOperationRouteMap allowNavigationCategories waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}
             vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId}
             onChange={value => { if (canEditMap()) update({ locationOverlay: value }); }} />}
           <h3>Points de passage</h3>
-          {editable && !signed && <SeaOperationWaypointImportPanel key={`gpx:${data?.actorId}:${record?.id || 'new'}:${contextDate || ''}:${draft.planning?.operationId || 'transit'}:${draft.vessel.id}`} disabled={busy || exporting} existingCount={draft.waypoints.length} onImport={importWaypoints} />}
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {

@@ -341,6 +341,16 @@ describe('sea operation form model', () => {
     expect(validateSeaOperation(payload, 'GO')).toEqual([]);
   });
 
+  it('accepts Client with a Non applicable DAPAQ and rejects contradictory stored values', () => {
+    const payload = completePayload();
+    payload.dapaq = { method: 'not_applicable', preparedBy: 'client', agentName: '', agentContact: '' };
+    const stored = JSON.parse(JSON.stringify(payload));
+    expect(isSeaOperationPayload(stored)).toBe(true);
+    expect(validateSeaOperation(stored, 'GO')).toEqual([]);
+    payload.dapaq.method = 's_wing';
+    expect(isSeaOperationPayload(payload)).toBe(false);
+  });
+
   it('requires the agent contact only when an agent prepares an email DAPAQ', () => {
     const payload = completePayload();
     payload.dapaq = { method: 'email', preparedBy: 'agent', agentName: '', agentContact: '' };

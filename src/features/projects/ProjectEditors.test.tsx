@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor, projectToWriteInput } from './ProjectEditors';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { localTodayIso } from './projectBareboatContract';
+import type { ComponentProps } from 'react';
+import type { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
 
 const mutationMocks = vi.hoisted(() => ({
   saveProject: vi.fn(),
@@ -14,7 +16,12 @@ const mutationMocks = vi.hoisted(() => ({
   saveProjectTowedAsset: vi.fn(),
 }));
 const locationMapMock = vi.hoisted(() => vi.fn());
-vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEditor: (props: Record<string, unknown>) => { locationMapMock(props); return <span data-testid="project-location-map" />; } }));
+vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({
+  SeaOperationWaypointMapEditor: (props: ComponentProps<typeof SeaOperationWaypointMapEditor>) => {
+    locationMapMock(props);
+    return <div data-testid="project-location-map">{props.waypointImport?.trigger}{props.waypointImport?.panel}</div>;
+  },
+}));
 
 vi.mock('./projectMutations', async (importOriginal) => ({
   ...await importOriginal<typeof import('./projectMutations')>(),
@@ -133,7 +140,7 @@ describe('ProjectEditor optional location', () => {
     form.locationPlan!.zones[0].vertices[0].latitude = '49'; expect(locationPlan.zones[0].vertices[0].latitude).toBe('');
     expect(form.locationPlan!.etd).toBe('2026-11-03T10:00');
   });
-  it('keeps Location at step five for every contract and saves a location-only project change', async () => {
+  it('saves location-only changes even with an unfinished GPX import open in the project form', async () => {
     const user = userEvent.setup(), onSaved = vi.fn();
     mutationMocks.saveProject.mockResolvedValue({ id: 145, projectCode: 'P145', title: project.title, updatedAt: '2026-11-01T10:00:00Z' });
     render(<ProjectEditor client={{ rpc: vi.fn() } as never} clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={onSaved} project={{ ...project, status: 'Non validé', contractType: 'Offre Commerciale', clientId: null, primaryVesselId: null, secondaryVesselId: null, deliveryPort: '', redeliveryPort: '', operationArea: '', updatedAt: '2026-08-01T10:00:00Z' } as never} statuses={['Non validé']} towedAssets={[]} vessels={vessels} />);
@@ -141,6 +148,14 @@ describe('ProjectEditor optional location', () => {
     expect(screen.getByRole('group', { name: '5 Localisation' })).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' })).not.toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Ajouter un waypoint' }));
+    await user.click(screen.getByRole('button', { name: 'Importer les waypoints' }));
+    const importer = within(screen.getByRole('region', { name: 'Import de waypoints GPX' }));
+    await user.selectOptions(importer.getByLabelText('Contenu à importer'), 'zone');
+    const zoneName = importer.getByLabelText('Nom de la zone');
+    expect(zoneName).toHaveValue('');
+    await user.click(zoneName);
+    await user.keyboard('{Enter}');
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Enregistrer le projet' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ locationPlan: expect.objectContaining({ includeInPdf: false, waypoints: [expect.objectContaining({ latitude: '', longitude: '', etaMode: 'automatic' })] }) }));

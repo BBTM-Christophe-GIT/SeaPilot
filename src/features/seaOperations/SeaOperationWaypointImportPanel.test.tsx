@@ -12,7 +12,7 @@ function upload(xml: string, filename = 'parcours.gpx') {
   fireEvent.change(screen.getByLabelText('Fichier GPX (.gpx)'), { target: { files: [file] } });
   return file;
 }
-async function open() { await userEvent.click(screen.getByRole('button', { name: 'Importer des waypoints' })); }
+async function open() { await userEvent.click(screen.getByRole('button', { name: 'Importer les waypoints' })); }
 async function preview(xml = route()) { upload(xml); return screen.findByRole('table', { name: 'Aperçu des points à importer' }); }
 
 describe('GPX waypoint import panel', () => {
@@ -29,7 +29,7 @@ describe('GPX waypoint import panel', () => {
     expect(screen.getByRole('button', { name: 'Ajouter à la fiche' })).toBeDisabled();
     expect(onImport).not.toHaveBeenCalled();
     await userEvent.selectOptions(screen.getByLabelText('Contenu à importer'), 'route');
-    expect(screen.getByText(/à la suite des 4 waypoints existants/)).toBeVisible();
+    expect(screen.getByText(/4 waypoints déjà présents/)).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: 'Ajouter les 12 waypoints' }));
     expect(onImport).toHaveBeenCalledOnce();
     const [imported, target, zoneName] = onImport.mock.calls[0] as unknown as [Array<{ latitude: string; longitude: string; name: string; description: string }>, string, undefined];
@@ -111,7 +111,7 @@ describe('GPX waypoint import panel', () => {
     expect(onImport).not.toHaveBeenCalled();
     expect(screen.queryByText('7 points à importer')).not.toBeInTheDocument();
     if (reason === 'new-file') expect(screen.getByText('2 points à importer')).toBeVisible();
-    if (reason === 'disabled') expect(screen.getByRole('button', { name: 'Importer des waypoints' })).toBeDisabled();
+    if (reason === 'disabled') expect(screen.getByRole('button', { name: 'Importer les waypoints' })).toBeDisabled();
   });
 
   it('keeps the preview on a stale access rejection or a capacity error, then cancels cleanly', async () => {

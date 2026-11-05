@@ -4,7 +4,7 @@ import {
   DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS,
   SEA_OPERATION_SOURCE, SEA_OPERATION_SUPPLY_ITEMS,
 } from './seaOperationModel';
-import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPortService } from './seaOperationModel';
+import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPayload, SeaOperationPortService } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
@@ -54,6 +54,22 @@ const portServiceLabels: Record<SeaOperationPortService, string> = {
   none: 'Le règlement portuaire n’exige pas ces services',
 };
 
+const dapaqMethodLabels: Record<SeaOperationPayload['dapaq']['method'], string> = {
+  '': blank,
+  nomade: 'Préparée dans NOMADE',
+  email: 'Réalisée par mail et transmise à la Capitainerie',
+  s_wing: 'S-WING',
+  not_applicable: 'Non applicable',
+};
+
+const dapaqPreparerLabels: Record<SeaOperationPayload['dapaq']['preparedBy'], string> = {
+  '': blank,
+  armament: 'L’Armement',
+  captain: 'Le Capitaine',
+  agent: 'L’agent consignataire',
+  client: 'Le Client',
+};
+
 /** Complete printable content with the original Word chrome and the authorized RH signature image. */
 export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOperationRecord; signatureImageUrl?: string | null }) {
   const form = record.draft;
@@ -64,12 +80,6 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
   const vessel = form.vessel;
   const voyage = seaOperationVoyageSummary(form);
   const signatureImage = signed ? record.signatureUrl || null : signatureImageUrl || null;
-  const method = form.dapaq.method === 'nomade' ? 'Préparée dans NOMADE'
-    : form.dapaq.method === 'email' ? 'Réalisée par mail et transmise à la Capitainerie'
-      : form.dapaq.method === 's_wing' ? 'S-WING' : blank;
-  const responsible = form.dapaq.preparedBy === 'armament' ? 'L’Armement'
-    : form.dapaq.preparedBy === 'captain' ? 'Le Capitaine'
-      : form.dapaq.preparedBy === 'agent' ? 'L’agent consignataire' : blank;
 
   return <article className="so-print" aria-label="Fiche imprimable Opération en Mer">
     <header className="so-print-header">
@@ -103,8 +113,8 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
       <h3>Demande d’Attribution de Poste À Quai (DAPAQ)</h3>
       <p>Caen, Le Havre, Dieppe et Rouen : préparation dans NOMADE par l’Armement ou le Capitaine. Autres ports : réalisation par mail et transmission à la Capitainerie.</p>
       <dl className="so-print-grid">
-        <PrintField label="Mode de réalisation">{method}</PrintField>
-        <PrintField label="Responsable">{responsible}</PrintField>
+        <PrintField label="Mode de réalisation">{dapaqMethodLabels[form.dapaq.method]}</PrintField>
+        <PrintField label="Responsable">{dapaqPreparerLabels[form.dapaq.preparedBy]}</PrintField>
         {form.dapaq.preparedBy === 'agent' && <>
           <PrintField label="Nom de l’agent consignataire">{text(form.dapaq.agentName)}</PrintField>
           <PrintField label="Coordonnées de l’agent consignataire">{text(form.dapaq.agentContact)}</PrintField>

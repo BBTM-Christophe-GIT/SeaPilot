@@ -212,7 +212,7 @@ const businessStepButtons = () => preparationButtons().filter(button => /^sea-op
 const stepButton = (index: number) => businessStepButtons()[index];
 const documentsButton = () => within(screen.getByRole('navigation', { name: 'Étapes de la préparation' })).getByRole('button', { name: /^Documents$/ });
 const choiceQueries = (label: string) => within(formQueries().getByRole('group', { name: label }));
-const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
+const optionLabels: Record<string, string> = { yes: 'Oui', no: 'Non', nomade: 'NOMADE', email: 'Mail à la Capitainerie', s_wing: 'S-WING', not_applicable: 'Non applicable', armament: 'Armement', captain: 'Capitaine', agent: 'Agent consignataire', client: 'Client', sms: 'Pas de mesures autres que le SMS', specific: 'Mesures spécifiques prises', GO: 'GO · la mission peut être réalisée', NO_GO: 'NO GO · la mission ne peut être réalisée' };
 const choiceInput = (label: string, value: string) => choiceQueries(label).getByRole('checkbox', { name: optionLabels[value] });
 const answerInput = (label: string) => formQueries().getByRole('switch', { name: label });
 const etaGroup = (index = 1) => formQueries().getByRole('group', { name: `ETA · date et heure · point ${index}` });
@@ -492,7 +492,7 @@ describe('Client contact layout with real-profile permission fixtures', () => {
     expect(contact.tagName).toBe('TEXTAREA');
     expect(contact).toHaveValue('Léa CLIENT\nlea@example.test\n+33 2 10 20 30 40\n12, quai du Port\n50100 Cherbourg-en-Cotentin\nFrance');
     expect(contact).toBeEnabled();
-    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
     expect(formQueries().queryByText('Client défini par le projet sélectionné.')).not.toBeInTheDocument();
     expect(footerQueries().getByText('Version 3 enregistrée')).toBeVisible();
     expect(footerQueries().queryByText('Modifications non enregistrées')).not.toBeInTheDocument();
@@ -509,7 +509,7 @@ describe('Client contact layout with real-profile permission fixtures', () => {
     expect(contact).toHaveValue(formatClientContactLines(source));
     fireEvent.change(contact, { target: { value: 'Contact opérationnel\nAutre adresse, conservée telle quelle' } });
     expect(capturingUkcPanel().payload.clientContact).toBe('Contact opérationnel\nAutre adresse, conservée telle quelle');
-    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
   });
 });
 
@@ -527,8 +527,8 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     for (const label of ['Description de l’opération', 'Coordonnées du client', 'Port de départ', 'Port d’arrivée', 'ETD · date et heure de départ', 'ETA · date et heure d’arrivée']) expect(formQueries().getByLabelText(label)).toHaveValue('');
     expect(formQueries().getByLabelText('Navire')).toHaveValue('');
     expect(within(formQueries().getByLabelText('Navire')).getAllByRole('option').map(option => option.textContent)).toEqual(['Choisir un navire', 'GOURY', 'LE ROZEL']);
-    expect(formQueries().getByLabelText('Client')).toBeEnabled();
-    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeEnabled();
+    await userEvent.selectOptions(formQueries().getByLabelText('Client', { selector: 'select' }), '701');
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(data.clients![0].contact));
     fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Contact opérationnel' } });
     fireEvent.change(formQueries().getByLabelText('Description de l’opération'), { target: { value: 'Transit de Cherbourg à Caen' } });
@@ -561,7 +561,7 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     vi.mocked(fetchSeaOperationVesselCaptainSignature).mockResolvedValue(profileSignature('303'));
     await openRecord(record);
     await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
-    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
     for (const [label, value] of [['Port de départ', 'Granville'], ['Quai de départ', 'Quai 5'], ['Port d’arrivée', 'Saint-Malo'], ['Quai d’arrivée', 'Quai 8'], ['ETD · date et heure de départ', '2026-11-01T07:00'], ['ETA · date et heure d’arrivée', '2026-11-01T14:00'], ['Description de l’opération', 'Voyage adapté'], ['Coordonnées du client', 'Autre contact autorisé']]) {
       const input = formQueries().getByLabelText(label); expect(input).toBeEnabled(); expect(input).not.toHaveAttribute('readonly');
       fireEvent.change(input, { target: { value } });
@@ -590,8 +590,8 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     const { client, data } = renderAccount(); data.vessels[0].maxSpeedKnots = 12;
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { version: 1, draft: structuredClone(draft) }));
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' })); await chooseTransit();
-    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
-    expect(formQueries().getByLabelText('Client')).toBeEnabled();
+    await userEvent.selectOptions(formQueries().getByLabelText('Client', { selector: 'select' }), '701');
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeEnabled();
     await userEvent.selectOptions(formQueries().getByLabelText('Navire'), '12');
     fireEvent.change(formQueries().getByLabelText('ETD · date et heure de départ'), { target: { value: '2026-11-01T08:00' } });
     fireEvent.change(formQueries().getByLabelText('ETA · date et heure d’arrivée'), { target: { value: '2026-11-01T17:00' } });
@@ -604,8 +604,8 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
       vessel: expect.objectContaining({ etd: '2026-11-01T08:00', eta: '2026-11-01T17:00' }), waypoints: expect.any(Array) }), undefined);
     expect(vi.mocked(saveSeaOperation).mock.lastCall![1].waypoints).toHaveLength(2);
     await userEvent.click(stepButton(0));
-    expect(formQueries().getByLabelText('Client')).toBeDisabled(); expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client du port');
-    fireEvent.change(formQueries().getByLabelText('Client'), { target: { value: '702' } });
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled(); expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue('Client du port');
+    fireEvent.change(formQueries().getByLabelText('Client', { selector: 'select' }), { target: { value: '702' } });
     fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Contact après sauvegarde' } });
     expect(capturingUkcPanel().payload).toMatchObject({ clientId: '701', client: 'Client du port', clientContact: 'Contact après sauvegarde' });
     expect(formQueries().getByLabelText('ETD · date et heure de départ')).toHaveValue('2026-11-01T08:00');
@@ -635,11 +635,11 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     const { data } = renderAccount(captainAccount, record, 1, choices);
     data.clients = data.clients!.filter(client => client.id !== '701');
     await openRecord(record); await waitFor(() => expect(formQueries().getByLabelText('Projet')).toBeEnabled());
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client historique'); expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue('Client historique'); expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
     fireEvent.change(formQueries().getByLabelText('Coordonnées du client'), { target: { value: 'Nouveau contact' } });
     expect(capturingUkcPanel().payload).toMatchObject({ clientId: '701', client: 'Client historique', clientContact: 'Nouveau contact' });
     await chooseMission(choices[0]);
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(choices[0].client);
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue(choices[0].client);
     expect(capturingUkcPanel().payload.transit).toBeUndefined();
   });
 
@@ -688,7 +688,8 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     draft.signature.captainName = 'Capitaine historique';
     const original = structuredClone(draft), record = recordFixture(captainAccount, { draft, status: 'signed', canEdit: false });
     renderAccount(captainAccount, record); await openRecord(record);
-    for (const label of ['Projet', 'Client', 'Navire', 'Port de départ', 'Port d’arrivée']) expect(formQueries().getByLabelText(label)).toBeDisabled();
+    for (const label of ['Projet', 'Navire', 'Port de départ', 'Port d’arrivée']) expect(formQueries().getByLabelText(label)).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
     expect(fetchSeaOperationVesselContext).not.toHaveBeenCalled(); expect(fetchSeaOperationVesselCaptainSignature).not.toHaveBeenCalled();
     expect(record.draft).toEqual(original);
   });
@@ -789,7 +790,7 @@ describe('Planning project choices across four Paris calendar days', () => {
     await chooseMission(missions[0], dates[0]);
     await chooseMission(missions[3], dates[3]);
     expect(formQueries().getByLabelText('Date de l’opération')).toHaveValue('2026-10-20');
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(missions[3].client);
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue(missions[3].client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(missions[3].clientContact));
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(missions[3].description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue(missions[3].vessel.id);
@@ -1475,7 +1476,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     fireEvent.click(stepButton(2));
     expect(formQueries().getByRole('figure', { name: 'Carte du parcours' })).toBeVisible();
-    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Placer les waypoints' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Afficher la carte en plein écran' })).not.toBeInTheDocument();
     expect(formQueries().queryByRole('button', { name: 'Quitter le plein écran' })).not.toBeInTheDocument();
@@ -1611,7 +1612,9 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client } = renderAccount(account, record);
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => ({ ...record, draft: structuredClone(payload), version: record.version + 1 }));
     await openRecord(record); fireEvent.click(stepButton(2));
-    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    const importButton = formQueries().getByRole('button', { name: 'Importer les waypoints' });
+    expect(importButton.previousElementSibling).toBe(formQueries().getByRole('button', { name: 'Placer les waypoints' }));
+    await userEvent.click(importButton);
     const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
     const file = new File(['<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><rte><name>Parcours GPX</name><rtept lat="49.7" lon="-1.4"><name>GPX A</name><time>2000-01-01T00:00:00Z</time></rtept><rtept lat="49.75" lon="-0.8"><name>GPX B</name></rtept><rtept lat="49.5" lon="0.1"><name>GPX C</name></rtept></rte></gpx>'], 'parcours.gpx', { type: 'application/gpx+xml' });
     await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), file);
@@ -1654,7 +1657,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount();
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     fireEvent.click(stepButton(2));
-    await userEvent.click(formQueries().getByRole('button', { name: 'Importer des waypoints' }));
+    await userEvent.click(formQueries().getByRole('button', { name: 'Importer les waypoints' }));
     const panel = within(formQueries().getByRole('region', { name: 'Import de waypoints GPX' }));
     await userEvent.upload(panel.getByLabelText('Fichier GPX (.gpx)'), new File(['<gpx><rte><rtept lat="49.65" lon="-1.62"><name>Départ importé</name></rtept></rte></gpx>'], 'nouveau.gpx'));
     await panel.findByRole('table', { name: 'Aperçu des points à importer' });
@@ -1734,7 +1737,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     await openRecord(record);
     await userEvent.click(stepButton(2));
     const map = formQueries().getByRole('figure', { name: 'Carte du parcours' });
-    expect(formQueries().queryByRole('button', { name: 'Importer des waypoints' })).not.toBeInTheDocument();
+    expect(formQueries().queryByRole('button', { name: 'Importer les waypoints' })).not.toBeInTheDocument();
     expect(within(map).getByRole('img', { name: 'Carte du parcours · 1 point géolocalisé · 1 port défini' })).toBeVisible();
     const categoryToggle = within(map).getByRole('button', { name: 'Catégories de navigation' });
     expect(within(map).getAllByRole('button')).toEqual([categoryToggle]);
@@ -2442,7 +2445,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     vi.mocked(fetchSeaOperationCaptainSignature).mockImplementation(async (_client, _date, _operationId, personId) => profileSignature(personId));
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     await chooseMission(first);
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(first.client);
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue(first.client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(first.clientContact));
     expect(formQueries().queryByText('Client défini par le projet sélectionné.')).not.toBeInTheDocument();
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(first.description);
@@ -2453,7 +2456,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(await formQueries().findByRole('img', { name: `Signature de ${first.captains[0].name}` })).toHaveAttribute('src', 'https://signature.example.test/101.png');
     await userEvent.click(stepButton(0));
     await chooseMission(second);
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue(second.client);
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue(second.client);
     expect(formQueries().getByLabelText('Coordonnées du client')).toHaveValue(formatClientContactLines(second.clientContact));
     expect(formQueries().getByLabelText('Description de l’opération')).toHaveValue(second.description);
     expect(formQueries().getByLabelText('Navire')).toHaveValue('13');
@@ -2461,7 +2464,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(formQueries().getByLabelText('Port de départ')).toHaveValue('Caen');
     expect(formQueries().getByLabelText('Port d’arrivée')).toHaveValue('Dieppe');
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine')).toHaveValue(second.captains[0].name);
-    expect(formQueries().getByLabelText('Client')).toBeDisabled();
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toBeDisabled();
     await decisionStep();
     expect(formQueries().getByLabelText('Prénom NOM du Capitaine signataire')).toHaveValue(second.captains[0].name);
     expect(await formQueries().findByRole('img', { name: `Signature de ${second.captains[0].name}` })).toHaveAttribute('src', 'https://signature.example.test/102.png');
@@ -2720,6 +2723,29 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ dapaq: expect.objectContaining({ method: 's_wing', preparedBy: 'captain' }) }), undefined);
   });
 
+  it.each([captainAccount, sailorAccount])('saves Client and its automatic DAPAQ mode for the real $id profile', async account => {
+    const { client } = renderAccount(account);
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(account, { draft, version: 1 }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    const notApplicable = choiceInput('Mode de déclaration', 'not_applicable');
+    await userEvent.click(notApplicable);
+    expect(notApplicable).toBeChecked();
+    await selectChoice('Mode de déclaration', 'nomade');
+    await selectChoice('Préparée par', 'client');
+    expect(notApplicable).toBeChecked();
+    expect(notApplicable).toBeDisabled();
+    expect(choiceInput('Mode de déclaration', 'nomade')).not.toBeChecked();
+    await userEvent.click(choiceInput('Préparée par', 'client'));
+    expect(notApplicable).toBeEnabled();
+    expect(notApplicable).toBeChecked();
+    await selectChoice('Préparée par', 'client');
+    await saveDraft();
+    expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
+    expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({
+      dapaq: expect.objectContaining({ method: 'not_applicable', preparedBy: 'client' }),
+    }), undefined);
+  });
+
   it('keeps explicit DAPAQ and safety choices clearable while binary boarding and shipchandler switches stay Oui or Non', async () => {
     const { client } = renderAccount();
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { draft, version: 1 }));
@@ -2852,7 +2878,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const progress = screen.getByRole('progressbar', { name: 'Champs de préparation renseignés' });
     const before = Number(progress.getAttribute('aria-valuenow'));
     await userEvent.type(formQueries().getByLabelText('Description de l’opération'), 'Mission aperçue en direct');
-    await userEvent.selectOptions(formQueries().getByLabelText('Client'), '701');
+    await userEvent.selectOptions(formQueries().getByLabelText('Client', { selector: 'select' }), '701');
     expect(preview).toHaveTextContent('Mission aperçue en direct');
     expect(preview).toHaveTextContent('Client du port');
     expect(Number(progress.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
@@ -2866,7 +2892,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(stepButton(2)).toHaveAttribute('aria-current', 'step');
     expect(formQueries().getByRole('region', { name: 'Passage Plan' })).toBeVisible();
     await userEvent.click(stepButton(0));
-    expect(formQueries().getByLabelText('Client')).toHaveDisplayValue('Client du port');
+    expect(formQueries().getByLabelText('Client', { selector: 'select' })).toHaveDisplayValue('Client du port');
   });
 
   it('switches compact 390px panes without losing fields and keeps footer actions available', async () => {

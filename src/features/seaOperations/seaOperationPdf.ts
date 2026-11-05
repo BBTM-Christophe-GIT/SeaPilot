@@ -3,7 +3,7 @@ import type { UserOptions } from 'jspdf-autotable';
 import type { VesselSeaStateAssessment } from '../fleet/vesselWeatherMatrix';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_OPERATION_SUPPLY_ITEMS } from './seaOperationModel';
-import type { SeaOperationAnswer, SeaOperationCheck } from './seaOperationModel';
+import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPayload } from './seaOperationModel';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
@@ -41,6 +41,22 @@ const SEA_STATE_COLORS: Record<VesselSeaStateAssessment['tone'], { foreground: [
   danger: { foreground: [161, 38, 40], background: [255, 240, 238] },
   critical: { foreground: [255, 255, 255], background: [24, 33, 50] },
   neutral: { foreground: [70, 80, 95], background: [242, 245, 248] },
+};
+
+const dapaqMethodLabels: Record<SeaOperationPayload['dapaq']['method'], string> = {
+  '': '',
+  nomade: 'NOMADE',
+  email: 'Mail à la Capitainerie',
+  s_wing: 'S-WING',
+  not_applicable: 'Non applicable',
+};
+
+const dapaqPreparerLabels: Record<SeaOperationPayload['dapaq']['preparedBy'], string> = {
+  '': '',
+  armament: 'L’Armement',
+  captain: 'Le Capitaine',
+  agent: 'L’agent consignataire',
+  client: 'Le Client',
 };
 
 export interface SeaOperationPdfOptions {
@@ -129,8 +145,8 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
   heading('Demande d’Attribution de Poste À Quai (DAPAQ)', true);
   paragraph('Caen, Le Havre, Dieppe et Rouen : DAPAQ préparée dans NOMADE par l’Armement ou le Capitaine. Autres ports : DAPAQ réalisée par mail et transmise à la Capitainerie.');
   fields([
-    ['Mode', form.dapaq.method === 'nomade' ? 'NOMADE' : form.dapaq.method === 'email' ? 'Mail à la Capitainerie' : form.dapaq.method === 's_wing' ? 'S-WING' : ''],
-    ['Réalisée par', form.dapaq.preparedBy === 'armament' ? 'L’Armement' : form.dapaq.preparedBy === 'captain' ? 'Le Capitaine' : form.dapaq.preparedBy === 'agent' ? 'L’agent consignataire' : ''],
+    ['Mode', dapaqMethodLabels[form.dapaq.method]],
+    ['Réalisée par', dapaqPreparerLabels[form.dapaq.preparedBy]],
     ...(form.dapaq.preparedBy === 'agent' ? [['Agent consignataire', form.dapaq.agentName], ['Coordonnées de l’agent', form.dapaq.agentContact]] as Array<[string, string]> : []),
     ['Port de départ / Quai', `${value(form.vessel.departurePort)} / ${value(form.vessel.departureQuay)}`],
     ['Port d’arrivée / Quai', `${value(form.vessel.arrivalPort)} / ${value(form.vessel.arrivalQuay)}`],
