@@ -180,6 +180,12 @@ function intersect(range: TimeRange, window: TimeRange): TimeRange | null {
   return endMs > startMs ? { startMs, endMs } : null;
 }
 
+function parseWorkRange(phase: PreviewWorkPhase): TimeRange | null {
+  const startMs = Date.parse(phase.startsAt);
+  const endMs = Date.parse(phase.endsAt);
+  return Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs ? { startMs, endMs } : null;
+}
+
 function windowMetrics(work: readonly TimeRange[], bounds: TimeRange): PreviewWindow {
   const workSegments = work.flatMap((range) => {
     const overlap = intersect(range, bounds);
@@ -226,7 +232,7 @@ function exceededWork(work: readonly PreviewSegment[], capHours: number): Previe
 }
 
 /** Keep the full sequence start: midnight and the rolling boundary do not reset it. */
-function amplitudeSequences(work: readonly TimeRange[], bounds: TimeRange, restHours: number): PreviewSegment[] {
+function amplitudeSequences(work: readonly TimeRange[], bounds: TimeRange, restHours: number): TimeRange[] {
   const sequences: Array<TimeRange & { relevant: boolean }> = [];
   for (const range of work) {
     if (range.startMs >= bounds.endMs) break;
@@ -241,7 +247,23 @@ function amplitudeSequences(work: readonly TimeRange[], bounds: TimeRange, restH
     }
   }
   return sequences.filter((sequence) => sequence.relevant)
-    .map(({ startMs, endMs }) => segment({ startMs, endMs }));
+    .map(({ startMs, endMs }) => ({ startMs, endMs }));
+}
+
+/** Longest loaded work sequence affected by the entry, including short breaks. */
+export function projectedEntryAmplitudeSeconds(
+  history: readonly PreviewWorkPhase[],
+  phases: readonly PreviewWorkPhase[],
+  restHours = PREVIEW_DEMO_POLICY.minContinuousRestHours,
+): number {
+  const validRanges = (items: readonly PreviewWorkPhase[]) => items.map(parseWorkRange).filter((range) => range !== null);
+  const entered = validRanges(phases);
+  if (!entered.length) return 0;
+  const work = mergeRanges([...validRanges(history), ...entered]);
+  const sequences = amplitudeSequences(work, { startMs: Math.min(...entered.map((range) => range.startMs)), endMs: Infinity }, restHours);
+  return sequences.reduce((longest, sequence) => entered.some((phase) => intersect(phase, sequence))
+    ? Math.max(longest, (sequence.endMs - sequence.startMs) / 1000)
+    : longest, 0);
 }
 
 function latestOperationalPeriod(
@@ -363,13 +385,10 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
   const invalidPhases: PreviewInvalidPhase[] = [];
   const parsePhases = (phases: readonly PreviewWorkPhase[], source: PreviewInvalidPhase['source']) =>
     phases.flatMap((phase, index) => {
-      const startMs = Date.parse(phase.startsAt);
-      const endMs = Date.parse(phase.endsAt);
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-        invalidPhases.push({ source, index, message: 'La fin de la plage doit suivre son début.' });
-        return [];
-      }
-      return [{ startMs, endMs }];
+      const range = parseWorkRange(phase);
+      if (range) return [range];
+      invalidPhases.push({ source, index, message: 'La fin de la plage doit suivre son début.' });
+      return [];
     });
   const history = parsePhases(input.history, 'history');
   const entered = parsePhases(input.phases, 'phases');
@@ -379,7 +398,7 @@ export function analyzeWorkingTimePreview(input: WorkingTimePreviewInput): Worki
   const windowEnd = anchorPhases.length ? Math.max(...anchorPhases.map((phase) => phase.endMs)) : dayEnd;
   const window24 = windowMetrics(work, { startMs: windowEnd - DAY_MS, endMs: windowEnd });
   const window7 = windowMetrics(work, { startMs: windowEnd - 7 * DAY_MS, endMs: windowEnd });
-  const sequences = amplitudeSequences(work, window24, policy.minContinuousRestHours);
+  const sequences = amplitudeSequences(work, window24, policy.minContinuousRestHours).map(segment);
   const maximumAmplitudeSequence = sequences.reduce<PreviewSegment | null>((longest, current) =>
     !longest || current.hours > longest.hours ? current : longest, null);
   const dailyAmplitudeHours = maximumAmplitudeSequence?.hours ?? 0;

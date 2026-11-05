@@ -20,7 +20,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
 import type { RoleKey } from '../permissions/roles';
 import { todayPlanningDate } from '../planning/planningDates';
@@ -47,6 +47,7 @@ import {
   type WorkingTimePhaseInput,
   type WorkingTimeRange,
   type WorkingTimeSignatureSnapshot,
+  type WorkingTimeWorkspace,
 } from './workingTimeQueries';
 import { buildWorkingTimePdf, prepareWorkingTimePdf } from './workingTimePdf';
 import {
@@ -110,6 +111,16 @@ interface EntryDraft {
   comment: string;
   editingIntervalId: number | null;
   pending: WorkingTimePhaseInput[];
+}
+
+interface AssignmentAnalysisScope {
+  key: string;
+  client: SupabaseClient;
+  workspace: WorkingTimeWorkspace;
+}
+
+function sameAssignmentAnalysis(left: AssignmentAnalysisScope | undefined, right: AssignmentAnalysisScope | null): boolean {
+  return Boolean(left && right && left.key === right.key && left.client === right.client && left.workspace === right.workspace);
 }
 
 function emptyEntryDraft(day: string): EntryDraft {
@@ -303,6 +314,11 @@ export function WorkingTimeWorkflowPanel({
   const [selectedDay, setSelectedDay] = useState(() => workingTimeInitialDay(range, localToday));
   const [entryDrafts, setEntryDrafts] = useState<Record<string, EntryDraft>>({});
   const entryKey = `${selectedPersonId}:${selectedDay}`;
+  const [timelineGestureKey, setTimelineGestureKey] = useState<string | null>(null);
+  const timelineGestureActive = timelineGestureKey === entryKey;
+  const handleTimelineGestureChange = useCallback((active: boolean) => {
+    setTimelineGestureKey((current) => active ? entryKey : current === entryKey ? null : current);
+  }, [entryKey]);
   const draft = entryDrafts[entryKey] ?? emptyEntryDraft(selectedDay);
   const { startsAt, endsAt, comment: intervalComment, editingIntervalId, pending: pendingPhases } = draft;
   function updateEntryDraft(change: Partial<EntryDraft>) {
@@ -439,41 +455,66 @@ export function WorkingTimeWorkflowPanel({
     const valid = Number.isFinite(Date.parse(startsAt)) && Date.parse(endsAt) > Date.parse(startsAt);
     return editingIntervalId ? (valid ? [active] : []) : pendingPhases.length ? pendingPhases : valid ? [active] : [];
   }, [editingIntervalId, endsAt, pendingPhases, startsAt]);
-  const analysisRefreshKey = JSON.stringify([selectedRegister?.id, workspace?.policies, selectedIntervals]);
-  const monthPendingPhases = Object.entries(entryDrafts)
+  const monthDrafts = Object.entries(entryDrafts)
     .filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) >= range.start && key.slice(key.indexOf(':') + 1) <= range.end)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const monthPendingPhases = monthDrafts
     .flatMap(([, savedDraft]) => savedDraft.editingIntervalId
       ? Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []
       : savedDraft.pending.length ? savedDraft.pending
         : Date.parse(savedDraft.endsAt) > Date.parse(savedDraft.startsAt) ? [{ startsAt: savedDraft.startsAt, endsAt: savedDraft.endsAt }] : []);
-  const monthEditingIntervalIds = Object.entries(entryDrafts)
-    .filter(([key]) => key.startsWith(`${selectedPersonId}:`) && key.slice(key.indexOf(':') + 1) >= range.start && key.slice(key.indexOf(':') + 1) <= range.end)
+  const monthEditingIntervalIds = monthDrafts
     .flatMap(([, savedDraft]) => savedDraft.editingIntervalId ? [savedDraft.editingIntervalId] : []);
   const [assignmentAnalysisAttempt, setAssignmentAnalysisAttempt] = useState(0);
   const pendingAnalysisKey = JSON.stringify([monthPendingPhases, monthEditingIntervalIds]);
-  const assignmentRequestKey = JSON.stringify([workspaceScope, selectedPersonId, range, analysisRefreshKey, refreshToken, pendingAnalysisKey, assignmentAnalysisAttempt]);
-  const [assignmentAnalysis, setAssignmentAnalysis] = useState<{ key: string; client: SupabaseClient; result: WorkingTimeEntryRecommendation | null; error: string | null } | null>(null);
-  const currentAssignmentAnalysis = assignmentAnalysis?.key === assignmentRequestKey && assignmentAnalysis.client === client ? assignmentAnalysis : null;
-  useEffect(() => {
-    if (!selectedRangeLoaded || !selectedPersonId) return;
-    let active = true;
-    const [analysisPhases, excludedIds] = JSON.parse(pendingAnalysisKey) as [WorkingTimePhaseInput[], number[]];
-    const analyze = () => {
-    void fetchWorkingTimeAssignmentAnalysis(client, { personId: selectedPersonId,
-      periodStart: range.start, periodEnd: range.end,
+  const assignmentRequest = useMemo(() => {
+    if (!workspace || !selectedRangeLoaded || !selectedPersonId) return null;
+    const [phases, excludeIntervalIds] = JSON.parse(pendingAnalysisKey) as [WorkingTimePhaseInput[], number[]];
+    return { personId: selectedPersonId, periodStart: range.start, periodEnd: range.end,
       timezoneName: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-      phases: analysisPhases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() })),
-      excludeIntervalIds: excludedIds, vesselId: null, watchGroup: null,
-    }).then((result) => {
-      if (active) setAssignmentAnalysis({ key: assignmentRequestKey, client, result, error: null });
-    }).catch((reason) => {
-      if (active) setAssignmentAnalysis({ key: assignmentRequestKey, client, result: null, error: workingTimeErrorMessage(reason) });
-    });
+      phases: phases.map((phase) => ({ startsAt: new Date(phase.startsAt).toISOString(), endsAt: new Date(phase.endsAt).toISOString() })),
+      excludeIntervalIds, workspace, client,
+      key: JSON.stringify([workspaceScope, selectedPersonId, range.start, range.end, pendingAnalysisKey, refreshToken, assignmentAnalysisAttempt]),
     };
-    const timer = analysisPhases.length ? window.setTimeout(analyze, 250) : null;
-    if (timer === null) analyze();
+  }, [assignmentAnalysisAttempt, client, pendingAnalysisKey, range.end, range.start, refreshToken, selectedPersonId, selectedRangeLoaded, workspace, workspaceScope]);
+  const assignmentFlight = useMemo<{ client: SupabaseClient; scope: string; current: {
+    request: NonNullable<typeof assignmentRequest>; promise: Promise<WorkingTimeEntryRecommendation>;
+  } | null }>(() => ({ client, scope: workspaceScope, current: null }), [client, workspaceScope]);
+  const [assignmentAnalysis, setAssignmentAnalysis] = useState<{
+    request: NonNullable<typeof assignmentRequest>; result: WorkingTimeEntryRecommendation | null; error: string | null;
+  } | null>(null);
+  const currentAssignmentAnalysis = sameAssignmentAnalysis(assignmentAnalysis?.request, assignmentRequest) ? assignmentAnalysis : null;
+  useEffect(() => {
+    if (!assignmentRequest || currentAssignmentAnalysis || timelineGestureActive) return;
+    let active = true;
+    const { personId, periodStart, periodEnd, timezoneName, phases, excludeIntervalIds } = assignmentRequest;
+    const analyze = async () => {
+      // Let the active database call finish. Only the latest settled draft
+      // survives effect cleanup and gets to issue another request.
+      while (active && assignmentFlight.current && !sameAssignmentAnalysis(assignmentFlight.current.request, assignmentRequest)) {
+        await assignmentFlight.current.promise.catch(() => undefined);
+      }
+      if (!active) return;
+      const flight = assignmentFlight.current ?? {
+        request: assignmentRequest,
+        promise: fetchWorkingTimeAssignmentAnalysis(client, {
+          personId, periodStart, periodEnd, timezoneName, phases, excludeIntervalIds, vesselId: null, watchGroup: null,
+        }),
+      };
+      assignmentFlight.current = flight;
+      try {
+        const result = await flight.promise;
+        if (active) setAssignmentAnalysis({ request: assignmentRequest, result, error: null });
+      } catch (reason) {
+        if (active) setAssignmentAnalysis({ request: assignmentRequest, result: null, error: workingTimeErrorMessage(reason) });
+      } finally {
+        if (assignmentFlight.current === flight) assignmentFlight.current = null;
+      }
+    };
+    const timer = phases.length ? window.setTimeout(() => void analyze(), 600) : null;
+    if (timer === null) void analyze();
     return () => { active = false; if (timer !== null) window.clearTimeout(timer); };
-  }, [assignmentRequestKey, pendingAnalysisKey, client, range.end, range.start, selectedPersonId, selectedRangeLoaded]);
+  }, [assignmentFlight, assignmentRequest, client, currentAssignmentAnalysis, timelineGestureActive]);
   const assignmentCoverages = currentAssignmentAnalysis?.result?.assignmentCoverage;
   const coverageTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
   const coverageByDay = useMemo(() => assignmentCoverages === undefined ? undefined
@@ -1033,7 +1074,6 @@ export function WorkingTimeWorkflowPanel({
                     <WorkingTimeEntryBoard
                     allowPhaseResize
                     preserveDayDrafts
-                    analysisRefreshKey={analysisRefreshKey}
                     externalAnalysis={{ result: currentAssignmentAnalysis?.result ?? null, loading: assignmentAnalysisLoading,
                       error: assignmentAnalysisError ?? null, retry: () => setAssignmentAnalysisAttempt((attempt) => attempt + 1) }}
                     previewGraph={entryAnalysis?.graph}
@@ -1045,6 +1085,7 @@ export function WorkingTimeWorkflowPanel({
                     endsAt={endsAt}
                     intervals={selectedIntervals}
                     isSaving={isSaving}
+                    minimumRestHours={entryPolicy?.minConsecutiveRestHours}
                     hasRecordedPeriods={selectedDayIntervals.length > 0}
                     onCancelEdit={resetIntervalForm}
                     onCommentChange={setIntervalComment}
@@ -1054,6 +1095,7 @@ export function WorkingTimeWorkflowPanel({
                     onRequestVoid={(interval) => { setVoidCandidateId(interval.id); setVoidReason(''); }}
                     onSelectedDayChange={setSelectedDay}
                     onStartsAtChange={setStartsAt}
+                    onTimelineGestureChange={handleTimelineGestureChange}
                     onSubmit={handleEntryAction}
                     periodEnd={selectedRegister.periodEnd}
                     periodStart={selectedRegister.periodStart}
@@ -1113,7 +1155,7 @@ export function WorkingTimeWorkflowPanel({
                     <p>Le commentaire et les mesures prises documentent l’écart sans jamais rendre la journée conforme. Les cinq champs sont obligatoires avant validation.</p>
                     {nonCompliantDates.map((date) => {
                       const response = dayResponses[date] || EMPTY_NON_COMPLIANCE;
-                      const violationDetails = workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
+                      const violationDetails = coverageByDay ? [] : workingTimeViolationDetails(selectedCalculations, selectedIntervals, date, workspace.policies);
                       const dateApproval = workspace.dayApprovals.find((approval) => approval.registerId === selectedRegister.id && approval.localWorkDate === date);
                       const canRespond = Boolean(dateApproval?.status === 'submitted'
                         && (canManageApproval(dateApproval)

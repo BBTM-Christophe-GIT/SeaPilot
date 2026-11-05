@@ -37,7 +37,7 @@ export function WorkingTimeEntryCompliance({ policy, coverages, availableSlots, 
               : known ? 'Affectation couverte sans interruption'
                 : policy ? 'Affectation à analyser' : 'Politique requise'}
     </p>
-    {known ? coverages?.map((coverage) => <div className="working-time-compatible-window" key={`${coverage.assignmentId}:${coverage.scopeStartsAt}:${coverage.scopeEndsAt}`}>
+    {known ? coverages?.map((coverage) => <div className={`working-time-compatible-window${coverage.status === 'uncovered' ? ' is-uncovered' : ''}`} key={`${coverage.assignmentId}:${coverage.scopeStartsAt}:${coverage.scopeEndsAt}`}>
       <strong>{entryBounds({ startsAt: coverage.scopeStartsAt, endsAt: coverage.scopeEndsAt })}</strong>
       {coverage.windows.length ? <details><summary>{coverage.windows.length} fenêtre{coverage.windows.length > 1 ? 's' : ''} de 24 h compatible{coverage.windows.length > 1 ? 's' : ''}</summary>
         <ol>{coverage.windows.map((window) => <li key={`${window.startsAt}:${window.endsAt}`}>{entryBounds(window)}</li>)}</ol>

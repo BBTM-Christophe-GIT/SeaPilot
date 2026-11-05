@@ -8,8 +8,9 @@ import {
   Trash2,
   UserCheck,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { WorkingTimeInterval } from './workingTimeModel';
+import { projectedEntryAmplitudeSeconds } from './preview/workingTimePreviewProjection';
 import {
   fetchWorkingTimePhasesRecommendation,
   workingTimeErrorMessage,
@@ -67,6 +68,7 @@ interface WorkingTimeEntryBoardProps {
   rollingWindow?: WorkingTimeRollingWindowMarker | null;
   previewGraph?: WorkingTimeEntryGraphPreview;
   allowPhaseResize?: boolean;
+  minimumRestHours?: number;
   preserveDayDrafts?: boolean;
   analysisRefreshKey?: string;
   externalAnalysis?: { result: WorkingTimeEntryRecommendation | null; loading: boolean; error: string | null; retry: () => void };
@@ -74,6 +76,7 @@ interface WorkingTimeEntryBoardProps {
   onEndsAtChange: (value: string) => void;
   onCommentChange: (value: string) => void;
   onPendingPhasesChange?: (phases: WorkingTimePhaseInput[]) => void;
+  onTimelineGestureChange?: (active: boolean) => void;
   onSelectedDayChange?: (day: string) => void;
   onSubmit: (phases: WorkingTimePhaseInput[], intent: 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day') => void;
   onCancelEdit: () => void;
@@ -83,6 +86,9 @@ interface WorkingTimeEntryBoardProps {
 
 const pad = (value: number) => String(value).padStart(2, '0');
 const MINUTES_PER_DAY = 24 * 60;
+const NORMAL_AMPLITUDE_SECONDS = 12 * 3600;
+const MAXIMUM_AMPLITUDE_SECONDS = 14 * 3600;
+const EMPTY_PHASES: WorkingTimePhaseInput[] = [];
 
 function addDays(value: string, amount: number): string {
   const date = new Date(`${value}T12:00:00`);
@@ -163,7 +169,7 @@ export function WorkingTimeEntryBoard({
   planningContextLoading = false,
   comment,
   editingIntervalId,
-  pendingPhases = [],
+  pendingPhases = EMPTY_PHASES,
   nonCompliantDates = [],
   selectedDay: controlledSelectedDay,
   approverName = null,
@@ -176,6 +182,7 @@ export function WorkingTimeEntryBoard({
   rollingWindow = null,
   previewGraph,
   allowPhaseResize = false,
+  minimumRestHours,
   preserveDayDrafts = false,
   analysisRefreshKey = '',
   externalAnalysis,
@@ -183,6 +190,7 @@ export function WorkingTimeEntryBoard({
   onEndsAtChange,
   onCommentChange,
   onPendingPhasesChange = () => undefined,
+  onTimelineGestureChange,
   onSelectedDayChange = () => undefined,
   onSubmit,
   onCancelEdit,
@@ -217,13 +225,28 @@ export function WorkingTimeEntryBoard({
   const dayButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const slotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const commentInputRef = useRef<HTMLInputElement>(null);
+  const amplitudePromptId = useId();
   const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
-  const activePhase = validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null;
+  const activePhase = useMemo(() => validProposal(startsAt, endsAt) ? { startsAt, endsAt } : null, [startsAt, endsAt]);
   const combinedPhases = useMemo(() => {
     if (editingIntervalId) return activePhase ? [activePhase] : [];
     if (pendingPhases.length) return [...pendingPhases].sort((left, right) => left.startsAt.localeCompare(right.startsAt));
     return activePhase ? [activePhase] : [];
-  }, [editingIntervalId, endsAt, pendingPhases, startsAt]);
+  }, [activePhase, editingIntervalId, pendingPhases]);
+  const amplitudeHistory = useMemo(() => intervals.filter((interval) => interval.id !== editingIntervalId), [editingIntervalId, intervals]);
+  const submissionAmplitudeSeconds = useMemo(() => canEdit
+    ? projectedEntryAmplitudeSeconds(amplitudeHistory, combinedPhases, minimumRestHours) : 0,
+  [amplitudeHistory, canEdit, combinedPhases, minimumRestHours]);
+  const amplitudeSeconds = useMemo(() => {
+    // The live selection is visible before a drag or keyboard selection is committed.
+    return canEdit && activePhase && !combinedPhases.some((phase) => phase.startsAt <= activePhase.startsAt && phase.endsAt >= activePhase.endsAt)
+      ? projectedEntryAmplitudeSeconds(amplitudeHistory, [...combinedPhases, activePhase], minimumRestHours) : submissionAmplitudeSeconds;
+  }, [activePhase, amplitudeHistory, canEdit, combinedPhases, minimumRestHours, submissionAmplitudeSeconds]);
+  const amplitudeCommentRequired = submissionAmplitudeSeconds > NORMAL_AMPLITUDE_SECONDS;
+  const amplitudeCommentPrompt = amplitudeSeconds > NORMAL_AMPLITUDE_SECONDS;
+  const amplitudeLimitExceeded = amplitudeSeconds > MAXIMUM_AMPLITUDE_SECONDS;
+  const amplitudeLabel = formatDuration(Math.ceil(amplitudeSeconds / 60) * 60);
   const phasesOverlap = combinedPhases.some((phase, index) => index > 0
     && new Date(phase.startsAt).getTime() < new Date(combinedPhases[index - 1].endsAt).getTime());
   const phasesConflictExisting = combinedPhases.some((phase) => intervals.some((interval) => interval.id !== editingIntervalId
@@ -306,21 +329,25 @@ export function WorkingTimeEntryBoard({
 
   useEffect(() => { setSelectedRecordedIntervalId(null); }, [client, personId, selectedDay]);
   useEffect(() => {
-    const finish = (event: PointerEvent) => {
-      if (drag.current?.pointerId === event.pointerId) drag.current = null;
-    };
-    const blur = () => { drag.current = null; };
-    window.addEventListener('pointerup', finish);
-    window.addEventListener('pointercancel', finish);
-    window.addEventListener('blur', blur);
-    return () => {
+    const clearGesture = () => {
+      if (!drag.current && !resizeDrag.current) return;
       drag.current = null;
       resizeDrag.current = null;
+      onTimelineGestureChange?.(false);
+    };
+    const finish = (event: PointerEvent) => {
+      if (drag.current?.pointerId === event.pointerId || resizeDrag.current?.pointerId === event.pointerId) clearGesture();
+    };
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('blur', clearGesture);
+    return () => {
+      clearGesture();
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', finish);
-      window.removeEventListener('blur', blur);
+      window.removeEventListener('blur', clearGesture);
     };
-  }, [client, personId, selectedDay, editingIntervalId, canEdit, isSaving]);
+  }, [client, personId, selectedDay, editingIntervalId, canEdit, isSaving, onTimelineGestureChange]);
   useEffect(() => {
     dayButtonRefs.current.get(selectedDay)?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
   }, [selectedDay]);
@@ -352,6 +379,7 @@ export function WorkingTimeEntryBoard({
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
     drag.current = null;
+    onTimelineGestureChange?.(false);
     if (!canEdit || isSaving) return;
     onStartsAtChange(current.startsAt);
     onEndsAtChange(current.endsAt);
@@ -434,6 +462,7 @@ export function WorkingTimeEntryBoard({
       setActivePendingIndex(activeDrag.activeIndex);
     }
     if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+    onTimelineGestureChange?.(false);
   }
 
   function handleResizeKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number, edge: 'start' | 'end', slot: number) {
@@ -509,9 +538,9 @@ export function WorkingTimeEntryBoard({
     ? currentRecommendationError ? 'Analyse indisponible' : combinedPhases.length ? 'Analyse en cours' : 'Sélectionnez une période'
     : status === 'conforme' ? 'Conforme' : status === 'alerte' ? 'Alerte' : status === 'non_conforme' ? 'Non conforme' : 'Politique requise';
   const maxRecommended = currentRecommendation?.alreadyNonCompliant ? 0 : currentRecommendation?.maxAdditionalSeconds || 0;
-  const commentRequired = combinedPhases.length > 0 && (externalAnalysis
+  const commentRequired = amplitudeCommentRequired || (combinedPhases.length > 0 && (externalAnalysis
     ? currentRecommendation?.assignmentCoverage?.some((scope) => scope.status === 'uncovered')
-    : status === 'alerte' || status === 'non_conforme');
+    : status === 'alerte' || status === 'non_conforme'));
   const selectionBlocked = phasesOverlap || phasesConflictExisting || Boolean(currentRecommendationError)
     || (combinedPhases.length > 0 && (analysisLoading || !currentRecommendation || status === 'sans_politique'));
 
@@ -539,6 +568,31 @@ export function WorkingTimeEntryBoard({
         })}
       </div>
 
+      {canEdit ? (
+        <div aria-label="Amplitude de travail" className="working-time-amplitude" role="group">
+          <div className="working-time-amplitude-labels">
+            <span>Amplitude normale <strong>12h00</strong><small>Sans commentaire d’amplitude</small></span>
+            <span>Amplitude maximale <strong>14h00</strong><small>Situation d’urgence</small></span>
+          </div>
+          <div
+            aria-label="Amplitude prévue"
+            aria-valuemax={MAXIMUM_AMPLITUDE_SECONDS / 60}
+            aria-valuemin={0}
+            aria-valuenow={Math.min(MAXIMUM_AMPLITUDE_SECONDS, amplitudeSeconds) / 60}
+            aria-valuetext={amplitudeLabel}
+            className={`working-time-amplitude-rail${amplitudeLimitExceeded ? ' is-exceeded' : amplitudeCommentPrompt ? ' is-emergency' : ''}`}
+            role="meter"
+          >
+            <span aria-hidden="true" style={{ width: `${Math.min(100, amplitudeSeconds / MAXIMUM_AMPLITUDE_SECONDS * 100)}%` }} />
+          </div>
+          {amplitudeSeconds > 0 ? <p className="working-time-amplitude-reading"><strong>Amplitude prévue {amplitudeLabel}</strong></p> : null}
+          {amplitudeCommentPrompt ? <p className={`working-time-amplitude-prompt${amplitudeLimitExceeded ? ' is-exceeded' : ''}`} id={amplitudePromptId} role="status">
+            {amplitudeLimitExceeded ? 'Amplitude maximale de 14h00 dépassée. ' : null}
+            Renseignez un commentaire pour justifier le dépassement de 12h00.
+          </p> : null}
+        </div>
+      ) : null}
+
       <div className="working-time-entry-layout">
         <div className="working-time-timeline-panel">
           <div className="working-time-timeline-legend"><span><i className="is-existing" />Enregistré</span><span><i className="is-pending" />À enregistrer</span><span><i className="is-selected" />Plage active</span>{rollingWindow ? <small className="is-rolling-window"><i />24 h glissantes</small> : <small>{allowPhaseResize ? 'Glissez pour ajouter · ajustez les bords des périodes · pas de 30 min' : 'Glissez plusieurs fois pour ajouter des périodes · pas de 30 min'}</small>}</div>
@@ -563,6 +617,7 @@ export function WorkingTimeEntryBoard({
                       if (!canEdit || isSaving || event.button > 0 || drag.current) return;
                       if (recordedInterval) { setSelectedRecordedIntervalId(recordedInterval.id); return; }
                       drag.current = { pointerId: event.pointerId, first: slot, last: slot, startsAt, endsAt };
+                      onTimelineGestureChange?.(true);
                       event.currentTarget.setPointerCapture?.(event.pointerId);
                       setActivePendingIndex(null); selectSlots(slot, slot);
                     }}
@@ -582,6 +637,7 @@ export function WorkingTimeEntryBoard({
                       const target = pointedSlot(event, slot);
                       drag.current = null;
                       commitSlots(current.first, target ?? current.last);
+                      onTimelineGestureChange?.(false);
                     }}
                     onPointerCancel={cancelDrag}
                     onLostPointerCapture={cancelDrag}
@@ -621,6 +677,7 @@ export function WorkingTimeEntryBoard({
                       pointerId: event.pointerId, index, edge, lastSlot: slot, initialSlot: slot, pointerStartX: event.clientX,
                       phases: pendingPhases.map((candidate) => ({ ...candidate })), startsAt, endsAt, activeIndex: activePendingIndex,
                     };
+                    onTimelineGestureChange?.(true);
                     event.currentTarget.setPointerCapture?.(event.pointerId);
                     event.currentTarget.focus();
                   }}
@@ -709,11 +766,15 @@ export function WorkingTimeEntryBoard({
       {canEdit ? (
         <form className="working-time-interval-form working-time-entry-form" onSubmit={(event) => {
           event.preventDefault();
-          if (isSaving || planningContextLoading || selectionBlocked) return;
+          if (isSaving || planningContextLoading || selectionBlocked || drag.current || resizeDrag.current) return;
+          if (amplitudeCommentRequired && !comment.trim()) {
+            commentInputRef.current?.focus();
+            return;
+          }
           const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
           onSubmit(combinedPhases, (submitter?.value || 'save-correction') as 'save-correction' | 'save-draft' | 'submit-day' | 'validate-day');
         }}>
-          <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-required={commentRequired} disabled={isSaving} onChange={(event) => onCommentChange(event.target.value)} required={commentRequired} value={comment} /></label>
+          <label className="is-wide">{commentRequired ? 'Commentaire obligatoire' : 'Commentaire'}<input aria-describedby={amplitudeCommentRequired ? amplitudePromptId : undefined} aria-required={commentRequired} disabled={isSaving} onChange={(event) => onCommentChange(event.target.value)} ref={commentInputRef} required={commentRequired} value={comment} /></label>
           {planningContextLoading
             ? <p className="working-time-planning-context" role="status">Chargement de l’affectation Planning…</p>
             : !planningVesselId

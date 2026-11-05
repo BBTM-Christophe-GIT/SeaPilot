@@ -137,6 +137,27 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
+    test('registre du travail : repères d’amplitude et demande de commentaire pendant la saisie', async ({ page }) => {
+      await signIn(page, profile, '/modules/workingTime');
+      const board = page.getByRole('region', { name: 'Journée de travail', exact: true });
+      const guide = board.getByRole('group', { name: 'Amplitude de travail', exact: true });
+      const meter = guide.getByRole('meter', { name: 'Amplitude prévue', exact: true });
+      await expect(guide).toContainText('Amplitude normale 12h00');
+      await expect(guide).toContainText('Amplitude maximale 14h00');
+
+      await board.getByRole('gridcell', { name: /^11:30, repos/ }).press('Shift+End');
+      await expect(meter).toHaveAttribute('aria-valuetext', '12 h 30');
+      await expect(guide).toContainText('Renseignez un commentaire pour justifier le dépassement de 12h00.');
+
+      await board.getByRole('gridcell', { name: /^23:30, repos, sélectionné/ }).press('Enter');
+      const comment = board.getByRole('textbox', { name: 'Commentaire obligatoire', exact: true });
+      await expect(comment).toHaveAttribute('aria-required', 'true');
+      await comment.fill('Intervention de sécurité');
+      await expect(comment).toHaveValue('Intervention de sécurité');
+      await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+      await test.info().attach('jauge-amplitude', { body: await guide.screenshot(), contentType: 'image/png' });
+    });
+
     test('DPR : périmètre réel du profil et brouillon conservé après rechargement', async ({ page, isMobile }) => {
       await signIn(page, profile, '/modules/dpr');
       await expect(page.getByText('CI VISIBLE REPORT', { exact: true })).toBeVisible();
