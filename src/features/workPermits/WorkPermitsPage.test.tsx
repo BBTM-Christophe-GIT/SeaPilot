@@ -124,7 +124,11 @@ describe('registre opérationnel des permis de travaux', () => {
         fireEvent.change(screen.getByLabelText('Vertical (%)'), { target: { value: y } });
         fireEvent.click(screen.getByRole('button', { name: 'Ajouter le sommet' }));
       }
-      fireEvent.click(screen.getByRole('button', { name: 'Fermer la zone' }));
+      expect(screen.getByText('Zone d’exclusion', { selector: '.work-permits-zone-label' })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Horizontal (%)'), { target: { value: 20 } });
+      fireEvent.change(screen.getByLabelText('Vertical (%)'), { target: { value: 42 } });
+      fireEvent.click(screen.getByRole('button', { name: 'Ajouter le sommet' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Terminer le tracé' }));
     }
     drawTriangle();
     fireEvent.change(screen.getByLabelText('Plan affiché'), { target: { value: 'pont-superieur' } });
@@ -134,8 +138,8 @@ describe('registre opérationnel des permis de travaux', () => {
     expect(queries.saveWorkPermit).toHaveBeenCalledWith(expect.anything(), location.id, expect.objectContaining({
       point_x: null, point_y: null,
       exclusion_zones: [
-        { planKey: 'pont-principal', points: expect.any(Array) },
-        { planKey: 'pont-superieur', points: expect.any(Array) },
+        { planKey: 'pont-principal', points: expect.arrayContaining([{ x: .2, y: .42 }]) },
+        { planKey: 'pont-superieur', points: expect.arrayContaining([{ x: .2, y: .42 }]) },
       ],
     }), permit);
     await screen.findByRole('region', { name: 'Permis sélectionné' });
