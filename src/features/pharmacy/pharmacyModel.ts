@@ -61,6 +61,19 @@ export function pharmacyNotificationHref(notification: PharmacyNotification): st
   return notification.kind === 'item' && notification.item_id != null ? `${route}&item=${notification.item_id}` : route;
 }
 export type PharmacyVesselExpiryCounts = { due: number; expired: number };
+
+export function pharmacyVesselExpiryCounts(notifications: PharmacyNotification[]): Record<number, PharmacyVesselExpiryCounts> {
+  const counts: Record<number, PharmacyVesselExpiryCounts> = {};
+  for (const notification of notifications) {
+    const days = notification.days_until_expiry;
+    if (notification.kind !== 'item' || !Number.isFinite(days) || days > PHARMACY_ALERT_DAYS) continue;
+    const vesselCounts = counts[notification.vessel_id] ||= { due: 0, expired: 0 };
+    if (days < 0) vesselCounts.expired += 1;
+    else vesselCounts.due += 1;
+  }
+  return counts;
+}
+
 export interface PharmacyItemGroup { key: string; section: string; medical_dotation: string; medical_section: PharmacyMedicalSection; category: string; items: PharmacyItem[] }
 
 export function groupPharmacyItems(items: PharmacyItem[], catalogue: PharmacyCategory[] = []): PharmacyItemGroup[] {

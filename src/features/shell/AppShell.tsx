@@ -6,6 +6,7 @@ import { useGmailUnreadCount } from '../mailbox/useGmailUnreadCount';
 import { fetchDisciplinaryNotifications, markDisciplinaryNotificationRead, DISCIPLINARY_NOTIFICATIONS_CHANGED, type DisciplinaryNotification } from '../disciplinary/disciplinaryWorkflow';
 import { fetchPharmacyNotifications } from '../pharmacy/pharmacyQueries';
 import { formatPharmacyDate, pharmacyNotificationHref, type PharmacyNotification } from '../pharmacy/pharmacyModel';
+import { usePharmacyAlertPolling, type PharmacyAlertPolling } from '../pharmacy/usePharmacyAlertPolling';
 import { PharmacyIcon } from '../pharmacy/PharmacyIcon';
 import { LiftingOperationsIcon } from '../lifting/LiftingIcons';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -90,6 +91,7 @@ export interface AppShellOutletContext {
   client: SupabaseClient;
   previewMode: boolean;
   currentPerson: CurrentPersonSummary | null;
+  pharmacyAlerts?: PharmacyAlertPolling<PharmacyNotification[]>;
   setLiftingNavigationBlocked?: (blocked: boolean) => void;
   liftingVesselId?: number;
   setLiftingVesselId?: (id: number) => void;
@@ -238,7 +240,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const [signOutError, setSignOutError] = useState('');
   const signOutPending = useRef(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [pharmacyNotifications, setPharmacyNotifications] = useState<PharmacyNotification[]>([]);
   const [serviceNoteNotifications, setServiceNoteNotifications] = useState<ServiceNoteNotification[]>([]);
   const [hrDocumentNotifications, setHrDocumentNotifications] = useState<HrDocumentExpiryNotification[]>([]);
   const [annualReviewNotifications, setAnnualReviewNotifications] = useState<AnnualReviewNotification[]>([]);
@@ -467,31 +468,8 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   }
 
   const canReceivePharmacy = visibleModules.some((module) => module.key === 'pharmacy');
-  useEffect(() => {
-    setPharmacyNotifications([]);
-    if (previewMode || !sessionUserId || !canReceivePharmacy) return;
-    let live = true;
-    let version = 0;
-    const refresh = () => {
-      const request = ++version;
-      void fetchPharmacyNotifications(client)
-        .then((rows) => { if (live && request === version) setPharmacyNotifications(rows); })
-        .catch(() => { if (live && request === version) setPharmacyNotifications([]); });
-    };
-    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
-    refresh();
-    const timer = window.setInterval(visible, 30_000);
-    window.addEventListener('focus', refresh);
-    window.addEventListener('pharmacy:changed', refresh);
-    document.addEventListener('visibilitychange', visible);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('pharmacy:changed', refresh);
-      document.removeEventListener('visibilitychange', visible);
-    };
-  }, [client, previewMode, sessionUserId, canReceivePharmacy]);
+  const pharmacyScope = !previewMode && sessionUserId && canReceivePharmacy ? `${sessionUserId}:${roles.join(',')}` : undefined;
+  const pharmacyAlerts = usePharmacyAlertPolling(client, pharmacyScope, fetchPharmacyNotifications);
 
   const requestedModule = getRequestedModule(location.pathname);
   const liftingSection = requestedModule?.key === 'lifting' ? LIFTING_SECTIONS.find((section) => location.pathname.replace(/\/+$/, '').endsWith(`/${section.path}`)) : undefined;
@@ -530,7 +508,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
     || (previewMode ? 'Préversion BBTM' : sessionDisplayName || userEmail.split('@')[0] || 'Utilisateur');
   const primaryRole = ROLE_KEYS.find((role) => roles.includes(role));
   const primaryRoleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'Utilisateur';
-  const activePharmacyNotifications = canReceivePharmacy && !previewMode && sessionUserId ? pharmacyNotifications : [];
+  const activePharmacyNotifications = pharmacyAlerts.data ?? [];
   const notificationCount = serviceNoteNotifications.length + hrDocumentNotifications.length + annualReviewNotifications.length + actionPlanNotifications.length + leaveNotifications.length + disciplinaryNotifications.length + activePharmacyNotifications.length;
 
   function openLeaveNotification(notification: PlanningLeaveNotification) {
@@ -849,7 +827,7 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
           {isRequestedModuleDenied ? (
             <div className="auth-loading">Acces refuse pour ce module.</div>
           ) : (
-            <Outlet context={{ userId: session?.user.id, roles, client, previewMode, currentPerson, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
+            <Outlet context={{ userId: session?.user.id, roles, client, previewMode, currentPerson, pharmacyAlerts, visibleModules: activeVisibleModules, setLiftingNavigationBlocked, liftingVesselId, setLiftingVesselId } satisfies AppShellOutletContext} />
           )}
         </main>
       </div>

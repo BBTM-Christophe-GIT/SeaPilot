@@ -48,7 +48,9 @@ async function errorOf(error: unknown): Promise<StorageApiError> {
   const detail = error && typeof error === 'object' ? error as { message?: string; code?: string } : {};
   return new StorageApiError(detail.message || 'Le document Vercel est indisponible.', detail.code === '42501' ? 403 : 502, detail.code || 'document_blob_error');
 }
-async function api(client: SupabaseClient, body: Json, signal?: AbortSignal): Promise<Json> {
+function api(client: SupabaseClient, body: Json, signal?: AbortSignal): Promise<Json>;
+function api(client: SupabaseClient, body: Json, signal: AbortSignal | undefined, allowUnmapped: true): Promise<Json | null>;
+async function api(client: SupabaseClient, body: Json, signal?: AbortSignal, allowUnmapped = false): Promise<Json | null> {
   const initial = await client.auth.getSession();
   if (initial.error) throw initial.error;
   const session = initial.data.session;
@@ -57,10 +59,11 @@ async function api(client: SupabaseClient, body: Json, signal?: AbortSignal): Pr
     body: JSON.stringify(body), ...(signal ? { signal } : {}) });
   const value: unknown = await result.json().catch(() => null);
   const data = value && typeof value === 'object' && !Array.isArray(value) ? value as Json : {};
-  if (!result.ok) throw new StorageApiError(typeof data.error === 'string' ? data.error : 'Le service documentaire est indisponible.', result.status, String(data.error || 'document_blob_error'));
+  const unmapped = allowUnmapped && result.status === 404 && data.error === 'DOCUMENT_NOT_FOUND';
+  if (!result.ok && !unmapped) throw new StorageApiError(typeof data.error === 'string' ? data.error : 'Le service documentaire est indisponible.', result.status, String(data.error || 'document_blob_error'));
   const current = await client.auth.getSession();
   if (current.error || current.data.session?.user.id !== session.user.id) throw new Error('Le compte a changé pendant la lecture du document.');
-  return data;
+  return unmapped ? null : data;
 }
 function signedUrl(data: Json): string {
   if (typeof data.signedUrl !== 'string') throw new Error('Le lien Vercel est invalide.');
@@ -68,6 +71,52 @@ function signedUrl(data: Json): string {
   if (url.protocol !== 'https:' || !/^[a-z0-9-]+\.private\.blob\.vercel-storage\.com$/.test(url.hostname)) throw new Error('Le lien Vercel est invalide.');
   return data.signedUrl;
 }
+function usesHostedDocumentGateway(): boolean {
+  return import.meta.env.VITE_SEAPILOT_DOCUMENT_GATEWAY === 'true';
+}
+
+async function resolveBlobUrl(client: SupabaseClient, bucket: string, path: string, options: {
+  expiresIn?: number; download?: boolean | string; signal?: AbortSignal; mapped?: BlobReference;
+}) {
+  const data = await api(client, { operation: 'url', bucket, path, expiresIn: options.expiresIn, download: options.download },
+    options.signal, true);
+  if (!data) {
+    if (options.mapped) throw new Error('Le document a changé. Rechargez la liste.');
+    return null;
+  }
+  const info = reference(data.document);
+  if (options.mapped && (info.blob_pathname !== options.mapped.blob_pathname || info.sha256 !== options.mapped.sha256)) {
+    throw new Error('Le document a changé. Rechargez la liste.');
+  }
+  return { url: signedUrl(data), info };
+}
+
+async function downloadBlob(resolved: NonNullable<Awaited<ReturnType<typeof resolveBlobUrl>>>, signal?: AbortSignal) {
+  const { url, info } = resolved;
+  const response = await fetch(url, { ...(signal ? { signal } : {}), credentials: 'omit' });
+  if (!response.ok) throw new Error('Le téléchargement Vercel a échoué.');
+  const blob = await response.blob();
+  if (blob.size !== info.bytes || blob.type.split(';')[0].trim().toLowerCase() !== info.mime_type.split(';')[0].trim().toLowerCase()) {
+    throw new Error('Le téléchargement du document est incomplet.');
+  }
+  return blob;
+}
+
+/** Hosted module readers with their own historical fallback can resolve and sign in one check. */
+export function hostedDocumentBlobReaders(client: SupabaseClient, bucket: string) {
+  if (!usesHostedDocumentGateway() || !BUCKETS.has(bucket)) return null;
+  return {
+    async download(path: string, signal?: AbortSignal): Promise<Blob | null> {
+      const resolved = await resolveBlobUrl(client, bucket, path, { signal });
+      return resolved ? downloadBlob(resolved, signal) : null;
+    },
+    async createSignedUrl(path: string, expiresIn: number): Promise<string | null> {
+      const resolved = await resolveBlobUrl(client, bucket, path, { expiresIn });
+      return resolved?.url ?? null;
+    },
+  };
+}
+
 function uploadDestination(data: Json): string {
   const invalid = () => new Error('La destination du document est invalide.');
   if (typeof data.uploadUrl !== 'string' || typeof data.uploadId !== 'string'
@@ -106,26 +155,23 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
     try { const result = await perform(); if (result.error && throwErrors) throw result.error; return result; }
     catch (error) { const failure = await errorOf(error); if (throwErrors) throw failure; return { data: null, error: failure }; }
   };
-  const createSignedUrl = (path: string, expiresIn: number, options?: SignedOptions) => operation(async () => {
+  const hosted = usesHostedDocumentGateway();
+  const resolve = async (path: string, options: Parameters<typeof resolveBlobUrl>[3]) => {
+    if (hosted) return resolveBlobUrl(client, bucket, path, options);
+    // A standalone Vite build has no document gateway for retained files.
     const mapped = await lookup(client, bucket, path);
-    if (!mapped) return await legacy.createSignedUrl(path, expiresIn, options) as Result<{ signedUrl: string }>;
-    const data = await api(client, { operation: 'url', bucket, path, expiresIn, download: options?.download || false });
-    const current = reference(data.document);
-    if (current.blob_pathname !== mapped.blob_pathname || current.sha256 !== mapped.sha256) throw new Error('Le document a changé. Rechargez la liste.');
-    return { data: { signedUrl: signedUrl(data) }, error: null };
+    return mapped ? resolveBlobUrl(client, bucket, path, { ...options, mapped }) : null;
+  };
+  const createSignedUrl = (path: string, expiresIn: number, options?: SignedOptions) => operation(async () => {
+    const resolved = await resolve(path, { expiresIn, download: options?.download || false });
+    if (!resolved) return await legacy.createSignedUrl(path, expiresIn, options) as Result<{ signedUrl: string }>;
+    return { data: { signedUrl: resolved.url }, error: null };
   });
   const download = (path: string, options?: DownloadOptions, parameters?: DownloadParameters) => {
     const result = operation<Blob>(async () => {
-      const mapped = await lookup(client, bucket, path);
-      if (!mapped) return await legacy.download(path, options, parameters) as Result<Blob>;
-      const data = await api(client, { operation: 'url', bucket, path }, parameters?.signal);
-      const info = reference(data.document);
-      if (info.blob_pathname !== mapped.blob_pathname || info.sha256 !== mapped.sha256) throw new Error('Le document a changé. Rechargez la liste.');
-      const response = await fetch(signedUrl(data), { ...(parameters?.signal ? { signal: parameters.signal } : {}), credentials: 'omit' });
-      if (!response.ok) throw new Error('Le téléchargement Vercel a échoué.');
-      const blob = await response.blob();
-      if (blob.size !== info.bytes || blob.type.split(';')[0].trim().toLowerCase() !== info.mime_type.split(';')[0].trim().toLowerCase()) throw new Error('Le téléchargement du document est incomplet.');
-      return { data: blob, error: null };
+      const resolved = await resolve(path, { signal: parameters?.signal });
+      if (!resolved) return await legacy.download(path, options, parameters) as Result<Blob>;
+      return { data: await downloadBlob(resolved, parameters?.signal), error: null };
     });
     return Object.assign(result, { asStream: () => result.then(value => value.error ? value : { data: value.data.stream(), error: null }) });
   };
@@ -133,47 +179,56 @@ export function documentBlobStorage(client: SupabaseClient, bucket: string, lega
     const entries: { path: string; signedUrl: string | null; error: string | null }[] = [];
     for (let offset = 0; offset < paths.length; offset += lookupBatchSize) {
       const batch = paths.slice(offset, offset + lookupBatchSize);
-      const lookup = await client.rpc('document_blob_lookup_batch', { target_bucket: bucket, target_paths: batch });
-      if (lookup.error) throw lookup.error;
-      if (!Array.isArray(lookup.data) || lookup.data.length !== batch.length) throw new Error('La liste des documents Vercel est invalide.');
       const mapped = new Map<string, BlobReference>();
-      const fallback: string[] = [];
+      const fallback = new Set<string>();
       const denied = new Map<string, string>();
-      lookup.data.forEach((entry: Json, index: number) => {
-        if (!entry || entry.path !== batch[index]) throw new Error('La liste des documents Vercel est invalide.');
-        if (entry.error) denied.set(batch[index], String(entry.error));
-        else if (entry.document === null) fallback.push(batch[index]);
-        else mapped.set(batch[index], reference(entry.document));
-      });
-      const native = fallback.length ? await legacy.createSignedUrls(fallback, expiresIn, options) : null;
-      const old = new Map((native?.data || []).map(entry => [entry.path, entry]));
-      const resolved = new Map<string, Json>();
-      if (mapped.size) {
-        const requested = [...mapped.keys()];
+      if (!hosted) {
+        const lookup = await client.rpc('document_blob_lookup_batch', { target_bucket: bucket, target_paths: batch });
+        if (lookup.error) throw lookup.error;
+        if (!Array.isArray(lookup.data) || lookup.data.length !== batch.length) throw new Error('La liste des documents Vercel est invalide.');
+        lookup.data.forEach((entry: Json, index: number) => {
+          if (!entry || entry.path !== batch[index]) throw new Error('La liste des documents Vercel est invalide.');
+          if (entry.error) denied.set(batch[index], String(entry.error));
+          else if (entry.document === null) fallback.add(batch[index]);
+          else mapped.set(batch[index], reference(entry.document));
+        });
+      }
+      const resolved = new Map<string, string>();
+      const requested = hosted ? [...new Set(batch)] : [...mapped.keys()];
+      if (requested.length) {
         try {
           const result = await api(client, { operation: 'urls', bucket, paths: requested, expiresIn, download: options?.download || false });
           if (!Array.isArray(result.entries) || result.entries.length !== requested.length) throw new Error('La liste des documents Vercel est invalide.');
-          result.entries.forEach((value: Json, index: number) => {
-            if (!value || value.path !== requested[index]) throw new Error('La liste des documents Vercel est invalide.');
-            // A mapping disappearing during the request must never revive its old source.
-            if (value.unmapped || value.error) resolved.set(requested[index], { error: value.error || 'Le document a changé. Rechargez la liste.' });
-            else {
-              const current = reference(value.document);
-              const original = mapped.get(requested[index])!;
-              if (current.blob_pathname !== original.blob_pathname || current.sha256 !== original.sha256) throw new Error('Le document a changé. Rechargez la liste.');
-              resolved.set(requested[index], { signedUrl: signedUrl(value) });
+          result.entries.forEach((entry: Json, index: number) => {
+            const path = requested[index];
+            if (!entry || entry.path !== path) throw new Error('La liste des documents Vercel est invalide.');
+            if (entry.error) denied.set(path, String(entry.error));
+            else if (entry.unmapped === true) {
+              if (hosted && entry.signedUrl === null && entry.document == null) fallback.add(path);
+              else denied.set(path, 'Le document a changé. Rechargez la liste.');
+            } else {
+              const current = reference(entry.document);
+              const original = mapped.get(path);
+              if (original && (current.blob_pathname !== original.blob_pathname || current.sha256 !== original.sha256)) {
+                throw new Error('Le document a changé. Rechargez la liste.');
+              }
+              resolved.set(path, signedUrl(entry));
             }
           });
         } catch (error) {
+          if (hosted) throw error;
           const failure = await errorOf(error);
-          for (const path of requested) resolved.set(path, { error: failure.message });
+          for (const path of requested) denied.set(path, failure.message);
         }
       }
+      const native = fallback.size ? await legacy.createSignedUrls([...fallback], expiresIn, options) : null;
+      const old = new Map((native?.data || []).map(entry => [entry.path, entry]));
       batch.forEach(path => {
         const value = resolved.get(path);
         const entry = old.get(path);
-        if (denied.has(path)) entries.push({ path, signedUrl: null, error: denied.get(path)! });
-        else if (mapped.has(path)) entries.push({ path, signedUrl: typeof value?.signedUrl === 'string' ? value.signedUrl : null, error: value?.error ? String(value.error) : null });
+        const error = denied.get(path);
+        if (error) entries.push({ path, signedUrl: null, error });
+        else if (value) entries.push({ path, signedUrl: value, error: null });
         else entries.push({ path, signedUrl: entry?.signedUrl || null, error: entry?.error || native?.error?.message || null });
       });
     }

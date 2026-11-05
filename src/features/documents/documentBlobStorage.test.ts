@@ -49,6 +49,64 @@ function fixture(mapping: Record<string, unknown> = {}, bucket = 'fleet-certific
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('private Blob documents', () => {
+  it('uses the hosted authorization result directly for links and downloads', async () => {
+    vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+    const { storage, legacy, rpc, fetcher } = fixture({ 'current.pdf': reference });
+    expect(await storage.createSignedUrl('current.pdf', 120)).toEqual({ data: { signedUrl: privateUrl }, error: null });
+    expect(await (await storage.download('current.pdf')).data?.text()).toBe(contents);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/documents', '/api/documents', privateUrl]);
+    expect(legacy.createSignedUrl).not.toHaveBeenCalled();
+    expect(legacy.download).not.toHaveBeenCalled();
+  });
+
+  it('only falls back after a hosted not-found result for the same account', async () => {
+    vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+    const { storage, legacy, rpc, fetcher, getSession } = fixture();
+    const unmapped = () => Response.json({ error: 'DOCUMENT_NOT_FOUND' }, { status: 404 });
+    fetcher.mockResolvedValueOnce(unmapped());
+    expect(await storage.createSignedUrl('old.pdf', 60)).toEqual({ data: { signedUrl: 'https://old.example/file' }, error: null });
+    expect(legacy.createSignedUrl).toHaveBeenCalledExactlyOnceWith('old.pdf', 60, undefined);
+    fetcher.mockResolvedValueOnce(unmapped());
+    getSession.mockResolvedValueOnce({ data: { session: { access_token: 'first', user } }, error: null })
+      .mockResolvedValueOnce({ data: { session: { access_token: 'second', user: { id: 'other-user' } } }, error: null });
+    expect((await storage.download('old.pdf')).error?.message).toContain('compte a changé');
+    expect(legacy.download).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([[403, 'DOCUMENT_ACCESS_DENIED'], [404, 'ROUTE_NOT_FOUND'], [502, 'DOCUMENT_SERVICE_UNAVAILABLE']])(
+    'stops a hosted read after %s %s without historical fallback', async (status, error) => {
+      vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+      const { storage, legacy, rpc, fetcher } = fixture();
+      fetcher.mockResolvedValueOnce(Response.json({ error }, { status }));
+      expect((await storage.download('old.pdf')).error?.status).toBe(status);
+      expect(legacy.download).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('authorizes each unique hosted batch entry once and preserves mixed results', async () => {
+    vi.stubEnv('VITE_SEAPILOT_DOCUMENT_GATEWAY', 'true');
+    const { storage, legacy, rpc, fetcher } = fixture({}, 'working-time-signatures');
+    fetcher.mockResolvedValueOnce(Response.json({ entries: [
+      { path: 'current.png', document: reference, signedUrl: privateUrl, error: null },
+      { path: 'old.png', signedUrl: null, unmapped: true, error: null },
+      { path: 'private.png', signedUrl: null, error: 'DOCUMENT_ACCESS_DENIED' },
+    ] }));
+    const paths = ['current.png', 'old.png', 'private.png', 'current.png'];
+    expect((await storage.createSignedUrls(paths, 60)).data).toEqual([
+      { path: 'current.png', signedUrl: privateUrl, error: null },
+      { path: 'old.png', signedUrl: 'https://old.example/old.png', error: null },
+      { path: 'private.png', signedUrl: null, error: 'DOCUMENT_ACCESS_DENIED' },
+      { path: 'current.png', signedUrl: privateUrl, error: null },
+    ]);
+    expect(JSON.parse(fetcher.mock.calls[0][1].body).paths).toEqual(paths.slice(0, 3));
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(legacy.createSignedUrls).toHaveBeenCalledExactlyOnceWith(['old.png'], 60, undefined);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it('reads current private bytes through the authenticated gateway', async () => {
     const { storage, legacy, fetcher } = fixture({ 'current.pdf': reference });
     const result = await storage.download('current.pdf');

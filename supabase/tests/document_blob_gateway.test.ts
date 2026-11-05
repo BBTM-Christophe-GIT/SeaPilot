@@ -146,6 +146,23 @@ describe('private document Blob gateway', () => {
     expect(deps.sign).not.toHaveBeenCalled();
   });
 
+  it('returns an authorized unmapped response even without Blob upload configuration', async () => {
+    const { handler, rpc, deps } = setup();
+    vi.mocked(deps.getEnv).mockReturnValue(undefined);
+    rpc.mockResolvedValueOnce(null);
+    const result = await handler(request({ operation: 'url', ...KEY }));
+    expect(result.status).toBe(404);
+    expect(await result.json()).toEqual({ error: 'DOCUMENT_NOT_FOUND' });
+    const mapped = await handler(request({ operation: 'url', ...KEY }));
+    expect(mapped.status).toBe(503);
+    expect(await mapped.json()).toEqual({ error: 'DOCUMENT_STORE_NOT_CONFIGURED' });
+    rpc.mockResolvedValueOnce([{ path: KEY.path, document: null, error: null }]);
+    const batch = await handler(request({ operation: 'urls', bucket: KEY.bucket, paths: [KEY.path] }));
+    expect(await batch.json()).toEqual({ entries: [{ path: KEY.path, signedUrl: null, error: null, unmapped: true }] });
+    expect(deps.sign).not.toHaveBeenCalled();
+    expect((await handler(request(prepare))).status).toBe(503);
+  });
+
   it('signs only the authorized mapped private object with a bounded expiry', async () => {
     const { handler, rpc, deps } = setup();
     const result = await handler(request({ operation: 'url', ...KEY, expiresIn: 90.8 }));
