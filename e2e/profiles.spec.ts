@@ -41,6 +41,26 @@ async function openDailyDprStep(dialog: Locator) {
   await expect(dialog.getByRole('heading', { name: 'Informations Journalière', exact: true })).toBeVisible();
 }
 
+async function inlinePercent(locator: Locator, property: 'left' | 'width') {
+  const style = await locator.getAttribute('style');
+  return Number(style?.match(new RegExp(`(?:^|;)\\s*${property}:\\s*([\\d.]+)%`))?.[1]);
+}
+
+async function openWorkingTimeDay(page: Page, daysAgo: number) {
+  const board = page.getByRole('region', { name: 'Journée de travail', exact: true });
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const selectedDate = new Date(`${today}T12:00:00Z`);
+  selectedDate.setUTCDate(selectedDate.getUTCDate() - daysAgo);
+  const day = selectedDate.toISOString().slice(0, 10);
+  if (daysAgo > 0) {
+    if (day.slice(0, 7) !== today.slice(0, 7)) await page.getByRole('button', { name: 'Mois précédent', exact: true }).click();
+    await board.getByRole('tablist', { name: 'Jours du registre' }).getByRole('tab').nth(Number(day.slice(8)) - 1).click();
+  }
+  const grid = board.getByRole('grid', { name: `Grille horaire du ${day}`, exact: true });
+  await expect(grid).toBeVisible();
+  return { board, grid };
+}
+
 const browserErrors = new WeakMap<Page, string[]>();
 
 test.beforeEach(async ({ page }) => {
@@ -137,26 +157,108 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
-    test('registre du travail : repères d’amplitude et demande de commentaire pendant la saisie', async ({ page }) => {
+    test('registre du travail : amplitude calée sur les heures enregistrées et actualisée pendant la saisie', async ({ page, isMobile }) => {
       await signIn(page, profile, '/modules/workingTime');
-      const board = page.getByRole('region', { name: 'Journée de travail', exact: true });
-      const guide = board.getByRole('group', { name: 'Amplitude de travail', exact: true });
-      const meter = guide.getByRole('meter', { name: 'Amplitude prévue', exact: true });
+      // Desktop and mobile exercise independent days for each real account.
+      const { board } = await openWorkingTimeDay(page, isMobile ? 1 : 0);
+      const timelinePanel = board.locator('.working-time-timeline-panel');
+      const timeline = board.locator('.working-time-timeline-track');
+      const guide = timeline.getByRole('group', { name: 'Amplitude de travail', exact: true });
+      const savedMeter = guide.getByRole('meter', { name: 'Amplitude enregistrée', exact: true });
+      const liveMeter = guide.getByRole('meter', { name: 'Amplitude prévue', exact: true });
       await expect(guide).toContainText('Amplitude normale 12h00');
       await expect(guide).toContainText('Amplitude maximale 14h00');
+      await expect(board.getByRole('gridcell', { name: /^08:00, travail enregistré/ })).toBeVisible();
+      await expect(board.getByRole('gridcell', { name: /^19:00, travail enregistré/ })).toBeVisible();
+      await expect(savedMeter).toHaveAttribute('aria-valuetext', '11 h 30');
+      const savedBand = savedMeter.locator('.working-time-amplitude-band');
+      expect(await inlinePercent(savedBand, 'left')).toBeCloseTo(8 / 24 * 100);
+      expect(await inlinePercent(savedBand, 'width')).toBeCloseTo(11.5 / 24 * 100);
+      const markerPosition = (kind: 'normal' | 'maximum') => inlinePercent(guide.locator(`.working-time-amplitude-marker.is-${kind}`), 'left');
+      expect(await markerPosition('normal')).toBeCloseTo(20 / 24 * 100);
+      expect(await markerPosition('maximum')).toBeCloseTo(22 / 24 * 100);
 
-      await board.getByRole('gridcell', { name: /^11:30, repos/ }).press('Shift+End');
-      await expect(meter).toHaveAttribute('aria-valuetext', '12 h 30');
+      await board.getByRole('gridcell', { name: /^19:30, repos/ }).press('Shift+ArrowRight');
+      await expect(liveMeter).toHaveAttribute('aria-valuetext', '12 h 30');
       await expect(guide).toContainText('Renseignez un commentaire pour justifier le dépassement de 12h00.');
 
-      await board.getByRole('gridcell', { name: /^23:30, repos, sélectionné/ }).press('Enter');
+      await board.getByRole('gridcell', { name: /^20:00, repos, sélectionné/ }).press('Enter');
       const comment = board.getByRole('textbox', { name: 'Commentaire obligatoire', exact: true });
       await expect(comment).toHaveAttribute('aria-required', 'true');
       await comment.fill('Intervention de sécurité');
-      await expect(comment).toHaveValue('Intervention de sécurité');
+      const [panelBounds, readingBounds] = await Promise.all([
+        timelinePanel.boundingBox(),
+        guide.locator('.working-time-amplitude-reading').boundingBox(),
+      ]);
+      expect(panelBounds && readingBounds && readingBounds.x >= panelBounds.x
+        && readingBounds.x + readingBounds.width <= panelBounds.x + panelBounds.width + 1).toBe(true);
+      await test.info().attach('jauge-amplitude', { body: await timelinePanel.screenshot(), contentType: 'image/png' });
+
+      const saved = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/save_working_time_phases'
+        && response.request().method() === 'POST');
+      await board.getByRole('button', { name: 'Enregistrer le brouillon', exact: true }).click();
+      const response = await saved;
+      expect(response.ok(), await response.text()).toBe(true);
+      expect(response.request().postDataJSON()).toMatchObject({ p_comment: 'Intervention de sécurité' });
+      await expect(board.getByRole('gridcell', { name: /^20:00, travail enregistré/ })).toBeVisible();
+      await expect(savedMeter).toHaveAttribute('aria-valuetext', '12 h 30');
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
-      await test.info().attach('jauge-amplitude', { body: await guide.screenshot(), contentType: 'image/png' });
     });
+
+    if (profile.role === 'capitaine') {
+      test('registre d’un marin affecté : corriger et retirer un créneau sans commentaire', async ({ page, isMobile }) => {
+        await signIn(page, profile, '/modules/workingTime');
+        const catalog = page.getByRole('navigation', { name: 'Registres accessibles', exact: true });
+        await catalog.getByRole('button', { name: /^Matelot\b/ }).click();
+        await catalog.getByRole('button', { name: /^CI MARIN\b/ }).click();
+        // These dates are separate from the owner's amplitude entry test.
+        const { board, grid } = await openWorkingTimeDay(page, isMobile ? 3 : 2);
+        await expect(grid).toHaveAttribute('aria-readonly', 'false');
+        const recordedPeriod = grid.getByRole('gridcell', { name: /^16:00, travail enregistré/ });
+
+        if (!isMobile) {
+          await recordedPeriod.click({ button: 'right' });
+          const menu = page.getByRole('menu', { name: 'Actions de la plage enregistrée', exact: true });
+          const edit = menu.getByRole('menuitem', { name: 'Corriger', exact: true });
+          await expect(edit).toBeVisible();
+          await expect(menu.getByRole('menuitem', { name: 'Retirer', exact: true })).toBeVisible();
+          await edit.press('Escape');
+          await expect(menu).toHaveCount(0);
+        }
+
+        if (isMobile) await recordedPeriod.tap();
+        else await recordedPeriod.click();
+        const comment = board.getByRole('textbox', { name: 'Commentaire', exact: true });
+        await expect(comment).toHaveValue('');
+        await grid.getByRole('gridcell', { name: /^19:30, repos/ }).press('Shift+ArrowRight');
+        await expect(board.getByRole('meter', { name: 'Amplitude prévue', exact: true })).toHaveAttribute('aria-valuetext', '12 h 30');
+        await expect(comment).not.toHaveAttribute('aria-required', 'true');
+
+        const corrected = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/save_working_time_interval'
+          && response.request().method() === 'POST');
+        await board.getByRole('button', { name: 'Enregistrer la correction', exact: true }).click();
+        const correction = await corrected;
+        expect(correction.ok(), await correction.text()).toBe(true);
+        expect(correction.request().postDataJSON()).toMatchObject({ p_comment: null });
+        const correctedSlot = grid.getByRole('gridcell', { name: /^20:00, travail enregistré/ });
+        await expect(correctedSlot).toBeVisible();
+
+        if (isMobile) await correctedSlot.tap();
+        else await correctedSlot.click();
+        await board.getByRole('button', { name: 'Retirer la période sélectionnée', exact: true }).click();
+        const confirmation = page.getByRole('dialog', { name: 'Retirer le créneau', exact: true });
+        await expect(confirmation.getByRole('textbox')).toHaveCount(0);
+        const removed = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/void_working_time_interval'
+          && response.request().method() === 'POST');
+        await confirmation.getByRole('button', { name: 'Retirer', exact: true }).click();
+        const removal = await removed;
+        expect(removal.ok(), await removal.text()).toBe(true);
+        expect(removal.request().postDataJSON()).toMatchObject({ p_reason: null });
+        await expect(grid.getByRole('gridcell', { name: /^20:00, repos/ })).toBeVisible();
+        await expect(grid.getByRole('gridcell', { name: /^08:00, travail enregistré/ })).toBeVisible();
+        await expect(board.getByRole('meter', { name: 'Amplitude enregistrée', exact: true })).toHaveAttribute('aria-valuetext', '4 h 00');
+      });
+    }
 
     test('DPR : périmètre réel du profil et brouillon conservé après rechargement', async ({ page, isMobile }) => {
       await signIn(page, profile, '/modules/dpr');

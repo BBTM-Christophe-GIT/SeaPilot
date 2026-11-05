@@ -40,6 +40,16 @@ function pointerEvent(type: string, pointerId = 71): MouseEvent {
   return event;
 }
 
+function recordedInterval(id: number, startsAt: string, endsAt: string): WorkingTimeInterval {
+  return {
+    id, registerId: 5, companyId: 1, personId: 42, localWorkDate: startsAt.slice(0, 10),
+    startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString(),
+    timezoneName: 'Europe/Paris', utcOffsetMinutes: 120, vesselId: 7, watchGroup: 'Bordée 1',
+    comment: null, authorUserId: 'user', authorPersonId: 42, sourceType: 'manual',
+    sourceReference: null, sourceRecordKey: null,
+  };
+}
+
 function Harness({
   onSubmit = vi.fn(),
   saveDraft = false,
@@ -53,6 +63,7 @@ function Harness({
   planningContextLoading = false,
   planningVesselId = 7,
   approverName = 'Camille CAPITAINE',
+  canEdit = true,
   initialEnd = '12:00',
   onTimelineGestureChange,
 }: {
@@ -68,6 +79,7 @@ function Harness({
   planningContextLoading?: boolean;
   planningVesselId?: number | null;
   approverName?: string | null;
+  canEdit?: boolean;
   initialEnd?: string;
   onTimelineGestureChange?: (active: boolean) => void;
 }) {
@@ -78,7 +90,7 @@ function Harness({
   return (
     <WorkingTimeEntryBoard
       approverName={approverName}
-      canEdit
+      canEdit={canEdit}
       client={fixtureClient}
       comment={comment}
       editingIntervalId={editingIntervalId}
@@ -144,6 +156,45 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByRole('textbox', { name: required ? 'Commentaire obligatoire' : 'Commentaire' }))
       .toHaveAttribute('aria-required', String(required));
     expect(Boolean(screen.queryByText(/Amplitude maximale de 14h00 dépassée/))).toBe(exceeded);
+  });
+
+  it('anchors the recorded amplitude and both thresholds to the workday ruler, including on a locked day', () => {
+    const intervals = [
+      recordedInterval(1, '2026-08-03T07:00', '2026-08-03T12:00'),
+      recordedInterval(2, '2026-08-03T16:00', '2026-08-03T22:30'),
+    ];
+    const { rerender } = render(<Harness initialEnd="08:00" intervals={intervals} />);
+    expect(screen.getByRole('meter', { name: 'Amplitude enregistrée' })).toHaveAttribute('aria-valuetext', '15 h 30');
+
+    rerender(<Harness canEdit={false} initialEnd="08:00" intervals={intervals} />);
+    const group = screen.getByRole('group', { name: 'Amplitude de travail' });
+    const meter = screen.getByRole('meter', { name: 'Amplitude enregistrée' });
+    const track = screen.getByRole('grid').closest('.working-time-timeline-track');
+    expect(track).toContainElement(group);
+    expect(screen.getByRole('status', { name: 'Amplitude enregistrée' })).toHaveTextContent('Amplitude enregistrée 15 h 30');
+    expect(meter).toHaveClass('is-exceeded');
+    const band = meter.querySelector<HTMLElement>('.working-time-amplitude-band')!;
+    expect(parseFloat(band.style.left)).toBeCloseTo(7 / 24 * 100);
+    expect(parseFloat(band.style.width)).toBeCloseTo(15.5 / 24 * 100);
+    const normalMarker = meter.querySelector<HTMLElement>('.working-time-amplitude-marker.is-normal')!;
+    const maximumMarker = meter.querySelector<HTMLElement>('.working-time-amplitude-marker.is-maximum')!;
+    expect(parseFloat(normalMarker.style.left)).toBeCloseTo(19 / 24 * 100);
+    expect(parseFloat(maximumMarker.style.left)).toBeCloseTo(21 / 24 * 100);
+    expect(screen.queryByText('Renseignez un commentaire', { exact: false })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['2026-08-02T18:00', '2026-08-03T08:00', 0, 8, 2],
+    ['2026-08-03T18:00', '2026-08-04T08:00', 18, 6, 0],
+  ] as const)('clips a recorded amplitude across midnight (%s to %s)', (startsAt, endsAt, visibleStart, visibleHours, markers) => {
+    render(<Harness canEdit={false} intervals={[recordedInterval(1, startsAt, endsAt)]} />);
+
+    const meter = screen.getByRole('meter', { name: 'Amplitude enregistrée' });
+    const band = meter.querySelector<HTMLElement>('.working-time-amplitude-band')!;
+    expect(meter).toHaveAttribute('aria-valuetext', '14 h 00');
+    expect(parseFloat(band.style.left)).toBeCloseTo(visibleStart / 24 * 100);
+    expect(parseFloat(band.style.width)).toBeCloseTo(visibleHours / 24 * 100);
+    expect(meter.querySelectorAll('.working-time-amplitude-marker')).toHaveLength(markers);
   });
 
   it('requires a nonblank amplitude comment before saving a draft even with a conforming server result', async () => {
@@ -217,7 +268,11 @@ describe('WorkingTimeEntryBoard', () => {
     fireEvent.pointerDown(cells[16]);
     expect(onTimelineGestureChange).toHaveBeenLastCalledWith(true);
     fireEvent.pointerEnter(cells[19]);
-    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuetext', '2 h 00');
+    const meter = screen.getByRole('meter', { name: 'Amplitude prévue' });
+    expect(meter).toHaveAttribute('aria-valuetext', '2 h 00');
+    const band = meter.querySelector<HTMLElement>('.working-time-amplitude-band')!;
+    expect(parseFloat(band.style.left)).toBeCloseTo(8 / 24 * 100);
+    expect(parseFloat(band.style.width)).toBeCloseTo(2 / 24 * 100);
     fireEvent.pointerUp(cells[19]);
     expect(onTimelineGestureChange).toHaveBeenLastCalledWith(false);
 
@@ -405,23 +460,73 @@ describe('WorkingTimeEntryBoard', () => {
     expect(screen.getByRole('button', { name: 'Valider' })).toBeDisabled();
   });
 
-  it('opens correction and removal actions only after clicking a recorded timeline segment', async () => {
+  it('selects a recorded period with a left click and withdraws the selected period with its badge', async () => {
     const user = userEvent.setup();
     const onEditInterval = vi.fn();
-    const interval: WorkingTimeInterval = {
-      id: 88, registerId: 5, companyId: 1, personId: 42, localWorkDate: '2026-08-03',
-      startsAt: '2026-08-03T08:00:00+02:00', endsAt: '2026-08-03T12:00:00+02:00',
-      timezoneName: 'Europe/Paris', utcOffsetMinutes: 120, vesselId: 7, watchGroup: 'Bordée 1',
-      comment: null, authorUserId: 'user', authorPersonId: 42, sourceType: 'manual',
-      sourceReference: null, sourceRecordKey: null,
-    };
-    render(<Harness intervals={[interval]} onEditInterval={onEditInterval} />);
+    const onRequestVoid = vi.fn();
+    const interval = recordedInterval(88, '2026-08-03T08:00', '2026-08-03T12:00');
+    const { rerender } = render(<Harness intervals={[interval]} onEditInterval={onEditInterval} onRequestVoid={onRequestVoid} />);
 
-    expect(screen.queryByRole('button', { name: 'Corriger' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
-    await user.click(screen.getByRole('button', { name: 'Corriger' }));
+    expect(onEditInterval).toHaveBeenCalledWith(interval);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    rerender(<Harness editingIntervalId={88} intervals={[interval]} onEditInterval={onEditInterval} onRequestVoid={onRequestVoid} />);
+    const grid = screen.getByRole('grid');
+    const remove = screen.getByRole('button', { name: 'Retirer la période sélectionnée' });
+    expect(grid.parentElement).toContainElement(remove);
+    expect(grid).not.toContainElement(remove);
+    const cells = screen.getAllByRole('gridcell');
+    await user.click(cells[17]);
+    expect(screen.getByRole('meter', { name: 'Amplitude prévue' })).toHaveAttribute('aria-valuetext', '4 h 00');
+    expect(onEditInterval).toHaveBeenCalledOnce();
+    fireEvent.pointerDown(cells[17]);
+    fireEvent.pointerEnter(cells[19]);
+    fireEvent.pointerUp(cells[19]);
+    expect(screen.getByRole('meter', { name: 'Amplitude prévue' })).toHaveAttribute('aria-valuetext', '1 h 30');
+    await user.click(remove);
+    expect(onRequestVoid).toHaveBeenCalledWith(interval);
+  });
+
+  it('uses the shared period menu for a right click or Shift+F10', async () => {
+    const user = userEvent.setup();
+    const interval = recordedInterval(88, '2026-08-03T08:00', '2026-08-03T12:00');
+    const onEditInterval = vi.fn();
+    const onRequestVoid = vi.fn();
+    render(<Harness intervals={[interval]} onEditInterval={onEditInterval} onRequestVoid={onRequestVoid} />);
+
+    const cell = screen.getByRole('gridcell', { name: /08:00, travail enregistré/ });
+    expect(fireEvent.contextMenu(cell, { clientX: 120, clientY: 80 })).toBe(false);
+    const menu = screen.getByRole('menu', { name: 'Actions de la plage enregistrée' });
+    expect(cell).toHaveAttribute('aria-expanded', 'true');
+    expect(menu).toHaveStyle({ left: '120px', top: '80px' });
+    await user.click(screen.getByRole('menuitem', { name: 'Retirer' }));
+    expect(onRequestVoid).toHaveBeenCalledWith(interval);
+    expect(onEditInterval).not.toHaveBeenCalled();
+    expect(menu).not.toBeInTheDocument();
+
+    cell.focus();
+    await user.keyboard('{Shift>}{F10}{/Shift}');
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(cell).toHaveFocus();
+    await user.keyboard('{Shift>}{F10}{/Shift}');
+    await user.click(screen.getByRole('menuitem', { name: 'Corriger' }));
     expect(onEditInterval).toHaveBeenCalledWith(interval);
   });
+
+  it('keeps the correction comment optional even above the amplitude limit with a non-compliant recommendation', async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchWorkingTimePhasesRecommendation).mockResolvedValue({ ...recommendation, status: 'non_conforme' });
+    const onSubmit = vi.fn();
+    render(<Harness editingIntervalId={88} initialEnd="22:01" onSubmit={onSubmit} />);
+
+    expect(screen.getByRole('textbox', { name: 'Commentaire' })).not.toBeRequired();
+    expect(screen.getByText('Amplitude maximale de 14h00 dépassée.')).toBeInTheDocument();
+    const correction = screen.getByRole('button', { name: 'Enregistrer la correction' });
+    await waitFor(() => expect(correction).toBeEnabled());
+    await user.click(correction);
+    expect(onSubmit).toHaveBeenCalledWith([{ startsAt: '2026-08-03T08:00', endsAt: '2026-08-03T22:01' }], 'save-correction');
+  });
+
   it('locks the pending phases and recorded-period actions until a save settles', async () => {
     const user = userEvent.setup(); const pending = deferred<void>();
     const onSubmit = vi.fn(); const onEditInterval = vi.fn(); const onRequestVoid = vi.fn();
@@ -440,14 +545,18 @@ describe('WorkingTimeEntryBoard', () => {
     render(<SavingHarness />);
     const cells = screen.getAllByRole('gridcell');
     fireEvent.pointerDown(cells[32]); fireEvent.pointerUp(cells[33]);
-    await user.click(screen.getByRole('gridcell', { name: /08:00, travail enregistré/ }));
+    const recordedCell = screen.getByRole('gridcell', { name: /08:00, travail enregistré/ });
+    fireEvent.contextMenu(recordedCell);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Enregistrer le brouillon' }));
     const period = screen.getByRole('button', { name: /Période 1/ });
     const remove = screen.getByRole('button', { name: 'Retirer la période 1' });
-    for (const button of [period, remove, screen.getByRole('button', { name: 'Corriger' }), screen.getByRole('button', { name: 'Retirer' }), screen.getByRole('button', { name: 'Fermer les actions' })]) {
+    for (const button of [period, remove, recordedCell]) {
       expect(button).toBeDisabled(); await user.click(button);
     }
+    fireEvent.contextMenu(recordedCell);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(screen.getByText('Période 1')).toBeInTheDocument();
     expect(onEditInterval).not.toHaveBeenCalled(); expect(onRequestVoid).not.toHaveBeenCalled();
     expect(onSubmit).toHaveBeenCalledOnce();

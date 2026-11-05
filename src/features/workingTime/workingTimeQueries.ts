@@ -1027,7 +1027,7 @@ export async function saveWorkingTimePhases(
 export async function voidWorkingTimeInterval(
   client: SupabaseClient,
   intervalId: number,
-  reason: string,
+  reason: string | null = null,
 ): Promise<number> {
   const { data, error } = await client.rpc('void_working_time_interval', {
     p_interval_id: intervalId,

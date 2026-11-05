@@ -2,12 +2,29 @@
 
 ## Amplitude et charge Supabase, 5 novembre 2026
 
-Le registre affiche une jauge dès que la journée est modifiable. Elle suit
-l’amplitude des séquences de travail touchées par la saisie, périodes
-enregistrées et pauses courtes comprises. Un repos consécutif suffisant
-ouvre une nouvelle séquence. La jauge indique 12 h en régime normal, exige
-une justification à partir de 12 h 01 pour une saisie à la minute et signale
-le franchissement du maximum d’urgence de 14 h. Le commentaire est conservé
+Depuis la version `3.82.1` (build `2026-11-05.002`), le registre aligne
+le bandeau d’amplitude et les repères à 12 h et 14 h sur l’échelle horaire
+de la timeline. Il se recalcule pendant la sélection et le redimensionnement.
+Après l’enregistrement, il affiche l’amplitude des heures enregistrées,
+y compris sur une journée consultée en lecture seule.
+
+Sur une période modifiable, un clic ouvre la correction et affiche la
+croix de retrait. Le menu contextuel propose aussi « Corriger » et
+« Retirer ». Un Capitaine utilise ces actions pour les marins dont
+la journée lui est ouverte en édition. Le commentaire de correction est
+facultatif. Le retrait demande une simple confirmation et conserve
+l’intervalle ainsi que l’auteur dans l’historique.
+
+Appliquer la migration
+`20261105145148_working_time_optional_correction_and_withdrawal_comments.sql`
+avant le déploiement du client. Elle conserve les autorisations de chaque
+journée et enregistre un motif technique pour les retraits sans motif saisi.
+
+Le bandeau suit les séquences de travail, pauses courtes comprises.
+Un repos consécutif suffisant ouvre une nouvelle séquence. Il indique
+12 h en régime normal et signale le franchissement du maximum
+d’urgence de 14 h. Une nouvelle saisie exige une justification à partir
+de 12 h 01 pour une saisie à la minute. Le commentaire est conservé
 avec le créneau ou le lot enregistré via le RPC existant. Les autres motifs
 de commentaire et les contrôles de couverture restent applicables.
 

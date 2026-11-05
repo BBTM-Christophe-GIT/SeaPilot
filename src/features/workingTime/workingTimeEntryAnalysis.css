@@ -22,33 +22,50 @@
 .working-time-workflow .working-time-amplitude {
   display: grid;
   gap: var(--sp-space-1);
-  padding: var(--sp-space-2) var(--sp-space-3);
-  border: 1px solid var(--sp-border);
-  border-radius: var(--sp-control-radius);
+  padding-block-start: var(--sp-space-2);
   color: var(--sp-text);
   font-size: .75rem;
 }
-.working-time-workflow .working-time-amplitude-labels { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
-.working-time-workflow .working-time-amplitude-labels strong { margin-inline-start: 3px; color: var(--sp-success); }
-.working-time-workflow .working-time-amplitude-labels > :last-child strong { color: var(--sp-warning); }
+.working-time-workflow .working-time-timeline-panel {
+  --working-time-track-gutter: var(--sp-space-4);
+  container-type: inline-size;
+}
+.working-time-workflow .working-time-amplitude-labels,
+.working-time-workflow .working-time-amplitude-prompt {
+  position: sticky;
+  inset-inline-start: 0;
+  width: min(100%, calc(100cqi - var(--working-time-track-gutter)));
+  padding-inline: var(--sp-space-2);
+}
+.working-time-workflow .working-time-amplitude-labels { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.working-time-workflow .working-time-amplitude-labels .is-normal strong { color: var(--sp-success); }
+.working-time-workflow .working-time-amplitude-labels .is-maximum strong { color: var(--sp-warning); }
 .working-time-workflow .working-time-amplitude-labels small { display: block; color: var(--sp-muted); font-size: inherit; }
 .working-time-workflow .working-time-amplitude-rail {
   position: relative;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 5px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--sp-success) 14%, var(--sp-surface)) 85.714%, var(--sp-warning-soft) 85.714%);
+  height: 12px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--sp-border);
+  background: repeating-linear-gradient(90deg, var(--sp-canvas) 0, var(--sp-canvas) calc(100% / 24 - 1px), var(--sp-border) calc(100% / 24 - 1px), var(--sp-border) calc(100% / 24));
 }
-.working-time-workflow .working-time-amplitude-rail::after {
+.working-time-workflow .working-time-amplitude-band {
   position: absolute;
-  inset: 0 auto 0 85.714%;
-  border-left: 1px solid var(--sp-warning);
-  content: '';
+  inset-block: 2px;
+  border-radius: 2px;
+  background: var(--sp-success);
 }
-.working-time-workflow .working-time-amplitude-rail > span { display: block; height: 100%; background: var(--sp-success); }
-.working-time-workflow .working-time-amplitude-rail.is-emergency > span { background: var(--sp-warning); }
-.working-time-workflow .working-time-amplitude-rail.is-exceeded > span { background: var(--sp-danger); }
-.working-time-workflow .working-time-amplitude-reading,
+.working-time-workflow .working-time-amplitude-rail.is-emergency .working-time-amplitude-band { background: var(--sp-warning); }
+.working-time-workflow .working-time-amplitude-rail.is-exceeded .working-time-amplitude-band { background: var(--sp-danger); }
+.working-time-workflow .working-time-amplitude-marker {
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1px var(--sp-surface);
+  background: var(--sp-success);
+}
+.working-time-workflow .working-time-amplitude-marker.is-maximum { background: var(--sp-warning); }
+.working-time-workflow .working-time-amplitude-reading { flex-basis: 100%; }
 .working-time-workflow .working-time-amplitude-prompt { margin: 0; }
 .working-time-workflow .working-time-amplitude-prompt { color: var(--sp-warning); }
 .working-time-workflow .working-time-amplitude-prompt.is-exceeded { color: var(--sp-danger); }
@@ -85,11 +102,34 @@
   .working-time-workflow .working-time-non-compliance-fields select,
   .working-time-workflow .working-time-non-compliance-fields textarea { min-height: 44px; }
 }
-.working-time-workflow .working-time-timeline-track { min-width: 616px; padding-right: 16px; }
+.working-time-workflow .working-time-timeline-track { min-width: 616px; padding-inline-end: var(--working-time-track-gutter); }
 .working-time-workflow .working-time-timeline-frame { position: relative; }
 .working-time-workflow .working-time-timeline { padding-left: 0; padding-right: 0; padding-bottom: 0; }
 .working-time-workflow .working-time-timeline button.is-occupied { background: #17a6b8; }
 .working-time-workflow .working-time-timeline button.is-pending { background: #a4e4ed; box-shadow: inset 0 1px #087789, inset 0 -1px #087789; }
+.working-time-workflow .working-time-selected-period-remove {
+  position: absolute;
+  top: 21px;
+  z-index: 3;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: white;
+  transform: translateX(-100%);
+  cursor: pointer;
+}
+.working-time-workflow .working-time-selected-period-remove svg {
+  padding: 2px;
+  border: 1px solid var(--sp-surface);
+  border-radius: 50%;
+  background: var(--sp-danger);
+}
+.working-time-workflow .working-time-selected-period-remove:disabled { cursor: not-allowed; opacity: .5; }
 .working-time-workflow .working-time-timeline-legend i.is-existing { background: #17a6b8; }
 .working-time-workflow .working-time-timeline-legend i.is-pending { background: #a4e4ed; }
 .working-time-workflow .working-time-phase-resize-handles { position: absolute; bottom: 0; left: 0; right: 0; height: 44px; pointer-events: none; }

@@ -91,6 +91,7 @@ const pgTapTests = [
 const apiSessionTests = new Set([
   'working_time_actor_scope_test.sql',
   'working_time_assignment_profiles_test.sql',
+  'working_time_captain_assignment_role_test.sql',
   'working_time_signed_entry_flow_test.sql',
   'pharmacy_vessel_read_scope_test.sql',
 ])

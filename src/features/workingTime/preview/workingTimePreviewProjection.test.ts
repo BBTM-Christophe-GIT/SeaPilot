@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeWorkingTimePreview,
   PREVIEW_DEMO_POLICY,
-  projectedEntryAmplitudeSeconds,
+  workingTimeEntryAmplitude,
 } from './workingTimePreviewProjection';
 import type { PreviewWorkPhase, WorkingTimePreviewInput } from './workingTimePreviewProjection';
 
@@ -25,14 +25,25 @@ describe('amplitude affected by an entry', () => {
       phase('2026-10-12', '19:00', '23:00'),
       phase('2026-10-13', '03:00', '07:01'),
     ];
-    expect(projectedEntryAmplitudeSeconds(history, [phase('2026-10-13', '01:00', '02:00')])).toBe(12 * 3600 + 60);
+    expect(workingTimeEntryAmplitude({ history, phases: [phase('2026-10-13', '01:00', '02:00')] })).toEqual({
+      startMs: Date.parse('2026-10-12T19:00'),
+      endMs: Date.parse('2026-10-13T07:01'),
+      seconds: 12 * 3600 + 60,
+    });
   });
 
   it('restarts at exactly the applicable rest threshold', () => {
     const history = [phase('2026-10-13', '02:00', '06:00')];
     const pending = [phase('2026-10-13', '12:00', '20:00')];
-    expect(projectedEntryAmplitudeSeconds(history, pending, 6)).toBe(8 * 3600);
-    expect(projectedEntryAmplitudeSeconds(history, pending, 7)).toBe(18 * 3600);
+    expect(workingTimeEntryAmplitude({ history, phases: pending, restHours: 6 })?.seconds).toBe(8 * 3600);
+    expect(workingTimeEntryAmplitude({ history, phases: pending, restHours: 7 })?.seconds).toBe(18 * 3600);
+  });
+
+  it('ignores long sequences on other days when displaying recorded amplitude', () => {
+    const history = [phase('2026-10-11', '00:00', '18:00'), phase('2026-10-13', '09:00', '14:00')];
+    const startMs = Date.parse('2026-10-13T00:00');
+    const endMs = Date.parse('2026-10-14T00:00');
+    expect(workingTimeEntryAmplitude({ history, recordedDay: { startMs, endMs } })?.seconds).toBe(5 * 3600);
   });
 });
 
