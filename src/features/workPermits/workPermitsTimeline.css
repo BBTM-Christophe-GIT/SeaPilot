@@ -1,0 +1,126 @@
+.work-permits-timeline {
+  --permit-track: var(--surface-subtle, #edf3f7);
+  --permit-line: var(--color-border-subtle, #dce6ed);
+  --permit-bar: var(--color-success, #196644);
+  container-type: inline-size;
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--permit-line);
+  border-radius: 0.65rem;
+  background: var(--surface, #fff);
+}
+
+.work-permits-timeline > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.work-permits-timeline :is(h2, p, ul) {
+  margin: 0;
+}
+
+.work-permits-timeline h2 {
+  font-size: 1rem;
+}
+
+.work-permits-timeline ul {
+  padding: 0;
+  list-style: none;
+}
+
+.work-permits-timeline li + li {
+  border-top: 1px solid var(--permit-line);
+}
+
+.work-permits-timeline small {
+  color: var(--color-text-muted, #4d6274);
+}
+
+.work-permits-timeline__axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.4rem;
+  color: var(--color-text-muted, #4d6274);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.work-permits-timeline__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+button.work-permits-timeline__row:is(:hover, [aria-pressed='true']) {
+  background: var(--permit-track);
+}
+
+.work-permits-timeline__label,
+.work-permits-timeline__interval {
+  display: grid;
+  gap: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.work-permits-timeline__interval {
+  font-variant-numeric: tabular-nums;
+}
+
+.work-permits-timeline__track {
+  position: relative;
+  display: block;
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 0.35rem;
+  background: var(--permit-track);
+}
+
+.work-permits-timeline li[data-state='paused'] {
+  --permit-bar: var(--color-warning, #8e4f13);
+}
+
+.work-permits-timeline li[data-state='closed'] {
+  --permit-bar: var(--color-text-muted, #4d6274);
+}
+
+.work-permits-timeline__status {
+  color: var(--permit-bar);
+}
+
+.work-permits-timeline__bar {
+  position: absolute;
+  inset-block: 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--permit-bar);
+}
+
+button.work-permits-timeline__row:is(:hover, [aria-pressed='true']) .work-permits-timeline__track {
+  background: var(--permit-line);
+}
+
+@container (min-width: 34rem) {
+  .work-permits-timeline__axis {
+    padding-inline-start: calc(30% + 0.75rem);
+  }
+
+  .work-permits-timeline__row {
+    grid-template-columns: minmax(0, 30%) minmax(0, 1fr);
+  }
+}
