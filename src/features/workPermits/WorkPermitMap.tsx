@@ -37,6 +37,7 @@ export function WorkPermitMap({ plan, pins, zones, onSelect, onPoint, onZones }:
   const [preview, setPreview] = useState<DragTarget>();
   const imageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointerId: number; target: DragTarget; start: PlanPoint; moved: boolean }>(null);
+  const canDragZones = !!onZones && (!mode || drawingZone !== undefined);
   const localZones = zones.flatMap((zone, index) => zone.planKey === plan.id
     ? [{ ...zone, points: preview && preview.kind !== 'pin' && preview.index === index ? preview.points : zone.points, index }]
     : []);
@@ -124,9 +125,13 @@ export function WorkPermitMap({ plan, pins, zones, onSelect, onPoint, onZones }:
 
   function finishDrag(event: PointerEvent<HTMLDivElement>) {
     if (drag.current?.pointerId !== event.pointerId) return;
+    const pressed = drag.current.target;
     const target = movedTarget(event);
     cancelDrag(event);
-    if (target?.kind === 'pin') onPoint?.(target.point);
+    if (!target && mode === 'zone' && pressed.kind === 'zone' && drawingZone === pressed.index) {
+      const { x, y } = location(event.clientX, event.clientY);
+      addPoint({ x: clamp(x), y: clamp(y) });
+    } else if (target?.kind === 'pin') onPoint?.(target.point);
     else if (target) {
       if (isValidPolygon(target.points)) updateZone(target.index, target.points);
       else setError('Le déplacement créerait une zone croisée ou sans surface.');
@@ -142,8 +147,8 @@ export function WorkPermitMap({ plan, pins, zones, onSelect, onPoint, onZones }:
         {mode && <button type="button" className="work-permits-placement" aria-label="Placer sur le plan, ou saisir les coordonnées sous le plan" onClick={positionOnPlan} />}
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           {localZones.map(({ points, index }) => <polygon key={index} points={svgPoints(points)} vectorEffect="non-scaling-stroke"
-            data-draggable={!!onZones && !mode || undefined}
-            onPointerDown={onZones && !mode ? (event) => startDrag(event, { kind: 'zone', index, points }) : undefined} />)}
+            data-draggable={canDragZones || undefined}
+            onPointerDown={canDragZones ? (event) => startDrag(event, { kind: 'zone', index, points }) : undefined} />)}
           {vertices.length > 1 && <polyline points={svgPoints(vertices)} vectorEffect="non-scaling-stroke" />}
           {vertices.map(({ x, y }, index) => <circle key={index} cx={x * 100} cy={y * 100} r=".55" />)}
         </svg>
@@ -161,7 +166,7 @@ export function WorkPermitMap({ plan, pins, zones, onSelect, onPoint, onZones }:
             style={style} onClick={() => onSelect(id)}>●</button>
             : <span key={id} className="work-permits-pin" style={style} aria-hidden="true">●</span>;
         })}
-        {onZones && !mode && localZones.flatMap(({ points, index }) => points.map((point, vertex) =>
+        {canDragZones && localZones.flatMap(({ points, index }) => points.map((point, vertex) =>
           <span key={`${index}-${vertex}`} className="work-permits-vertex work-permits-drag-handle" style={styleAt(point)}
             aria-hidden="true" onPointerDown={(event) => startDrag(event, { kind: 'vertex', index, points, vertex })} />
         ))}
@@ -183,7 +188,7 @@ export function WorkPermitMap({ plan, pins, zones, onSelect, onPoint, onZones }:
             onClick={() => addPoint({ x: Number(x) / 100, y: Number(y) / 100 })}>{mode === 'point' ? 'Placer le repère' : 'Ajouter le sommet'}</button>
           {mode === 'zone' && drawingZone === undefined &&
             <button type="button" disabled={!vertices.length} onClick={() => setVertices(vertices.slice(0, -1))}>Retirer le dernier sommet</button>}
-          <button type="button" onClick={stopDrawing}>{drawingZone === undefined ? 'Annuler le tracé' : 'Terminer le tracé'}</button>
+          {drawingZone === undefined && <button type="button" onClick={stopDrawing}>Annuler le tracé</button>}
         </div>
       </>}
       {error && <p className="work-permits-error" role="alert">{error}</p>}
