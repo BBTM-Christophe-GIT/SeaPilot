@@ -8,6 +8,12 @@ ravitaillement avant départ et le prix du fuel HT en €/L. Le relevé
 est enregistré séparément des informations signées. Les comptes autorisés à
 consulter la fiche accèdent à son récapitulatif.
 
+Après l’enregistrement, la carte de l’opération reprend immédiatement le
+relevé confirmé par le serveur. Le bouton **Consos Excel** du ruban exporte
+un fichier `.xlsx` avec les relevés enregistrés des opérations correspondant
+aux filtres du registre. Les groupes Voyage, Jauges, Consommation et
+Avitaillement reprennent les données du relevé et les calculs enregistrés.
+
 La soute de départ est estimée à partir de la jauge. La consommation totale
 correspond à l’écart entre les soutes de départ et d’arrivée. Le ravitaillement
 d’avant départ est déjà compris dans la jauge de départ. Les litres par heure

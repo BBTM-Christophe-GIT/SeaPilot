@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.84.4` actualise les indicateurs de la carte dès la confirmation
+d’un relevé Conso. Le bouton **Consos Excel** exporte les relevés enregistrés
+des opérations affichées dans le registre. Appliquer
+`20261106124800_sea_operation_consumption_export.sql` avant le frontend.
+
 La version `3.84.3` reprend automatiquement le dernier prix HT applicable
 saisi dans la flotte pour les navires sans tarif propre. Appliquer
 `20261106115307_fleet_fuel_price_fallback.sql` avant le frontend.

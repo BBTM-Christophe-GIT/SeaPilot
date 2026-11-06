@@ -6,6 +6,7 @@ import type { SeaOperationRecord } from './seaOperationQueries';
 import { SeaOperationProjectDocuments } from './SeaOperationProjectDocuments';
 import { SeaOperationRegisterMap } from './SeaOperationRegisterMap';
 import { SeaOperationConsumptionSummary } from './SeaOperationConsumptionPanel';
+import type { SeaOperationConsumption } from './seaOperationConsumption';
 import { hasSeaOperationConsumption, useSeaOperationConsumptionContext } from './useSeaOperationConsumption';
 import './seaOperationDocumentLibrary.css';
 
@@ -16,6 +17,7 @@ interface Props {
   record: SeaOperationRecord | null;
   maxSpeedKnots?: number | null;
   consumptionRefresh?: number;
+  savedConsumption?: SeaOperationConsumption;
   disabled?: boolean;
   canManageDocuments?: boolean;
   onSave: (draft: SeaOperationPayload, record: SeaOperationRecord) => Promise<void>;
@@ -23,18 +25,19 @@ interface Props {
 }
 
 /** Both panels stay mounted: switching to documents must preserve unsaved map edits. */
-export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, consumptionRefresh, disabled = false, canManageDocuments = false, onSave, onDirtyChange }: Props) {
+export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, consumptionRefresh, savedConsumption, disabled = false, canManageDocuments = false, onSave, onDirtyChange }: Props) {
   const id = useId();
   const selectedId = operationId ?? record?.id ?? '';
   const context = useMemo(() => ({ client, accessKey, selectedId }), [client, accessKey, selectedId]);
-  const consumption = useSeaOperationConsumptionContext(client, record?.id, consumptionRefresh, `${accessKey}:${record?.version ?? ''}`);
-  const [view, setView] = useState<{ context: typeof context; tab: 'map' | 'documents' } | null>(null);
+  const consumption = useSeaOperationConsumptionContext(client, record?.id, consumptionRefresh, `${accessKey}:${record?.version ?? ''}`, savedConsumption);
+  const savedVersion = savedConsumption?.operationId === selectedId ? savedConsumption.record?.version : undefined;
+  const [view, setView] = useState<{ context: typeof context; savedVersion?: number; tab: 'map' | 'documents' } | null>(null);
   const [catalogCount, setCatalogCount] = useState<{ context: typeof context; count: number | null } | null>(null);
-  const tab = view?.context === context ? view.tab : 'map';
+  const tab = view?.context === context && view.savedVersion === savedVersion ? view.tab : 'map';
   const count = catalogCount?.context === context ? catalogCount.count : record?.draft.planning?.projectId ? null : 0;
   const setCount = useCallback((count: number | null) => setCatalogCount({ context, count }), [context]);
   const mapTab = useRef<HTMLButtonElement>(null); const documentsTab = useRef<HTMLButtonElement>(null);
-  function choose(next: 'map' | 'documents', focus = false) { setView({ context, tab: next }); if (focus) (next === 'map' ? mapTab : documentsTab).current?.focus(); }
+  function choose(next: 'map' | 'documents', focus = false) { setView({ context, savedVersion, tab: next }); if (focus) (next === 'map' ? mapTab : documentsTab).current?.focus(); }
   return <div className="so-register-detail">
     <div className="so-register-detail-tabs" role="tablist" aria-label="Vue de l’opération" onKeyDown={event => {
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); choose(event.key === 'Home' ? 'map' : event.key === 'End' ? 'documents' : tab === 'map' ? 'documents' : 'map', true); }

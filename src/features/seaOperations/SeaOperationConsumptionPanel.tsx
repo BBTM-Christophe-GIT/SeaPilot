@@ -123,7 +123,7 @@ interface DialogProps {
   client: SupabaseClient;
   record: SeaOperationRecord;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (saved: ConsumptionContext) => void;
 }
 
 function EditableConsumptionDialog({ client, context, description, onClose, onSaved, onReload }: Omit<DialogProps, 'record'> & { context: ConsumptionContext; description: string; onReload: () => void }) {
@@ -150,8 +150,8 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
     setSaving(true);
     setError('');
     try {
-      await saveSeaOperationConsumption(client, context.operationId, context.record?.version ?? null, preview.inputs);
-      if (alive.current) onSaved();
+      const saved = await saveSeaOperationConsumption(client, context.operationId, context.record?.version ?? null, preview.inputs);
+      if (alive.current) onSaved(saved);
     } catch (reason) {
       if (alive.current) {
         setError(consumptionErrorMessage(reason));

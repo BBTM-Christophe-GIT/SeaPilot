@@ -10,18 +10,23 @@ import { fetchSeaOperationData, fetchSeaOperationDetail, saveSeaOperation, type 
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import { captureSeaOperationValidationUkc } from './seaOperationValidationUkc';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import { renderSeaOperationVoyageFuelDetails } from './SeaOperationVoyageFuelMetrics';
+import type { SeaOperationConsumption } from './seaOperationConsumption';
 import type { RoleKey } from '../permissions/roles';
 
 type MapProps = ComponentProps<typeof SeaOperationRegisterMap>;
-const mapSpy = vi.hoisted(() => vi.fn());
+const { mapSpy, buildWorkbook } = vi.hoisted(() => ({ mapSpy: vi.fn(), buildWorkbook: vi.fn() }));
 vi.mock('./seaOperationQueries', () => ({ fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn() }));
+vi.mock('./seaOperationConsumptionWorkbook', () => ({ buildSeaOperationConsumptionWorkbook: buildWorkbook }));
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn(), loadSeaOperationProjectDocumentBlob: vi.fn() }));
 vi.mock('../projects/ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span aria-hidden="true">Miniature</span> }));
 vi.mock('./seaOperationValidationWeather', () => ({ captureSeaOperationValidationWeather: vi.fn() }));
 vi.mock('./seaOperationValidationUkc', async original => ({ ...await original<typeof import('./seaOperationValidationUkc')>(), captureSeaOperationValidationUkc: vi.fn() }));
 vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: (props: MapProps) => {
   mapSpy(props);
-  return <section aria-label="Carte de test"><p>{props.record?.draft.project || 'Aucune sélection'}</p></section>;
+  return <section aria-label="Carte de test"><p>{props.record?.draft.project || 'Aucune sélection'}</p>
+    {props.record && renderSeaOperationVoyageFuelDetails(props.consumption, props.record.draft, 71)}
+  </section>;
 } }));
 
 function fixture(id: string, canEdit = true): SeaOperationRecord {
@@ -32,12 +37,12 @@ function fixture(id: string, canEdit = true): SeaOperationRecord {
 const first = fixture('A'), second = fixture('B');
 const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
-function mount(roles?: RoleKey[]) {
+function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>) {
   const actor = roles?.[0] || 'captain';
-  const client = { fixture: `authenticated-${actor}` } as unknown as SupabaseClient;
-  const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records: [first, second], vessels: [{ id: 12, name: 'GOURY', lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false }] };
+  const client = { fixture: `authenticated-${actor}`, rpc } as unknown as SupabaseClient;
+  const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: [{ id: 12, name: 'GOURY', lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false }] };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
-  vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === first.id ? structuredClone(first) : structuredClone(second));
+  vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => structuredClone(records.find(record => record.id === id)!));
   const app = (value: SupabaseClient) => <MemoryRouter><Routes><Route element={<Outlet context={{ client: value, roles }} />}><Route path="/" element={<SeaOperationsPage />} /></Route></Routes></MemoryRouter>;
   const result = render(app(client));
   return { client, data, changeClient: (next: SupabaseClient) => result.rerender(app(next)) };
@@ -50,7 +55,7 @@ beforeEach(() => {
   vi.mocked(captureSeaOperationValidationWeather).mockImplementation(async (_client, draft) => draft);
   vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, draft) => draft);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Operation register map integration', () => {
   it.each(['capitaine', 'marin', 'armement', 'admin', 'direction'] as const)('uses the authenticated %s role for document actions independently of map edit rights', async role => {
@@ -149,5 +154,110 @@ describe('Operation register map integration', () => {
     vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, actorId: 'other', records: [] }); view.changeClient(newClient);
     let failure: unknown; await act(async () => { pending.resolve(first.draft); try { await result; } catch (reason) { failure = reason; } });
     expect(failure).toBeInstanceOf(Error); expect(saveSeaOperation).not.toHaveBeenCalled(); expect(props().record).toBeNull();
+  });
+});
+
+function signedGo(id: string, project = `Projet ${id}`): SeaOperationRecord {
+  const operation = fixture(id, false);
+  return { ...operation, status: 'signed', signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-11-05T10:00:00Z',
+    captainName: 'Capitaine', draft: { ...operation.draft, project, decision: 'GO' } };
+}
+
+function initialConsumption(operationId: string): SeaOperationConsumption {
+  return {
+    operationId, canEdit: true, record: null,
+    calibration: { kind: 'nominal', defaultGaugeUnit: 'percent', nominalCapacityLiters: 10_000 },
+    reference: { vesselId: 12, transitLitersPerNm: 8.4, towageLitersPerNm: null, pricePerLiter: 1.254, priceDate: '2026-11-05' },
+  };
+}
+
+const savedReading = {
+  durationMinutes: 120, averageSpeedKnots: 10, gaugeUnit: 'percent', departureGauge: 80, arrivalGauge: 70,
+  refuelLiters: null, pricePerLiter: 1.2, actualArrival: null, completed: true, distanceNm: 20, departureLiters: 8000, arrivalLiters: 7000,
+  consumedLiters: 1000, litersPerHour: 500, litersPerNm: 50, costEuros: 1200, version: 1, includedInReference: false,
+  updatedAt: '2026-11-06T10:00:00Z',
+} satisfies NonNullable<SeaOperationConsumption['record']>;
+
+function exportButton() {
+  return within(screen.getByRole('navigation', { name: 'Commandes Opération en Mer' }))
+    .getByRole('button', { name: 'Exporter les consommations en Excel' });
+}
+
+describe('Operation consumption from the register', () => {
+  it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {
+    const operations = [signedGo('A'), signedGo('B')];
+    const saved: SeaOperationConsumption = { ...initialConsumption('B'), record: savedReading,
+      reference: { ...initialConsumption('B').reference, pricePerLiter: 1.2 } };
+    const reload = deferred<{ data: null; error: { message: string } }>();
+    const afterSaveRead = vi.fn(() => reload.promise);
+    let didSave = false;
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'sea_operation_save_consumption') {
+        didSave = true;
+        return { data: saved, error: null };
+      }
+      if (didSave) return afterSaveRead();
+      return { data: initialConsumption(String(args.p_id)), error: null };
+    });
+    mount(['capitaine'], operations, rpc);
+    await select('A');
+    expect(await screen.findByRole('region', { name: 'Estimation du carburant' })).toHaveTextContent('596 L');
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Actions pour Projet B' })).getByRole('button', { name: 'Conso' }));
+    await screen.findByLabelText('Heures');
+    const form = within(screen.getByRole('dialog', { name: 'Consommation de carburant' }));
+    for (const [label, value] of [
+      ['Heures', '2'], ['Vitesse moyenne (nœuds)', '10'], ['Jauge au départ après avitaillement (%)', '80'],
+      ['Jauge à l’arrivée (%)', '70'], ['Prix du fuel HT en €/L', '1.2'],
+    ]) {
+      fireEvent.change(form.getByLabelText(label), { target: { value } });
+    }
+    fireEvent.click(form.getByRole('checkbox', { name: 'Je confirme que la navigation est terminée.' }));
+    fireEvent.click(form.getByRole('button', { name: 'Enregistrer la consommation' }));
+
+    const metrics = await screen.findByRole('region', { name: 'Carburant du relevé Conso' });
+    expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(metrics).getByText('1 m³')).toBeVisible();
+    expect(within(metrics).getByText(/1\s200 € HT/)).toBeVisible();
+    expect(within(metrics).getByText('2,73 t')).toBeVisible();
+    expect(within(metrics).getByText('50 L/NM')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: 'B', p_expected_version: null,
+      p_inputs: expect.objectContaining({ durationMinutes: 120, pricePerLiter: 1.2, completed: true }) });
+    await waitFor(() => expect(afterSaveRead).toHaveBeenCalled());
+    await act(async () => reload.resolve({ data: null, error: { message: 'Lecture momentanément indisponible' } }));
+    expect(metrics).toBeVisible();
+    expect(screen.queryByText('Lecture momentanément indisponible')).not.toBeInTheDocument();
+  });
+
+  it('exports only saved readings from the filtered GO operations, even without a selected map', async () => {
+    const selected = signedGo('A', 'Mission exportable');
+    const withoutReading = signedGo('C', 'Mission sans relevé');
+    const noGo = signedGo('D', 'Mission refusée');
+    noGo.draft.decision = 'NO_GO';
+    const rpc = vi.fn().mockResolvedValue({ data: [{ operationId: 'A', record: savedReading }], error: null });
+    const blob = new Blob(['xlsx']);
+    buildWorkbook.mockResolvedValue(blob);
+    const createObjectURL = vi.fn(() => 'blob:conso-test'), revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    mount(['marin'], [selected, signedGo('B', 'Transit hors filtre'), withoutReading, noGo], rpc);
+    fireEvent.change(await screen.findByLabelText('Rechercher une opération'), { target: { value: 'Mission' } });
+    fireEvent.click(exportButton());
+
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_consumption_export', { p_ids: ['A', 'C'] });
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([{ operation: selected, consumption: savedReading }]);
+    expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
+    expect(download.mock.contexts[0]).toHaveAttribute('download', expect.stringMatching(/^SeaPilot - Consommations - \d{4}-\d{2}-\d{2}\.xlsx$/));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:conso-test'), { timeout: 1500 });
+  });
+
+  it('explains that no reading is available when the filtered operation has no saved Conso', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    mount(['capitaine'], [signedGo('A')], rpc);
+    await screen.findByRole('button', { name: /^Projet A/ });
+    fireEvent.click(exportButton());
+    expect(await screen.findByText('Aucun relevé de consommation enregistré pour les opérations affichées.')).toBeVisible();
+    expect(buildWorkbook).not.toHaveBeenCalled();
   });
 });
