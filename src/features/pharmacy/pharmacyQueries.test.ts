@@ -214,7 +214,7 @@ describe('pharmacy vessel expiry badges', () => {
       notification(7, 4, -1, 'control'), notification(8, 1, 30, 'control'), notification(9, 6, 1, 'control')], error: null });
     expect(await fetchPharmacyVesselExpiryCounts({ rpc } as unknown as SupabaseClient)).toEqual({ 4: { due: 3, expired: 1 }, 1: { due: 0, expired: 1 } });
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('pharmacy_notifications');
+    expect(rpc).toHaveBeenCalledWith('pharmacy_inventory_notifications');
   });
 
   it('distinguishes a successful empty snapshot from a failed counter load', async () => {
@@ -235,20 +235,20 @@ describe('pharmacy vessel expiry badges', () => {
       expect(pharmacyToday()).toBe('2026-10-20');
       expect(items.some(({ category }) => category === '1. CARDIOLOGIE')).toBe(true);
       expect(items.some(({ category }) => category.startsWith('10.'))).toBe(true);
-      expect(await fetchPharmacyVesselExpiryCounts(client)).toEqual(Object.fromEntries(vessels.map(({ id }) => [id, { due: 1, expired: 1 }])));
+      expect(await fetchPharmacyVesselExpiryCounts(client)).toEqual(Object.fromEntries(vessels.map(({ id }) => [id, { due: 1, expired: 1, low: 1, red: 2 }])));
 
       const file = new File(['pdf'], 'Démonstration.pdf', { type: 'application/pdf' });
       const controlId = await uploadPharmacyControl(client, selected, file, '2026-11-19', '2026-10-20');
       const notifications = await fetchPharmacyNotifications(client);
       expect(notifications.find(({ id }) => id === `control-${controlId}`)?.days_until_expiry).toBe(30);
-      expect((await fetchPharmacyVesselExpiryCounts(client))[selected.id]).toEqual({ due: 1, expired: 1 });
+      expect((await fetchPharmacyVesselExpiryCounts(client))[selected.id]).toEqual({ due: 1, expired: 1, low: 1, red: 2 });
 
       await uploadPharmacyControl(client, selected, file, '2026-11-20', '2026-10-20', controlId);
       expect((await fetchPharmacyNotifications(client)).filter(({ kind }) => kind === 'control')).toEqual([]);
       const expired = items.find(({ expires_on }) => expires_on && expires_on < pharmacyToday())!;
       await savePharmacyItem(client, selected.id, { ...expired, active: false }, expired);
-      expect((await fetchPharmacyVesselExpiryCounts(client))[selected.id]).toEqual({ due: 1, expired: 0 });
-      expect((await fetchPharmacyVesselExpiryCounts(client))[vessels[1].id]).toEqual({ due: 1, expired: 1 });
+      expect((await fetchPharmacyVesselExpiryCounts(client))[selected.id]).toEqual({ due: 1, expired: 0, low: 1, red: 1 });
+      expect((await fetchPharmacyVesselExpiryCounts(client))[vessels[1].id]).toEqual({ due: 1, expired: 1, low: 1, red: 2 });
     } finally { vi.useRealTimers(); }
   });
 });

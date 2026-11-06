@@ -1,5 +1,5 @@
 import type { jsPDF as PdfDocument } from 'jspdf';
-import type { MedicalEntry, MedicalVessel } from './medicalLogbookModel';
+import { medicalTreatmentText, type MedicalEntry, type MedicalVessel } from './medicalLogbookModel';
 
 const MARGIN = 12;
 const LINE_HEIGHT = 3.8;
@@ -108,7 +108,7 @@ export async function createMedicalLogbookPdf(
     for (const entry of selected) {
       const values = [
         entry.occurred_on.split('-').reverse().join('/'), entry.occurred_time.slice(0, 5),
-        entry.patient_name, entry.injury_illness, entry.treatment_medicines, entry.first_aider_name, entry.signature_name,
+        entry.patient_name, entry.injury_illness, medicalTreatmentText(entry), entry.first_aider_name, entry.signature_name,
       ];
       const columns = values.map((value, index) => pdf.splitTextToSize(printable(value), WIDTHS[index] - CELL_PADDING * 2) as string[]);
       const maxLines = Math.max(1, ...columns.map((lines) => lines.length));

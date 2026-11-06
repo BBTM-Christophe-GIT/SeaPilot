@@ -3,6 +3,20 @@
   min-height: 84px;
 }
 
+.pharmacy-item-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-space-1);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.pharmacy-item-name em {
+  color: var(--sp-muted);
+}
+
 .pharmacy-vessel-actions {
   display: flex;
   flex: 0 0 auto;

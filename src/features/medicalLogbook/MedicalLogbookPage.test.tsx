@@ -7,9 +7,10 @@ import type { RoleKey } from '../permissions/roles';
 import type { MedicalDraft, MedicalEntry, MedicalHistory, MedicalSignatureSnapshot, MedicalVessel } from './medicalLogbookModel';
 import { MedicalLogbookPage } from './MedicalLogbookPage';
 
-const mocks = vi.hoisted(() => ({ vessels: vi.fn(), entries: vi.fn(), signer: vi.fn(), signatureUrl: vi.fn(), images: vi.fn(), save: vi.fn(), archive: vi.fn(), history: vi.fn(), pdf: vi.fn(), download: vi.fn() }));
+const mocks = vi.hoisted(() => ({ vessels: vi.fn(), entries: vi.fn(), medications: vi.fn(), signer: vi.fn(), signatureUrl: vi.fn(), images: vi.fn(), save: vi.fn(), archive: vi.fn(), history: vi.fn(), pdf: vi.fn(), download: vi.fn() }));
 vi.mock('./medicalLogbookQueries', () => ({
   fetchMedicalVessels: mocks.vessels, fetchMedicalEntries: mocks.entries, fetchMedicalSigner: mocks.signer,
+  fetchMedicalMedicationChoices: mocks.medications,
   createMedicalSignatureUrl: mocks.signatureUrl, fetchMedicalSignatureImages: mocks.images,
   saveMedicalEntry: mocks.save, setMedicalEntryArchived: mocks.archive, fetchMedicalHistory: mocks.history,
 }));
@@ -72,6 +73,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.vessels.mockResolvedValue([secondVessel, vessel]);
   mocks.entries.mockImplementation(async (_client: SupabaseClient, vesselId: number) => vesselId === 1 ? [entry] : []);
+  mocks.medications.mockResolvedValue([]);
   mocks.signer.mockResolvedValue({ person_id: 20, signer_name: 'Capitaine Test', signature: currentSignature });
   mocks.signatureUrl.mockImplementation(async (_client: SupabaseClient, snapshot: MedicalSignatureSnapshot) => `https://private.example.test/signature-${snapshot.signature_id}.png`);
   mocks.images.mockResolvedValue(new Map([[entry.id, new Uint8Array([1, 2, 3])]]));
@@ -92,7 +94,7 @@ describe('MedicalLogbookPage', () => {
     expect(screen.getByRole('heading', { name: 'Accès réservé' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Nouvelle entrée' })).not.toBeInTheDocument();
     expect(screen.queryByRole('row', { name: 'Nouvelle entrée médicale' })).not.toBeInTheDocument();
-    for (const query of [mocks.vessels, mocks.entries, mocks.signer, mocks.signatureUrl, mocks.save, mocks.history]) expect(query).not.toHaveBeenCalled();
+    for (const query of [mocks.vessels, mocks.entries, mocks.medications, mocks.signer, mocks.signatureUrl, mocks.save, mocks.history]) expect(query).not.toHaveBeenCalled();
   });
 
   it('uses authorized vessel capabilities and shows the seven medical columns in French', async () => {
@@ -104,8 +106,40 @@ describe('MedicalLogbookPage', () => {
     expect(screen.queryByRole('button', { name: 'Nouvelle entrée' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Modifier l’entrée/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Archiver l’entrée/ })).not.toBeInTheDocument();
+    expect(mocks.medications).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /Historique de l’entrée/ })).toBeEnabled();
     expect(await screen.findByRole('img', { name: 'Signature de Alice Martin' })).toHaveAttribute('src', 'https://private.example.test/signature-401.png');
+  });
+
+  it('submits several stock items with their individual units, without requiring narrative text', async () => {
+    const first = { item_id: 4, designation: 'Article A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 12 };
+    const second = { item_id: 5, designation: 'Article B', brand: '', lot_number: '', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10 };
+    mocks.medications.mockResolvedValue([first, second]);
+    mocks.save.mockImplementation(async (_client, vesselId, draft: MedicalDraft) => ({
+      ...entry, ...draft, id: 12, vessel_id: vesselId,
+      medications: draft.medications?.map((item) => ({ ...(item.item_id === 4 ? first : second), ...item, stock_quantity: item.item_id === 4 ? 3 : 2 })),
+    }));
+    renderPage({ roles: ['capitaine'] });
+    const row = await openNew();
+    await userEvent.type(within(row).getByLabelText('Nom du patient'), 'Patient exemple');
+    await userEvent.type(within(row).getByLabelText('Blessure / Maladie'), 'Observation');
+    await userEvent.click(within(row).getByRole('button', { name: 'Choisir les articles de pharmacie' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Articles de pharmacie du navire' });
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /Article A/ }));
+    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: /Unité — Article A/ }), 'package');
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /Article B/ }));
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /Quantité — Article B/ }), { target: { value: '2' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Appliquer la sélection' }));
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.medications).toHaveBeenCalledExactlyOnceWith(client, 1);
+    await userEvent.click(saveButton(row));
+    await screen.findByText('Patient exemple');
+    expect(mocks.save).toHaveBeenCalledWith(client, 1, expect.objectContaining({
+      treatment_medicines: '',
+      medications: [{ item_id: 4, quantity: 1, unit: 'package' }, { item_id: 5, quantity: 2, unit: 'unit' }],
+    }), undefined);
+    expect(screen.getByText(/1 boîte de 3 comprimé/)).toBeVisible();
+    expect(mocks.medications).toHaveBeenCalledTimes(2);
   });
 
   it('defaults to the longest accessible vessel and rejects an unauthorized remembered selection before entry calls', async () => {
@@ -200,6 +234,7 @@ describe('MedicalLogbookPage', () => {
     await screen.findByText('Entrée médicale enregistrée.');
     expect(mocks.save).toHaveBeenCalledExactlyOnceWith(client, 1, {
       occurred_on: '2026-10-14', occurred_time: '09:10', patient_name: 'Nouveau Patient', injury_illness: 'Incident de démonstration', treatment_medicines: 'Intervention de démonstration', first_aider_name: 'Capitaine Test',
+      create_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     }, undefined);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('Nouveau Patient')).toBeVisible();
@@ -258,6 +293,9 @@ describe('MedicalLogbookPage', () => {
     await userEvent.click(saveButton(row));
     await screen.findByText('Entrée médicale enregistrée.');
     expect(mocks.save).toHaveBeenCalledTimes(2);
+    const requestId = mocks.save.mock.calls[0][2].create_request_id;
+    expect(requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(mocks.save.mock.calls[1][2].create_request_id).toBe(requestId);
     expect(within(screen.getByRole('row', { name: 'Nouvelle entrée médicale' })).getByLabelText('Nom du patient')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'SURFEUR' })).toBeEnabled();
   });

@@ -1,12 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { demoFleetVessels } from '../lifting/liftingPreview';
-import { blankMedicalDraft, normalizedMedicalDraft, validateMedicalDraft, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalSignatureSnapshot } from './medicalLogbookModel';
+import { blankMedicalDraft, normalizedMedicalDraft, validateMedicalDraft, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalMedicationChoice, type MedicalMedicationSnapshot, type MedicalSignatureSnapshot } from './medicalLogbookModel';
 import { DEMO_SIGNATURE_BASE64, DEMO_SIGNATURE_SHA256, DEMO_SIGNATURE_SIZE, demoMedicalSignatureBytes } from './medicalPreviewSignature';
 
 // Every name and medical event here is invented. This client never reaches a network or browser storage.
 export function createMedicalPreviewClient(): SupabaseClient {
   const vessels = demoFleetVessels.filter((vessel) => !/^YARD|BUREAU/i.test(vessel.name)).map((vessel) => ({ ...vessel, can_write: true }));
   const histories = new Map<number, MedicalHistory[]>();
+  const requests = new Map<string, MedicalEntry>();
+  const pharmacy = new Map<number, MedicalMedicationChoice[]>(vessels.map((vessel) => [vessel.id, [
+    { item_id: 1, designation: 'Article Démo A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 20 },
+    { item_id: 2, designation: 'Article Démo B', brand: '', lot_number: 'DEMO-B', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10 },
+  ]]));
   let nextId = 10000;
   let nextHistoryId = 1;
   const stamp = () => new Date().toISOString();
@@ -28,7 +33,7 @@ export function createMedicalPreviewClient(): SupabaseClient {
     histories.set(entry.id, history);
   }
   entries.forEach((entry) => audit(entry, 'created'));
-  const failure = (code: string) => ({ data: null, error: { code } });
+  const failure = (code: string, message?: string) => ({ data: null, error: { code, message } });
   return {
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'get_medical_logbook_vessels') return { data: structuredClone(vessels), error: null };
@@ -37,22 +42,44 @@ export function createMedicalPreviewClient(): SupabaseClient {
         if (!vessels.some((vessel) => vessel.id === args.p_vessel_id)) return failure('42501');
         return { data: structuredClone(entries.filter((entry) => entry.vessel_id === args.p_vessel_id)), error: null };
       }
+      if (name === 'list_medical_logbook_medications') {
+        const items = pharmacy.get(Number(args.p_vessel_id));
+        return items ? { data: structuredClone(items), error: null } : failure('42501');
+      }
       if (name === 'save_medical_logbook_entry') {
         const vessel = vessels.find((vessel) => vessel.id === args.p_vessel_id);
         const draft = args.p_entry as MedicalDraft;
         if (!vessel) return failure('42501');
         if (!draft || validateMedicalDraft(draft) || draft.first_aider_name !== signature.signer_name) return failure('22023');
         const existing = entries.find((entry) => entry.id === args.p_entry_id);
+        const requestKey = !existing && draft.create_request_id ? `${vessel.id}:${draft.create_request_id}` : '';
         if (args.p_entry_id != null && (!existing || existing.vessel_id !== vessel.id)) return failure('42501');
         if (existing && existing.revision !== args.p_expected_revision) return failure('40001');
         if (existing?.archived) return failure('22023');
-        const signed = { ...normalizedMedicalDraft(draft), signature_name: signature.signer_name, signature_version_id: signature.signature_id,
+        if (requestKey && requests.has(requestKey)) return { data: structuredClone(requests.get(requestKey)), error: null };
+        const items = pharmacy.get(vessel.id)!;
+        const before = new Map(existing?.medications?.map((item) => [item.item_id, item.stock_quantity]));
+        const medications: MedicalMedicationSnapshot[] = [];
+        for (const row of draft.medications ?? existing?.medications ?? []) {
+          const item = items.find((choice) => choice.item_id === row.item_id);
+          if (!item || item.stock_quantity === null) return failure('22023', 'MEDICAL_LOGBOOK_MEDICATION_UNAVAILABLE');
+          if (row.unit === 'package' && !item.package_size) return failure('22023', 'MEDICAL_LOGBOOK_MEDICATION_PACKAGE_UNAVAILABLE');
+          const stockQuantity = row.quantity * (row.unit === 'package' ? item.package_size! : 1);
+          if (stockQuantity > item.stock_quantity + (before.get(row.item_id) ?? 0)) return failure('22023', 'MEDICAL_LOGBOOK_INSUFFICIENT_STOCK');
+          medications.push({ ...item, ...row, stock_quantity: stockQuantity });
+        }
+        for (const item of items) {
+          if (item.stock_quantity !== null) item.stock_quantity = Math.round((item.stock_quantity + (before.get(item.item_id) ?? 0)
+            - (medications.find((row) => row.item_id === item.item_id)?.stock_quantity ?? 0)) * 1000) / 1000;
+        }
+        const signed = { ...normalizedMedicalDraft(draft), medications, signature_name: signature.signer_name, signature_version_id: signature.signature_id,
           signature_snapshot: structuredClone(signature) };
         const entry: MedicalEntry = existing
           ? Object.assign(existing, signed, { revision: existing.revision + 1, updated_at: stamp() })
           : { ...signed, id: nextId++, company_id: vessel.company_id, vessel_id: vessel.id,
             revision: 1, archived: false, created_at: stamp(), updated_at: stamp() };
         if (!existing) entries.push(entry);
+        if (requestKey) requests.set(requestKey, entry);
         audit(entry, existing ? 'updated' : 'created');
         return { data: structuredClone(entry), error: null };
       }

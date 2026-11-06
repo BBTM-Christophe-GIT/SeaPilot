@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Plus, Save, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { validateMedicalDraft, type MedicalDraft, type MedicalSigner } from './medicalLogbookModel';
+import { validateMedicalDraft, type MedicalDraft, type MedicalMedicationSnapshot, type MedicalMedicationChoice, type MedicalSigner } from './medicalLogbookModel';
+import { MedicalMedicationPicker } from './MedicalMedicationPicker';
 import { MedicalSignaturePreview } from './MedicalSignaturePreview';
 
-export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, error, signer, signerLoading, signerError, signerUrl, signatureLoading, signatureUnavailable, autoFocus = false, onDirtyChange, onReloadSigner, onSave, onCancel }: {
-  initial: MedicalDraft; editing: boolean; busy: boolean; error: string;
+export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, error, signer, signerLoading, signerError, signerUrl, signatureLoading, signatureUnavailable, medicationList, onReloadMedications, autoFocus = false, onDirtyChange, onReloadSigner, onSave, onCancel }: {
+  initial: MedicalDraft & { medications?: MedicalMedicationSnapshot[] }; editing: boolean; busy: boolean; error: string;
+  medicationList: { choices: MedicalMedicationChoice[]; error: string } | null; onReloadMedications: () => void;
   signer: MedicalSigner | null; signerLoading: boolean; signerError: string; signerUrl?: string;
   signatureLoading: boolean; signatureUnavailable: boolean;
   autoFocus?: boolean; onDirtyChange?: (dirty: boolean) => void;
@@ -18,6 +20,7 @@ export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, 
   const formId = useId();
   const feedbackId = useId();
   const patientInput = useRef<HTMLInputElement>(null);
+  const createRequestId = useRef<string | null>(null);
   const feedback = validation || error;
   const describedBy = feedback ? feedbackId : undefined;
   const disabled = busy || locked;
@@ -29,7 +32,10 @@ export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, 
     setDraft(next);
     onDirtyChange?.(next.occurred_on !== original.occurred_on || next.occurred_time !== original.occurred_time
       || next.patient_name.trim() !== original.patient_name.trim() || next.injury_illness.trim() !== original.injury_illness.trim()
-      || next.treatment_medicines.trim() !== original.treatment_medicines.trim());
+      || next.treatment_medicines.trim() !== original.treatment_medicines.trim()
+      || (next.medications?.length ?? 0) !== (original.medications?.length ?? 0)
+      || !!next.medications?.some((item) => !original.medications?.some((row) =>
+        row.item_id === item.item_id && row.quantity === item.quantity && row.unit === item.unit)));
     setValidation('');
   }
 
@@ -41,14 +47,19 @@ export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, 
     const submitted: MedicalDraft = {
       occurred_on: text('occurred_on'), occurred_time: text('occurred_time'), patient_name: text('patient_name'),
       injury_illness: text('injury_illness'), treatment_medicines: text('treatment_medicines'), first_aider_name: signer.signer_name,
+      ...(draft.medications ? { medications: draft.medications } : {}),
     };
     const problem = validateMedicalDraft(submitted);
     if (problem) {
       setValidation(problem);
       const invalid = Array.from(event.currentTarget.elements).find((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
-        ? !element.validity.valid || !element.value.trim() : false);
+        ? !element.validity.valid || (element.required && !element.value.trim()) : false);
       if (invalid instanceof HTMLElement) invalid.focus();
       return;
+    }
+    if (!editing) {
+      createRequestId.current ??= crypto.randomUUID();
+      submitted.create_request_id = createRequestId.current;
     }
     onSave(submitted);
   }
@@ -59,7 +70,13 @@ export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, 
       <td><label className="medical-sr-only" htmlFor={`${formId}-time`}>Heure</label><input id={`${formId}-time`} form={formId} name="occurred_time" type="time" required disabled={disabled} value={draft.occurred_time} aria-describedby={describedBy} onChange={(event) => field('occurred_time', event.target.value)} /></td>
       <td><label className="medical-sr-only" htmlFor={`${formId}-patient`}>Nom du patient</label><input ref={patientInput} id={`${formId}-patient`} form={formId} name="patient_name" required disabled={disabled} maxLength={160} autoComplete="off" value={draft.patient_name} aria-describedby={describedBy} onChange={(event) => field('patient_name', event.target.value)} /></td>
       <td><label className="medical-sr-only" htmlFor={`${formId}-injury`}>Blessure / Maladie</label><textarea id={`${formId}-injury`} form={formId} name="injury_illness" required disabled={disabled} rows={3} maxLength={4000} value={draft.injury_illness} aria-describedby={describedBy} onChange={(event) => field('injury_illness', event.target.value)} /></td>
-      <td><label className="medical-sr-only" htmlFor={`${formId}-treatment`}>Traitement / Médicaments administrés</label><textarea id={`${formId}-treatment`} form={formId} name="treatment_medicines" required disabled={disabled} rows={3} maxLength={4000} value={draft.treatment_medicines} aria-describedby={describedBy} onChange={(event) => field('treatment_medicines', event.target.value)} /></td>
+      <td><div className="medical-treatment-cell">
+        <label className="medical-sr-only" htmlFor={`${formId}-treatment`}>Traitement / Médicaments administrés</label>
+        <textarea id={`${formId}-treatment`} form={formId} name="treatment_medicines" required={!draft.medications?.length} disabled={disabled} rows={3} maxLength={4000}
+          placeholder="Notes de traitement" value={draft.treatment_medicines} aria-describedby={describedBy} onChange={(event) => field('treatment_medicines', event.target.value)} />
+        <MedicalMedicationPicker list={medicationList} original={original.medications ?? []} value={draft.medications ?? []}
+          disabled={disabled} onChange={(items) => field('medications', items)} onReload={onReloadMedications} />
+      </div></td>
       <td><label className="medical-sr-only" htmlFor={`${formId}-aider`}>Secouriste</label><input id={`${formId}-aider`} readOnly disabled={disabled} value={signer?.signer_name || ''} /></td>
       <td><div className="medical-inline-signature" aria-label="Signature personnelle du compte connecté">
         {signerLoading ? <p role="status">Chargement de votre signature…</p> : signerError ? <p className="medical-error" role="alert">{signerError}</p>

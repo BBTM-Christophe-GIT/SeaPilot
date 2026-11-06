@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, groupPharmacyItems, pharmacyDaysUntil, pharmacyDotationKey, pharmacyDotationLabel, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, selectPharmacyVessels, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { blankPharmacyItem, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, groupPharmacyItems, pharmacyDaysUntil, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyStockStatus, pharmacyToday, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
 
 describe('pharmacy dates and stock', () => {
   it('alerts inclusively at thirty days and retains expired dates', () => {
@@ -27,11 +27,35 @@ describe('pharmacy dates and stock', () => {
   });
   it('compares bare quantities and leaves incomparable packages for review', () => {
     expect(pharmacyStockStatus({ quantity: '4', required_quantity: '10' })).toBe('low');
+    expect(pharmacyStockStatus({ quantity: '4', required_quantity: '4' })).toBe('ok');
     expect(pharmacyStockStatus({ quantity: '10', required_quantity: '4' })).toBe('ok');
     expect(pharmacyStockStatus({ quantity: '0,5', required_quantity: '1' })).toBe('low');
     for (const quantity of ['', '30x300mg', '4x5', '2 Boîtes', '100g']) {
       expect(pharmacyStockStatus({ quantity, required_quantity: '4' })).toBe('unknown');
     }
+  });
+  it('compares stocks with a matching dose or legacy unit, and uses structured stock when present', () => {
+    const legacy = { quantity: '20 X 300mg', required_quantity: '30×300 mg' };
+    expect(pharmacyStockStatus(legacy)).toBe('low');
+    expect(pharmacyStockStatus({ ...legacy, stock_quantity: 30 })).toBe('ok');
+    expect(pharmacyItemStrength({ ...legacy, stock_quantity: 19 })).toBe('300 mg');
+    expect(pharmacyStockStatus({ ...legacy, required_quantity: '30 × 500 mg' })).toBe('unknown');
+    expect(pharmacyStockStatus({ quantity: '1 boîte', required_quantity: '2 Boîtes' })).toBe('low');
+    expect(pharmacyStockStatus({ quantity: '1 boîte', required_quantity: '2 doses' })).toBe('unknown');
+    expect(pharmacyStockStatus({ quantity: 'texte', required_quantity: 'autre', stock_quantity: 9, required_stock_quantity: 9 })).toBe('ok');
+    expect(pharmacyStockStatus({ quantity: 'texte', required_quantity: 'autre', stock_quantity: 0, required_stock_quantity: 9 })).toBe('low');
+  });
+  it('suppresses expiry alerts for articles explicitly marked without an expiry date', () => {
+    const item = { expires_on: '2000-01-01', expiry_precision: 'day' as const, expiry_text: '', no_expiry: true };
+    expect(pharmacyItemExpiryStatus(item, '2026-10-20')).toBe('none');
+    expect(formatPharmacyItemExpiry(item)).toBe('Sans date de péremption');
+    expect(pharmacyItemExpiryStatus({ expires_on: null })).toBe('unknown');
+  });
+  it('retains each stock and dotation count while counting each urgent article once', () => {
+    const stock: PharmacyNotification = { id: 'stock-7', kind: 'stock', vessel_id: 2, vessel_name: 'SUROIT', title: 'Article', expires_on: null, days_until_expiry: null, item_id: 7 };
+    const expired: PharmacyNotification = { ...stock, id: 'item-7', kind: 'item', expires_on: '2026-10-19', days_until_expiry: -1 };
+    const outside: PharmacyNotification = { ...stock, id: 'outside-dotation-7', kind: 'outside_dotation' };
+    expect(pharmacyVesselExpiryCounts([stock, { ...stock, id: 'stock-8', item_id: 8 }, expired, outside])).toEqual({ 2: { due: 0, expired: 1, low: 2, outsideDotation: 1, red: 2 } });
   });
   it('allows managers and captains to request edits, while sailors remain readers', () => {
     expect(canManagePharmacy(['admin'])).toBe(true);

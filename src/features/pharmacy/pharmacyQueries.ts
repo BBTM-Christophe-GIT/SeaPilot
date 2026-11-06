@@ -64,8 +64,8 @@ export async function downloadPharmacyControl(client: SupabaseClient, path: stri
   if (error || !data) throw error || new Error('Document de contrôle introuvable.');
   return data;
 }
-export async function fetchPharmacyNotifications(client: SupabaseClient): Promise<PharmacyNotification[]> {
-  const { data, error } = await client.rpc('pharmacy_notifications');
+export async function fetchPharmacyNotifications(client: SupabaseClient, includeUndated = true): Promise<PharmacyNotification[]> {
+  const { data, error } = await client.rpc(includeUndated ? 'pharmacy_inventory_notifications' : 'pharmacy_notifications');
   if (error) throw error;
   return data || [];
 }

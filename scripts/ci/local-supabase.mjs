@@ -113,6 +113,7 @@ const assertionTests = [
   'hr_employment_periods_test.sql',
   'public_catalogue_and_import_rpc_security_test.sql',
   'pharmacy_vessel_read_scope_test.sql',
+  'medical_pharmacy_stock_test.sql',
 ]
 
 function fail(message) {

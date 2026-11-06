@@ -72,6 +72,32 @@
   font-weight: 400;
 }
 .medical-inline-row textarea { resize: vertical; line-height: 1.5; min-height: 100px; }
+.medical-treatment-cell, .medical-medication-picker, .medical-medication-selection { display: grid; gap: var(--sp-space-2); }
+.medical-treatment-cell .medical-medication-trigger { width: 100%; justify-content: space-between; white-space: normal; }
+.medical-medication-summary { margin: 0; padding-inline-start: var(--sp-space-4); overflow-wrap: anywhere; }
+.medical-medication-picker fieldset {
+  min-width: 0; margin: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius);
+}
+.medical-medication-picker legend, .medical-medication-picker > label { font-weight: 600; }
+.medical-medication-picker label:not(.medical-medication-option) { display: grid; gap: var(--sp-space-1); min-width: 0; }
+.medical-medication-picker input:not([type="checkbox"]), .medical-medication-picker select {
+  width: 100%; min-width: 0; min-height: 40px; padding: var(--sp-space-2);
+  border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius);
+  color: var(--sp-text); background: var(--sp-surface); font: inherit;
+}
+.medical-medication-selection + .medical-medication-selection { margin-top: var(--sp-space-3); }
+.medical-medication-fields { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(100px, 2fr) auto; gap: var(--sp-space-2); align-items: end; }
+.medical-medication-options { max-height: 18rem; overflow: auto; }
+.medical-medication-option {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--sp-space-2);
+  min-height: 44px; padding-block: var(--sp-space-1); border-bottom: 1px solid var(--sp-border);
+}
+.medical-medication-option:last-child { border-bottom: 0; }
+.medical-medication-option small { display: block; color: var(--sp-muted); }
+@media (max-width: 480px) {
+  .medical-medication-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+  .medical-medication-fields button { grid-column: 1 / -1; justify-self: start; }
+}
 .medical-logbook-page .medical-archive-filter { display: flex; gap: var(--sp-space-2); min-height: var(--sp-control-height); align-items: center; }
 .medical-archive-filter input { width: 18px; height: 18px; accent-color: var(--sp-primary); }
 .medical-logbook-page :focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
@@ -79,7 +105,7 @@
 .medical-empty svg { color: var(--sp-primary); }
 .medical-empty h2, .medical-empty h3 { margin: var(--sp-space-3) 0; color: var(--sp-heading); }
 .medical-empty p { color: var(--sp-muted); margin: var(--sp-space-3) auto; max-width: 560px; line-height: 1.5; }
-.medical-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.medical-table-scroll { position: relative; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
 .medical-table { border-collapse: collapse; width: 100%; min-width: 1050px; font-size: var(--sp-subtitle-size); table-layout: fixed; }
 .medical-table th, .medical-table td { text-align: left; vertical-align: top; padding: var(--sp-space-3); border-right: 1px solid var(--sp-border); border-bottom: 1px solid var(--sp-border); overflow-wrap: anywhere; }
 .medical-table th { background: var(--sp-surface-subtle); color: var(--sp-heading); font-weight: 600; }
@@ -135,5 +161,6 @@
   .medical-ready-actions { max-width: calc(100vw - 80px); }
 }
 @media (pointer: coarse) {
-  .medical-logbook-page input:not([type="checkbox"]), .medical-logbook-page select { min-height: 44px; }
+  .medical-logbook-page input:not([type="checkbox"]), .medical-logbook-page select,
+  .medical-medication-picker input:not([type="checkbox"]), .medical-medication-picker select { min-height: 44px; }
 }

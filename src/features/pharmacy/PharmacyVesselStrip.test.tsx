@@ -32,13 +32,20 @@ describe('PharmacyVesselStrip', () => {
     expect(goury).toHaveAccessibleDescription('2 articles à échéance sous 30 jours ; 3 articles périmés');
   });
 
+  it('includes stock to renew and articles outside the dotation in the red badge and counts overlaps once', () => {
+    render(<PharmacyVesselStrip counts={{ 1: { due: 2, expired: 3, low: 2, outsideDotation: 1, red: 4 } }} disabled={false} onChange={vi.fn()} value={1} vessels={[vessels[0]]} />);
+    const goury = screen.getByRole('button', { name: 'GOURY' });
+    expect(within(goury).getByRole('img', { name: '2 articles à échéance sous 30 jours' })).toHaveTextContent('2');
+    expect(within(goury).getByRole('img', { name: '4 articles à traiter (3 articles périmés ; 2 articles à réapprovisionner ; 1 article hors dotation)' })).toHaveTextContent('4');
+  });
+
   it('does not show badges for zero counts and handles singular articles', () => {
     render(<PharmacyVesselStrip counts={{ 1: { due: 1, expired: 1 }, 2: { due: 0, expired: 0 } }} disabled={false} onChange={vi.fn()} value={1} vessels={vessels.slice(0, 2)} />);
     expect(screen.getByRole('img', { name: '1 article à échéance sous 30 jours' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: '1 article périmé' })).toBeInTheDocument();
     const suroit = screen.getByRole('button', { name: 'SUROIT' });
     expect(within(suroit).queryByRole('img')).not.toBeInTheDocument();
-    expect(suroit).toHaveAccessibleDescription('Aucun article à échéance sous 30 jours ni périmé.');
+    expect(suroit).toHaveAccessibleDescription('Aucun article à traiter.');
     expect(within(suroit).queryByText('0')).not.toBeInTheDocument();
   });
 
@@ -56,7 +63,7 @@ describe('PharmacyVesselStrip', () => {
     goury = screen.getByRole('button', { name: 'GOURY' });
     expect(within(goury).queryByText('Comptages indisponibles')).not.toBeInTheDocument();
     expect(within(goury).queryByRole('img')).not.toBeInTheDocument();
-    expect(goury).toHaveAccessibleDescription('Aucun article à échéance sous 30 jours ni périmé.');
+    expect(goury).toHaveAccessibleDescription('Aucun article à traiter.');
   });
 
   it('prevents selection while disabled and supports keyboard activation otherwise', async () => {

@@ -53,4 +53,20 @@ describe('PharmacyItemForm medical dotation', () => {
     fireEvent.submit(screen.getByRole('dialog'));
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ medical_dotation: 'Dotation B', medical_section: 'equipment', category: '', category_id: null, quantity: '12 boîtes', revision: 5, source_file: 'Source.xlsx' }));
   });
+  it('saves the dispensing units, package size and dosage and clears the date when marked as inapplicable', () => {
+    const article: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vessel_id: 1, designation: 'Article', medical_section: 'medicines', expires_on: '2027-06-30', expiry_precision: 'day', expiry_text: 'Juin 2027', revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '' };
+    const onSave = vi.fn();
+    render(<PharmacyItemForm item={article} categories={[]} busy={false} error="" onClose={vi.fn()} onSave={onSave} />);
+    expect(screen.getByLabelText('Date de péremption')).toHaveValue('2027-06-30');
+    fireEvent.change(screen.getByLabelText('Quantité à bord'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Quantité réglementaire'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Unité de stock'), { target: { value: 'comprimé' } });
+    fireEvent.change(screen.getByLabelText('Unités par boîte'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Dosage par unité'), { target: { value: '300 mg' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hors Dotation' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Sans date de péremption' }));
+    expect(screen.queryByLabelText('Date de péremption')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Enregistrer' }));
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outside_dotation: true, no_expiry: true, expires_on: null, expiry_precision: 'unknown', expiry_text: '', stock_quantity: 6, required_stock_quantity: 9, stock_unit: 'comprimé', package_size: 3, strength: '300 mg' }));
+  });
 });
