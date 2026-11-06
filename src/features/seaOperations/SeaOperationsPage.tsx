@@ -30,7 +30,7 @@ import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { SeaOperationConsumptionDialog } from './SeaOperationConsumptionPanel';
 import type { SeaOperationConsumption } from './seaOperationConsumption';
-import { fetchSeaOperationConsumptionExport } from './seaOperationConsumptionExportQuery';
+import { fetchSeaOperationConsumptionExport, fetchSeaOperationConsumptionHistory } from './seaOperationConsumptionExportQuery';
 import { hasSeaOperationConsumption, useSeaOperationConsumptionContext } from './useSeaOperationConsumption';
 import { renderSeaOperationVoyageFuelDetails } from './SeaOperationVoyageFuelMetrics';
 import { SeaOperationEtaPicker } from './SeaOperationEtaPicker';
@@ -918,26 +918,29 @@ export function SeaOperationsPage() {
   const exportableRecords = records.filter(hasSeaOperationConsumption);
 
   async function exportConsumption() {
-    if (busy || exporting || consumptionExportRequest.current || !exportableRecords.length) return;
+    if (busy || exporting || consumptionExportRequest.current || !data) return;
     const request = { client, accessKey };
     consumptionExportRequest.current = request;
     const isCurrent = () => consumptionExportRequest.current === request && actionContext.current.client === request.client
       && actionContext.current.accessKey === request.accessKey;
     setExportingConsumption(true); setError(''); setNotice('');
     try {
-      const readings = await fetchSeaOperationConsumptionExport(client, exportableRecords.map(item => item.id));
+      const [readings, history] = await Promise.all([
+        fetchSeaOperationConsumptionExport(client, exportableRecords.map(item => item.id)),
+        fetchSeaOperationConsumptionHistory(client),
+      ]);
       if (!isCurrent()) return;
       const byId = new globalThis.Map(readings.map(reading => [reading.operationId, reading.record]));
       const rows = exportableRecords.flatMap(operation => {
         const consumption = byId.get(operation.id);
         return consumption ? [{ operation, consumption }] : [];
       });
-      if (!rows.length) {
+      if (!rows.length && !history.rozel.length && !history.suroit.length && !history.rozelGauge.length) {
         setNotice('Aucun relevé de consommation enregistré pour les opérations affichées.');
         return;
       }
       const { buildSeaOperationConsumptionWorkbook } = await import('./seaOperationConsumptionWorkbook');
-      const blob = await buildSeaOperationConsumptionWorkbook(rows);
+      const blob = await buildSeaOperationConsumptionWorkbook(rows, history);
       if (!isCurrent()) return;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -959,9 +962,9 @@ export function SeaOperationsPage() {
     <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Map size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
     <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations">
       <ModuleRibbonCommand disabled={busy || exporting || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />
-      <ModuleRibbonCommand disabled={busy || exporting || !exportableRecords.length} icon={<FileSpreadsheet size={22} aria-hidden="true" />}
+      <ModuleRibbonCommand disabled={busy || exporting || !data} icon={<FileSpreadsheet size={22} aria-hidden="true" />}
         label={exportingConsumption ? 'Export en cours…' : 'Consos Excel'} aria-label="Exporter les consommations en Excel"
-        aria-busy={exportingConsumption} title="Exporter les relevés des opérations affichées" onClick={() => void exportConsumption()} />
+        aria-busy={exportingConsumption} title="Exporter les relevés des opérations affichées et l’historique disponible" onClick={() => void exportConsumption()} />
     </ModuleRibbonGroup></ModuleRibbon>
     {!editing && error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
     {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
@@ -1209,7 +1212,6 @@ export function SeaOperationsPage() {
         if (actionContext.current.client !== consumptionDialog.client || actionContext.current.accessKey !== consumptionDialog.accessKey) return;
         setConsumptionSave({ client: consumptionDialog.client, accessKey: consumptionDialog.accessKey, data: saved });
         setConsumptionRefresh(value => value + 1);
-        setConsumptionAction(null);
         setNotice('La consommation de l’opération a été enregistrée.');
       }} />}
     {record && <SeaOperationPrint record={record} />}</div>;

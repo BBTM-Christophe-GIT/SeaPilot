@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.86.0` réorganise le relevé Conso, préremplit les paramètres de
+navigation à partir d’une trace GPX horodatée et affiche le bilan graphique de
+la mission. L’export Excel ajoute les archives Suroît et Rozel. Appliquer les
+deux migrations Conso de cette version et charger l’archive privée avant la
+mise en ligne. Voir [les relevés Conso](./sea-operation-consumption.md).
+
 La version `3.84.4` actualise les indicateurs de la carte dès la confirmation
 d’un relevé Conso. Le bouton **Consos Excel** exporte les relevés enregistrés
 des opérations affichées dans le registre. Appliquer

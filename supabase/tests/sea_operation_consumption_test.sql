@@ -243,5 +243,69 @@ select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('revisi
 reset role;
 select is((select count(*)::integer from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('native_cm')::text),
   0, 'removing the logical operation withdraws the fuel sample');
+
+create function pg_temp.conso_trace() returns jsonb language sql immutable as $$
+  select '{"startedAt":"2026-11-06T00:00:00.000Z","endedAt":"2026-11-06T02:00:00.000Z",
+    "durationMinutes":120,"distanceNm":18.2499,"averageSpeedKnots":9.125,"pointCount":3,"segmentCount":1,
+    "gapCount":0,"reorderedPointCount":0,"excludedPointCount":0,"profile":[
+      {"elapsedMinutes":0,"speedKnots":null},{"elapsedMinutes":60,"speedKnots":9.125},
+      {"elapsedMinutes":120,"speedKnots":9.125}]}'::jsonb;
+$$;
+create function pg_temp.conso_gps_input() returns jsonb language sql immutable as $$
+  select pg_temp.conso_input() || jsonb_build_object('trace', pg_temp.conso_trace(), 'averageSpeedKnots', 9.125, 'pricePerLiter', 1.47);
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(4);
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4, pg_temp.conso_gps_input())$$,
+  '42501', null, 'another Capitaine cannot attach a GPS trace');
+select pg_temp.conso_actor(3);
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4, pg_temp.conso_gps_input() || '{"durationMinutes":119}')$$,
+  '22023', null, 'confirmed duration must match the attached trace');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4,
+  jsonb_set(pg_temp.conso_gps_input(), '{trace,distanceNm}', '99'))$$, '22023', null, 'trace distance must agree with average speed and elapsed time');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4,
+  jsonb_set(pg_temp.conso_gps_input(), '{trace,profile,1,elapsedMinutes}', '121'))$$,
+  '22023', null, 'speed series must follow the trace chronology');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4,
+  jsonb_set(pg_temp.conso_gps_input(), '{trace,profile}',
+    (select jsonb_agg('{"elapsedMinutes":0,"speedKnots":null}'::jsonb) from generate_series(1, 241))))$$,
+  '22023', null, 'speed series payload is bounded');
+select lives_ok($$update conso_fixture set response = public.sea_operation_save_consumption(id, 4, pg_temp.conso_gps_input()) where key = 'base'$$,
+  'the signing Capitaine can confirm the GPS trace with the readings');
+select is((response#>>'{record,distanceNm}')::numeric, 18.2499::numeric, 'GPS distance takes priority over duration times speed') from conso_fixture where key = 'base';
+select is((response#>>'{record,litersPerNm}')::numeric, 57.516::numeric, 'litres per mile use the GPS distance') from conso_fixture where key = 'base';
+select is(response#>'{record,trace}', pg_temp.conso_trace(), 'GPS summary and bounded profile return with the saved record') from conso_fixture where key = 'base';
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 4, pg_temp.conso_gps_input())$$,
+  '40001', null, 'a stale client cannot replace the saved trace');
+
+select pg_temp.conso_actor(5);
+select is(public.sea_operation_consumption(pg_temp.conso_id('base'))#>'{record,trace}', pg_temp.conso_trace(), 'real Marin can read the GPS profile');
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('base')])#>'{0,record,trace}', pg_temp.conso_trace() - 'profile',
+  'Excel export includes the authorized GPS summary with a bounded batch payload');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 5, pg_temp.conso_gps_input())$$,
+  '42501', null, 'real Marin cannot change the GPS trace');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('base')]), '[]'::jsonb,
+  'foreign admin cannot export the GPS summary');
+reset role;
+select is((select distance_nm from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('base')::text),
+  18.25::numeric, 'calibrated reference sample uses the measured distance at sample precision');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select lives_ok($$update conso_fixture set response = public.sea_operation_save_consumption(id, 5, pg_temp.conso_gps_input() - 'trace') where key = 'base'$$,
+  'an older client can update a reading without sending the trace field');
+select is(response#>'{record,trace}', pg_temp.conso_trace(), 'omitting the trace retains it when the GPS-derived inputs agree') from conso_fixture where key = 'base';
+select lives_ok($$update conso_fixture set response = public.sea_operation_save_consumption(id, 6, pg_temp.conso_input()) where key = 'base'$$,
+  'an older client can replace the navigation values manually');
+select is(response#>>'{record,trace}', null::text, 'manual corrections invalidate the older trace') from conso_fixture where key = 'base';
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 7, pg_temp.conso_gps_input())$$,
+  'GPS can be reattached after a manual correction');
+select lives_ok($$update conso_fixture set response = public.sea_operation_save_consumption(id, 8,
+  pg_temp.conso_gps_input() || '{"trace":null}') where key = 'base'$$, 'signing Capitaine can explicitly remove the GPS trace');
+select is(response#>>'{record,trace}', null::text, 'explicit removal clears the GPS provenance') from conso_fixture where key = 'base';
+select is((response#>>'{record,distanceNm}')::numeric, 18.25::numeric, 'distance falls back to duration times speed after removal') from conso_fixture where key = 'base';
+reset role;
 select * from finish();
 rollback;

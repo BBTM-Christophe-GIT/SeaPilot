@@ -1,14 +1,63 @@
 .so-consumption-dialog .app-dialog-backdrop { z-index: 1500; }
 .so-consumption-summary, .so-consumption-preview { margin-block: var(--sp-space-2); padding: var(--sp-space-3); }
-.so-consumption-summary h2, .so-consumption-preview h3 { display: flex; align-items: center; gap: var(--sp-space-2); margin: 0 0 var(--sp-space-2); font-size: .9rem; color: var(--sp-heading); }
-.so-consumption-summary p, .so-consumption-summary small { margin: 0; color: var(--sp-muted); font-size: .75rem; }
-.so-consumption-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); margin: 0; }
-.so-consumption-values dt { color: var(--sp-muted); font-size: .75rem; }
-.so-consumption-values dd { margin: 0; color: var(--sp-heading); font-weight: 650; font-variant-numeric: tabular-nums; }
-.so-consumption-fields, .so-consumption-duration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
-.so-consumption-duration, .so-consumption-wide { grid-column: 1 / -1; }
-.so-consumption-duration legend { margin-bottom: var(--sp-space-1); color: var(--sp-heading); font-size: .85rem; font-weight: 650; }
-.so-consumption-fields .so-help { margin: 0; }
+.so-consumption-summary h2, .so-consumption-preview h3, .so-consumption-chart h3 {
+  display: flex; align-items: center; gap: var(--sp-space-2); margin: 0 0 var(--sp-space-2); font-size: .9rem; color: var(--sp-heading);
+}
+.so-consumption-summary p, .so-consumption-dialog .so-help, .so-consumption-summary small, .so-consumption-dialog small {
+  margin: 0; color: var(--sp-muted); font-size: .75rem;
+}
+.so-consumption-values, .so-consumption-trip {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); margin: 0;
+}
+.so-consumption-dialog .so-consumption-values > div {
+  padding: var(--sp-space-2) var(--sp-space-3); background: var(--sp-primary-soft); border-radius: var(--sp-control-radius);
+}
+.so-consumption-values dt, .so-consumption-trip dt { color: var(--sp-muted); font-size: .75rem; }
+.so-consumption-values dd, .so-consumption-trip dd {
+  margin: 0; color: var(--sp-heading); font-weight: 650; font-variant-numeric: tabular-nums;
+}
+.so-consumption-fields, .so-consumption-section, .so-consumption-duration { min-width: 0; margin: 0; }
+.so-consumption-fields { display: grid; gap: var(--sp-space-3); padding: 0; border: 0; }
+.so-consumption-section {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-2) var(--sp-space-3);
+  padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle);
+}
+.so-consumption-section > legend { padding-inline: var(--sp-space-1); color: var(--sp-heading); font-size: .95rem; font-weight: 700; }
+.so-consumption-duration {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 6.25rem)); gap: var(--sp-space-2); grid-column: 1 / -1; padding: 0; border: 0;
+}
+.so-consumption-duration legend { margin-bottom: var(--sp-space-1); color: var(--sp-heading); font-size: .8rem; font-weight: 650; }
+.so-consumption-wide { grid-column: 1 / -1; }
+.so-consumption-import { display: grid; gap: var(--sp-space-2); padding-bottom: var(--sp-space-2); border-bottom: 1px solid var(--sp-border); }
+.so-consumption-import .so-field-label { display: flex; align-items: center; gap: var(--sp-space-1); }
+.so-consumption-import input[type='file'] { width: 100%; max-width: 25rem; min-width: 0; }
+.so-consumption-import input::file-selector-button { font: inherit; }
+.so-consumption-track-picker { display: flex; align-items: end; gap: var(--sp-space-2); flex-wrap: wrap; }
+.so-consumption-track-picker .so-field { min-width: 0; flex: 1 1 15rem; }
+.so-consumption-trace {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-space-2);
+  padding: var(--sp-space-2) var(--sp-space-3); background: var(--sp-primary-soft); border-radius: var(--sp-control-radius);
+}
+.so-consumption-confirm { padding: var(--sp-space-2) var(--sp-space-3); }
 .so-consumption-error { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); }
-@media (max-width: 520px) { .so-consumption-fields { grid-template-columns: minmax(0, 1fr); } }
+.so-consumption-charts { display: grid; gap: var(--sp-space-3); margin-block: var(--sp-space-3); }
+.so-consumption-chart, .so-consumption-trip {
+  min-width: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius);
+}
+.so-consumption-chart svg { display: block; width: 100%; height: auto; max-height: 14rem; }
+.so-consumption-chart h3 svg { width: 17px; height: 17px; flex: none; }
+.so-consumption-chart svg text { fill: var(--sp-muted); font-size: 12px; }
+.so-consumption-chart-grid { stroke: var(--sp-border); }
+.so-consumption-chart-line { fill: none; stroke: var(--sp-primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.so-consumption-chart-point { fill: var(--sp-primary); }
+.so-consumption-bars { display: grid; gap: var(--sp-space-2); }
+.so-consumption-bar-row { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 6.5rem; gap: var(--sp-space-2); align-items: center; font-size: .82rem; }
+.so-consumption-bar-row strong { text-align: right; font-variant-numeric: tabular-nums; }
+.so-consumption-bar-track { height: .75rem; overflow: hidden; background: var(--sp-primary-soft); border-radius: var(--sp-control-radius); }
+.so-consumption-bar-track > span { display: block; height: 100%; background: var(--sp-primary); border-radius: inherit; }
+@media (max-width: 520px) {
+  .so-consumption-section { grid-template-columns: minmax(0, 1fr); }
+  .so-consumption-bar-row { grid-template-columns: 4.6rem minmax(0, 1fr) 5.5rem; }
+  .so-consumption-chart svg text { font-size: 17px; }
+}
 @media print { .so-consumption-dialog { display: none !important; } }
