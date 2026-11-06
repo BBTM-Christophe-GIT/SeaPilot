@@ -1059,6 +1059,7 @@ export function SeaOperationsPage() {
                 onImport={importWaypoints}
               >
                 {waypointImport => step === 2 && <SeaOperationWaypointMapEditor
+                  key={record?.version ?? 'new'}
                   waypoints={draft.waypoints}
                   isolatedPoints={mapIsolatedPoints}
                   zones={draft.locationOverlay?.zones}
@@ -1072,8 +1073,7 @@ export function SeaOperationsPage() {
                   eta={seaOperationRouteArrivalEta(draft)}
                   departurePort={draft.vessel.departurePort}
                   arrivalPort={draft.vessel.arrivalPort}
-                  mapViewport={draft.mapViewport}
-                  onMapViewportChange={mapViewport => { if (canEditMap()) update({ mapViewport: mapViewport ? { ...mapViewport } : undefined }); }}
+                  fitOperationRoute
                   onAddWaypoint={addWaypoint}
                   onMoveWaypoint={moveWaypoint}
                   onDeleteWaypoint={removeWaypoint}
@@ -1081,10 +1081,10 @@ export function SeaOperationsPage() {
                   waypointImport={waypointImport}
                 />}
               </SeaOperationWaypointImportPanel>
-            : step === 2 && <SeaOperationRouteMap allowNavigationCategories inspectPoints showRouteLegs voyageSummaryPosition="compact"
+            : step === 2 && <SeaOperationRouteMap allowNavigationCategories inspectPoints showRouteLegs fitOperationRoute voyageSummaryPosition="compact"
                 renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(formConsumption, draft, distanceNm)} maxSpeedKnots={formMaxSpeedKnots}
                 etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} basemapControlsDisabled={busy || exporting}
-                waypoints={draft.waypoints} isolatedPoints={mapIsolatedPoints} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
+                waypoints={draft.waypoints} isolatedPoints={mapIsolatedPoints} zones={draft.locationOverlay?.zones} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
           <fieldset className="so-form-fields" disabled={formLocked}>
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}

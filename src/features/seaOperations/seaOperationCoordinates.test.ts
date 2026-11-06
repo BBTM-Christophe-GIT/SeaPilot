@@ -9,6 +9,14 @@ describe('SMCP degree / decimal-minute presentation', () => {
       .toBe('50° 04.264′ N — 001° 01.840′ E');
   });
 
+  it('can display four minute decimals on maps without changing the default precision', () => {
+    const position = { latitude: '49.994327', longitude: '-0.95218' };
+    expect(formatSeaPosition(position, 4)).toBe('49° 59.6596′ N — 000° 57.1308′ W');
+    expect(formatSeaPosition(position)).toBe('49° 59.660′ N — 000° 57.131′ W');
+    expect(formatSeaLatitude(49 + 59.99996 / 60, 4)).toBe('50° 00.0000′ N');
+    expect(formatSeaLongitude(-0, 4)).toBe('000° 00.0000′ W');
+  });
+
   it.each([
     ['49.65 N', '49° 39.000′ N'], ['49,65 S', '49° 39.000′ S'],
     ['50° 04.264′ N', '50° 04.264′ N'], ['N 50 4 15.84', '50° 04.264′ N'],

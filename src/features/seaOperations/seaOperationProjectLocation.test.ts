@@ -17,12 +17,11 @@ describe('project location copied when selecting a sea-operation mission', () =>
     copied.locationOverlay!.points[0].isolatedPointIcon = 'anchor';
     expect(plan).toEqual(original);
   });
-  it('imports an independent project frame and clears the previous manual frame when the chosen plan uses automatic framing', () => {
+  it('imports project geometry with automatic framing even when the project has a manual frame', () => {
     const plan = { ...emptyProjectLocationPlan(), mapViewport: { centerLatitude: 49.654321, centerLongitude: -1.789012, longitudeSpan: .023456789 } };
     const draft = emptySeaOperation(); draft.mapViewport = { centerLatitude: 0, centerLongitude: 0, longitudeSpan: 20 };
     const result = copyProjectLocationToSeaOperation(draft, plan);
-    expect(result.mapViewport).toEqual(plan.mapViewport); expect(result.mapViewport).not.toBe(plan.mapViewport);
-    result.mapViewport!.centerLongitude = 10;
+    expect(result).not.toHaveProperty('mapViewport');
     expect(plan.mapViewport.centerLongitude).toBe(-1.789012); expect(draft.mapViewport.centerLongitude).toBe(0);
     expect(copyProjectLocationToSeaOperation(result, emptyProjectLocationPlan())).not.toHaveProperty('mapViewport');
     expect(copyProjectLocationToSeaOperation(draft, null)).toBe(draft);

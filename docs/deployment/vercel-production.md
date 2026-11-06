@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.84.1` recadre les cartes Opération en mer sur les coordonnées
+du parcours, des points isolés et des zones, dès l’ouverture et après chaque
+enregistrement. Les ports éloignés du parcours restent renseignés dans la
+fiche. Les coordonnées affichées au clic sur les cartes Projet et Opération
+en mer utilisent quatre décimales de minute.
+
 La version `3.84.0` ajoute les relevés Conso après navigation, les indicateurs
 carburant sur la carte Opération en mer et l’usage du dernier prix saisi sur
 la carte Projet. Appliquer `20261106092442_sea_operation_consumption.sql`

@@ -247,8 +247,11 @@ export async function saveSeaOperation(
   projectPorts?: SeaOperationProjectPorts | null,
 ): Promise<SeaOperationRecord> {
   const baseline = projectPorts ? mapProjectPorts(projectPorts, draft) : null;
+  // Keep the camera independent of the saved passage plan.
+  const payload = { ...draft };
+  delete payload.mapViewport;
   return hydrateSignature(client, mapSeaOperationRecord(await rpc(client, baseline ? 'sea_operation_save_with_project_ports' : 'sea_operation_save', {
-    p_id: existing?.id ?? null, p_version: existing?.version ?? null, p_draft: draft,
+    p_id: existing?.id ?? null, p_version: existing?.version ?? null, p_draft: payload,
     ...(baseline ? { p_project_ports: baseline } : {}),
   })));
 }

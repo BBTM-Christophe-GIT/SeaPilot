@@ -1,5 +1,5 @@
 import type { SeaOperationWaypoint } from './seaOperationModel';
-import { seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
+import { seaDistanceToRouteNm, seaWaypointPosition, type SeaPosition } from './seaOperationNavigation';
 import type { SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 
@@ -13,6 +13,18 @@ export function seaOperationMapExtraPositions(points: readonly SeaOperationWaypo
   return [...points, ...zones.flatMap(zone => zone.vertices)].flatMap(point => {
     const position = seaWaypointPosition(point); return position ? [position] : [];
   });
+}
+
+const PORT_FRAMING_DISTANCE_NM = 10;
+
+/** A port recorded for the mission may be far from the actual passage plan. */
+export function seaOperationMapFitPositions(waypoints: readonly SeaOperationWaypoint[], extras: readonly SeaPosition[], ports: readonly SeaPosition[]): SeaPosition[] {
+  if (!ports.length) return [...extras];
+  const route = waypoints.map(seaWaypointPosition);
+  if (!extras.length && !route.some(position => position !== null)) return [...ports];
+  const nearbyPorts = ports.filter(port => seaDistanceToRouteNm(port, route) <= PORT_FRAMING_DISTANCE_NM
+    || extras.some(position => seaDistanceToRouteNm(port, [position]) <= PORT_FRAMING_DISTANCE_NM));
+  return [...extras, ...nearbyPorts];
 }
 
 export function seaOperationZonePositions(zone: SeaOperationMapZone): SeaPosition[] | null {

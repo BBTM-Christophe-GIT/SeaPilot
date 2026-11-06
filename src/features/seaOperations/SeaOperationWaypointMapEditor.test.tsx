@@ -165,6 +165,25 @@ describe('SeaOperationWaypointMapEditor', () => {
     expect(mode()).toHaveDisplayValue('Cadrage automatique'); expect(changed).toHaveBeenLastCalledWith(undefined);
   });
 
+  it('refits the local operation during placement even when the arrival port is far away', () => {
+    const build = vi.spyOn(mapGeometry, 'buildSeaOperationRouteMap');
+    const add = vi.fn(), waypoints = [point(1, '49.470', '0.079'), point(2, '49.486', '0.092')];
+    render(<SeaOperationWaypointMapEditor fitOperationRoute voyageSummaryPosition="compact" waypoints={waypoints}
+      departurePort="Port du Havre" arrivalPort="Port de Cannes Marina" onAddWaypoint={add} />);
+    const frame = () => build.mock.results.at(-1)!.value.viewport;
+    const automatic = frame();
+    expect(automatic.longitudeSpan).toBeLessThan(.25);
+    activate();
+    fireEvent.click(screen.getByRole('button', { name: 'Dézoomer la carte' }));
+    expect(frame().longitudeSpan).toBeGreaterThan(automatic.longitudeSpan);
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage manuel');
+    fireEvent.click(screen.getByRole('button', { name: 'Cadrer le parcours' }));
+    expect(screen.getByRole('combobox')).toHaveDisplayValue('Cadrage automatique');
+    expect(screen.getByRole('button', { name: 'Zone de placement des waypoints' })).toBeVisible();
+    expect(frame()).toEqual(automatic);
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it('allows manual camera navigation and zoom without enabling waypoint placement or adding on a tap or Enter', () => {
     const changed = vi.fn(), add = vi.fn(), frames = animationFrames();
     render(<SeaOperationWaypointMapEditor waypoints={[]} onAddWaypoint={add} onMapViewportChange={changed} />);
@@ -372,7 +391,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.blur(window); frames.advance(1000); expect(changed).not.toHaveBeenCalled();
     const external = { centerLatitude: 48, centerLongitude: -4, longitudeSpan: 2 };
     view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={vi.fn()} mapViewport={external} onMapViewportChange={changed} />);
-    expect(screen.getByText('Centre : 48° 00.000′ N — 004° 00.000′ W')).toBeVisible();
+    expect(screen.getByText('Centre : 48° 00.0000′ N — 004° 00.0000′ W')).toBeVisible();
     fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
     view.rerender(<SeaOperationWaypointMapEditor waypoints={points} onAddWaypoint={vi.fn()} onMapViewportChange={changed} disabled />);
     frames.advance(1000); expect(changed).not.toHaveBeenCalled();
@@ -412,7 +431,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const vertex = screen.getAllByRole('button', { name: 'Sélectionner Sommet · Travaux' })[0];
     fireEvent.keyDown(vertex, { key: 'ArrowUp', altKey: true }); expect(moveVertex).toHaveBeenCalledExactlyOnceWith('zone', 0, expect.any(Object));
     fireEvent.click(vertex);
-    expect(screen.getByRole('menu', { name: 'Sommet · Travaux' })).toHaveTextContent('49° 12.000′ N — 002° 12.000′ W');
+    expect(screen.getByRole('menu', { name: 'Sommet · Travaux' })).toHaveTextContent('49° 12.0000′ N — 002° 12.0000′ W');
     fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(deleteVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
     expect(add).not.toHaveBeenCalled(); expect({ route, isolated, zones }).toEqual(original);
   });
@@ -837,7 +856,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.click(surface, { clientX: 437.5, clientY: 130 });
     expect(add).toHaveBeenCalledExactlyOnceWith({ latitude: 49, longitude: 1 });
     expect(screen.getByRole('status')).toHaveTextContent('Point 1 ajouté au tableau');
-    expect(screen.getByRole('status')).toHaveTextContent('49° 00.000′ N — 001° 00.000′ E');
+    expect(screen.getByRole('status')).toHaveTextContent('49° 00.0000′ N — 001° 00.0000′ E');
     tap(surface, 437.5, 130, 2, 'mouse', 1100); // accidental second click/tap at the same pixel
     expect(add).toHaveBeenCalledOnce();
   });
@@ -881,7 +900,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.pointerDown(surface, { clientX: 325, clientY: 130, pointerId: 1, button: 0 });
     fireEvent.pointerMove(surface, { clientX: 415, clientY: 130, pointerId: 1 });
     frames.advance(16);
-    expect(screen.getByText('Centre : 49° 00.000′ N — 006° 12.000′ W')).toBeVisible();
+    expect(screen.getByText('Centre : 49° 00.0000′ N — 006° 12.0000′ W')).toBeVisible();
     fireEvent.pointerMove(surface, { clientX: 325, clientY: 130, pointerId: 1 });
     fireEvent.pointerUp(surface, { clientX: 325, clientY: 130, pointerId: 1 });
     fireEvent.click(surface);
@@ -931,7 +950,7 @@ describe('SeaOperationWaypointMapEditor', () => {
     const { surface } = activate();
     fireEvent.click(screen.getByRole('button', { name: 'Zoomer sur la carte' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers l’est' }));
-    expect(screen.getByText('Centre : 49° 00.000′ N — 001° 24.000′ W')).toBeVisible();
+    expect(screen.getByText('Centre : 49° 00.0000′ N — 001° 24.0000′ W')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers le nord' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers le sud' }));
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la carte vers l’ouest' }));

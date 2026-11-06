@@ -431,8 +431,8 @@ describe('Project port selectors in operation forms', () => {
   });
 });
 
-describe('Saved route map framing in operation forms', () => {
-  it('forwards voyage ports and preserves manual map framing through save and reopen', async () => {
+describe('Automatic route map framing in operation forms', () => {
+  it('forwards voyage ports and resets temporary zoom when the operation is saved', async () => {
     const record = recordFixture(captainAccount, { draft: waypointCaptureDraft() });
     renderAccount(captainAccount, record, 1, plannedMissions());
     let saved = record;
@@ -441,38 +441,31 @@ describe('Saved route map framing in operation forms', () => {
     });
     await openRecord(record); await userEvent.click(stepButton(2));
     const map = () => waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
-    expect(map()).toMatchObject({ departurePort: record.draft.vessel.departurePort, arrivalPort: record.draft.vessel.arrivalPort });
+    expect(map()).toMatchObject({ departurePort: record.draft.vessel.departurePort, arrivalPort: record.draft.vessel.arrivalPort, fitOperationRoute: true });
     expect(map().mapViewport).toBeUndefined();
-    const retained = { centerLatitude: 49.6, centerLongitude: -1.4, longitudeSpan: 2.7 };
-    act(() => map().onMapViewportChange!(retained));
-    expect(capturingUkcPanel().payload.mapViewport).toEqual(retained); expect(capturingUkcPanel().payload.mapViewport).not.toBe(retained);
+    const framing = () => formQueries().getByRole('combobox', { name: 'Mode de cadrage de la carte' });
+    expect(framing()).toHaveValue('automatic');
+    await userEvent.click(formQueries().getByRole('button', { name: 'Zoomer sur la carte' }));
+    expect(framing()).toHaveValue('manual');
+    expect(capturingUkcPanel().payload.mapViewport).toBeUndefined();
     await saveDraft(); await waitFor(() => expect(footerQueries().getByText('Version 4 enregistrée')).toBeVisible());
-    expect(saved.draft.mapViewport).toEqual(retained);
+    expect(framing()).toHaveValue('automatic');
+    expect(saved.draft.mapViewport).toBeUndefined();
     await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
     vi.mocked(fetchSeaOperationDetail).mockResolvedValue(saved);
     await openRecord(saved); await userEvent.click(stepButton(2));
-    expect(map().mapViewport).toEqual(retained);
-    act(() => map().onMapViewportChange!(undefined));
-    expect(capturingUkcPanel().payload.mapViewport).toBeUndefined(); expect(saved.draft.mapViewport).toEqual(retained);
+    expect(framing()).toHaveValue('automatic');
   });
 
-  it('rejects a framing callback from previous voyage ports and from a signed operation', async () => {
-    const record = recordFixture(captainAccount, { draft: waypointCaptureDraft() });
-    const signed = recordFixture(captainAccount, { id: 'signed-map-framing', draft: { ...waypointCaptureDraft(), project: 'Carte historique signée', mapViewport: { centerLatitude: 49, centerLongitude: -2, longitudeSpan: 4 } }, status: 'signed', canEdit: false });
-    const { data } = renderAccount(captainAccount, record, 1, plannedMissions()); data.records.push(signed);
-    vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => id === signed.id ? signed : record);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await openRecord(record); await userEvent.click(stepButton(2));
-    const old = waypointMapMock.mock.lastCall![0] as Parameters<typeof import('./SeaOperationWaypointMapEditor').SeaOperationWaypointMapEditor>[0];
-    await userEvent.click(stepButton(0));
-    fireEvent.change(formQueries().getByLabelText('Port de départ'), { target: { value: 'Port de Granville' } });
-    const stale = { centerLatitude: 44, centerLongitude: -5, longitudeSpan: 10 };
-    act(() => old.onMapViewportChange!(stale)); expect(capturingUkcPanel().payload.mapViewport).toBeUndefined();
-    await userEvent.click(footerQueries().getByRole('button', { name: 'Annuler' }));
+  it('fits the real geometry in a signed operation without rewriting its historical viewport', async () => {
+    const signed = recordFixture(captainAccount, { id: 'signed-map-framing', draft: { ...waypointCaptureDraft(), project: 'Carte historique signée', mapViewport: { centerLatitude: 0, centerLongitude: 0, longitudeSpan: .02 } }, status: 'signed', canEdit: false });
+    const snapshot = structuredClone(signed.draft);
+    renderAccount(captainAccount, signed, 1, plannedMissions());
     await openRecord(signed); await userEvent.click(stepButton(2));
-    const snapshot = structuredClone(capturingUkcPanel().payload);
-    act(() => old.onMapViewportChange!(stale));
-    expect(capturingUkcPanel().payload).toEqual(snapshot); expect(signed.draft.mapViewport).toEqual(snapshot.mapViewport);
+    const map = formQueries().getByRole('figure', { name: /carte du parcours/i });
+    expect(map.querySelector('[data-point-indices="1"]')).toBeInTheDocument();
+    expect(signed.draft).toEqual(snapshot);
+    expect(saveSeaOperation).not.toHaveBeenCalled();
     expect(formQueries().queryByRole('combobox', { name: 'Mode de cadrage de la carte' })).not.toBeInTheDocument();
   });
 });
@@ -1745,7 +1738,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     expect(within(map).getAllByRole('button')).toEqual([categoryToggle, waypoint]);
     await userEvent.click(waypoint);
     expect(within(map).getByText('Entrée de Cherbourg')).toBeVisible();
-    expect(within(map).getByText(/49° 39\.000′ N.*001° 37\.200′ W/)).toBeVisible();
+    expect(within(map).getByText(/49° 39\.0000′ N.*001° 37\.2000′ W/)).toBeVisible();
     expect(categoryToggle).toHaveAttribute('aria-pressed', 'false');
     await userEvent.click(within(map).getByRole('button', { name: 'Fermer les détails du point' }));
     expect(within(map).queryByText('Entrée de Cherbourg')).not.toBeInTheDocument();
