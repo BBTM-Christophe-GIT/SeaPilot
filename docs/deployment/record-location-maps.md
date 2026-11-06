@@ -1,6 +1,26 @@
 # Cartes des fiches et du registre
 
-Version 3.80.8 — 28 octobre 2026.
+## Lecture de la carte — v3.82.3
+
+Dans **Projet** et **Opération en Mer**, sélectionner un waypoint, un point
+isolé ou un sommet ouvre ses coordonnées WGS84 et sa description lorsqu’elle
+est renseignée. Les sommets apparaissent sans numéro et portent le nom de leur
+zone dans le détail. Au clavier, Entrée ou Espace sélectionne le point et
+Échap ferme le détail. En mode placement, le menu du point affiche aussi ses
+coordonnées et sa description.
+
+Les points isolés sont jaune doré. Les zones et les points isolés sont
+légèrement translucides. Les limites des catégories de navigation se
+superposent aux zones. La route reste au premier plan, devant les points
+isolés et les limites de navigation.
+
+L’icône d’un point à la même position dans le projet lié est reprise dans les
+cartes d’opération. Ce rapprochement couvre les opérations déjà enregistrées
+et n’écrit pas dans les fiches signées. Appliquer la migration
+`20261106080141_sea_operation_project_point_icons.sql` avant le déploiement
+du client.
+
+## Cartes des fiches et du registre — v3.80.8
 
 La fiche Projet propose un onglet **Carte**, quel que soit le type de contrat.
 Il affiche la localisation enregistrée (route, points isolés et zones), même

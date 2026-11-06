@@ -37,7 +37,7 @@ describe('shared navigation category overlay', () => {
 
   it('can select either published limit without hiding route or named work zones', async () => {
     const zones = [{ id: 'z', name: 'Zone de Travaux', vertices: [{ latitude: '49.7', longitude: '-1.6' }, { latitude: '49.8', longitude: '-1.5' }, { latitude: '49.8', longitude: '-1.6' }] }];
-    const { container } = render(<SeaOperationRouteMap allowNavigationCategories waypoints={waypoints} zones={zones} viewport={viewport} />);
+    const { container } = render(<SeaOperationRouteMap allowNavigationCategories waypoints={waypoints} zones={zones} isolatedPoints={[{ ...waypoints[0], id: 'buoy', isolatedPointIcon: 'buoy' }]} viewport={viewport} />);
     const track = container.querySelector('.so-route-map-points')!.innerHTML;
     fireEvent.click(screen.getByRole('button', { name: 'Catégories de navigation' }));
     await waitFor(() => expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(1));
@@ -48,6 +48,10 @@ describe('shared navigation category overlay', () => {
     expect(container.querySelector('[data-navigation-category="3"]')).not.toBeNull();
     expect(container.querySelector('.so-route-map-points')!.innerHTML).toBe(track);
     expect(container.querySelector('[data-zone-name="Zone de Travaux"]')).not.toBeNull();
+    const layers = ['.so-route-map-zones', '.so-route-map-zone-vertices', '.so-route-map-zone-tags', '.so-navigation-category-layer',
+      '.so-route-map-isolated-points', '.so-route-map-isolated-crosses', '.so-route-map-track', '.so-route-map-points'];
+    const camera = container.querySelector('.so-route-map-camera')!;
+    expect(Array.from(camera.children).flatMap(layer => layers.filter(selector => layer.matches(selector)))).toEqual(layers);
     fireEvent.click(screen.getByRole('checkbox', { name: /3e catégorie/ }));
     expect(container.querySelectorAll('[data-navigation-category]')).toHaveLength(0);
     expect(screen.getByRole('status')).toHaveTextContent('Sélectionnez une limite à afficher.');

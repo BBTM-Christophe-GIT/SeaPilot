@@ -1,9 +1,12 @@
 import { parseProjectLocationPlan, type ProjectLocationPlan } from '../projects/projectLocation';
 import { projectLocationRouteEtas } from '../projects/projectLocationRouteEtas';
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
+import type { SeaOperationIsolatedPointIconName } from './seaOperationIsolatedPointIcons';
+import type { SeaOperationRecord } from './seaOperationQueries';
+import { seaWaypointPosition } from './seaOperationNavigation';
 import { initialSeaOperationDepartureEta, seaOperationWaypointEtaIsAutomatic, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 
-/** Explicit selection imports a fresh editable copy; saved declarations never follow the live project. */
+/** Explicit selection imports a fresh editable copy of the project's route and geometry. */
 export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, location: ProjectLocationPlan | null | undefined,
   maxSpeedKnots?: number | null, newId: () => string = () => crypto.randomUUID(), now = new Date()): SeaOperationPayload {
   const parsed = parseProjectLocationPlan(location);
@@ -23,4 +26,31 @@ export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, 
   if (plan.mapViewport) result.mapViewport = { ...plan.mapViewport };
   else delete result.mapViewport;
   return updateSeaOperationRouteEtas(result, maxSpeedKnots);
+}
+
+function samePointPosition(point: SeaOperationWaypoint, savedPoint: SeaOperationWaypoint): boolean {
+  if (point.latitude === savedPoint.latitude && point.longitude === savedPoint.longitude) return true;
+  const position = seaWaypointPosition(point), savedPosition = seaWaypointPosition(savedPoint);
+  const rounded = (degrees: number) => Math.sign(degrees) * Math.round(Math.abs(degrees) * 1e6);
+  return position != null && savedPosition != null
+    && rounded(position.latitude) === rounded(savedPosition.latitude)
+    && rounded(position.longitude) === rounded(savedPosition.longitude);
+}
+
+/** A point moved away from its project location keeps its operation-specific symbol. */
+export function seaOperationPointPresentation(draft: SeaOperationPayload, record: SeaOperationRecord | null) {
+  const points = draft.locationOverlay?.points;
+  const icons = record?.projectPointIcons;
+  if (!record || !points?.length || !icons?.size || draft.planning?.projectId !== record.draft.planning?.projectId) {
+    return { points, projectIcons: undefined };
+  }
+  const savedPoints = new Map(record.draft.locationOverlay?.points.map(point => [point.id, point]));
+  const projectIcons = new Map<string, SeaOperationIsolatedPointIconName | null>();
+  const mapPoints = points.map(point => {
+    const icon = icons.get(point.id), saved = savedPoints.get(point.id);
+    if (icon === undefined || !saved || !samePointPosition(point, saved)) return point;
+    projectIcons.set(point.id, icon);
+    return { ...point, isolatedPointIcon: icon ?? undefined };
+  });
+  return { points: mapPoints, projectIcons };
 }

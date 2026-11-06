@@ -73,10 +73,14 @@ Les identifiants des points sont renouvelés et les captures ne sont pas
 réutilisées. La première ETA issue de l’ETD devient une ancre conservée ;
 toutes les dates et géométries restent modifiables par les profils autorisés.
 
-La copie est indépendante : modifier ensuite le projet ne réécrit pas une
-fiche Opération en mer existante ou signée. Les points isolés et zones ne
-créent pas de segments de navigation. Leur présence est conservée dans
-l’aperçu et l’export de la fiche.
+Les cartes interactives d’Opération en mer reprennent le pictogramme du projet
+pour les points isolés qui correspondent à une position du projet. Les
+coordonnées sont comparées après normalisation, avec une précision de six
+décimales. Si plusieurs points du projet se superposent avec des pictogrammes
+différents, la carte utilise le pictogramme enregistré dans la fiche. Les
+positions propres à l’opération gardent leur pictogramme modifiable. Les
+déclarations et leurs exports conservent la copie enregistrée. Les points
+isolés et les zones restent hors calcul de navigation.
 
 ## Vérifications
 

@@ -46,6 +46,22 @@ describe('SeaOperationRegisterMap', () => {
     expect(map().mapViewport).toBeUndefined(); expect(map().onMapViewportChange).toBeUndefined();
     expect(onSave).not.toHaveBeenCalled(); expect(onDirtyChange).toHaveBeenLastCalledWith(false); expect(source).toEqual(original);
   });
+  it('displays the current project symbol for an already signed point without changing the signed draft', () => {
+    const source = record({ status: 'signed', canEdit: false, projectPointIcons: new Map([['isolated-1', 'buoy']]) });
+    const point = source.draft.locationOverlay!.points[0];
+    delete point.isolatedPointIcon;
+    render(<SeaOperationRegisterMap record={source} onSave={vi.fn()} />);
+    expect(map().isolatedPoints?.[0]).toMatchObject({ ...point, isolatedPointIcon: 'buoy' });
+    expect(point).not.toHaveProperty('isolatedPointIcon');
+  });
+  it('keeps the operation-specific symbol once a point is moved away from the project position', () => {
+    const source = record({ projectPointIcons: new Map([['isolated-1', null]]) });
+    render(<SeaOperationRegisterMap record={source} onSave={vi.fn()} />);
+    expect(map().isolatedPoints?.[0].isolatedPointIcon).toBeUndefined();
+    edit();
+    act(() => map().onMoveIsolatedPoint?.('isolated-1', { latitude: 49.75, longitude: -1.63 }));
+    expect(map().isolatedPoints?.[0].isolatedPointIcon).toBe('buoy');
+  });
   it.each([{ status: 'signed' as const, canEdit: true }, { status: 'draft' as const, canEdit: false }])('allows navigation but no changes for server state $status / canEdit=$canEdit', overrides => {
     const onSave = vi.fn(), source = record(overrides); render(<SeaOperationRegisterMap record={source} onSave={onSave} />);
     expect(map().readOnly).toBe(true); expect(map().disabled).not.toBe(true);

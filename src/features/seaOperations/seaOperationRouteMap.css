@@ -1,4 +1,6 @@
 .so-route-map { min-width: 0; max-width: 100%; margin: var(--sp-space-4) 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); color: var(--sp-text); background: var(--sp-surface); font-family: var(--sp-font); break-inside: avoid; }
+.so-route-map { --so-isolated-point-color: var(--sp-map-isolated-point); --so-isolated-point-label: var(--sp-map-isolated-point-label); }
+.so-route-map.is-compact { --so-isolated-point-color: var(--sp-success); --so-isolated-point-label: var(--sp-success); }
 .so-route-map-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-3); margin-bottom: var(--sp-space-2); }
 .so-route-map .so-route-map-heading h3 { margin: 0; color: var(--sp-heading); font-size: .875rem; font-weight: 700; }
 .so-route-map-heading > span { color: var(--sp-muted); font-size: .72rem; }
@@ -25,18 +27,45 @@
 .so-route-map .so-route-map-zone-legend { display: flex; max-height: 160px; overflow-y: auto; margin: var(--sp-space-2) 0 0; color: var(--sp-muted); font-size: .68rem; overflow-wrap: anywhere; }
 .so-route-map-zone-legend .so-route-map-zone-swatch { width: 14px; height: 12px; border-width: 2px; border-radius: 3px; }
 .so-route-map-zone-vertices { pointer-events: none; }
-.so-route-map-zone-vertices circle { stroke: var(--sp-surface); stroke-width: 1px; }
-.so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--sp-success); stroke-width: 2px; }
-.so-route-map-isolated-cross { fill: none; stroke: var(--sp-success); stroke-width: 1px; pointer-events: none; }
-.so-route-map-isolated-icon { color: var(--sp-success); }
-.so-route-map-isolated-ordinal { fill: var(--sp-success); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
+.so-route-map-zone-vertices circle:not(.so-route-map-hit-area) { stroke: var(--sp-surface); stroke-width: 1px; }
+.so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--so-isolated-point-color); stroke-width: 2px; }
+.so-route-map-isolated-cross { fill: none; stroke: var(--so-isolated-point-color); stroke-width: 1px; pointer-events: none; }
+.so-route-map-isolated-icon { color: var(--so-isolated-point-color); }
+.so-route-map-isolated-ordinal { fill: var(--so-isolated-point-label); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
 .so-route-map-pin { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 2px; }
 .so-route-map-ordinal { fill: var(--sp-primary); font-family: var(--sp-font); font-size: 12px; font-weight: 750; }
 .so-route-map-point.is-start .so-route-map-pin { fill: var(--sp-primary); }
 .so-route-map-point.is-start .so-route-map-ordinal { fill: var(--sp-surface); }
 .so-route-map-finish-ring { fill: none; stroke: var(--sp-primary); stroke-width: 1.5px; }
+.so-route-map:not(.is-compact) :is(.so-route-map-zones, .so-route-map-zone-vertices, .so-route-map-zone-tags, .so-route-map-isolated-points, .so-route-map-isolated-crosses) { opacity: .9; }
+.so-route-map-camera [role="button"] { cursor: pointer; pointer-events: visiblePainted; }
+.so-route-map-hit-area { fill: transparent; stroke: none; }
+.so-route-map-camera [role="button"]:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 2px; }
+.so-route-map-point-details {
+  position: absolute;
+  top: var(--sp-space-2);
+  left: var(--sp-space-2);
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-space-2);
+  max-width: min(310px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: var(--sp-space-2);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font-size: .75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+}
+.so-route-map-point-details strong { color: var(--sp-heading); }
+.so-route-map .so-route-map-point-details p { margin: var(--sp-space-1) 0 0; font-size: inherit; white-space: pre-wrap; }
+.so-route-map .so-route-map-point-details button { flex-shrink: 0; min-height: 32px; min-width: 32px; padding: var(--sp-space-1); }
 .so-route-map-point-label { fill: var(--sp-heading); font-family: var(--sp-font); font-size: 11px; font-weight: 650; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 3px; stroke-linejoin: round; }
-.so-route-map-point-coordinates { pointer-events: none; fill: var(--sp-heading); font-family: var(--sp-font); font-size: 9px; paint-order: stroke; stroke: var(--sp-primary-soft); stroke-width: 3px; stroke-linejoin: round; }
 .so-route-map .so-route-map-point-vigilance { pointer-events: none; color: var(--sp-warning, #8a6100); }
 .so-route-map-point-vigilance > circle { fill: var(--sp-warning-soft, #fffaf0); stroke: var(--sp-warning, #8a6100); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .so-route-map-cities { pointer-events: none; }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseProjectLocationPlan, type ProjectLocationPlan } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { parseVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { isSeaOperationIsolatedPointIconName, type SeaOperationIsolatedPointIconName } from './seaOperationIsolatedPointIcons';
 import { isSeaOperationPayload, type SeaOperationPayload } from './seaOperationModel';
 import { isSeaOperationWeatherObservation, type ObservationResult } from './seaOperationWeatherObservationsModel';
 
@@ -35,6 +36,8 @@ export interface SeaOperationRecord {
   weatherHistoryError?: string;
   /** Current project ports for optimistic synchronization; outside the signed form. */
   projectPorts?: SeaOperationProjectPorts | null;
+  /** Current project symbols keyed by matching operation point, for interactive maps. */
+  projectPointIcons?: ReadonlyMap<string, SeaOperationIsolatedPointIconName | null>;
 }
 
 export interface SeaOperationProjectPorts {
@@ -136,6 +139,16 @@ function mapProjectPorts(value: unknown, draft: SeaOperationPayload): SeaOperati
   return { projectId: row.projectId, departurePort: row.departurePort, arrivalPort: row.arrivalPort };
 }
 
+function mapProjectPointIcons(value: unknown, draft: SeaOperationPayload): SeaOperationRecord['projectPointIcons'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !draft.planning?.projectId) return undefined;
+  const points = new Set(draft.locationOverlay?.points.map(point => point.id));
+  const icons = new Map<string, SeaOperationIsolatedPointIconName | null>();
+  for (const [id, icon] of Object.entries(value)) {
+    if (points.has(id) && (icon === null || isSeaOperationIsolatedPointIconName(icon))) icons.set(id, icon);
+  }
+  return icons.size ? icons : undefined;
+}
+
 export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
   const row = object(value);
   const draft = row.draft;
@@ -143,6 +156,7 @@ export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
     || (row.status !== 'draft' && row.status !== 'signed') || !isSeaOperationPayload(draft)) {
     throw new Error('La réponse du module Opération en Mer est invalide.');
   }
+  const projectPointIcons = mapProjectPointIcons(row.project_point_icons, draft);
   return {
     id: String(row.id), companyId: Number(row.company_id), version: Number(row.version), status: row.status,
     draft,
@@ -154,6 +168,7 @@ export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
     previousRevisionId: nullableText(row.previous_revision_id), supersededById: nullableText(row.superseded_by_id),
     signatureSnapshot: mapSignature(row.signature_snapshot),
     ...(row.project_ports === undefined ? {} : { projectPorts: mapProjectPorts(row.project_ports, draft) }),
+    ...(projectPointIcons ? { projectPointIcons } : {}),
   };
 }
 

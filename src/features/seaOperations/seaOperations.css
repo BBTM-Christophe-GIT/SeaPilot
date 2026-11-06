@@ -75,6 +75,7 @@
 .so-page .so-steps button.is-active { background: var(--sp-surface); color: var(--sp-primary); box-shadow: var(--sp-shadow); }
 .so-steps button > span { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; background: var(--sp-border); flex: 0 0 auto; font-size: .71rem; }
 .so-steps button.is-active > span { background: var(--sp-primary); color: white; }
+.so-form-fields { border: 0; margin: 0; min-width: 0; padding: 0; }
 .so-panel { display: none; padding: 27px 30px; }
 .so-panel.is-active { display: block; }
 .so-section-title { display: flex; gap: 12px; margin-bottom: 24px; align-items: flex-start; }

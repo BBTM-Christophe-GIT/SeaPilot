@@ -4,6 +4,7 @@ import { PROJECT_LOCATION_LIMITS } from '../projects/projectLocation';
 import { emptySeaOperationWaypoint, type SeaOperationPayload } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import type { SeaPosition } from './seaOperationNavigation';
+import { seaOperationPointPresentation } from './seaOperationProjectLocation';
 import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
@@ -130,7 +131,7 @@ function RegisterMapContent({ record, maxSpeedKnots, disabled = false, onSave, o
       : <p className="so-register-map-help">Molette pour zoomer, appui long pour déplacer la carte. Le plein écran est disponible sur la carte.</p>}
     {!editable ? <p className="so-register-map-help">{record.status === 'signed' ? 'Fiche signée : carte en consultation.' : 'Carte en consultation selon vos droits sur cette opération.'}</p> : null}
     {error ? <p className="so-alert so-danger" role="alert">{error}</p> : null}
-    <SeaOperationWaypointMapEditor waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones}
+    <SeaOperationWaypointMapEditor waypoints={draft.waypoints} isolatedPoints={seaOperationPointPresentation(draft, record).points} zones={draft.locationOverlay?.zones}
       readOnly={!editing || !editable || saving || disabled} drawingMode={editing && editable ? 'route' : undefined} maxSpeedKnots={maxSpeedKnots}
       departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort}
       etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)}

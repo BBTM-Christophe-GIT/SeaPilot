@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.82.3` allège les cartes de Projet et d’Opération en Mer. Elle
+affiche les coordonnées et la description au clic et reprend les icônes
+du projet lié dans les cartes d’opération. Appliquer
+`20261106080141_sea_operation_project_point_icons.sql` avant le frontend.
+Voir [les cartes des fiches et du registre](./record-location-maps.md).
+
 Le correctif salarial utilise désormais la colonne « Annuel brut », majorée du taux
 d’ancienneté calculé sur toutes les périodes travaillées. Le mensuel est cet annuel
 divisé par douze, arrondi à l’euro supérieur. Le détail figure dans

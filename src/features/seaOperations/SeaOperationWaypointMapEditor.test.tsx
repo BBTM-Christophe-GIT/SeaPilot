@@ -118,8 +118,8 @@ describe('SeaOperationWaypointMapEditor', () => {
     const props = { waypoints, isolatedPoints: isolated, zones, onAddWaypoint: add, onMoveWaypoint: move, onDeleteWaypoint: remove, onMoveIsolatedPoint: movePoint, onDeleteIsolatedPoint: removePoint, onMoveZoneVertex: moveVertex, onDeleteZoneVertex: removeVertex };
     const view = render(<SeaOperationWaypointMapEditor {...props} />);
     activate();
-    const name = kind === 'route' ? 'Sélectionner le waypoint 1' : kind === 'point' ? 'Sélectionner Point isolé 1 · B04' : 'Sélectionner Sommet 1 · Travaux';
-    const target = screen.getByRole('button', { name });
+    const name = kind === 'route' ? 'Sélectionner le waypoint 1' : kind === 'point' ? 'Sélectionner Point isolé 1 · B04' : 'Sélectionner Sommet · Travaux';
+    const target = screen.getAllByRole('button', { name })[0];
     fireEvent.pointerDown(target, { clientX: 325, clientY: 130, pointerId: 4, button: 0 });
     fireEvent.pointerMove(target, { clientX: 345, clientY: 130, pointerId: 4 });
     view.rerender(<SeaOperationWaypointMapEditor {...props} readOnly />);
@@ -389,13 +389,13 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.click(cluster);
     expect(screen.getByRole('menuitem', { name: 'Waypoint 1' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Sommet 1 · Travaux' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Sommet · Travaux' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' }));
     fireEvent.keyDown(cluster, { key: 'ArrowRight', altKey: true }); expect(movePoint).toHaveBeenCalledExactlyOnceWith('isolated', expect.any(Object));
     fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Point isolé 1 · B04' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' }));
     expect(removePoint).toHaveBeenCalledExactlyOnceWith('isolated'); expect(removeRoute).not.toHaveBeenCalled(); expect(removeVertex).not.toHaveBeenCalled();
     fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Waypoint 1' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(removeRoute).toHaveBeenCalledExactlyOnceWith('point-1');
-    fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Sommet 1 · Travaux' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(removeVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
+    fireEvent.click(cluster); fireEvent.click(screen.getByRole('menuitem', { name: 'Sommet · Travaux' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(removeVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
     expect(add).not.toHaveBeenCalled();
   });
   it('moves and deletes overlay points and zone vertices through their own callbacks without adding route legs', () => {
@@ -409,9 +409,11 @@ describe('SeaOperationWaypointMapEditor', () => {
     fireEvent.keyDown(isolatedTarget, { key: 'ArrowRight', altKey: true });
     expect(movePoint).toHaveBeenCalledExactlyOnceWith('isolated', expect.objectContaining({ latitude: expect.any(Number), longitude: expect.any(Number) }));
     fireEvent.click(isolatedTarget); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(deletePoint).toHaveBeenCalledExactlyOnceWith('isolated');
-    const vertex = screen.getByRole('button', { name: 'Sélectionner Sommet 1 · Travaux' });
+    const vertex = screen.getAllByRole('button', { name: 'Sélectionner Sommet · Travaux' })[0];
     fireEvent.keyDown(vertex, { key: 'ArrowUp', altKey: true }); expect(moveVertex).toHaveBeenCalledExactlyOnceWith('zone', 0, expect.any(Object));
-    fireEvent.click(vertex); fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(deleteVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
+    fireEvent.click(vertex);
+    expect(screen.getByRole('menu', { name: 'Sommet · Travaux' })).toHaveTextContent('49° 12.000′ N — 002° 12.000′ W');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Supprimer' })); expect(deleteVertex).toHaveBeenCalledExactlyOnceWith('zone', 0);
     expect(add).not.toHaveBeenCalled(); expect({ route, isolated, zones }).toEqual(original);
   });
   it('adds an exact catalog port immediately on click before placement, without confirmation or route mutation', () => {

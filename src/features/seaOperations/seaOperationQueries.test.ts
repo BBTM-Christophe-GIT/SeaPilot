@@ -67,6 +67,21 @@ describe('sea operation queries', () => {
       .toMatchObject({ canRevise: true, canDelete: true, previousRevisionId: 'old', supersededById: 'new' });
   });
 
+  it('keeps live project symbols outside the signed operation payload', () => {
+    const draft = emptySeaOperation();
+    draft.planning = { date: '2026-11-05', projectId: '251', operationId: '27:1', captainPersonId: '19' };
+    draft.locationOverlay = { version: 1, points: [emptySeaOperationWaypoint('copied'), emptySeaOperationWaypoint('reset')], zones: [] };
+    const source = record({ status: 'signed', draft });
+    const mapped = mapSeaOperationRecord({ ...source, project_point_icons: { copied: 'buoy', reset: null } });
+    expect([...mapped.projectPointIcons!]).toEqual([['copied', 'buoy'], ['reset', null]]);
+    expect(mapped.draft).toBe(draft);
+    expect(mapped.draft.locationOverlay?.points[0]).not.toHaveProperty('isolatedPointIcon');
+    expect(mapSeaOperationRecord(source).projectPointIcons).toBeUndefined();
+    for (const project_point_icons of [{ wrong: 'buoy' }, { copied: 'invalid' }, ['buoy']]) {
+      expect(mapSeaOperationRecord({ ...source, project_point_icons }).projectPointIcons).toBeUndefined();
+    }
+  });
+
   it('requests an administrator revision with the expected version and accepts server metadata only', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: record({ id: 'new-record', previous_revision_id: 'record-1', version: 1 }), error: null });
     const result = await reviseSeaOperation({ rpc } as unknown as SupabaseClient, { id: 'record-1', version: 3 });

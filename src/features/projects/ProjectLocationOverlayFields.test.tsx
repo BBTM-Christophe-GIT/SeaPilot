@@ -52,6 +52,18 @@ describe('isolated project and operation location points', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
+  it('shows the project icon for a matched operation point and leaves its description editable', () => {
+    const point = retainedPoint(), changed = vi.fn();
+    render(<ProjectLocationOverlayFields value={{ version: 1, points: [point], zones: [] }} onChange={changed}
+      projectIcons={new Map([[point.id, 'buoy']])} />);
+    expect(screen.getByText('Icône reprise du projet')).toBeVisible();
+    const choices = within(screen.getByRole('group', { name: 'Icône · Point isolé 1' }));
+    expect(choices.getByRole('button', { name: 'Bouée · Point isolé 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(choices.getAllByRole('button').every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+    fireEvent.change(screen.getByLabelText('Description · Point isolé 1'), { target: { value: 'Description locale' } });
+    expect(changed).toHaveBeenCalledWith({ version: 1, points: [{ ...point, descriptionVhf: 'Description locale' }], zones: [] });
+  });
+
   it('shows only number, description, coordinates and deletion without publishing or clearing retained navigation data', () => {
     const point = retainedPoint(), original = structuredClone(point), changed = vi.fn();
     render(<ProjectLocationPointFields point={point} index={0} kind="Point isolé" onChange={changed} onDelete={vi.fn()} />);
