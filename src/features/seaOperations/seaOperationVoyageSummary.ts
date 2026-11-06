@@ -3,6 +3,8 @@ import { seaWaypointPosition } from './seaOperationNavigation';
 import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperationVoyageTiming,
   type SeaOperationRouteLegs, type SeaOperationVoyageTiming } from './seaOperationRouteLegs';
 
+export const COMPACT_VOYAGE_SUMMARY_MEDIA = '(max-width: 720px)';
+
 type VoyagePayload = Pick<SeaOperationPayload, 'waypoints' | 'vessel'>;
 
 export interface SeaOperationVoyageSummary {

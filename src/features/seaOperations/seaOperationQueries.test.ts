@@ -197,8 +197,10 @@ describe('sea operation queries', () => {
     const draft = emptySeaOperation();
     await saveSeaOperation(client, draft);
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save', { p_id: null, p_version: null, p_draft: draft });
-    await saveSeaOperation(client, draft, { id: 'record-1', version: 2 });
+    const legacy = { ...draft, mapViewport: { centerLatitude: 49, centerLongitude: -2, longitudeSpan: 1 } };
+    await saveSeaOperation(client, legacy, { id: 'record-1', version: 2 });
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save', { p_id: 'record-1', p_version: 2, p_draft: draft });
+    expect(legacy.mapViewport.longitudeSpan).toBe(1);
   });
 
   it('sends the project port baseline in the atomic RPC without adding it to the saved form', async () => {

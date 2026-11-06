@@ -189,6 +189,38 @@ describe('SeaOperationRouteMap', () => {
     expect(geometry.points.map((point: { index: number }) => point.index)).toEqual([1, 2]);
     for (const port of resolveSeaOperationMapPorts('Cherbourg', 'Brest').ports) expect(projectSeaOperationMapPlace(geometry, port.location)).not.toBeNull();
   });
+  it('fits a local operation around Le Havre without pulling the frame to the declared port of Cannes', () => {
+    const route = [
+      point(1, '49.464', '0.066'), point(2, '49.469', '0.071'),
+      point(3, '49.471', '0.082'), point(4, '49.473', '0.088'),
+    ];
+    const isolated = [point(5, '49.478', '0.109')];
+    const zones = [{ id: 'zone', name: 'Zone locale', vertices: [
+      { latitude: '49.453', longitude: '0.054' }, { latitude: '49.456', longitude: '0.062' },
+      { latitude: '49.459', longitude: '0.054' },
+    ] }];
+    const onGeometry = vi.fn();
+    const props = { waypoints: route, isolatedPoints: isolated, zones, departurePort: 'Port du Havre', arrivalPort: 'Port de Cannes Marina', onGeometry };
+    const { container, rerender } = render(<SeaOperationRouteMap {...props} fitOperationRoute />);
+    const geometry = onGeometry.mock.calls.at(-1)![0];
+    expect(geometry.viewport.longitudeSpan).toBeLessThan(.4);
+    expect(geometry.points).toHaveLength(4);
+    expect(geometry.segments).toHaveLength(3);
+    expect(container.querySelector('[data-isolated-point-id="point-5"]')).toBeInTheDocument();
+    expect(container.querySelector('.so-route-map-zones polygon')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Départ : Port du Havre' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Arrivée : Port de Cannes Marina' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Arrivée : Port de Cannes Marina.*hors du cadr/);
+
+    rerender(<SeaOperationRouteMap {...props} />);
+    expect(onGeometry.mock.calls.at(-1)![0].viewport.longitudeSpan).toBeGreaterThan(1);
+    expect(screen.getByRole('img', { name: 'Arrivée : Port de Cannes Marina' })).toBeInTheDocument();
+  });
+  it('falls back to the declared ports if an operation has no usable coordinates', () => {
+    render(<SeaOperationRouteMap waypoints={[point(1, '', '')]} departurePort="Port du Havre" arrivalPort="Port de Cannes Marina" fitOperationRoute />);
+    expect(screen.getByRole('img', { name: 'Départ : Port du Havre' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Arrivée : Port de Cannes Marina' })).toBeInTheDocument();
+  });
   it('shows a ports-only map, groups identical endpoints and reports unresolved ports without inventing positions', () => {
     const { container, rerender } = render(<SeaOperationRouteMap waypoints={[]} departurePort="Cherbourg" arrivalPort="Cherbourg" compact />);
     expect(screen.getByRole('img', { name: /Départ \/ Arrivée : .*Cherbourg/ })).toBeInTheDocument();
@@ -267,9 +299,9 @@ describe('SeaOperationRouteMap', () => {
     const transform = pin.getAttribute('transform');
     expect(pin.querySelector('.so-route-map-ordinal')).toHaveTextContent('2');
     expect(pin.querySelector('.so-route-map-point-label')).toHaveTextContent('WP2');
-    expect(screen.queryByText(/49° 39.000′ N/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/49° 39\.0000′ N/)).not.toBeInTheDocument();
     fireEvent.click(pin);
-    expect(container.querySelector('.so-route-map-point-details')).toHaveTextContent('49° 39.000′ N');
+    expect(container.querySelector('.so-route-map-point-details')).toHaveTextContent('49° 39.0000′ N');
     expect(pin.querySelector('title')).toHaveTextContent('Vigilance : trafic dense, risque de collision · Waypoint 2');
     expect(container.querySelectorAll('.so-route-map-point-vigilance')).toHaveLength(1);
     const circle = badge.querySelector('circle')!;
@@ -316,7 +348,7 @@ describe('SeaOperationRouteMap', () => {
     rerender(<SeaOperationRouteMap waypoints={points} showPlaces inspectPoints showRouteLegs maxSpeedKnots={12} viewport={viewport} onGeometry={report} previewWaypoint={{ id: points[1].id, position: { latitude: 51, longitude: -3 } }} />);
     expect(container.querySelector('[data-point-indices="2"]')!.getAttribute('transform')).not.toBe(transform);
     fireEvent.click(screen.getByRole('button', { name: 'Waypoint WP2' }));
-    expect(container.querySelector('.so-route-map-point-details')).toHaveTextContent('51° 00.000′ N');
+    expect(container.querySelector('.so-route-map-point-details')).toHaveTextContent('51° 00.0000′ N');
     expect(container.querySelector('.so-route-map-leg-summary')!.innerHTML).toBe(metrics);
     expect(screen.getByRole('complementary', { name: 'Estimation du parcours' }).innerHTML).toBe(summary);
     expect(container.querySelector('.so-route-map-places')!.innerHTML).toBe(places);
@@ -569,7 +601,7 @@ describe('SeaOperationRouteMap', () => {
 
   it('reveals route, isolated point and vertex details only on activation', () => {
     const waypoints = channelRoute(); waypoints[0].latitude = '';
-    const isolated = { ...point(4, '49.65', '-1.62'), number: 'B04', isolatedPointIcon: 'buoy' as const };
+    const isolated = { ...point(4, '49.65', '-1.620002'), number: 'B04', isolatedPointIcon: 'buoy' as const };
     const zones = [{ id: 'zone', name: 'Zone d’étude', vertices: [
       { latitude: '49.7', longitude: '-1.4' }, { latitude: '49.8', longitude: '-1.4' }, { latitude: '49.75', longitude: '-1.3' },
     ] }];
@@ -581,13 +613,13 @@ describe('SeaOperationRouteMap', () => {
     const waypoint = screen.getByRole('button', { name: 'Waypoint WP2' });
     fireEvent.click(waypoint);
     expect(waypoint).toHaveAttribute('aria-expanded', 'true');
-    expect(details()).toHaveTextContent('48° 21.600′ N · 004° 31.800′ W');
+    expect(details()).toHaveTextContent('48° 21.6000′ N · 004° 31.8000′ W');
     expect(details()).toHaveTextContent('Description du point 2');
 
     const buoy = screen.getByRole('button', { name: 'Point isolé · B04' });
     fireEvent.keyDown(buoy, { key: 'Enter' });
     expect(waypoint).toHaveAttribute('aria-expanded', 'false');
-    expect(details()).toHaveTextContent('49° 39.000′ N · 001° 37.200′ W');
+    expect(details()).toHaveTextContent('49° 39.0000′ N · 001° 37.2001′ W');
     expect(details()).toHaveTextContent('Description du point 4');
     fireEvent.keyDown(buoy, { key: 'Escape' });
     expect(details()).not.toBeInTheDocument();
@@ -595,7 +627,7 @@ describe('SeaOperationRouteMap', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Sommet · Zone d’étude' })[0]);
     expect(details()).toHaveTextContent('Sommet · Zone d’étude');
-    expect(details()).toHaveTextContent('49° 42.000′ N · 001° 24.000′ W');
+    expect(details()).toHaveTextContent('49° 42.0000′ N · 001° 24.0000′ W');
     fireEvent.click(screen.getByRole('button', { name: 'Fermer les détails du point' }));
     expect(details()).not.toBeInTheDocument();
   });

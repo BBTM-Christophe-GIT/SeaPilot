@@ -31,7 +31,7 @@ function coordinates(position: SeaPosition) {
   return { latitude: String(Number(position.latitude.toFixed(6))), longitude: String(Number(position.longitude.toFixed(6))) };
 }
 
-/** Browsing never writes the saved frame; only explicit point changes are persisted. */
+/** Point changes are saved independently of temporary map navigation. */
 export function SeaOperationRegisterMap(props: RegisterMapProps) {
   const { record } = props;
   return <section className="so-register-map sp-panel" aria-label="Carte de l’opération">
@@ -137,7 +137,7 @@ function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = fal
     <SeaOperationWaypointMapEditor waypoints={draft.waypoints} isolatedPoints={seaOperationPointPresentation(draft, record).points} zones={draft.locationOverlay?.zones}
       readOnly={!editing || !editable || saving || disabled} drawingMode={editing && editable ? 'route' : undefined} maxSpeedKnots={maxSpeedKnots}
       voyageSummaryPosition="compact" renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(consumption, draft, distanceNm)}
-      departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort}
+      departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} fitOperationRoute
       etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)}
       onAddWaypoint={addWaypoint} onMoveWaypoint={(id, position) => movePoint('waypoints', id, position)}
       onDeleteWaypoint={id => deletePoint('waypoints', id)} onMoveIsolatedPoint={(id, position) => movePoint('points', id, position)}

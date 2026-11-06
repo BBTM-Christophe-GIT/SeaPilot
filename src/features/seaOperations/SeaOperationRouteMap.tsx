@@ -8,7 +8,7 @@ import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates
 import { formatProjectPort } from '../projects/projectPorts';
 import { buildSeaOperationRouteLegs, formatSeaOperationVoyageDuration, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 import './seaOperationRouteMap.css';
-import { seaOperationMapExtraPositions, seaOperationMapLayers, seaOperationZonePositions, type SeaOperationMapZone } from './seaOperationMapLayers';
+import { seaOperationMapExtraPositions, seaOperationMapFitPositions, seaOperationMapLayers, seaOperationZonePositions, type SeaOperationMapZone } from './seaOperationMapLayers';
 import { projectSeaOperationMapPlace } from './seaOperationMapPlaces';
 import { SeaOperationIsolatedPointIcon } from './SeaOperationIsolatedPointIcon';
 import { seaOperationIsolatedPointIcon, seaOperationIsolatedPointLabel } from './seaOperationIsolatedPointIcons';
@@ -16,6 +16,7 @@ import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance, type SeaOpera
 import { SeaOperationNavigationCategoryLayer, SeaOperationNavigationCategoryLegend, useNavigationCategoryOverlay, type NavigationCategory } from './SeaOperationNavigationCategories';
 import { SeaOperationDetailedBasemap, DETAILED_BASEMAP_ATTRIBUTION } from './SeaOperationDetailedBasemap';
 import type { DetailedBasemapStatus } from './seaOperationDetailedBasemapModel';
+import { COMPACT_VOYAGE_SUMMARY_MEDIA } from './seaOperationVoyageSummary';
 
 const NO_ISOLATED_POINTS: readonly SeaOperationWaypoint[] = [];
 const NO_ZONES: readonly SeaOperationMapZone[] = [];
@@ -102,11 +103,12 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, voyageSummaryPosition = 'overlay', fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, fitOperationRoute = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, voyageSummaryPosition = 'overlay', fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: fit every recorded position, keeping a saved frame only for an empty map. */
   fitAllPositions?: boolean;
+  fitOperationRoute?: boolean;
   /** Document view only: widen a saved frame when its zones would be cropped. */
   ensureZonesVisible?: boolean;
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
@@ -144,10 +146,10 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 900, height: 320 });
   const compactSummary = !compact && voyageSummaryPosition === 'compact';
-  const [narrowScreen, setNarrowScreen] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 720px)').matches === true);
+  const [narrowScreen, setNarrowScreen] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(COMPACT_VOYAGE_SUMMARY_MEDIA).matches === true);
   useEffect(() => {
     if (!compactSummary || typeof window.matchMedia !== 'function') return;
-    const media = window.matchMedia('(max-width: 720px)');
+    const media = window.matchMedia(COMPACT_VOYAGE_SUMMARY_MEDIA);
     const update = () => setNarrowScreen(media.matches);
     update();
     media.addEventListener('change', update);
@@ -194,7 +196,11 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
   const summaryBelowMap = compactSummary ? narrowScreen : width < 600;
   const definedPorts = useMemo(() => resolveSeaOperationMapPorts(departurePort, arrivalPort), [departurePort, arrivalPort]);
-  const extraPositions = useMemo(() => [...seaOperationMapExtraPositions(isolatedPoints, zones), ...definedPorts.ports.map(port => port.location)], [isolatedPoints, zones, definedPorts]);
+  const extraPositions = useMemo(() => {
+    const extras = seaOperationMapExtraPositions(isolatedPoints, zones);
+    const ports = definedPorts.ports.map(port => port.location);
+    return fitOperationRoute ? seaOperationMapFitPositions(waypoints, extras, ports) : [...extras, ...ports];
+  }, [isolatedPoints, zones, definedPorts, fitOperationRoute, waypoints]);
   const displayViewport = useMemo(() => fitAllPositions && (extraPositions.length > 0 || waypoints.some(point => seaWaypointPosition(point) !== null)) ? undefined : ensureZonesVisible
     ? routeMapViewportContainingPositions(viewport, zones.flatMap(zone => seaOperationZonePositions(zone) ?? []), width, height)
     : viewport, [fitAllPositions, extraPositions, waypoints, ensureZonesVisible, viewport, zones, width, height]);
@@ -367,7 +373,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
             const vigilanceX = (alignEnd ? -1 : 1) * (icon ? Math.max(31, label.length * 7 + 34) : markerWidth / 2 + 16);
             const details = canInspect ? pointControl({ id: `point:${point.id}`, label: `Point isolé · ${fullLabel}`, position,
               descriptions: point.descriptionVhf.trim() ? [point.descriptionVhf] : [] }) : { role: 'img',
-              'aria-label': `Point isolé ${index} : ${fullLabel}${point.descriptionVhf ? ` · ${point.descriptionVhf}` : ''} · ${formatSeaLatitude(position.latitude)} · ${formatSeaLongitude(position.longitude)}` };
+              'aria-label': `Point isolé ${index} : ${fullLabel}${point.descriptionVhf ? ` · ${point.descriptionVhf}` : ''} · ${formatSeaLatitude(position.latitude, 4)} · ${formatSeaLongitude(position.longitude, 4)}` };
             return <g key={point.id} data-isolated-point-id={point.id} transform={`translate(${x} ${y})`} {...details}>
               {canInspect && <><circle className="so-route-map-hit-area" r={10} /><circle className="so-route-map-hit-area" cy={labelY} r={14} /></>}
               <title>{`Point isolé ${index} · ${fullLabel}${point.descriptionVhf ? ` · ${point.descriptionVhf}` : ''}${icon ? ` · ${icon.label}` : ''}`}</title>
@@ -424,7 +430,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
       {canInspect && pointDetails && <div className="so-route-map-point-details" id={pointDetailsId}>
         <div role="status">
           <strong>{pointDetails.label}</strong>
-          <div>{formatSeaLatitude(pointDetails.position.latitude)} · {formatSeaLongitude(pointDetails.position.longitude)}</div>
+          <div>{formatSeaLatitude(pointDetails.position.latitude, 4)} · {formatSeaLongitude(pointDetails.position.longitude, 4)}</div>
           {pointDetails.descriptions?.map((description, index) => <p key={index}>{description}</p>)}
         </div>
         <button type="button" className="sp-button sp-button--secondary" aria-label="Fermer les détails du point" onClick={closePointDetails}><X size={16} aria-hidden="true" /></button>
@@ -438,7 +444,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     </div>}
     {geometry.invalidCount > 0 && <p className="so-route-map-omissions" role="status">{geometry.invalidCount === 1 ? '1 point sans coordonnées valides n’est pas représenté ; la liaison est interrompue à cet endroit.' : `${geometry.invalidCount} points sans coordonnées valides ne sont pas représentés ; les liaisons sont interrompues à ces endroits.`}</p>}
     {definedPorts.issues.length > 0 && <p className="so-route-map-omissions" role="status">{definedPorts.issues.map(issue => `${issue.role === 'departure' ? 'Départ' : 'Arrivée'} : ${issue.input} — ${issue.reason === 'ambiguous' ? 'plusieurs ports correspondent, précisez le libellé du catalogue' : issue.reason === 'unlocated' ? 'position propre non disponible dans le catalogue' : 'port non identifié dans le catalogue'}.`).join(' ')}</p>}
-    {definedPorts.ports.length > visibleDefinedPorts.length && <p className="so-route-map-omissions" role="status">{definedPorts.ports.filter(port => !visibleDefinedPorts.some(visible => visible.key === port.key)).map(port => `${port.roleLabel} : ${port.port.port} — hors du cadre conservé.`).join(' ')}</p>}
+    {definedPorts.ports.length > visibleDefinedPorts.length && <p className="so-route-map-omissions" role="status">{definedPorts.ports.filter(port => !visibleDefinedPorts.some(visible => visible.key === port.key)).map(port => `${port.roleLabel} : ${port.port.port} — ${fitOperationRoute && !displayViewport ? 'hors du cadrage automatique' : 'hors du cadre conservé'}.`).join(' ')}</p>}
     {places && geometry.projection && <details className="so-route-map-places" onToggle={event => setPortsOpen(event.currentTarget.open)}><summary>Ports dans cette région · {places.ports.length}</summary>
       {portsOpen && <div className="so-route-map-port-list">
         <p>Catalogue partagé avec Projets. Points de référence indicatifs : ni entrées de port ni positions de quai.</p>
