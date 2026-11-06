@@ -25,7 +25,8 @@ concernés indisponibles. Les valeurs restent estimées à partir de jauges.
 Le premier prix saisi dans un relevé ou sa correction actualise le prix
 du fuel pour le navire à la date de saisie en heure de Paris. Les cartes
 Projet et Opération en mer utilisent le dernier prix applicable du navire.
-Le tarif de la flotte sert de référence pour les navires sans prix propre.
+Pour les navires sans prix propre, les cartes reprennent le dernier prix
+applicable saisi dans la flotte.
 Une correction de durée,
 de vitesse ou de jauge conserve le tarif de référence si le prix du
 relevé est inchangé.

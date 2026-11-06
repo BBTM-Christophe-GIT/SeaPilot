@@ -13,6 +13,7 @@ export interface ProjectFuelPrice {
   eurosPerLiter: number;
   effectiveOn: string;
   source: string;
+  recordedAt?: string;
 }
 
 export interface ProjectVesselFuelPrice extends ProjectFuelPrice {
@@ -43,6 +44,18 @@ export function projectFuelPriceForVessel(reference: ProjectFuelReference, vesse
   const vesselPrice = reference.vesselPrices?.find(price => price.vesselId === vesselId);
   if (vesselPrice && isProjectFuelPrice(vesselPrice)) return vesselPrice;
   return reference.price && isProjectFuelPrice(reference.price) ? reference.price : null;
+}
+
+export function applyProjectFuelPrice(reference: ProjectFuelReference, saved: ProjectFuelPrice, vesselId?: number | null): ProjectFuelReference {
+  const recordedTime = (price: ProjectFuelPrice) => Date.parse(price.recordedAt ?? price.effectiveOn);
+  const price = !reference.price || recordedTime(saved) >= recordedTime(reference.price) ? saved : reference.price;
+  if (vesselId == null) return { ...reference, price };
+
+  const prices = reference.vesselPrices ?? [];
+  const own = prices.find(entry => entry.vesselId === vesselId);
+  if (own && (own.effectiveOn > saved.effectiveOn
+    || (own.effectiveOn === saved.effectiveOn && recordedTime(own) > recordedTime(saved)))) return { ...reference, price };
+  return { ...reference, price, vesselPrices: [...prices.filter(entry => entry.vesselId !== vesselId), { ...saved, vesselId }] };
 }
 
 export function estimateProjectFuel(reference: ProjectFuelReference | undefined, vesselId: number | undefined | null,

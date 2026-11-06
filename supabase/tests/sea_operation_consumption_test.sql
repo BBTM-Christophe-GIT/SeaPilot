@@ -6,6 +6,7 @@ select ok(not has_table_privilege('authenticated', 'sea_operation_private.consum
 select ok(not has_function_privilege('anon', 'public.sea_operation_consumption(uuid)', 'EXECUTE'), 'anonymous cannot read Conso');
 select ok(not has_function_privilege('anon', 'public.sea_operation_save_consumption(uuid,integer,jsonb)', 'EXECUTE'), 'anonymous cannot save Conso');
 select ok(not has_table_privilege('anon', 'public.project_fuel_latest_vessel_prices', 'SELECT'), 'anonymous cannot read vessel prices');
+select ok(not has_table_privilege('anon', 'public.project_fuel_latest_fallback_price', 'SELECT'), 'anonymous cannot read the fleet fallback');
 
 insert into public.companies(code, name) values ('conso-other', 'Conso foreign company');
 insert into auth.users(id, email)
@@ -56,6 +57,13 @@ create function pg_temp.conso_actor(p_number integer) returns text language sql 
   select set_config('request.jwt.claim.sub', 'b9470000-0000-0000-0000-' || lpad(p_number::text, 12, '0'), true);
 $$;
 
+select is((select price_eur_per_liter_ht from public.project_fuel_latest_fallback_price
+  where company_id = (select id from public.companies where code = 'bbtm')),
+  1.254::numeric, 'the more recent historical workbook tariff supplies the fleet baseline');
+select is((select recorded_at from public.project_fuel_latest_fallback_price
+  where company_id = (select id from public.companies where code = 'bbtm')),
+  timestamptz '2026-10-31 00:00 Europe/Paris', 'legacy prices use their effective date as the entry timestamp');
+
 insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
 select id, (now() at time zone 'Europe/Paris')::date + 1, 9.99, 'Future fixture quote'
 from public.companies where code = 'bbtm'
@@ -85,7 +93,7 @@ select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{r
 select is(public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{reference,priceDate}',
   '2026-09-22', 'Suroit workbook price retains the historical date');
 select is((public.sea_operation_consumption(pg_temp.conso_id('missing_calibration'))#>>'{reference,pricePerLiter}')::numeric,
-  1.70::numeric, 'a vessel without its own price falls back to the applicable company quote');
+  1.70::numeric, 'a vessel without its own price falls back to the latest applicable quote in the company');
 select throws_ok($$insert into public.vessel_fuel_price_observations(vessel_id, price_date, price_eur_per_liter_ht, source_label)
   select vessel_id, current_date, 9.99, 'Unauthorised fixture price' from conso_fixture where key = 'base'$$,
   '42501', null, 'a captain publishes prices only through the signed operation RPC');
@@ -107,7 +115,7 @@ select is((response#>>'{reference,pricePerLiter}')::numeric, 1.25::numeric, 'new
 select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{reference,pricePerLiter}')::numeric,
   1.115::numeric, 'a Rozel Conso entry leaves the Suroit price unchanged');
 select is((public.sea_operation_consumption(pg_temp.conso_id('missing_calibration'))#>>'{reference,pricePerLiter}')::numeric,
-  1.70::numeric, 'a Rozel Conso entry leaves the company fallback unchanged');
+  1.25::numeric, 'the latest vessel price supplies the fleet fallback without copying it');
 select is((response#>>'{record,includedInReference}')::boolean, true, 'valid new calibrated voyage augments the historical reference') from conso_fixture where key = 'base';
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input())$$,
   '40001', null, 'stale version cannot replace a concurrent edit');
@@ -124,9 +132,12 @@ select pg_temp.conso_actor(5);
 select is((public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{record,version}')::integer, 1, 'real Marin can consult the voyage recap');
 select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,towageLitersPerNm}')::numeric > 0, 'real Marin gets limited forecast for the visible record');
 select is((select count(*)::integer from public.project_fuel_latest_vessel_prices), 0, 'real Marin cannot list company-wide vessel prices');
+select is((select count(*)::integer from public.project_fuel_latest_fallback_price), 0, 'real Marin cannot list the fleet fallback directly');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'Marin cannot write recap');
 select pg_temp.conso_actor(6);
 select is((select count(*)::integer from public.project_fuel_latest_vessel_prices), 0, 'a foreign admin cannot list another company’s prices');
+select is((select price_eur_per_liter_ht from public.project_fuel_latest_fallback_price), 9.99::numeric,
+  'a foreign admin receives only their own company fallback');
 select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('base'))$$, '42501', null, 'foreign admin cannot read recap or forecast');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'foreign admin cannot write recap or price');
 
@@ -139,6 +150,23 @@ set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = exc
 select is((select price_eur_per_liter_ht from public.project_fuel_latest_vessel_prices
   where vessel_id = (select vessel_id from conso_fixture where key = 'base')),
   1.80::numeric, 'Direction can read the latest applicable price per vessel after saving it');
+insert into public.project_fuel_price_observations(price_date, price_eur_per_liter_ht, source_label, recorded_at)
+values ((now() at time zone 'Europe/Paris')::date - 1, 1.95, 'Just entered, dated yesterday', '2000-01-01T00:00:00Z')
+on conflict (company_id, price_date) do update
+set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = excluded.source_label;
+select is((select price_eur_per_liter_ht from public.project_fuel_latest_fallback_price), 1.95::numeric,
+  'fallback chooses the last entry even when its effective date is earlier');
+select ok((select recorded_at from public.project_fuel_latest_fallback_price) > now() - interval '1 minute',
+  'the server supplies the entry timestamp even if the client submits one');
+update public.project_fuel_price_observations set price_eur_per_liter_ht = 9.999
+where price_date = (now() at time zone 'Europe/Paris')::date + 1;
+select is((select price_eur_per_liter_ht from public.project_fuel_latest_fallback_price), 1.95::numeric,
+  'a future price stays out of the fallback even after being entered last');
+select is((public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{reference,pricePerLiter}')::numeric,
+  1.80::numeric, 'a vessel specific price stays ahead of the fleet fallback');
+select is((select count(*)::integer from public.vessel_fuel_price_observations
+  where vessel_id = (select vessel_id from conso_fixture where key = 'missing_calibration')), 0,
+  'the fleet fallback never creates an observation for an unpriced vessel');
 update conso_fixture set response = public.sea_operation_save_consumption(id, 1, pg_temp.conso_input() || '{"durationMinutes":90}') where key = 'base';
 select is((response#>>'{reference,pricePerLiter}')::numeric, 1.80::numeric, 'duration-only correction does not overwrite a later quote') from conso_fixture where key = 'base';
 select is((response#>>'{record,version}')::integer, 2, 'authorized correction advances annex version') from conso_fixture where key = 'base';

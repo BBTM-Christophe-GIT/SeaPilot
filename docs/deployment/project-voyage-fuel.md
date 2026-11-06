@@ -20,9 +20,10 @@ d’une référence de devis ou de facture. Le produit de référence est le
 Zaphir TAXABLE - GASOIL Pêche UN1202.
 Administration et Direction peuvent le renseigner depuis la carte Projet.
 Le tarif est enregistré pour le navire principal du projet. Sans navire
-principal, la saisie fixe le tarif de référence de la flotte. Les cartes et
-le PDF utilisent le prix applicable le plus récent du navire, puis celui
-de la flotte si le navire n’a pas de tarif propre. Les relevés Conso mettent
+principal, la saisie enregistre un prix au niveau de la société. Les cartes
+et le PDF utilisent le prix applicable le plus récent du navire. En l’absence
+de tarif propre, ils reprennent automatiquement le dernier prix applicable
+saisi pour un navire de la même flotte ou pour la société. Les relevés Conso mettent
 à jour le prix de leur navire. Le Rozel démarre à 1,254 €/L HT au 31/10/2026
 et le Suroît à 1,115 €/L HT au 22/09/2026, selon leurs classeurs.
 L’absence de prix laisse le coût indisponible et permet

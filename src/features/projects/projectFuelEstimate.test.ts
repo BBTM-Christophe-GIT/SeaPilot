@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  estimateProjectFuel, formatProjectFuelCo2, formatProjectFuelPrice, formatProjectFuelVolume,
-  isProjectFuelPrice, projectFuelCurrentDate, type ProjectFuelReference,
+  applyProjectFuelPrice, estimateProjectFuel, formatProjectFuelCo2, formatProjectFuelPrice, formatProjectFuelVolume,
+  isProjectFuelPrice, projectFuelCurrentDate, projectFuelPriceForVessel, type ProjectFuelReference,
 } from './projectFuelEstimate';
 
 const reference: ProjectFuelReference = {
@@ -46,6 +46,17 @@ describe('Project voyage fuel estimates', () => {
     expect([2, 3, 4].map(id => estimateProjectFuel(fleetReference, id, 50)?.price?.eurosPerLiter)).toEqual([1.254, 1.115, 1.4]);
     const suroit = estimateProjectFuel(fleetReference, 3, 50);
     expect(suroit?.costEuros).toBeCloseTo((suroit?.fuelLiters ?? 0) * 1.115);
+  });
+
+  it('updates the fleet fallback after a newly entered backdated price without replacing a newer own tariff', () => {
+    const rozel = { vesselId: 2, eurosPerLiter: 1.254, effectiveOn: '2026-10-31', recordedAt: '2026-10-30T23:00:00Z', source: 'Classeur Rozel' };
+    const before = { ...reference, price: rozel, vesselPrices: [rozel] };
+    const saved = { eurosPerLiter: 1.18, effectiveOn: '2026-10-30', recordedAt: '2026-11-06T10:00:00Z', source: 'Facture' };
+    const after = applyProjectFuelPrice(before, saved, 2);
+
+    expect(projectFuelPriceForVessel(after, 2)?.eurosPerLiter).toBe(1.254);
+    expect(projectFuelPriceForVessel(after, 3)?.eurosPerLiter).toBe(1.18);
+    expect(applyProjectFuelPrice(after, rozel, 2).price?.eurosPerLiter).toBe(1.18);
   });
 
   it('switches units at 1,000 and selects dates in Paris', () => {
