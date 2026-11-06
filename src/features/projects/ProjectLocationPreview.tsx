@@ -4,13 +4,15 @@ import { passagePlanCellData } from '../seaOperations/seaOperationPassagePlan';
 import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
 import type { ProjectLocationPlan } from './projectLocation';
+import type { ProjectFuelReference } from './projectFuelEstimate';
+import { renderProjectVoyageFuelDetails } from './projectVoyageFuelDetails';
 import './projectLocationPreview.css';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 /** An appendix is visible only after the user opts in; it is not a contract section. */
-export function ProjectLocationPreview({ plan, projectLabel, maxSpeedKnots, departurePort, arrivalPort }: {
+export function ProjectLocationPreview({ plan, projectLabel, maxSpeedKnots, departurePort, arrivalPort, fuelReference, vesselId, towing }: {
   plan: ProjectLocationPlan; projectLabel: string; maxSpeedKnots?: number | null; draftMeters?: number | null;
-  departurePort?: string; arrivalPort?: string;
+  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; vesselId?: number; towing?: boolean;
 }) {
   const paper = useRef<HTMLElement>(null);
   const [scale, setScale] = useState(1);
@@ -37,7 +39,8 @@ export function ProjectLocationPreview({ plan, projectLabel, maxSpeedKnots, depa
   </section> : null;
   return <article ref={paper} style={{ zoom: scale }} className="project-location-preview" aria-label="Annexe Localisation">
     <h2>Annexe — Localisation / Passage plan</h2><p>{projectLabel}</p>
-    <SeaOperationRouteMap waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} viewport={plan.mapViewport} departurePort={departurePort} arrivalPort={arrivalPort} showPlaces showRouteLegs maxSpeedKnots={maxSpeedKnots} etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} />
+    <SeaOperationRouteMap waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} viewport={plan.mapViewport} departurePort={departurePort} arrivalPort={arrivalPort} showPlaces showRouteLegs={plan.includeVoyageEstimateInPdf !== false} maxSpeedKnots={maxSpeedKnots} etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)}
+      renderVoyageDetails={plan.includeVoyageEstimateInPdf === true ? distanceNm => renderProjectVoyageFuelDetails(fuelReference, vesselId, distanceNm, towing) : undefined} />
     {plan.charts ? <p>Cartes marines : {plan.charts}</p> : null}
     {table('Passage plan', plan.waypoints)}
     {plan.points.length > 0 && <section><h3>Points isolés — hors calcul de navigation</h3>

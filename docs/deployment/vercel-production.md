@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.83.0` ajoute l’estimation de consommation, de coût HT et de
+CO₂ sur la carte Projet et un choix de récapitulatif pour l’annexe PDF.
+Appliquer les deux migrations avant le frontend.
+Voir [les estimations de trajet Projet](./project-voyage-fuel.md).
+
 La version `3.82.3` allège les cartes de Projet et d’Opération en Mer. Elle
 affiche les coordonnées et la description au clic et reprend les icônes
 du projet lié dans les cartes d’opération. Appliquer

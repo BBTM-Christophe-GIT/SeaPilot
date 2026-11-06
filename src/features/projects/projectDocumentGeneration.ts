@@ -17,8 +17,11 @@ import {
   DEFAULT_TOWAGE_CONDITIONS,
   DEFAULT_TOWAGE_PAYMENT_TERMS,
   DEFAULT_TOWAGE_SPECIAL_CONDITIONS,
+  normalizeProjectContractType,
+  TOWAGE_CONTRACT_TYPE,
   towageOptionalCostsWithDefault,
 } from './projectContractOptions';
+import type { ProjectFuelReference } from './projectFuelEstimate';
 import { formatProjectOfferPort } from './projectPorts';
 import { BIMCO_P144_FIELDS } from './projectContractModels';
 import { buildStyledContract } from './projectStyledContract';
@@ -63,6 +66,7 @@ export interface ProjectDocumentGenerationInput {
   project: ProjectRecord;
   towedAsset?: ProjectTowedAssetRecord;
   vessel?: VesselRecord;
+  fuelReference?: ProjectFuelReference;
   vesselCertificates?: ProjectVesselCertificateRecord[];
   language?: ProjectDocumentLanguage;
 }
@@ -461,6 +465,11 @@ export async function generateProjectDocument(
       vesselName: input.vessel?.name,
       maxSpeedKnots: input.vessel?.maxSpeedKnots,
       draftMeters: input.vessel?.draftMeters,
+      ...(input.project.locationPlan.includeVoyageEstimateInPdf === true ? {
+        fuelReference: input.fuelReference,
+        vesselId: input.vessel?.id,
+        towing: normalizeProjectContractType(input.project.contractType) === TOWAGE_CONTRACT_TYPE,
+      } : {}),
       departurePort: input.project.deliveryPort,
       arrivalPort: input.project.redeliveryPort,
       language: input.language,

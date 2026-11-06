@@ -5,6 +5,7 @@ import type { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperatio
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { ProjectDetailMap } from './ProjectDetailMap';
 import { emptyProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
+import { TOWAGE_CONTRACT_TYPE } from './projectContractOptions';
 import type { ProjectRecord } from './projectQueries';
 
 const map = vi.hoisted(() => vi.fn());
@@ -58,6 +59,31 @@ describe('ProjectDetailMap', () => {
     expect(screen.getByText('Aucun waypoint, point isolé ou zone enregistré pour ce projet.')).toBeVisible();
     expect(map.mock.calls.at(-1)![0]).toMatchObject({ readOnly: true, waypoints: [], isolatedPoints: [], zones: [], etd: '' });
     expect(record).not.toHaveProperty('locationPlan');
+  });
+
+  it('renders estimates for the project’s selected vessel and explicit towing regime', () => {
+    const fuelReference = {
+      rates: [
+        { vesselId: 12, towing: false, sampleCount: 5, distanceNm: 100, fuelLiters: 2_000 },
+        { vesselId: 12, towing: true, sampleCount: 5, distanceNm: 50, fuelLiters: 1_500 },
+      ],
+      price: { eurosPerLiter: 1.2, effectiveOn: '2026-01-01', source: 'Facture de référence' },
+    };
+    render(<ProjectDetailMap project={project({ locationPlan: planFixture(), contractType: TOWAGE_CONTRACT_TYPE })} fuelReference={fuelReference} />);
+    render(<div>{currentMap().renderVoyageDetails?.(40)}</div>);
+    expect(screen.getByText('1,2 m³')).toBeVisible();
+    expect(screen.getByText('3,27 t')).toBeVisible();
+    expect(screen.getByText(/1\s440 € HT/)).toBeVisible();
+    expect(screen.getByText('En remorquage · 30 L/NM')).toBeVisible();
+    expect(currentMap().renderVoyageDetails?.(null)).toBeNull();
+  });
+
+  it('explains missing fuel calibration only when the route has a distance', () => {
+    render(<ProjectDetailMap project={project({ locationPlan: planFixture() })} />);
+    render(<div>{currentMap().renderVoyageDetails?.(40)}</div>);
+    expect(screen.getByText('Référence de consommation indisponible pour ce navire et ce régime.')).toBeVisible();
+    expect(currentMap().renderVoyageDetails?.(null)).toBeNull();
+    expect(currentMap().renderVoyageDetails?.(0)).toBeNull();
   });
 
   it('uses only the newly selected project layers and its ports', () => {

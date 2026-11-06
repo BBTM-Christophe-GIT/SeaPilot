@@ -18,6 +18,8 @@ export interface ProjectLocationPlan extends ProjectLocationOverlay {
   charts: string;
   waypoints: SeaOperationWaypoint[];
   includeInPdf: boolean;
+  /** Omitted keeps the historical distance and duration summary. */
+  includeVoyageEstimateInPdf?: boolean;
 }
 export const PROJECT_LOCATION_LIMITS = { bytes: 256 * 1024, overlayBytes: 512 * 1024, waypoints: 200, points: 200, zones: 50, vertices: 200 } as const;
 const invalid = () => new Error('La localisation du projet est invalide ou dépasse les limites autorisées.');
@@ -73,12 +75,15 @@ function overlay(value: Record<string, unknown>, ids: Set<string>): ProjectLocat
 export function parseProjectLocationPlan(value: unknown): ProjectLocationPlan | null {
   if (value === null || value === undefined) return null;
   if (!object(value) || typeof value.includeInPdf !== 'boolean') throw invalid();
+  const includeVoyageEstimateInPdf = value.includeVoyageEstimateInPdf;
+  if (includeVoyageEstimateInPdf !== undefined && typeof includeVoyageEstimateInPdf !== 'boolean') throw invalid();
   checkSize(value);
   const ids = new Set<string>();
   const waypoints = boundedArray(value.waypoints, PROJECT_LOCATION_LIMITS.waypoints).map(point => waypoint(point, ids));
   let mapViewport: SeaOperationMapViewport | undefined;
   try { mapViewport = parseSeaOperationMapViewport(value.mapViewport); } catch { throw invalid(); }
   return { ...overlay(value, ids), etd: string(value.etd, 80), charts: string(value.charts, 20000), waypoints, includeInPdf: value.includeInPdf,
+    ...(includeVoyageEstimateInPdf !== undefined ? { includeVoyageEstimateInPdf } : {}),
     ...(mapViewport ? { mapViewport } : {}) };
 }
 export function parseProjectLocationOverlay(value: unknown): ProjectLocationOverlay | null {

@@ -12,11 +12,13 @@ import { emptyProjectLocationPlan, parseProjectLocationPlan, PROJECT_LOCATION_LI
 import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
 import { initialSeaOperationDepartureEta } from '../seaOperations/seaOperationRouteEta';
+import type { ProjectFuelReference } from './projectFuelEstimate';
+import { renderProjectVoyageFuelDetails } from './projectVoyageFuelDetails';
 import './projectLocationEditor.css';
 
-export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort }: {
+export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort, fuelReference, towing }: {
   value?: ProjectLocationPlan | null; onChange: (value: ProjectLocationPlan) => void; disabled?: boolean; vessel?: ProjectLocationVessel; projectId?: string;
-  departurePort?: string; arrivalPort?: string;
+  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; towing?: boolean;
 }) {
   const plan = useMemo(() => value ?? emptyProjectLocationPlan(), [value]);
   const [mode, setMode] = useState<'route' | 'point' | 'zone'>('route');
@@ -81,10 +83,23 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     <p className="project-location-help">Préparez une route, des points isolés et des zones sur la même carte. Cette rubrique n’est pas obligatoire pour enregistrer le projet.</p>
     <div className="project-location-settings"><label>ETD · départ prévu<input type="datetime-local" aria-label="ETD de la localisation" value={plan.etd} onChange={event => emit({ ...plan, etd: event.target.value })} /></label><label>Numéro des cartes marines<input value={plan.charts} maxLength={20000} onChange={event => emit({ ...plan, charts: event.target.value })} /></label></div>
     <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>
+    {plan.includeInPdf && <div className="project-location-settings"><label>Récapitulatif du parcours dans le PDF
+      <select value={plan.includeVoyageEstimateInPdf === undefined ? 'navigation' : plan.includeVoyageEstimateInPdf ? 'full' : 'none'} onChange={event => {
+        const next = { ...plan };
+        if (event.target.value === 'navigation') delete next.includeVoyageEstimateInPdf;
+        else next.includeVoyageEstimateInPdf = event.target.value === 'full';
+        emit(next);
+      }}>
+        <option value="navigation">Distance et durée</option>
+        <option value="full">Distance, durée, carburant, coût et CO₂</option>
+        <option value="none">Sans récapitulatif</option>
+      </select>
+    </label></div>}
     <div className="project-location-modes" role="group" aria-label="Mode de dessin"><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'route'} onClick={() => setMode('route')}><Route size={16} aria-hidden="true" />Route</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'point'} onClick={() => setMode('point')}><MapPin size={16} aria-hidden="true" />Point isolé</button><button type="button" className="sp-button sp-button--secondary" aria-pressed={mode === 'zone'} onClick={() => startZone()}><Shapes size={16} aria-hidden="true" />Zone</button>{mode === 'zone' && plan.zones.length > 0 && <label>Zone à compléter<select value={activeZoneId || ''} onChange={event => setActiveZoneId(event.target.value)}>{plan.zones.map((zone, index) => <option key={zone.id} value={zone.id}>{zone.name || `Zone ${index + 1}`}</option>)}</select></label>}</div>
     <SeaOperationWaypointImportPanel key={projectId} disabled={disabled} existingCount={plan.waypoints.length} destinationLabel="la carte" onImport={importWaypoints}>
       {waypointImport => <SeaOperationWaypointMapEditor
         waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} drawingMode={mode} maxSpeedKnots={vessel?.maxSpeedKnots}
+        renderVoyageDetails={distanceNm => renderProjectVoyageFuelDetails(fuelReference, typeof vessel?.id === 'number' ? vessel.id : null, distanceNm, towing)}
         etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
         departurePort={departurePort} arrivalPort={arrivalPort} mapViewport={plan.mapViewport}
         waypointImport={waypointImport}

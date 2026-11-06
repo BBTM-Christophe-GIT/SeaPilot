@@ -91,6 +91,7 @@ import {
 } from './projectBareboatContract';
 import { cloneProjectLocationPlan } from './projectLocation';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
+import type { ProjectFuelReference } from './projectFuelEstimate';
 
 interface ProjectEditorProps {
   client: SupabaseClient;
@@ -106,6 +107,7 @@ interface ProjectEditorProps {
   onSaved: (result: ProjectMutationResult) => void;
   project?: ProjectRecord;
   projectAttachments?: ProjectOperationDocumentRecord[];
+  fuelReference?: ProjectFuelReference;
   statuses: string[];
   towedAssets: ProjectTowedAssetRecord[];
   vessels: VesselRecord[];
@@ -454,6 +456,7 @@ export function ProjectEditor({
   onSaved,
   project,
   projectAttachments = [],
+  fuelReference,
   towedAssets,
   vessels,
 }: ProjectEditorProps) {
@@ -1567,7 +1570,7 @@ export function ProjectEditor({
 
           <fieldset hidden={activeStep !== 'location'} id="project-step-location">
             <legend><span>5</span> Localisation</legend>
-            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} departurePort={form.deliveryPort} arrivalPort={form.redeliveryPort} />}
+            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} departurePort={form.deliveryPort} arrivalPort={form.redeliveryPort} fuelReference={fuelReference} towing={isTowage} />}
           </fieldset>
           <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
             <legend><span>{isBimco ? 6 : 4}</span> Documents</legend>
@@ -1703,6 +1706,7 @@ export function ProjectEditor({
               client={clients.find((item) => item.id === form.clientId)}
               emitter={documentEmitter}
               form={form}
+              fuelReference={fuelReference}
               projectCode={nextProjectCode}
               towedAsset={towedAsset}
               vessel={vessels.find((item) => item.id === form.primaryVesselId)}

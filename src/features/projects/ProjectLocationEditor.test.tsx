@@ -150,6 +150,19 @@ describe('ProjectLocationEditor', () => {
     expect(screen.getByText(/Zone en cours/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' })); expect(current().includeInPdf).toBe(true);
   });
+  it('chooses independently between the three PDF summary modes when the appendix is included', () => {
+    render(<Harness />);
+    expect(screen.queryByLabelText('Récapitulatif du parcours dans le PDF')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
+    const summary = screen.getByLabelText('Récapitulatif du parcours dans le PDF');
+    expect(summary).toHaveValue('navigation');
+    fireEvent.change(summary, { target: { value: 'full' } });
+    expect(current()).toMatchObject({ includeInPdf: true, includeVoyageEstimateInPdf: true });
+    fireEvent.change(summary, { target: { value: 'none' } });
+    expect(current()).toMatchObject({ includeInPdf: true, includeVoyageEstimateInPdf: false });
+    fireEvent.change(summary, { target: { value: 'navigation' } });
+    expect(current()).not.toHaveProperty('includeVoyageEstimateInPdf');
+  });
   it('seeds the manually added first waypoint, then preserves a manual ETA when ETD changes', () => {
     render(<Harness />);
     fireEvent.change(screen.getByLabelText('ETD de la localisation'), { target: { value: '2026-11-03T10:00' } });

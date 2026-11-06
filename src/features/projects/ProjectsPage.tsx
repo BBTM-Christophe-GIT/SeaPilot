@@ -3,6 +3,9 @@ import { localCalendarDate } from './projectPortfolioMetrics';
 import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
 import { ProjectDetailMap } from './ProjectDetailMap';
+import { ProjectFuelPriceControl } from './ProjectFuelPriceControl';
+import type { ProjectFuelPrice, ProjectFuelReference } from './projectFuelEstimate';
+import { saveProjectFuelPrice } from './projectFuelQueries';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
 import './ProjectsProductionWorkspace.css';
@@ -122,11 +125,26 @@ const EMPTY_PROJECTS_DATA: ProjectsData = {
 const PROJECTS_PER_PAGE = 40;
 
 type ProjectDocumentDownloadMode = 'document' | 'bundle';
+type ProjectLocationExportMode = 'omit' | 'none' | 'navigation' | 'full';
+
+function projectLocationExportMode(plan: ProjectLocationPlan): ProjectLocationExportMode {
+  if (!plan.includeInPdf) return 'omit';
+  if (plan.includeVoyageEstimateInPdf === undefined) return 'navigation';
+  return plan.includeVoyageEstimateInPdf ? 'full' : 'none';
+}
+
+function projectLocationForExport(plan: ProjectLocationPlan, mode: ProjectLocationExportMode): ProjectLocationPlan {
+  const location = { ...plan, includeInPdf: mode !== 'omit' };
+  if (mode === 'navigation' || mode === 'omit') delete location.includeVoyageEstimateInPdf;
+  else location.includeVoyageEstimateInPdf = mode === 'full';
+  return location;
+}
 
 interface ProjectDocumentEmissionRequest {
   contractType?: string;
   kind: ProjectGeneratedDocumentKind;
   planningOccurrenceId: number | null;
+  locationMode?: ProjectLocationExportMode;
 }
 
 function generatedDocumentKindForContract(contractType?: string | null): ProjectGeneratedDocumentKind {
@@ -453,20 +471,24 @@ function ProjectDocumentEmissionDialog({
   definition,
   isBusy,
   language,
+  locationMode,
   mode,
   onClose,
   onConfirm,
   onLanguageChange,
+  onLocationModeChange,
   onModeChange,
 }: {
   attachmentCount: number;
   definition: (typeof PROJECT_DOCUMENT_TYPES)[number];
   isBusy: boolean;
   language: ProjectDocumentLanguage;
+  locationMode?: ProjectLocationExportMode;
   mode: ProjectDocumentDownloadMode;
   onClose: () => void;
   onConfirm: () => void;
   onLanguageChange: (language: ProjectDocumentLanguage) => void;
+  onLocationModeChange: (mode: ProjectLocationExportMode) => void;
   onModeChange: (mode: ProjectDocumentDownloadMode) => void;
 }) {
   return (
@@ -517,6 +539,17 @@ function ProjectDocumentEmissionDialog({
           </div>
         </div>
       ) : null}
+      {locationMode !== undefined && <div className="project-location-settings">
+        <label>Annexe de localisation du PDF
+          <select value={locationMode} disabled={isBusy}
+            onChange={event => onLocationModeChange(event.target.value as ProjectLocationExportMode)}>
+            <option value="omit">Sans annexe de localisation</option>
+            <option value="none">Carte et tableaux, sans récapitulatif</option>
+            <option value="navigation">Carte et tableaux, distances et durées</option>
+            <option value="full">Carte et tableaux, distances, durées, carburant, coût HT et CO₂</option>
+          </select>
+        </label>
+      </div>}
       <div aria-label="Contenu du téléchargement" className="project-document-delivery-options" role="radiogroup">
         <label className={mode === 'document' ? 'is-selected' : undefined}>
           <input
@@ -586,6 +619,8 @@ function ProjectDetail({
   onBeforeLeaveMap,
   mapSaving,
   mapSessionKey,
+  fuelReference,
+  onSaveFuelPrice,
   operationDocuments,
   planningOccurrences,
   towedAsset,
@@ -619,6 +654,8 @@ function ProjectDetail({
   onBeforeLeaveMap: () => boolean;
   mapSaving: boolean;
   mapSessionKey: string;
+  fuelReference?: ProjectFuelReference;
+  onSaveFuelPrice: (price: ProjectFuelPrice) => Promise<void>;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
   towedAsset?: ProjectTowedAssetRecord;
@@ -720,7 +757,9 @@ function ProjectDetail({
       ) : null}
       {activeTab === 'map' ? <ProjectDetailMap key={mapSessionKey} project={project} canManage={isManager && !project.archivedAt}
         disabled={mapSaving || changingProjectState} onSave={onSaveMap} onDirtyChange={onMapDirtyChange}
-        maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} /> : null}
+        maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} fuelReference={fuelReference}
+        fuelPriceControl={isManager && fuelReference ? <ProjectFuelPriceControl price={fuelReference.price}
+          disabled={mapSaving || changingProjectState} onSave={onSaveFuelPrice} /> : undefined} /> : null}
       {activeTab === 'offer-contract' ? (
       <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
         <div className="project-context-heading">
@@ -1209,6 +1248,21 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     openProjectEditor();
   }, [creationRequest.open, isLoading, isManager]);
 
+  const fuelReference = mapDataContext?.client === effectiveClient && mapDataContext.userId === effectiveUserId
+    ? projectsData.fuelReference : undefined;
+
+  async function updateFuelPrice(price: ProjectFuelPrice) {
+    const account = mapAccount.current;
+    if (!isManager || !fuelReference || account.client !== effectiveClient) throw new Error('Le tarif ne peut pas être modifié.');
+    const saved = await saveProjectFuelPrice(effectiveClient, price);
+    if (mapAccount.current !== account) return;
+    setProjectsData(current => {
+      const reference = current.fuelReference;
+      if (!reference || (reference.price && reference.price.effectiveOn > saved.effectiveOn)) return current;
+      return { ...current, fuelReference: { ...reference, price: saved } };
+    });
+  }
+
   const effectiveFilters = useMemo(() => ({ ...filters, search: deferredSearch }), [deferredSearch, filters]);
   const projectDocumentSet = useMemo(
     () => deduplicateProjectDocuments(projectsData.projectDocuments),
@@ -1423,7 +1477,9 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     setMutationError('');
     setDocumentDownloadMode('document');
     setDocumentLanguage('fr');
-    setDocumentEmissionRequest({ kind, planningOccurrenceId, contractType });
+    const locationMode = selectedProject?.locationPlan && kind !== 'intellectual_service'
+      ? projectLocationExportMode(selectedProject.locationPlan) : undefined;
+    setDocumentEmissionRequest({ kind, planningOccurrenceId, contractType, locationMode });
   }
 
   async function saveMap(plan: ProjectLocationPlan, source: ProjectRecord) {
@@ -1496,6 +1552,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     downloadMode: ProjectDocumentDownloadMode,
     language: ProjectDocumentLanguage,
     contractType?: string,
+    locationMode?: ProjectLocationExportMode,
   ) {
     if (!selectedProject) return;
     setMutationError('');
@@ -1515,13 +1572,17 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           ? await fetchProjectVesselCertificates(effectiveClient, selectedProject.primaryVesselId)
           : []
         : undefined;
+      const documentProject = contractType ? { ...selectedProject, contractType } : selectedProject;
+      const documentLocation = locationMode && selectedProject.locationPlan
+        ? projectLocationForExport(selectedProject.locationPlan, locationMode) : selectedProject.locationPlan;
       const generated = await generateProjectDocument(kind, {
         client: selectedClient,
         contract: selectedContract,
         emitter,
         occurrence,
-        project: contractType ? { ...selectedProject, contractType } : selectedProject,
+        project: { ...documentProject, locationPlan: documentLocation },
         language,
+        fuelReference,
         towedAsset: projectsData.towedAssets.find((asset) => asset.id === selectedContract?.towedAssetId),
         vessel: projectsData.vessels.find((vessel) => vessel.id === selectedProject.primaryVesselId),
         vesselCertificates,
@@ -1877,6 +1938,8 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               onBeforeLeaveMap={allowMapLeave}
               mapSaving={mapSaving || projectEditorOpen || planningEditorOpen || clientCatalogOpen || towedAssetCatalogOpen || serviceCatalogOpen || Boolean(statusMenu) || Boolean(documentEmissionRequest) || Boolean(closingProject)}
               mapSessionKey={`${mapAccount.current.generation}:${selectedProject.id}:${mapReset}`}
+              fuelReference={fuelReference}
+              onSaveFuelPrice={updateFuelPrice}
               operationDocuments={selectedOperationDocuments}
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
@@ -1894,6 +1957,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           definition={namedDocumentEmissionDefinition}
           isBusy={generatingDocument !== null}
           language={documentLanguage}
+          locationMode={documentEmissionRequest.locationMode}
           mode={documentDownloadMode}
           onClose={() => setDocumentEmissionRequest(null)}
           onConfirm={() => void generateSelectedProjectDocument(
@@ -1902,8 +1966,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
             documentDownloadMode,
             documentLanguage,
             documentEmissionRequest.contractType,
+            documentEmissionRequest.locationMode,
           )}
           onLanguageChange={setDocumentLanguage}
+          onLocationModeChange={locationMode => setDocumentEmissionRequest(current => current ? { ...current, locationMode } : null)}
           onModeChange={setDocumentDownloadMode}
         />
       ) : null}
@@ -1925,6 +1991,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           clients={projectsData.clients}
           contract={editingProject ? projectsData.projectContracts.find((item) => item.projectId === editingProject.id && !item.archivedAt) : undefined}
           contractTypes={contractTypeOptions}
+          fuelReference={fuelReference}
           initialOperation={editingProject ? undefined : creationRequest.operation}
           onClose={() => setProjectEditorOpen(false)}
           onSaved={(result) => {

@@ -75,6 +75,17 @@ select lives_ok($$select public.projects_save_with_location(target_title=>'LOCAT
 select lives_ok($$select public.projects_save_with_location(target_title=>'LOCATION-OFFER',target_contract_type=>'Offre Commerciale',target_location_plan=>(select payload from location_fixture where kind='plan'))$$,'commercial offers accept the optional location');
 select lives_ok($$select public.projects_save_with_location(target_title=>'LOCATION-SUPPLYTIME',target_contract_type=>'SUPPLYTIME 2017',target_location_plan=>(select payload from location_fixture where kind='plan'))$$,'SUPPLYTIME contracts accept the same optional location');
 select lives_ok($$select public.projects_save_with_location(target_title=>'LOCATION-BARECON',target_contract_type=>'BARECON 2017',target_location_plan=>(select payload from location_fixture where kind='plan'))$$,'BARECON contracts accept the same optional location');
+select is((select saved.location_plan->'includeVoyageEstimateInPdf' from public.projects_save_with_location(target_title=>'LOCATION-VOYAGE-FULL',
+  target_location_plan=>(select payload || '{"includeVoyageEstimateInPdf":true}'::jsonb from location_fixture where kind='plan')) saved),
+  'true'::jsonb,'the project save RPC retains the full voyage summary opt-in');
+select is((select saved.location_plan->'includeVoyageEstimateInPdf' from public.projects_save_with_location(target_title=>'LOCATION-VOYAGE-HIDDEN',
+  target_location_plan=>(select payload || '{"includeVoyageEstimateInPdf":false}'::jsonb from location_fixture where kind='plan')) saved),
+  'false'::jsonb,'the project save RPC retains the explicit choice to hide the voyage summary');
+select is((select payload->'includeVoyageEstimateInPdf' from location_fixture where kind='created'),null::jsonb,'existing plans keep the navigation-only preference absent');
+select throws_ok($$select project_location_private.normalize_plan(payload || '{"includeVoyageEstimateInPdf":"true"}'::jsonb) from location_fixture where kind='plan'$$,
+  '22023',null,'the project validator rejects nonboolean export preferences');
+select throws_ok($$select project_location_private.validate_overlay('{"version":1,"points":[],"zones":[],"includeVoyageEstimateInPdf":true}'::jsonb,'[]'::jsonb)$$,
+  '22023',null,'a Sea Operation overlay cannot retain the project-only export preference');
 
 select throws_ok($$select project_location_private.normalize_plan(jsonb_set((select payload from location_fixture where kind='plan'),'{points,0,id}','"route"'))$$,'22023',null,'IDs are unique across route and isolated points');
 select throws_ok($$select project_location_private.normalize_plan(jsonb_set((select payload from location_fixture where kind='plan'),'{zones,0,id}','"route"'))$$,'22023',null,'IDs are unique across route and zones');

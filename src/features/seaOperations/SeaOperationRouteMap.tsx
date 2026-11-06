@@ -82,11 +82,11 @@ function directionArrow(from: Position, to: Position): string | null {
   return `${x + ux * 5},${y + uy * 5} ${x - ux * 4 - uy * 3.5},${y - uy * 4 + ux * 3.5} ${x - ux * 4 + uy * 3.5},${y - uy * 4 - ux * 3.5}`;
 }
 
-function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType<typeof buildSeaOperationRouteLegs>['legs'], places: ReturnType<typeof seaOperationMapPlaces> | null) {
+function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType<typeof buildSeaOperationRouteLegs>['legs'], places: ReturnType<typeof seaOperationMapPlaces> | null, summaryHeight: number) {
   if (geometry.width < 600) return [];
   const occupied = geometry.points.map(point => ({ west: point.x - 72, east: point.x + 72, north: point.y - 24, south: point.y + 45 }));
   for (const marker of places?.markers || []) occupied.push({ west: marker.x - 16, east: marker.x + 16, north: marker.y - 16, south: marker.y + 16 });
-  occupied.push({ west: geometry.width - 248, east: geometry.width, north: geometry.height - 164, south: geometry.height });
+  occupied.push({ west: geometry.width - 248, east: geometry.width, north: geometry.height - summaryHeight, south: geometry.height });
   const labels: Array<{ x: number; y: number; width: number; text: string; leg: typeof legs[number] }> = [];
   for (const leg of legs) {
     const from = geometry.points.find(point => point.index === leg.fromIndex), to = geometry.points.find(point => point.index === leg.toIndex);
@@ -102,7 +102,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: fit every recorded position, keeping a saved frame only for an empty map. */
@@ -112,6 +112,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   onGeometry?: (geometry: SeaOperationRouteMapGeometry) => void;
   renderSurface?: (geometry: SeaOperationRouteMapGeometry, places: ReturnType<typeof seaOperationMapPlaces> | null) => ReactNode;
   renderOverlay?: (geometry: SeaOperationRouteMapGeometry, context: { places: ReturnType<typeof seaOperationMapPlaces> | null }) => ReactNode;
+  renderVoyageDetails?: (distanceNm: number | null) => ReactNode;
   fillAvailableSpace?: boolean;
   showPlaces?: boolean;
   inspectPoints?: boolean;
@@ -215,7 +216,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     return area(b.vertices) - area(a.vertices);
   }), [presentedZones]);
   const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
-  const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places) : [], [recordedGeometry, route, places]);
+  const voyageDetails = route && waypoints.length > 1 ? renderVoyageDetails?.(route.totalDistanceNm) : null;
+  const summaryHeight = voyageDetails ? 278 : 164;
+  const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places, summaryHeight) : [], [recordedGeometry, route, places, summaryHeight]);
   const zoneGraphics = useMemo(() => {
     const obstacles: SeaOperationZoneLabelObstacle[] = [
       { west: geometry.width - 48, east: geometry.width, north: 0, south: 70 },
@@ -223,14 +226,14 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
       ...visibleDefinedPorts.map(port => ({ west: port.x - 90, east: port.x + 90, north: port.y - 50, south: port.y + 35 })),
       ...legLabels.map(label => ({ west: label.x - label.width / 2, east: label.x + label.width / 2, north: label.y - 11, south: label.y + 11 })),
     ];
-    if (!compact && showRouteLegs && waypoints.length > 1 && geometry.width >= 600) obstacles.push({ west: geometry.width - 264, east: geometry.width, north: geometry.height - 170, south: geometry.height });
+    if (!compact && showRouteLegs && waypoints.length > 1 && geometry.width >= 600) obstacles.push({ west: geometry.width - 264, east: geometry.width, north: geometry.height - summaryHeight - 6, south: geometry.height });
     for (const city of places?.cities || []) obstacles.push({ west: city.label.anchor === 'end' ? city.label.x - city.name.length * 6 : city.label.x, east: city.label.anchor === 'end' ? city.label.x : city.label.x + city.name.length * 6, north: city.label.y - 12, south: city.label.y + 3 });
     for (const port of places?.markers || []) {
       obstacles.push({ west: port.x - 7, east: port.x + 7, north: port.y - 7, south: port.y + 7 });
       if (port.label) obstacles.push({ west: port.label.anchor === 'end' ? port.label.x - port.ports[0].port.port.length * 6 : port.label.x, east: port.label.anchor === 'end' ? port.label.x : port.label.x + port.ports[0].port.port.length * 6, north: port.label.y - 12, south: port.label.y + 3 });
     }
     return zonePresentation(geometry, layers, visualZones, obstacles, compact);
-  }, [geometry, layers, visualZones, visibleDefinedPorts, legLabels, compact, showRouteLegs, waypoints.length, places]);
+  }, [geometry, layers, visualZones, visibleDefinedPorts, legLabels, compact, showRouteLegs, waypoints.length, places, summaryHeight]);
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const routeCountLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
@@ -259,6 +262,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     <dl><div><dt>ETD</dt><dd>{voyage.etdLabel || 'À renseigner'}</dd></div><div><dt>{eta?.trim() ? 'ETA arrivée' : 'ETA estimée'}</dt><dd>{voyage.etaLabel || 'Indisponible'}</dd></div></dl>
     {voyage.etaSource === 'waypoint' && <small>Durée ETD → ETA retenue.</small>}
     {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}
+    {voyageDetails}
   </aside> : null;
 
   return <figure aria-labelledby={titleId} onKeyDown={event => {
