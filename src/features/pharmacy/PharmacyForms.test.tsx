@@ -48,10 +48,11 @@ describe('PharmacyItemForm medical dotation', () => {
     const onSave = vi.fn();
     render(<PharmacyItemForm item={article} medicalDotation="Dotation C" categories={[]} busy={false} error="" onClose={vi.fn()} onSave={onSave} />);
     expect(screen.getByLabelText('Branche')).toHaveValue('unclassified');
+    expect(screen.queryByLabelText('Section d’origine')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Branche'), { target: { value: 'equipment' } });
     expect(screen.getByLabelText('Catégorie')).toHaveValue('');
     fireEvent.submit(screen.getByRole('dialog'));
-    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ medical_dotation: 'Dotation B', medical_section: 'equipment', category: '', category_id: null, quantity: '12 boîtes', revision: 5, source_file: 'Source.xlsx' }));
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ medical_dotation: 'Dotation B', medical_section: 'equipment', category: '', category_id: null, section: article.section, quantity: '12 boîtes', revision: 5, source_file: 'Source.xlsx' }));
   });
   it('saves the dispensing units, package size and dosage and clears the date when marked as inapplicable', () => {
     const article: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vessel_id: 1, designation: 'Article', medical_section: 'medicines', expires_on: '2027-06-30', expiry_precision: 'day', expiry_text: 'Juin 2027', revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '' };

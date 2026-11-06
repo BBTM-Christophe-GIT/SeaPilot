@@ -756,6 +756,7 @@ describe('PharmacyPage', () => {
     expect(screen.getByRole('combobox', { name: 'État des articles' })).toHaveValue('expiry');
     expect(screen.getByText('Détail de l’article')).toBeInTheDocument();
     expect(within(screen.getByRole('complementary')).getByText('Dotation B')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).queryByText('Section d’origine')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), 'dotation c');
     expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();
