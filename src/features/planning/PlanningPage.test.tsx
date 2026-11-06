@@ -2055,6 +2055,69 @@ describe('PlanningPage cockpit', () => {
     }));
   });
 
+  it('adds and schedules a sailor on the active vessel when an archived namesake has past assignments', async () => {
+    const user = userEvent.setup();
+    const vessel = { ...vesselRow, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR' };
+    const archivedVessel = { ...vessel, id: 2, active: false };
+    const activeAssignment = {
+      ...assignmentOverviewRow,
+      vessel_name: vessel.name,
+      watch_group: 'Bordée 1',
+      starts_on: '2026-06-29',
+      ends_on: '2026-06-29',
+      status_label: 'En Mer',
+      confirmation_status: 'confirmed',
+    };
+    const archivedAssignment = {
+      ...activeAssignment,
+      id: 101,
+      vessel_id: archivedVessel.id,
+      crew_person_id: secondCrewRow.id,
+      crew_name: 'Luc MOREL',
+      starts_on: '2026-06-28',
+      ends_on: '2026-06-28',
+    };
+    const assignments = [activeAssignment, archivedAssignment];
+    const { client, rpc } = createClient({
+      vessels: [vessel, archivedVessel],
+      people: [captainRow, crewRow, secondCrewRow],
+      assignments,
+      boardRows: [],
+      createdBoardRow: { ...emptyBoardRow, id: 901, person_id: secondCrewRow.id, watch_group: 'Bordée 1' },
+      days: [],
+      periods: [],
+      projects: [],
+    });
+    render(<PlanningPage client={client as never} roles={['armement']} />);
+
+    await user.click(await screen.findByRole('button', { name: `Ajouter un marin à Bordée 1 de ${vessel.name}` }));
+    const dialog = screen.getByRole('dialog', { name: 'Ajouter un marin à Bordée 1' });
+    await user.click(within(dialog).getByRole('button', { name: 'Ajouter Luc MOREL' }));
+    await screen.findByText('Luc MOREL a été ajouté comme ligne vide à Bordée 1.');
+    expect(rpc).toHaveBeenCalledWith('add_planning_board_row_for_month', {
+      p_vessel_id: vessel.id,
+      p_watch_group: 'Bordée 1',
+      p_person_id: secondCrewRow.id,
+      p_reference_month: '2026-06-01',
+    });
+    expect(screen.getByRole('button', { name: 'Modifier le statut et le commentaire du 28/06/2026 pour Luc MOREL' })).toBeInTheDocument();
+
+    assignments.push({
+      ...archivedAssignment,
+      id: 102,
+      vessel_id: vessel.id,
+      starts_on: '2026-06-30',
+      ends_on: '2026-06-30',
+    });
+    await user.dblClick(screen.getByRole('button', { name: /^Case vide de Luc MOREL le 30\/06\/2026\./ }));
+    expect(rpc).toHaveBeenCalledWith('apply_planning_grid_cells', {
+      p_cells: [expect.objectContaining({
+        personId: secondCrewRow.id, vesselId: vessel.id, watchGroup: 'Bordée 1', workDate: '2026-06-30', status: 'En Mer',
+      })],
+    });
+    expect(await screen.findByRole('button', { name: 'Modifier le statut et le commentaire du 30/06/2026 pour Luc MOREL' })).toBeInTheDocument();
+  });
+
   it('lists only sailors whose employment overlaps the reference month and adds an eligible row', async () => {
     const user = userEvent.setup();
     const boardRows: unknown[] = [];

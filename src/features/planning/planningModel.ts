@@ -11,6 +11,7 @@ import {
   type PlanningPeriodRecord,
   type PlanningPerson,
   type PlanningProjectRecord,
+  type PlanningVessel,
 } from './planningQueries';
 import {
   addPlanningDays,
@@ -578,6 +579,14 @@ function safeKey(value: string): string {
   return normalizePlanningText(value) || 'NONRENSEIGNE';
 }
 
+export function planningVesselsByName(vessels: PlanningVessel[]): Map<string, PlanningVessel> {
+  const byName = new Map<string, PlanningVessel>();
+  for (const vessel of vessels) {
+    if (vessel.active || !byName.get(vessel.name)?.active) byName.set(vessel.name, vessel);
+  }
+  return byName;
+}
+
 export function buildPlanningCrewRows(
   overview: PlanningOverview,
   days: PlanningTimelineDay[],
@@ -606,7 +615,7 @@ export function buildPlanningCrewRows(
       (!filters.vesselName || project.primaryVesselName === filters.vesselName || project.secondaryVesselName === filters.vesselName),
   );
   const vesselsById = new Map(overview.vessels.map((vessel) => [vessel.id, vessel]));
-  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
+  const vesselsByName = planningVesselsByName(overview.vessels);
   const visibleGenericRows = (overview.genericCrewRows || []).filter((row) => !paternityFilter
     || genericCrewEvents(row, vesselsById.get(row.vesselId)?.name || '').some((event) => planningPaternityEventMatchesFilters(event, filters, range)));
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
@@ -653,6 +662,7 @@ export function buildPlanningCrewRows(
       const vesselEvents = events.filter((event) => event.vessel === vessel);
       const vesselBoardRows = boardRows.filter((entry) => entry.vessel.name === vessel);
       const vesselRecord = vesselsByName.get(vessel);
+      const activeVesselId = vesselRecord?.active ? vesselRecord.id : null;
       const vesselProjects = projects.filter((project) => project.primaryVesselName === vessel || project.secondaryVesselName === vessel);
       rows.push({
         key: vesselKey,
@@ -695,7 +705,7 @@ export function buildPlanningCrewRows(
             key: boardKey,
             type: 'board',
             personId: null,
-            vesselId: boardEvents[0]?.vesselId || vesselRecord?.id || null,
+            vesselId: activeVesselId ?? boardEvents[0]?.vesselId ?? vesselRecord?.id ?? null,
             label: board,
             vessel,
             board,
@@ -761,7 +771,7 @@ export function buildPlanningCrewRows(
                 key: `${boardKey}-person-${safeKey(person)}`,
                 type: 'person',
                 personId,
-                vesselId: personEvents[0]?.vesselId || vesselRecord?.id || null,
+                vesselId: activeVesselId ?? boardRow?.vesselId ?? personEvents[0]?.vesselId ?? vesselRecord?.id ?? null,
                 label: person,
                 vessel,
                 board,
