@@ -12,6 +12,10 @@ Sélectionner un navire. Une ligne vierge apparaît directement dans le tableau.
 
 **Modifier** rend une entrée enregistrée éditable sur place ; **Enregistrer l’entrée** applique la correction et **Annuler** l’abandonne. Une ligne vierge laisse disponibles les filtres, les exports et le changement de navire. Ces actions sont bloquées dès qu’un brouillon est modifié ou qu’une correction est en cours, afin de conserver le contexte de la saisie.
 
+Depuis la colonne **Traitement / Médicaments administrés**, **Choisir les articles de pharmacie** ouvre la liste des articles du navire. Plusieurs articles ou lots peuvent être choisis dans la même entrée. Saisir une quantité et son unité pour chaque article. L’option **Boîte** est proposée quand le nombre d’unités par boîte est renseigné. Les notes de traitement restent disponibles, notamment pour les soins sans article de pharmacie. Une quantité inconnue doit être renseignée dans l’inventaire avant de pouvoir être déduite.
+
+L’enregistrement signé déduit les quantités dans la même transaction que l’écriture médicale. Une correction applique la différence ; un échec ou un stock insuffisant laisse l’inventaire et l’entrée intacts. Réessayer l’enregistrement du même brouillon après une interruption réseau ne déduit pas le stock deux fois. L’archivage et la restauration du dossier ne changent pas le stock. L’historique et le PDF conservent les libellés, lots et quantités de chaque version du traitement. Les sélections sont accessibles uniquement si le compte peut gérer à la fois le registre et l’inventaire de ce navire.
+
 Le nom du secouriste et sa signature proviennent automatiquement du profil connecté, sans saisie d’une autre identité. La signature doit être enregistrée dans **RH / Brevets → sa fiche → Signature**. Le lien proposé ouvre directement `/modules/humanResources?person=<id>&section=signature`. Sans profil actif associé ou sans signature valide, l’enregistrement reste impossible ; les données saisies restent disponibles pour réessayer.
 
 La recherche et l’année filtrent le tableau. **Historique** montre toutes les versions. Chaque correction utilise la signature actuelle de son auteur tout en conservant les versions antérieures. **Archiver** retire une entrée du registre actif ; **Inclure les archives** permet de la consulter et de la restaurer. Aucun dossier n’est supprimé définitivement.
@@ -33,6 +37,8 @@ Les remarques informatives du conseiller Supabase sur les deux tables privées s
 ## Déploiement et vérification
 
 Appliquer `20261014081132_medical_logbook.sql`, puis `20261014081722_medical_logbook_current_assignment_times.sql`, avant le client. Les versions correspondent à l’historique du projet Supabase SeaPilot. La seconde migration tient compte de la normalisation réelle du Planning : une date de fin à minuit peut appartenir au jour suivant et ne doit pas prolonger les droits. Le registre démarre vide. Aucune nouvelle dépendance ni variable d’environnement n’est nécessaire. Aucun nouveau bucket public n’est créé.
+
+Appliquer également `20261106133422_pharmacy_medical_stock.sql` avant la version 3.85.0. Cette migration ajoute la liste des articles du navire et les instantanés des articles utilisés. Les dossiers saisis en texte libre restent lisibles et modifiables.
 
 `supabase/tests/medical_logbook_test.sql` utilise les vrais rôles PostgreSQL authentifiés, des sociétés, personnes, affectations et signatures synthétiques, puis annule toute la transaction. Elle vérifie les refus de périmètre, les intervalles et publications, les signatures absentes ou falsifiées, les versions anciennes, les conflits, l’historique immuable et les archives. La recette ne prend jamais une vue Marin/Capitaine simulée comme preuve des droits réels.
 

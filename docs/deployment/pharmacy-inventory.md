@@ -2,7 +2,15 @@
 
 Le module **Registres → Inventaire Pharmacie** suit les articles et les documents de contrôle par navire. L’interface est conçue pour un portable de 15 pouces, avec synthèse, recherche et filtres immédiatement visibles, en-tête fixe et défilement limité à la liste.
 
-La cloche et les compteurs par navire réutilisent la même lecture de `pharmacy_notifications()` dans la session connectée. Le client relit les alertes toutes les deux minutes lorsque l’onglet est visible. Le retour au premier plan déclenche une lecture si la précédente a commencé il y a au moins 30 secondes. Un enregistrement et **Actualiser l’inventaire** déclenchent une lecture immédiate. Une modification survenue pendant la lecture programme une seule lecture de rattrapage.
+Depuis la version **3.85.0**, **Sans date de péremption** distingue les articles qui n’expirent pas des dates à renseigner. Le conditionnement et le dosage sont distincts du stock : on peut par exemple indiquer **3 comprimés par boîte** et **300 mg**. Les quantités à bord et de dotation se saisissent dans la même unité. L’alerte de renouvellement apparaît uniquement quand le stock à bord est inférieur à la dotation. La pastille rouge compte chaque article périmé ou à renouveler une seule fois.
+
+**Hors Dotation** signale un article actif en dehors de la dotation obligatoire. L’article affiche la mention *« (hors dotation obligatoire) »* et figure dans les alertes. La pastille le compte une seule fois même s’il a aussi une alerte de stock ou de péremption.
+
+La section d’origine reste conservée dans les données historiques. Elle n’est plus affichée dans le détail ni dans la fenêtre de modification.
+
+**Exporter Excel** dans le ruban télécharge les articles actifs de la dotation du navire sélectionné, avec le stock, la dotation, le conditionnement, le dosage et les statuts. L’export couvre aussi les lignes masquées par les filtres du tableau. Il ne contient aucune donnée du registre médical. Appliquer la migration `20261106133422_pharmacy_medical_stock.sql` avant le déploiement du client ; les valeurs historiques sont conservées.
+
+La cloche et les compteurs par navire réutilisent la même lecture de `pharmacy_inventory_notifications()` dans la session connectée. `pharmacy_notifications()` reste réservée aux échéances datées pour l’accueil et les versions précédentes. Le client relit les alertes toutes les deux minutes lorsque l’onglet est visible. Le retour au premier plan déclenche une lecture si la précédente a commencé il y a au moins 30 secondes. Un enregistrement et **Actualiser l’inventaire** déclenchent une lecture immédiate. Une modification survenue pendant la lecture programme une seule lecture de rattrapage.
 
 La migration `20261105133711_optimize_pharmacy_vessel_read_policies.sql` applique les politiques de lecture des articles et des contrôles à la liste des couples société-navire accessibles à l’utilisateur, évaluée une fois par politique et par requête. Le prédicat d’accès par navire reste celui de `pharmacy_private.can_access`. La RPC d’alertes conserve sa signature, son calendrier et sa lecture RLS. La fixture `supabase/tests/pharmacy_vessel_read_scope_test.sql` vérifie le périmètre des articles, contrôles et notifications avec de vraies identités SQL.
 

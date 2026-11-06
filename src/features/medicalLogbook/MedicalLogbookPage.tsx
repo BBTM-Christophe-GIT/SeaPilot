@@ -8,11 +8,12 @@ import { supabase } from '../../lib/supabaseClient';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { LiftingVesselFilter } from '../lifting/LiftingVesselFilter';
 import type { RoleKey } from '../permissions/roles';
+import { PHARMACY_NOTIFICATIONS_CHANGED } from '../pharmacy/usePharmacyAlertPolling';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { MedicalInlineEntryRow } from './MedicalInlineEntryRow';
 import { MedicalSignaturePreview } from './MedicalSignaturePreview';
-import { blankMedicalDraft, canAccessMedicalLogbook, formatMedicalDate, medicalEntryMatches, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalSigner, type MedicalVessel } from './medicalLogbookModel';
-import { createMedicalSignatureUrl, fetchMedicalEntries, fetchMedicalHistory, fetchMedicalSignatureImages, fetchMedicalSigner, fetchMedicalVessels, saveMedicalEntry, setMedicalEntryArchived } from './medicalLogbookQueries';
+import { blankMedicalDraft, canAccessMedicalLogbook, formatMedicalDate, medicalEntryMatches, medicalTreatmentText, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalMedicationChoice, type MedicalSigner, type MedicalVessel } from './medicalLogbookModel';
+import { createMedicalSignatureUrl, fetchMedicalEntries, fetchMedicalHistory, fetchMedicalMedicationChoices, fetchMedicalSignatureImages, fetchMedicalSigner, fetchMedicalVessels, saveMedicalEntry, setMedicalEntryArchived } from './medicalLogbookQueries';
 import { createMedicalPreviewClient } from './medicalLogbookPreview';
 import '../lifting/liftingNavigation.css';
 import './medicalLogbook.css';
@@ -37,7 +38,7 @@ function MedicalEntryDetails({ entry, signatureUrl, signatureLoading, signatureU
     <div><dt>Date et heure</dt><dd>{formatMedicalDate(entry.occurred_on)} · {entry.occurred_time.slice(0, 5)}</dd></div>
     <div><dt>Nom du patient</dt><dd>{entry.patient_name}</dd></div>
     <div><dt>Blessure / Maladie</dt><dd>{entry.injury_illness}</dd></div>
-    <div><dt>Traitement / Médicaments administrés</dt><dd>{entry.treatment_medicines}</dd></div>
+    <div><dt>Traitement / Médicaments administrés</dt><dd className="medical-narrative">{medicalTreatmentText(entry)}</dd></div>
     <div><dt>Secouriste</dt><dd>{entry.first_aider_name}</dd></div>
     <div><dt>Signature</dt><dd><MedicalSignaturePreview signature={entry.signature_snapshot} url={signatureUrl} loading={signatureLoading} unavailable={signatureUnavailable} /></dd></div>
   </dl>;
@@ -59,6 +60,9 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [fleetReload, setFleetReload] = useState(0);
   const [entriesReload, setEntriesReload] = useState(0);
+  const [medicationReload, setMedicationReload] = useState(0);
+  const [medicationState, setMedicationState] = useState<{ accessScope: string; vesselId: number; choices: MedicalMedicationChoice[]; error: string } | null>(null);
+  const medicationList = medicationState?.accessScope === accessScope && medicationState.vesselId === vesselId ? medicationState : null;
   const [query, setQuery] = useState('');
   const [year, setYear] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -71,7 +75,7 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
   const [creationFocus, setCreationFocus] = useState(false);
   const [creationState, setCreationState] = useState<{ accessScope: string; vesselId: number; dirty: boolean } | null>(null);
   const creationDirty = creationState?.accessScope === accessScope && creationState.vesselId === vesselId && creationState.dirty;
-  const [editorState, setEditor] = useState<{ entry?: MedicalEntry; draft: MedicalDraft; vesselId: number; accessScope: string } | null>(null);
+  const [editorState, setEditor] = useState<{ entry: MedicalEntry; draft: MedicalEntry; vesselId: number; accessScope: string } | null>(null);
   const editor = editorState?.accessScope === accessScope ? editorState : null;
   const interactionBlocked = busy || !!editor || !!creationDirty;
   const [archiveState, setArchiveTarget] = useState<{ entry: MedicalEntry; archived: boolean; accessScope: string } | null>(null);
@@ -195,6 +199,18 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     return () => { active = false; };
   }, [db, allowed, accessScope, vesselId, authorizedVessel, entriesReload]);
 
+  useEffect(() => {
+    let active = true;
+    setMedicationState(null);
+    if (!canWrite || !vesselId) return;
+    void fetchMedicalMedicationChoices(db, vesselId).then((choices) => {
+      if (active) setMedicationState({ accessScope, vesselId, choices, error: '' });
+    }).catch(() => {
+      if (active) setMedicationState({ accessScope, vesselId, choices: [], error: 'Impossible de charger les articles de pharmacie de ce navire.' });
+    });
+    return () => { active = false; };
+  }, [db, canWrite, accessScope, vesselId, medicationReload]);
+
   const rememberVessel = context?.setLiftingVesselId;
   useEffect(() => { if (vesselId) rememberVessel?.(vesselId); }, [vesselId, rememberVessel]);
 
@@ -214,12 +230,13 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     setActionError('');
     setFleetReload((value) => value + 1);
     setEntriesReload((value) => value + 1);
+    setMedicationReload((value) => value + 1);
     setSignerReload((value) => value + 1);
   }
 
-  function startEntry(entry?: MedicalEntry) {
-    if (!entry || !canWrite || !loaded || interactionBlocked || entry.archived) return;
-    const draft = entry ? { ...entry } : blankMedicalDraft();
+  function startEntry(entry: MedicalEntry) {
+    if (!canWrite || !loaded || interactionBlocked || entry.archived) return;
+    const draft = { ...entry };
     draft.first_aider_name = signer?.signer_name || '';
     setActionError('');
     setEntryError('');
@@ -244,7 +261,10 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     setNotice('');
     try {
       const saved = await saveMedicalEntry(db, targetVessel, draft, previous);
+      const pharmacyLinked = !!(previous?.medications?.length || saved.medications?.length);
+      if (pharmacyLinked && !preview) window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED));
       if (!stillCurrent(startedSession, targetVessel)) return;
+      if (pharmacyLinked) setMedicationReload((value) => value + 1);
       replaceEntry(saved);
       setEditor(null);
       resetCreation(!previous);
@@ -325,12 +345,13 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     signatureUnavailable: signer?.signature ? signatureFailures.has(signer.signature.signature_id) : false,
     onReloadSigner: () => { signatureCache.current.clear(); setSignerReload((value) => value + 1); },
   };
+  const medicationProps = { medicationList, onReloadMedications: () => setMedicationReload((value) => value + 1) };
   const readyRow = loaded && canWrite ? <MedicalInlineEntryRow key={`${accessScope}:${vesselId}:new-${creationEpoch}`} initial={blankMedicalDraft()} editing={false} busy={busy} locked={!!editor} error={editor ? '' : entryError}
-    {...signatureProps} autoFocus={creationFocus && !editor}
+    {...signatureProps} {...medicationProps} autoFocus={creationFocus && !editor}
     onDirtyChange={(dirty) => setCreationState({ accessScope, vesselId, dirty })}
     onSave={(draft) => void save(draft)} onCancel={() => { if (!busy && !editor) resetCreation(); }} /> : null;
   const inlineEditor = editor && loaded && canWrite ? <MedicalInlineEntryRow key={`${accessScope}:${vesselId}:${editor.entry?.id}`} initial={editor.draft} editing busy={busy} error={entryError}
-    {...signatureProps}
+    {...signatureProps} {...medicationProps}
     autoFocus
     onSave={(draft) => void save(draft, editor.entry)} onCancel={() => { if (!busy) { setEditor(null); setActionError(''); resetCreation(); } }} /> : null;
 
@@ -372,7 +393,7 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
                     {filtered.map((entry) => editor?.entry?.id === entry.id ? inlineEditor : <tr key={entry.id} className={entry.archived ? 'is-archived' : ''}>
                     <td>{formatMedicalDate(entry.occurred_on)}</td><td>{entry.occurred_time.slice(0, 5)}</td>
                     <td><strong>{entry.patient_name}</strong>{entry.archived ? <span className="medical-archived-label">Archivée</span> : null}</td>
-                    <td className="medical-narrative">{entry.injury_illness}</td><td className="medical-narrative">{entry.treatment_medicines}</td><td>{entry.first_aider_name}</td>
+                    <td className="medical-narrative">{entry.injury_illness}</td><td className="medical-narrative">{medicalTreatmentText(entry)}</td><td>{entry.first_aider_name}</td>
                     <td><MedicalSignaturePreview signature={entry.signature_snapshot} url={signatureUrls.get(entry.signature_snapshot.signature_id)} loading={signaturesLoading} unavailable={signatureFailures.has(entry.signature_snapshot.signature_id)} /></td>
                     <td><div className="medical-row-actions">
                       {canWrite && !entry.archived ? <button ref={(node) => { if (node) rowActionRefs.current.set(entry.id, node); else rowActionRefs.current.delete(entry.id); }} className="sp-button sp-button--secondary" disabled={interactionBlocked} type="button" aria-label={`Modifier l’entrée de ${entry.patient_name}`} onClick={() => startEntry(entry)}><Pencil size={15} aria-hidden="true" />Modifier</button> : null}

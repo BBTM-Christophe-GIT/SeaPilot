@@ -1,14 +1,14 @@
 import { useId, useState } from 'react';
 import { AlertTriangle, Check, Clock3, Ship } from 'lucide-react';
 import { fleetIllustration } from '../fleet/fleetDisplay';
-import type { PharmacyVessel } from './pharmacyModel';
+import type { PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
 import './pharmacyVessels.css';
 
 export interface PharmacyVesselStripProps {
   vessels: PharmacyVessel[];
   value: number;
   disabled: boolean;
-  counts: Record<number, { due: number; expired: number }> | null;
+  counts: Record<number, PharmacyVesselExpiryCounts> | null;
   onChange: (id: number) => void;
   loading?: boolean;
 }
@@ -20,7 +20,7 @@ function countLabel(count: number, type: 'due' | 'expired'): string {
 
 function VesselCard({ vessel, selected, disabled, count, loading, onChange }: {
   vessel: PharmacyVessel; selected: boolean; disabled: boolean;
-  count: { due: number; expired: number } | undefined;
+  count: PharmacyVesselExpiryCounts | undefined;
   loading: boolean; onChange: (id: number) => void;
 }) {
   const statusId = useId();
@@ -28,8 +28,17 @@ function VesselCard({ vessel, selected, disabled, count, loading, onChange }: {
   const [failedPhoto, setFailedPhoto] = useState('');
   const known = count && Number.isFinite(count.due) && count.due >= 0 && Number.isFinite(count.expired) && count.expired >= 0;
   const unavailable = loading ? 'Comptages en cours…' : 'Comptages indisponibles';
+  const low = count?.low ?? 0;
+  const expired = count?.expired ?? 0;
+  const outside = count?.outsideDotation ?? 0;
+  const redCount = count?.red ?? expired + low + outside;
+  const lowLabel = low ? `${low} article${low === 1 ? '' : 's'} à réapprovisionner` : '';
+  const expiredLabel = expired ? countLabel(expired, 'expired') : '';
+  const outsideLabel = outside ? `${outside} article${outside === 1 ? '' : 's'} hors dotation` : '';
+  const redLabels = [expiredLabel, lowLabel, outsideLabel].filter(Boolean);
+  const redLabel = redLabels.length > 1 ? `${redCount} article${redCount === 1 ? '' : 's'} à traiter (${redLabels.join(' ; ')})` : redLabels[0];
   const description = known
-    ? [count.due ? countLabel(count.due, 'due') : '', count.expired ? countLabel(count.expired, 'expired') : ''].filter(Boolean).join(' ; ') || 'Aucun article à échéance sous 30 jours ni périmé.'
+    ? [count.due ? countLabel(count.due, 'due') : '', redLabel].filter(Boolean).join(' ; ') || 'Aucun article à traiter.'
     : unavailable;
   return <button
     aria-describedby={statusId}
@@ -46,9 +55,9 @@ function VesselCard({ vessel, selected, disabled, count, loading, onChange }: {
         ? <img alt="" decoding="async" height={48} loading="lazy" onError={() => setFailedPhoto(photo)} src={photo} width={88} />
         : <span aria-hidden="true" className="pharmacy-vessel-placeholder"><Ship size={27} /><small>{vessel.acronym || 'Navire'}</small></span>}
       {selected ? <span aria-hidden="true" className="pharmacy-vessel-selected"><Check size={10} strokeWidth={3} /></span> : null}
-      {known && (count.due > 0 || count.expired > 0) ? <span className="pharmacy-vessel-counts">
+      {known && (count.due > 0 || redCount > 0) ? <span className="pharmacy-vessel-counts">
         {count.due > 0 ? <span aria-label={countLabel(count.due, 'due')} className="pharmacy-vessel-count is-due" role="img" title={countLabel(count.due, 'due')}><Clock3 aria-hidden="true" size={10} /><span aria-hidden="true">{count.due}</span></span> : null}
-        {count.expired > 0 ? <span aria-label={countLabel(count.expired, 'expired')} className="pharmacy-vessel-count is-expired" role="img" title={countLabel(count.expired, 'expired')}><AlertTriangle aria-hidden="true" size={10} /><span aria-hidden="true">{count.expired}</span></span> : null}
+        {redCount > 0 ? <span aria-label={redLabel} className="pharmacy-vessel-count is-expired" role="img" title={redLabel}><AlertTriangle aria-hidden="true" size={10} /><span aria-hidden="true">{redCount}</span></span> : null}
       </span> : null}
     </span>
     <strong className="pharmacy-vessel-name">{vessel.name}</strong>

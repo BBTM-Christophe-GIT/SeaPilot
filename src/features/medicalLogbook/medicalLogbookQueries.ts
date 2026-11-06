@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { normalizedMedicalDraft, validateMedicalDraft, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalVessel, type MedicalSigner, type MedicalSignatureSnapshot } from './medicalLogbookModel';
+import { normalizedMedicalDraft, validateMedicalDraft, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalMedicationChoice, type MedicalMedicationSnapshot, type MedicalVessel, type MedicalSigner, type MedicalSignatureSnapshot } from './medicalLogbookModel';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Réponse du registre médical invalide. Rechargez le registre.');
@@ -8,6 +8,29 @@ function object(value: unknown): Record<string, unknown> {
 }
 function id(value: unknown): value is number { return Number.isSafeInteger(value) && Number(value) > 0; }
 function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
+
+function parseMedicalMedicationChoice(value: unknown): MedicalMedicationChoice {
+  const row = object(value);
+  const { item_id, package_size, stock_quantity } = row;
+  if (!id(item_id) || !text(row.designation).trim()
+    || (package_size != null && (typeof package_size !== 'number' || !Number.isFinite(package_size) || package_size <= 0))
+    || (stock_quantity != null && (typeof stock_quantity !== 'number' || !Number.isFinite(stock_quantity) || stock_quantity < 0))) {
+    throw new Error('Liste des articles de pharmacie invalide. Actualisez le registre.');
+  }
+  return { item_id, designation: text(row.designation), brand: text(row.brand), lot_number: text(row.lot_number),
+    stock_unit: text(row.stock_unit) || 'unité', strength: text(row.strength),
+    package_size: package_size ?? null, stock_quantity: stock_quantity ?? null };
+}
+
+function parseMedicalMedicationSnapshot(value: unknown): MedicalMedicationSnapshot {
+  const choice = parseMedicalMedicationChoice(value);
+  const { quantity, unit } = object(value);
+  if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0 || (unit !== 'unit' && unit !== 'package')
+    || !choice.stock_quantity || (unit === 'package' && !choice.package_size)) {
+    throw new Error('Réponse du registre médical invalide. Rechargez le registre.');
+  }
+  return { ...choice, quantity, unit, stock_quantity: choice.stock_quantity };
+}
 
 export function parseMedicalSignature(value: unknown): MedicalSignatureSnapshot {
   const row = object(value);
@@ -30,6 +53,8 @@ export function parseMedicalEntry(value: unknown): MedicalEntry {
   const draft: MedicalDraft = { occurred_on: text(row.occurred_on), occurred_time: /^\d{2}:\d{2}:00$/.test(rawTime) ? rawTime.slice(0, 5) : rawTime,
     patient_name: text(row.patient_name), injury_illness: text(row.injury_illness), treatment_medicines: text(row.treatment_medicines),
     first_aider_name: text(row.first_aider_name) };
+  const medications = row.medications === undefined ? undefined : array(row.medications).map(parseMedicalMedicationSnapshot);
+  if (medications) draft.medications = medications;
   if (!id(row.id) || !id(row.company_id) || !id(row.vessel_id) || !id(row.revision)
     || typeof row.archived !== 'boolean' || !text(row.created_at) || !text(row.updated_at) || validateMedicalDraft(draft)) {
     throw new Error('Réponse du registre médical invalide. Rechargez le registre.');
@@ -38,6 +63,7 @@ export function parseMedicalEntry(value: unknown): MedicalEntry {
   if (row.signature_version_id !== signature.signature_id || row.signature_name !== signature.signer_name
     || draft.first_aider_name !== signature.signer_name) throw new Error('La référence de signature personnelle est invalide.');
   return { ...draft, signature_name: signature.signer_name, signature_version_id: signature.signature_id, signature_snapshot: signature,
+    medications,
     id: row.id, company_id: row.company_id, vessel_id: row.vessel_id, revision: row.revision,
     archived: row.archived, created_at: text(row.created_at), updated_at: text(row.updated_at) };
 }
@@ -48,6 +74,11 @@ async function rpc(client: SupabaseClient, name: string, args?: Record<string, u
     if (error.code === '40001') throw new Error('Cette entrée a été modifiée depuis un autre écran. Actualisez le registre avant de réessayer.');
     if (error.code === '42501') throw new Error('Le registre médical est réservé aux administrateurs et aux capitaines de leurs navires autorisés.');
     if (error.code === '23514' && error.message === 'MEDICAL_LOGBOOK_PROFILE_SIGNATURE_REQUIRED') throw new Error('Ajoutez votre signature dans votre fiche RH, section Signature, avant d’enregistrer le registre médical.');
+    if (error.message === 'MEDICAL_LOGBOOK_INSUFFICIENT_STOCK') throw new Error('Le stock est insuffisant pour un des articles. Vérifiez les quantités dans l’inventaire du navire.');
+    if (error.message === 'MEDICAL_LOGBOOK_MEDICATION_PACKAGE_UNAVAILABLE') throw new Error('Le nombre d’unités par boîte n’est pas renseigné pour un article. Choisissez une unité de stock ou complétez son conditionnement dans l’inventaire.');
+    if (error.message === 'MEDICAL_LOGBOOK_MEDICATION_STOCK_UNKNOWN') throw new Error('Le stock d’un article doit être renseigné dans l’inventaire avant de pouvoir le déduire.');
+    if (error.message === 'MEDICAL_LOGBOOK_MEDICATION_UNAVAILABLE') throw new Error('Un article sélectionné n’est plus disponible dans l’inventaire du navire. Actualisez les articles.');
+    if (error.message === 'MEDICAL_LOGBOOK_INVALID_MEDICATIONS') throw new Error('Vérifiez les quantités et unités des articles sélectionnés.');
     if (error.code === '22023' || error.code === '23514' || error.code === '22007') throw new Error('Les informations saisies ne sont pas valides. Vérifiez le formulaire.');
     throw new Error('Impossible de charger ou d’enregistrer le registre médical. Réessayez.');
   }
@@ -113,12 +144,18 @@ export async function fetchMedicalEntries(client: SupabaseClient, vesselId: numb
   return entries.sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || b.occurred_time.localeCompare(a.occurred_time) || b.id - a.id);
 }
 
+export async function fetchMedicalMedicationChoices(client: SupabaseClient, vesselId: number): Promise<MedicalMedicationChoice[]> {
+  return array(await rpc(client, 'list_medical_logbook_medications', { p_vessel_id: vesselId })).map(parseMedicalMedicationChoice);
+}
+
 export async function saveMedicalEntry(client: SupabaseClient, vesselId: number, draft: MedicalDraft, entry?: MedicalEntry): Promise<MedicalEntry> {
   const error = validateMedicalDraft(draft);
   if (error) throw new Error(error);
   if (entry && (entry.vessel_id !== vesselId || entry.archived)) throw new Error('Cette entrée ne peut pas être modifiée dans ce registre.');
+  const content = normalizedMedicalDraft(draft);
+  if (!entry && draft.create_request_id) content.create_request_id = draft.create_request_id;
   return parseMedicalEntry(await rpc(client, 'save_medical_logbook_entry', { p_vessel_id: vesselId,
-    p_entry_id: entry?.id ?? null, p_expected_revision: entry?.revision ?? null, p_entry: normalizedMedicalDraft(draft) }));
+    p_entry_id: entry?.id ?? null, p_expected_revision: entry?.revision ?? null, p_entry: content }));
 }
 
 export async function setMedicalEntryArchived(client: SupabaseClient, entry: MedicalEntry, archived: boolean): Promise<MedicalEntry> {

@@ -7,8 +7,10 @@ import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
 import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { buildPharmacyWorkbook } from './pharmacyWorkbook';
 import { PHARMACY_ALERT_FOCUS_MS } from './usePharmacyAlertPolling';
 
+vi.mock('./pharmacyWorkbook', () => ({ buildPharmacyWorkbook: vi.fn() }));
 vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
 const vessels: PharmacyVessel[] = [{ id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', can_manage: true }, { id: 2, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true }, { id: 3, company_id: 1, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', can_manage: true }];
@@ -61,6 +63,36 @@ describe('PharmacyPage', () => {
     await user.type(screen.getByRole('textbox', { name: 'Rechercher un article' }), 'SANS DATE');
     expect(screen.getByRole('button', { name: 'ARTICLE SANS DATE' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+  });
+  it('downloads the whole selected dotation from the ribbon even when the table search hides it', async () => {
+    const user = userEvent.setup();
+    const vessel = { ...vessels[1], can_manage: false, medical_dotation: 'Dotation B' };
+    const inventory = [{ ...articleB, vessel_id: vessel.id }, { ...expired, vessel_id: vessel.id, medical_dotation: 'Dotation B' }];
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([vessel]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: inventory, controls: [], categories: [] });
+    const blob = new Blob(['xlsx']);
+    const filename = 'inventaire-pharmacie-suroit.xlsx';
+    vi.mocked(buildPharmacyWorkbook).mockResolvedValue({ blob, filename });
+    const createObjectURL = vi.fn(() => 'blob:pharmacy-test');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      page(['marin'], '/modules/pharmacy?vessel=2');
+      await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+      await user.type(screen.getByRole('textbox', { name: 'Rechercher un article' }), 'Aucun résultat');
+      expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+      const ribbon = screen.getByRole('navigation', { name: 'Commandes de l’inventaire pharmacie' });
+      await user.click(within(ribbon).getByRole('button', { name: 'Exporter Excel' }));
+      await waitFor(() => expect(download).toHaveBeenCalledOnce());
+      expect(buildPharmacyWorkbook).toHaveBeenCalledExactlyOnceWith(vessel, inventory, 'Dotation B');
+      expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
+      expect(download.mock.contexts[0]).toHaveAttribute('download', filename);
+      await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:pharmacy-test'), { timeout: 1500 });
+    } finally {
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
   it('keeps a real Marin fixture read only even if a mocked vessel is incorrectly marked manageable', async () => {
     page(['marin']); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
@@ -236,6 +268,30 @@ describe('PharmacyPage', () => {
     expect(fetchPharmacyVesselExpiryCounts).toHaveBeenCalledWith(client);
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 2);
     expect(fetchPharmacyRegister).not.toHaveBeenCalledWith(client, 3);
+  });
+  it('renders an article with no date alert and retains its stock alert in the stock filter', async () => {
+    const lowStock = { ...item, id: 9, designation: 'ARTICLE À RENOUVELER', no_expiry: true, expires_on: null, stock_quantity: 6, required_stock_quantity: 9, stock_unit: 'comprimé', package_size: 3, strength: '300 mg' };
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, lowStock], controls: [], categories: categoryFixtures });
+    page(['capitaine'], '/modules/pharmacy?vessel=1&filter=low&item=9');
+    const name = await screen.findByRole('button', { name: lowStock.designation });
+    const row = within(name.closest('tr')!);
+    expect(row.getByText('Sans date de péremption')).toBeInTheDocument();
+    expect(row.queryByText('Date à vérifier')).not.toBeInTheDocument();
+    expect(row.getByText('Stock insuffisant')).toBeInTheDocument();
+    expect(row.getByText('6 comprimés')).toBeInTheDocument();
+    expect(row.getByText(/300 mg · 3 unités par boîte/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: item.designation })).not.toBeInTheDocument();
+  });
+  it('renders the italic outside-dotation mention and an alert even when stock and expiry are in order', async () => {
+    const extraItem = { ...item, id: 9, designation: 'ARTICLE HORS DOTATION', outside_dotation: true };
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, extraItem], controls: [], categories: categoryFixtures });
+    page(['marin'], '/modules/pharmacy?vessel=1&filter=outside_dotation&item=9');
+    const name = await screen.findByRole('button', { name: extraItem.designation });
+    const row = within(name.closest('tr')!);
+    expect(row.getByText('(hors dotation obligatoire)').tagName).toBe('EM');
+    expect(row.getByText('Hors dotation')).toBeInTheDocument();
+    expect(row.queryByText('Stock insuffisant')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: item.designation })).not.toBeInTheDocument();
   });
   it('uses the shell alerts for expiry badges and manual refresh without a separate poll', async () => {
     const refresh = vi.fn();
@@ -700,6 +756,7 @@ describe('PharmacyPage', () => {
     expect(screen.getByRole('combobox', { name: 'État des articles' })).toHaveValue('expiry');
     expect(screen.getByText('Détail de l’article')).toBeInTheDocument();
     expect(within(screen.getByRole('complementary')).getByText('Dotation B')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).queryByText('Section d’origine')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Type de dotation médicale' }), 'dotation c');
     expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
     expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();

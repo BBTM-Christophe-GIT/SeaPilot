@@ -53,6 +53,14 @@ describe('pharmacy expiry notifications', () => {
     expect(await screen.findByLabelText('Cible Pharmacie')).toHaveTextContent('?vessel=4&filter=expiry&item=42');
     expect(screen.getByRole('button', { name: /Notifications, 1 élément/ })).toBeInTheDocument();
   });
+  it('opens the stock filter for a stock alert with no expiry date', async () => {
+    vi.mocked(fetchPharmacyNotifications).mockResolvedValue([{ ...notices[0], id: 'stock-42', kind: 'stock', item_id: 42, title: 'Article à réapprovisionner', expires_on: null, days_until_expiry: null }]);
+    const user = userEvent.setup(); renderShell();
+    await user.click(await screen.findByRole('button', { name: /Notifications, 1 élément/ }));
+    const link = screen.getByRole('link', { name: /SUROIT.*Article à réapprovisionner.*Stock à renouveler/ });
+    await user.click(link);
+    expect(await screen.findByLabelText('Cible Pharmacie')).toHaveTextContent('?vessel=4&filter=low&item=42');
+  });
   it('does not fetch alerts when the pharmacy module is hidden', async () => {
     fixture.visible = false; renderShell();
     await screen.findByRole('button', { name: 'Notifications' });

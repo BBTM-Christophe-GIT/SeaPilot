@@ -2375,7 +2375,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     return createPreviewQuery(previewProjectDocumentSelectionRpc(functionName, args));
   }
   // The pharmacy editor owns its synthetic register; the shared home never reads real inventory.
-  if (functionName === 'pharmacy_notifications') return createPreviewQuery({ data: [], error: null });
+  if (functionName === 'pharmacy_notifications' || functionName === 'pharmacy_inventory_notifications') return createPreviewQuery({ data: [], error: null });
   if (functionName === 'document_blob_lookup' || functionName === 'document_drive_lookup') return createPreviewQuery({ data: null, error: null });
   if (functionName === 'document_blob_lookup_batch') {
     const paths = Array.isArray(args.target_paths) ? args.target_paths : [];

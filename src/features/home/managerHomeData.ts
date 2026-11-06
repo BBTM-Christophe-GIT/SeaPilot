@@ -658,9 +658,10 @@ const GROUP_ORDER: ManagerHomeGroupKey[] = ['purchases', 'workingTime', 'procedu
 const TONE_ORDER: ManagerHomeTone[] = ['danger', 'warning', 'success'];
 
 function pharmacyItems(rows: PharmacyNotification[], vessels: ManagerHomeVesselIndex): ManagerHomeItem[] {
-  return rows.map((row) => {
+  return rows.flatMap((row) => {
     // The RPC owns the J-30 window and the Europe/Paris date calculation.
     const remainingDays = row.days_until_expiry;
+    if (row.expires_on === null || remainingDays === null) return [];
     const referenceDate = new Date(`${row.expires_on}T12:00:00Z`);
     referenceDate.setUTCDate(referenceDate.getUTCDate() - remainingDays);
     const todayKey = referenceDate.toISOString().slice(0, 10);
@@ -811,7 +812,7 @@ async function loadManagerHomeDashboard(
       return query;
     }),
     loadRows<PharmacyNotification>('les échéances pharmacie', async () => ({
-      data: await fetchPharmacyNotifications(client), error: null,
+      data: await fetchPharmacyNotifications(client, false), error: null,
     })),
     loadRows<PersonRow>('les ressources humaines', async () => {
       let query = client.from('people')

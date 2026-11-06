@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, pharmacyDotationKey, pharmacyMedicalSection, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyMedicalSection, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, pharmacyDotationKey, pharmacyMedicalSection, pharmacyStockStatus, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyMedicalSection, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
 
 // Synthetic preview data only. The customer workbooks are imported into the protected database.
 export function createPharmacyPreviewClient(): SupabaseClient {
@@ -76,14 +76,20 @@ export function createPharmacyPreviewClient(): SupabaseClient {
         else Object.assign(old, { name: trimmed, revision: old.revision + 1, updated_at: new Date().toISOString() });
         return { data: name === 'delete_pharmacy_category' ? null : old.id, error: null };
       }
-      if (name === 'pharmacy_notifications') {
+      if (name === 'pharmacy_notifications' || name === 'pharmacy_inventory_notifications') {
         const today = pharmacyToday();
         const notifications: PharmacyNotification[] = [];
         for (const item of items) {
-          const days = pharmacyDaysUntil(item.expires_on, today);
-          if (!item.active || days === null || days > PHARMACY_ALERT_DAYS) continue;
+          if (!item.active) continue;
           const vessel = vessels.find((candidate) => candidate.id === item.vessel_id);
-          if (vessel) notifications.push({ id: `item-${item.id}`, kind: 'item', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: item.expires_on!, days_until_expiry: days, item_id: item.id });
+          if (!vessel) continue;
+          if (name === 'pharmacy_inventory_notifications') {
+            if (item.outside_dotation) notifications.push({ id: `outside-dotation-${item.id}`, kind: 'outside_dotation', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: null, days_until_expiry: null, item_id: item.id });
+            if (pharmacyStockStatus(item) === 'low') notifications.push({ id: `stock-${item.id}`, kind: 'stock', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: null, days_until_expiry: null, item_id: item.id });
+          }
+          const days = pharmacyDaysUntil(item.expires_on, today);
+          if (item.no_expiry || days === null || days > PHARMACY_ALERT_DAYS) continue;
+          notifications.push({ id: `item-${item.id}`, kind: 'item', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: item.expires_on, days_until_expiry: days, item_id: item.id });
         }
         for (const control of controls) {
           const days = pharmacyDaysUntil(control.expires_on, today);
@@ -91,7 +97,7 @@ export function createPharmacyPreviewClient(): SupabaseClient {
           const vessel = vessels.find((candidate) => candidate.id === control.vessel_id);
           if (vessel) notifications.push({ id: `control-${control.id}`, kind: 'control', vessel_id: vessel.id, vessel_name: vessel.name, title: 'Contrôle Pharmacie', expires_on: control.expires_on, days_until_expiry: days, item_id: null });
         }
-        notifications.sort((a, b) => a.expires_on.localeCompare(b.expires_on) || a.vessel_name.localeCompare(b.vessel_name, 'fr') || a.title.localeCompare(b.title, 'fr'));
+        notifications.sort((a, b) => (a.expires_on ?? '9999-12-31').localeCompare(b.expires_on ?? '9999-12-31') || a.vessel_name.localeCompare(b.vessel_name, 'fr') || a.title.localeCompare(b.title, 'fr'));
         return { data: structuredClone(notifications), error: null };
       }
       if (name === 'save_pharmacy_item') {
