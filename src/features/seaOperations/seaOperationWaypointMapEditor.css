@@ -17,6 +17,8 @@
 .so-waypoint-map-controls .sp-button { width: 40px; min-width: 40px; padding: var(--sp-space-2); }
 .so-waypoint-map-centre { color: var(--sp-muted); font-size: .72rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .so-waypoint-map-editor .so-route-map { margin-top: var(--sp-space-2); margin-bottom: 0; }
+.so-waypoint-map-editor .so-route-map-camera { pointer-events: none; }
+.so-waypoint-map-editor .so-route-map-svg:has(.so-waypoint-map-surface) { touch-action: none; }
 .so-waypoint-map-surface { fill: transparent; cursor: crosshair; touch-action: none; }
 .so-waypoint-map-surface:focus { outline: none; }
 .so-waypoint-map-surface:focus-visible { stroke: var(--sp-focus); stroke-width: 4px; }
@@ -53,3 +55,6 @@
   .so-waypoint-map-toolbar > .sp-button { flex: 1 1 145px; }
   .so-waypoint-map-centre { flex-basis: 100%; }
 }
+
+.so-waypoint-map-menu-details { max-width: min(260px, calc(100vw - 48px)); padding: var(--sp-space-2); color: var(--sp-text); font-size: .75rem; overflow-wrap: anywhere; }
+.so-waypoint-map-menu-details p { max-height: 7rem; overflow: auto; margin: var(--sp-space-1) 0 0; font-size: inherit; white-space: pre-wrap; }

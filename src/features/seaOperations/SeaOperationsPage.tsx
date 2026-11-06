@@ -41,7 +41,7 @@ import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRe
 import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
-import { copyProjectLocationToSeaOperation } from './seaOperationProjectLocation';
+import { copyProjectLocationToSeaOperation, seaOperationPointPresentation } from './seaOperationProjectLocation';
 import { ProjectLocationOverlayFields } from '../projects/ProjectLocationOverlayFields';
 import type { ProjectLocationOverlay } from '../projects/projectLocation';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
@@ -165,6 +165,7 @@ export function SeaOperationsPage() {
   const [projectPortsContext, setProjectPortsContext] = useState<ProjectPortsContext | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [draft, setDraft] = useState<SeaOperationPayload>(newSeaOperation);
+  const { points: mapIsolatedPoints, projectIcons } = useMemo(() => seaOperationPointPresentation(draft, record), [draft, record]);
   const latestDraft = useRef(draft);
   const [editing, setEditing] = useState(false);
   const [planningDate, setPlanningDate] = useState(seaOperationToday);
@@ -1042,7 +1043,7 @@ export function SeaOperationsPage() {
               >
                 {waypointImport => step === 2 && <SeaOperationWaypointMapEditor
                   waypoints={draft.waypoints}
-                  isolatedPoints={draft.locationOverlay?.points}
+                  isolatedPoints={mapIsolatedPoints}
                   zones={draft.locationOverlay?.zones}
                   onMoveIsolatedPoint={moveIsolatedPoint}
                   onDeleteIsolatedPoint={deleteIsolatedPoint}
@@ -1062,10 +1063,10 @@ export function SeaOperationsPage() {
                   waypointImport={waypointImport}
                 />}
               </SeaOperationWaypointImportPanel>
-            : step === 2 && <SeaOperationRouteMap allowNavigationCategories waypoints={draft.waypoints} isolatedPoints={draft.locationOverlay?.points} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
+            : step === 2 && <SeaOperationRouteMap allowNavigationCategories inspectPoints waypoints={draft.waypoints} isolatedPoints={mapIsolatedPoints} zones={draft.locationOverlay?.zones} viewport={draft.mapViewport} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
           <Field label="Numéro de la ou des cartes marines"><input value={draft.charts} onChange={(event) => update({ charts: event.target.value })} /></Field>
           {draft.locationOverlay && <ProjectLocationOverlayFields value={draft.locationOverlay} disabled={busy || exporting || signed || !editable}
-            vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId}
+            vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId} projectIcons={projectIcons}
             onChange={value => { if (canEditMap()) update({ locationOverlay: value }); }} />}
           <h3>Points de passage</h3>
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>

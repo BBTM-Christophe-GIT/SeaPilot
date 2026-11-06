@@ -59,6 +59,13 @@ insert into ports_data values('base',jsonb_build_object('version',1,'project','s
 create function pg_temp.data(text) returns jsonb language sql stable as $$select payload from ports_data where key=$1$$;
 create function pg_temp.record_id(text) returns uuid language sql stable as $$select (pg_temp.data($1)->>'id')::uuid$$;
 create function pg_temp.baseline(text,text,text) returns jsonb language sql immutable as $$select jsonb_build_object('projectId',$1,'departurePort',$2,'arrivalPort',$3)$$;
+create function pg_temp.isolated_point(p_id text,p_latitude text,p_longitude text,p_icon text default null) returns jsonb language sql immutable as $$
+  select jsonb_strip_nulls(jsonb_build_object('id',p_id,'number',p_id,'descriptionVhf','Fixture','latitude',p_latitude,'longitude',p_longitude,
+    'ukc','','eta','','denseTraffic',false,'isolatedPointIcon',p_icon))
+$$;
+update ports_data set payload=payload||jsonb_build_object('locationOverlay',jsonb_build_object('version',1,'zones','[]'::jsonb,
+  'points',jsonb_build_array(pg_temp.isolated_point('copied','49.7','-1.6'),pg_temp.isolated_point('reset','50','-1.7','anchor'),
+    pg_temp.isolated_point('ambiguous','51','-1.8'),pg_temp.isolated_point('local','52','-1.9','mooring')))) where key='base';
 -- Narrow postgres-owned assertions can inspect only these synthetic projects.
 create function pg_temp.project(text) returns jsonb language sql stable security definer set search_path='' as $$
   select to_jsonb(project)-'source_payload' from public.projects project where project.id=(select value::bigint from pg_temp.ports_refs where key='project-'||$1)$$;
@@ -72,6 +79,7 @@ select ok(not has_function_privilege('anon','public.sea_operation_save_with_proj
 select ok(not has_function_privilege('anon','sea_operation_private.save_with_project_ports(uuid,integer,jsonb,jsonb)','EXECUTE'),'anonymous cannot call private writer');
 select ok(not has_table_privilege('authenticated','public.projects','UPDATE'),'direct project writes remain revoked');
 select ok(not has_function_privilege('authenticated','sea_operation_private.save_core(uuid,integer,jsonb)','EXECUTE'),'unguarded core remains private');
+select ok(not has_function_privilege('authenticated','sea_operation_private.match_project_point_icons(jsonb,jsonb)','EXECUTE'),'isolated project icon matcher is private');
 
 set local role authenticated;
 select pg_temp.actor(4);
@@ -141,6 +149,27 @@ select is(public.sea_operation_detail(pg_temp.record_id('record'))->'project_por
 select throws_ok($$select public.sea_operation_save_with_project_ports(pg_temp.record_id('record'),7,
   jsonb_set(pg_temp.data('record')->'draft','{vessel,departurePort}','"Lorient"'),pg_temp.baseline(pg_temp.ref('project-1'),'Brest','Nantes'))$$,'42501',null,'signed operation cannot synchronize a different project port');
 select is(pg_temp.project('1')->>'delivery_port','Brest','signature immutability also protects project against forged edit');
+
+-- The live project can add or reset map symbols after a declaration is signed.
+reset role;
+update public.projects set location_plan=jsonb_build_object('version',1,'etd','','charts','','includeInPdf',false,
+  'waypoints','[]'::jsonb,'zones','[]'::jsonb,'points',jsonb_build_array(
+    pg_temp.isolated_point('project-copy','49° 42.000′ N','001° 36.000′ W','buoy'),
+    pg_temp.isolated_point('project-reset','50','-1.7'),
+    pg_temp.isolated_point('project-ambiguous-a','51','-1.8','anchor'),pg_temp.isolated_point('project-ambiguous-b','51','-1.8','pin'),
+    pg_temp.isolated_point('project-only','53','-1.9','platform')))
+  where id=pg_temp.ref('project-1')::bigint;
+set local role authenticated;
+select is(public.sea_operation_detail(pg_temp.record_id('record'))->'project_point_icons','{"copied":"buoy","reset":null}'::jsonb,
+  'Captain reads only unambiguous icon matches with equivalent coordinates');
+select is(public.sea_operation_detail(pg_temp.record_id('record'))->'draft',pg_temp.data('record')->'draft',
+  'signed declaration payload keeps the original icons and geometry');
+select pg_temp.actor(4);
+select is(public.sea_operation_detail(pg_temp.record_id('record'))->'project_point_icons','{"copied":"buoy","reset":null}'::jsonb,
+  'Marin reads scoped icon metadata for the same signed operation');
+select pg_temp.actor(6);
+select throws_ok($$select public.sea_operation_detail(pg_temp.record_id('record'))$$,'42501',null,
+  'foreign company cannot read icon metadata for a known operation');
 
 -- Management profiles retain their ordinary SeaOps authority, without a new
 -- generic Projects mutation permission being granted to any operational role.
