@@ -1,5 +1,3 @@
-export const PROJECT_FUEL_PRODUCT = 'Zaphir TAXABLE - GASOIL Pêche UN1202 carburant diesel, 3, GE III, (D/E)';
-
 // IMO MEPC.346(78) diesel/gas oil factor, with a nominal density of 0.85 kg/L.
 export const PROJECT_FUEL_COMBUSTION_CO2_KG_PER_LITER = 3.206 * 0.85;
 
@@ -17,9 +15,14 @@ export interface ProjectFuelPrice {
   source: string;
 }
 
+export interface ProjectVesselFuelPrice extends ProjectFuelPrice {
+  vesselId: number;
+}
+
 export interface ProjectFuelReference {
   rates: readonly ProjectVesselFuelRate[];
   price: ProjectFuelPrice | null;
+  vesselPrices?: readonly ProjectVesselFuelPrice[];
 }
 
 export function projectFuelCurrentDate(now = new Date()): string {
@@ -36,6 +39,12 @@ export function isProjectFuelPrice(price: ProjectFuelPrice): boolean {
     && price.source.trim().length > 0 && price.source.trim().length <= 160;
 }
 
+export function projectFuelPriceForVessel(reference: ProjectFuelReference, vesselId?: number | null): ProjectFuelPrice | null {
+  const vesselPrice = reference.vesselPrices?.find(price => price.vesselId === vesselId);
+  if (vesselPrice && isProjectFuelPrice(vesselPrice)) return vesselPrice;
+  return reference.price && isProjectFuelPrice(reference.price) ? reference.price : null;
+}
+
 export function estimateProjectFuel(reference: ProjectFuelReference | undefined, vesselId: number | undefined | null,
   distanceNm: number | null, towing = false) {
   if (!reference || !vesselId || distanceNm === null || !Number.isFinite(distanceNm) || distanceNm <= 0) return null;
@@ -46,7 +55,7 @@ export function estimateProjectFuel(reference: ProjectFuelReference | undefined,
 
   const litersPerNm = rate.fuelLiters / rate.distanceNm;
   const fuelLiters = distanceNm * litersPerNm;
-  const price = reference.price && isProjectFuelPrice(reference.price) ? reference.price : null;
+  const price = projectFuelPriceForVessel(reference, vesselId);
   return {
     fuelLiters,
     litersPerNm,

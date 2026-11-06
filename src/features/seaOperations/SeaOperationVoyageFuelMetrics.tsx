@@ -21,8 +21,8 @@ export function renderSeaOperationVoyageFuelDetails(consumption: SeaOperationCon
     : rate !== null && distanceNm !== null && distanceNm > 0 ? rate * distanceNm : null;
   const unitPrice = reference.pricePerLiter;
   const cost = fuel !== null && unitPrice !== null ? fuel * unitPrice : null;
-  const priceTitle = unitPrice === null ? 'Prix du Zaphir TAXABLE indisponible'
-    : `Dernier prix du Zaphir TAXABLE · ${formatProjectFuelPrice(unitPrice)}`;
+  const priceTitle = unitPrice === null ? 'Prix du fuel indisponible'
+    : `Dernier prix du fuel · ${formatProjectFuelPrice(unitPrice)}`;
   const co2 = fuel === null ? null : fuel * PROJECT_FUEL_COMBUSTION_CO2_KG_PER_LITER;
   const average = actual
     ? record.litersPerNm !== null ? `${rateFormat.format(record.litersPerNm)} L/NM`

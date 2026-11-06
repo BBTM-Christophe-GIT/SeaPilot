@@ -4,7 +4,7 @@ import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
 import { ProjectDetailMap } from './ProjectDetailMap';
 import { ProjectFuelPriceControl } from './ProjectFuelPriceControl';
-import type { ProjectFuelPrice, ProjectFuelReference } from './projectFuelEstimate';
+import { projectFuelPriceForVessel, type ProjectFuelPrice, type ProjectFuelReference } from './projectFuelEstimate';
 import { saveProjectFuelPrice } from './projectFuelQueries';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
@@ -655,7 +655,7 @@ function ProjectDetail({
   mapSaving: boolean;
   mapSessionKey: string;
   fuelReference?: ProjectFuelReference;
-  onSaveFuelPrice: (price: ProjectFuelPrice) => Promise<void>;
+  onSaveFuelPrice: (price: ProjectFuelPrice, vesselId?: number | null) => Promise<void>;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
   towedAsset?: ProjectTowedAssetRecord;
@@ -758,8 +758,9 @@ function ProjectDetail({
       {activeTab === 'map' ? <ProjectDetailMap key={mapSessionKey} project={project} canManage={isManager && !project.archivedAt}
         disabled={mapSaving || changingProjectState} onSave={onSaveMap} onDirtyChange={onMapDirtyChange}
         maxSpeedKnots={vessels.find(vessel => vessel.id === project.primaryVesselId)?.maxSpeedKnots} fuelReference={fuelReference}
-        fuelPriceControl={isManager && fuelReference ? <ProjectFuelPriceControl price={fuelReference.price}
-          disabled={mapSaving || changingProjectState} onSave={onSaveFuelPrice} /> : undefined} /> : null}
+        fuelPriceControl={isManager && fuelReference ? <ProjectFuelPriceControl price={projectFuelPriceForVessel(fuelReference, project.primaryVesselId)}
+          vesselName={project.primaryVesselId ? project.primaryVesselName || 'Navire du projet' : undefined}
+          disabled={mapSaving || changingProjectState} onSave={price => onSaveFuelPrice(price, project.primaryVesselId)} /> : undefined} /> : null}
       {activeTab === 'offer-contract' ? (
       <section aria-label="Offre et contrat" className="project-detail-section project-offer-contract-panel">
         <div className="project-context-heading">
@@ -1251,15 +1252,23 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const fuelReference = mapDataContext?.client === effectiveClient && mapDataContext.userId === effectiveUserId
     ? projectsData.fuelReference : undefined;
 
-  async function updateFuelPrice(price: ProjectFuelPrice) {
+  async function updateFuelPrice(price: ProjectFuelPrice, vesselId?: number | null) {
     const account = mapAccount.current;
     if (!isManager || !fuelReference || account.client !== effectiveClient) throw new Error('Le tarif ne peut pas être modifié.');
-    const saved = await saveProjectFuelPrice(effectiveClient, price);
+    const saved = await saveProjectFuelPrice(effectiveClient, price, vesselId);
     if (mapAccount.current !== account) return;
     setProjectsData(current => {
       const reference = current.fuelReference;
-      if (!reference || (reference.price && reference.price.effectiveOn > saved.effectiveOn)) return current;
-      return { ...current, fuelReference: { ...reference, price: saved } };
+      if (!reference) return current;
+      if (vesselId == null) {
+        if (reference.price && reference.price.effectiveOn > saved.effectiveOn) return current;
+        return { ...current, fuelReference: { ...reference, price: saved } };
+      }
+      const prices = reference.vesselPrices ?? [];
+      if (prices.some(price => price.vesselId === vesselId && price.effectiveOn > saved.effectiveOn)) return current;
+      return { ...current, fuelReference: { ...reference, vesselPrices: [
+        ...prices.filter(price => price.vesselId !== vesselId), { ...saved, vesselId },
+      ] } };
     });
   }
 

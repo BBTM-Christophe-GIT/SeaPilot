@@ -4,7 +4,7 @@ Dans le registre **Opération en mer**, **Conso** ouvre le relevé de la fiche
 signée. Après une navigation terminée, le capitaine signataire et les profils
 bureau autorisés peuvent renseigner les heures et minutes, la vitesse moyenne
 en nœuds, la jauge de départ après ravitaillement, la jauge d’arrivée, le
-ravitaillement avant départ et le prix du Zaphir TAXABLE HT en €/L. Le relevé
+ravitaillement avant départ et le prix du fuel HT en €/L. Le relevé
 est enregistré séparément des informations signées. Les comptes autorisés à
 consulter la fiche accèdent à son récapitulatif.
 
@@ -23,9 +23,10 @@ Une capacité absente ou une conversion incohérente laisse les volumes
 concernés indisponibles. Les valeurs restent estimées à partir de jauges.
 
 Le premier prix saisi dans un relevé ou sa correction actualise le prix
-de référence du Zaphir TAXABLE pour la société à la date de saisie en
-heure de Paris. Les cartes Projet et Opération en mer recalculent leurs
-estimations avec ce dernier prix applicable. Une correction de durée,
+du fuel pour le navire à la date de saisie en heure de Paris. Les cartes
+Projet et Opération en mer utilisent le dernier prix applicable du navire.
+Le tarif de la flotte sert de référence pour les navires sans prix propre.
+Une correction de durée,
 de vitesse ou de jauge conserve le tarif de référence si le prix du
 relevé est inchangé.
 

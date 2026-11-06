@@ -32,6 +32,22 @@ describe('Project voyage fuel estimates', () => {
     expect(estimateProjectFuel(reference, 2, 0)).toBeNull();
   });
 
+  it('uses the applicable vessel price before falling back to the fleet reference', () => {
+    const rate = reference.rates[0];
+    const fleetReference = {
+      ...reference,
+      rates: [rate, { ...rate, vesselId: 3 }, { ...rate, vesselId: 4 }],
+      vesselPrices: [
+        { vesselId: 2, eurosPerLiter: 1.254, effectiveOn: '2026-10-31', source: 'Classeur Rozel' },
+        { vesselId: 3, eurosPerLiter: 1.115, effectiveOn: '2026-09-22', source: 'Classeur Suroît' },
+      ],
+      price: { eurosPerLiter: 1.4, effectiveOn: '2026-11-01', source: 'Tarif flotte' },
+    };
+    expect([2, 3, 4].map(id => estimateProjectFuel(fleetReference, id, 50)?.price?.eurosPerLiter)).toEqual([1.254, 1.115, 1.4]);
+    const suroit = estimateProjectFuel(fleetReference, 3, 50);
+    expect(suroit?.costEuros).toBeCloseTo((suroit?.fuelLiters ?? 0) * 1.115);
+  });
+
   it('switches units at 1,000 and selects dates in Paris', () => {
     expect(formatProjectFuelVolume(999)).toBe('999 L');
     expect(formatProjectFuelVolume(1000)).toBe('1 m³');
