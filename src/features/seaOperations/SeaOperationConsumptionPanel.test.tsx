@@ -61,7 +61,7 @@ describe('Conso after signed navigation', () => {
     expect(save()).toBeDisabled();
     fireEvent.click(confirmation());
     fireEvent.click(save());
-    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledExactlyOnceWith({ ...initial, record: saved }));
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: operation.id, p_expected_version: null, p_inputs: values });
     expect(operation.version).toBe(3);
     expect(operation.canEdit).toBe(false);

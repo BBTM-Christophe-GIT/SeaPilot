@@ -68,7 +68,7 @@ describe('Sea Operation register Carte/Documents pane', () => {
     expect(screen.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument();
   });
 
-  it('loads map fuel references for drafts and shares the signed operation’s consumption with its recap', async () => {
+  it('loads map fuel references for drafts and shares newly saved consumption with the map and recap immediately', async () => {
     const detail: SeaOperationConsumption = {
       operationId: 'A', canEdit: false, record: null,
       calibration: { kind: 'nominal', defaultGaugeUnit: 'percent', nominalCapacityLiters: 10_000 },
@@ -77,16 +77,30 @@ describe('Sea Operation register Carte/Documents pane', () => {
     const saved = { ...detail, record: { durationMinutes: 60, averageSpeedKnots: 10, gaugeUnit: 'percent', departureGauge: 80, arrivalGauge: 70,
       refuelLiters: null, pricePerLiter: 1.1, actualArrival: null, completed: true, distanceNm: 10, departureLiters: 8000, arrivalLiters: 7000,
       consumedLiters: 1000, litersPerHour: 1000, litersPerNm: 100, costEuros: 1100, version: 1, includedInReference: false, updatedAt: '2026-11-06T10:00:00Z' } } satisfies SeaOperationConsumption;
-    const rpc = vi.fn().mockResolvedValueOnce({ data: detail, error: null }).mockResolvedValueOnce({ data: saved, error: null });
+    let finishRefresh!: (response: { data: SeaOperationConsumption; error: null }) => void;
+    const refresh = new Promise<{ data: SeaOperationConsumption; error: null }>(resolve => { finishRefresh = resolve; });
+    const rpc = vi.fn().mockResolvedValueOnce({ data: detail, error: null }).mockReturnValueOnce(refresh).mockRejectedValueOnce(new Error('Connexion interrompue'));
     const fixtureClient = { rpc } as unknown as SupabaseClient;
     const view = render(<SeaOperationRegisterPane {...props} client={fixtureClient} />);
     await waitFor(() => expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: detail })));
     expect(screen.queryByRole('region', { name: 'Consommation de l’opération' })).not.toBeInTheDocument();
+    const documentsTab = screen.getByRole('tab', { name: /^Documents/ });
+    fireEvent.click(documentsTab);
     const signed = { ...props.record, status: 'signed' as const, draft: { ...props.record.draft, decision: 'GO' as const } };
-    view.rerender(<SeaOperationRegisterPane {...props} client={fixtureClient} record={signed} consumptionRefresh={1} />);
-    const summary = await screen.findByRole('region', { name: 'Consommation de l’opération' });
-    await waitFor(() => expect(summary).toHaveTextContent('100 L/NM'));
+    view.rerender(<SeaOperationRegisterPane {...props} client={fixtureClient} record={signed} consumptionRefresh={1} savedConsumption={saved} />);
+    expect(screen.getByRole('tab', { name: /^Carte$/ })).toHaveAttribute('aria-selected', 'true');
+    const summary = screen.getByRole('region', { name: 'Consommation de l’opération' });
+    expect(summary).toHaveTextContent('100 L/NM');
     expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: saved }));
-    expect(rpc.mock.calls).toEqual(Array(2).fill(['sea_operation_consumption', { p_id: 'A' }]));
+    fireEvent.click(documentsTab);
+    expect(documentsTab).toHaveAttribute('aria-selected', 'true');
+    await act(async () => finishRefresh({ data: detail, error: null }));
+    expect(summary).toHaveTextContent('100 L/NM');
+    expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: saved }));
+    await act(async () => view.rerender(<SeaOperationRegisterPane {...props} client={fixtureClient} record={signed} consumptionRefresh={2} savedConsumption={saved} />));
+    expect(summary).toHaveTextContent('100 L/NM');
+    expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: saved }));
+    expect(documentsTab).toHaveAttribute('aria-selected', 'true');
+    expect(rpc.mock.calls).toEqual(Array(3).fill(['sea_operation_consumption', { p_id: 'A' }]));
   });
 });

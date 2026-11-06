@@ -102,21 +102,25 @@ function gaugeUnit(value: unknown): value is SeaOperationGaugeUnit {
 const nullableFields = ['refuelLiters', 'pricePerLiter', 'departureLiters', 'arrivalLiters', 'consumedLiters',
   'litersPerHour', 'litersPerNm', 'costEuros'];
 
+export function isSeaOperationConsumptionRecord(value: unknown): value is SeaOperationConsumptionRecord {
+  const record = object(value);
+  return record !== null && number(record.version) && record.completed === true
+    && typeof record.updatedAt === 'string' && typeof record.includedInReference === 'boolean'
+    && gaugeUnit(record.gaugeUnit) && (record.actualArrival === null || typeof record.actualArrival === 'string')
+    && ['durationMinutes', 'averageSpeedKnots', 'departureGauge', 'arrivalGauge', 'distanceNm'].every(key => number(record[key]))
+    && nullableFields.every(key => nullableNumber(record[key]));
+}
+
 function readConsumption(value: unknown, operationId: string): SeaOperationConsumption {
   const data = object(value);
   const calibration = object(data?.calibration);
-  const record = object(data?.record);
   const reference = object(data?.reference);
   if (!data || data.operationId !== operationId || typeof data.canEdit !== 'boolean' || !calibration
     || !['rozel', 'suroit', 'nominal', 'unavailable'].includes(String(calibration.kind))
     || !gaugeUnit(calibration.defaultGaugeUnit) || !nullableNumber(calibration.nominalCapacityLiters)
     || !reference || !['vesselId', 'transitLitersPerNm', 'towageLitersPerNm', 'pricePerLiter'].every(key => nullableNumber(reference[key]))
     || (reference.priceDate !== null && typeof reference.priceDate !== 'string')
-    || (data.record !== null && (!record || !number(record.version) || record.completed !== true
-      || typeof record.updatedAt !== 'string' || typeof record.includedInReference !== 'boolean'
-      || !gaugeUnit(record.gaugeUnit) || (record.actualArrival !== null && typeof record.actualArrival !== 'string')
-      || !['durationMinutes', 'averageSpeedKnots', 'departureGauge', 'arrivalGauge', 'distanceNm'].every(key => number(record[key]))
-      || !nullableFields.every(key => nullableNumber(record[key]))))) {
+    || (data.record !== null && !isSeaOperationConsumptionRecord(data.record))) {
     throw new Error('Le relevé de consommation reçu est invalide.');
   }
   return data as unknown as SeaOperationConsumption;

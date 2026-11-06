@@ -10,7 +10,8 @@ export function hasSeaOperationConsumption(record: SeaOperationRecord) {
   return record.status === 'signed' && record.draft.decision === 'GO';
 }
 
-export function useSeaOperationConsumptionContext(client: SupabaseClient, operationId?: string, refresh?: number, accessKey?: string) {
+export function useSeaOperationConsumptionContext(client: SupabaseClient, operationId?: string, refresh?: number, accessKey?: string,
+  savedConsumption?: SeaOperationConsumption) {
   const [retry, setRetry] = useState(0);
   const request = useMemo(() => ({ client, operationId, refresh, retry, accessKey }), [client, operationId, refresh, retry, accessKey]);
   const [response, setResponse] = useState<{
@@ -24,5 +25,9 @@ export function useSeaOperationConsumptionContext(client: SupabaseClient, operat
     }).catch(reason => { if (active) setResponse({ request, error: consumptionErrorMessage(reason) }); });
     return () => { active = false; };
   }, [request]);
-  return { response: response?.request === request ? response : undefined, reload: () => setRetry(value => value + 1) };
+  const current = response?.request === request ? response : undefined;
+  const saved = savedConsumption?.operationId === operationId ? savedConsumption : undefined;
+  const displayed = saved?.record && (current?.data?.record?.version ?? 0) < saved.record.version
+    ? { data: saved, error: undefined } : current;
+  return { response: displayed, reload: () => setRetry(value => value + 1) };
 }

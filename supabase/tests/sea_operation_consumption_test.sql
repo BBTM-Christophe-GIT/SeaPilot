@@ -4,6 +4,7 @@ select no_plan();
 select ok(not has_table_privilege('authenticated', 'sea_operation_private.consumption', 'SELECT,INSERT,UPDATE,DELETE'),
   'authenticated accounts can only access the annex through scoped RPCs');
 select ok(not has_function_privilege('anon', 'public.sea_operation_consumption(uuid)', 'EXECUTE'), 'anonymous cannot read Conso');
+select ok(not has_function_privilege('anon', 'public.sea_operation_consumption_export(uuid[])', 'EXECUTE'), 'anonymous cannot export Conso');
 select ok(not has_function_privilege('anon', 'public.sea_operation_save_consumption(uuid,integer,jsonb)', 'EXECUTE'), 'anonymous cannot save Conso');
 select ok(not has_table_privilege('anon', 'public.project_fuel_latest_vessel_prices', 'SELECT'), 'anonymous cannot read vessel prices');
 select ok(not has_table_privilege('anon', 'public.project_fuel_latest_fallback_price', 'SELECT'), 'anonymous cannot read the fleet fallback');
@@ -130,6 +131,15 @@ select is((public.sea_operation_consumption(pg_temp.conso_id('base'))->>'canEdit
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'other captain write rejected');
 select pg_temp.conso_actor(5);
 select is((public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{record,version}')::integer, 1, 'real Marin can consult the voyage recap');
+select is(public.sea_operation_consumption_export(array[
+    pg_temp.conso_id('base'), pg_temp.conso_id('draft'), pg_temp.conso_id('base'),
+    pg_temp.conso_id('no_go'), pg_temp.conso_id('native_cm')
+  ]),
+  jsonb_build_array(jsonb_build_object('operationId', pg_temp.conso_id('base'),
+    'record', public.sea_operation_consumption(pg_temp.conso_id('base'))->'record')),
+  'real Marin can export visible recorded readings without duplicates, drafts, NO GO, unrecorded passages or reference prices');
+select throws_ok($$select public.sea_operation_consumption_export(array_fill(pg_temp.conso_id('base'), array[201]))$$,
+  '22023', null, 'export batches are bounded');
 select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,towageLitersPerNm}')::numeric > 0, 'real Marin gets limited forecast for the visible record');
 select is((select count(*)::integer from public.project_fuel_latest_vessel_prices), 0, 'real Marin cannot list company-wide vessel prices');
 select is((select count(*)::integer from public.project_fuel_latest_fallback_price), 0, 'real Marin cannot list the fleet fallback directly');
@@ -139,6 +149,8 @@ select is((select count(*)::integer from public.project_fuel_latest_vessel_price
 select is((select price_eur_per_liter_ht from public.project_fuel_latest_fallback_price), 9.99::numeric,
   'a foreign admin receives only their own company fallback');
 select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('base'))$$, '42501', null, 'foreign admin cannot read recap or forecast');
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('base')]), '[]'::jsonb,
+  'foreign admin cannot export another company’s readings');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'foreign admin cannot write recap or price');
 
 select pg_temp.conso_actor(2);
@@ -211,6 +223,10 @@ set local role authenticated;
 select pg_temp.conso_actor(3);
 select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))->>'canEdit')::boolean, false, 'superseded signed version is read-only');
 select is((public.sea_operation_consumption(pg_temp.conso_id('revision'))#>>'{record,version}')::integer, 1, 'a revised plan retains its measured passage');
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('native_cm'), pg_temp.conso_id('revision')]),
+  jsonb_build_array(jsonb_build_object('operationId', pg_temp.conso_id('revision'),
+    'record', public.sea_operation_consumption(pg_temp.conso_id('revision'))->'record')),
+  'export includes the active signed revision and excludes the superseded plan');
 update conso_fixture set response = public.sea_operation_save_consumption(id, 1,
   pg_temp.conso_input() || '{"gaugeUnit":"cm","departureGauge":208,"arrivalGauge":110,"pricePerLiter":null}') where key = 'revision';
 select is((response#>>'{record,version}')::integer, 2, 'revised plan updates the same annex') from conso_fixture where key = 'revision';
@@ -222,6 +238,8 @@ set local role authenticated;
 select pg_temp.conso_actor(1);
 select lives_ok($$select public.sea_operation_delete(pg_temp.conso_id('revision'), 1)$$, 'admin can remove the current operation');
 select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('revision'))$$, '42501', null, 'removed record cannot expose its annex');
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('revision')]), '[]'::jsonb,
+  'export excludes a removed operation');
 reset role;
 select is((select count(*)::integer from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('native_cm')::text),
   0, 'removing the logical operation withdraws the fuel sample');
