@@ -109,8 +109,41 @@ describe('Conso after signed navigation', () => {
       p_inputs: { ...values, durationMinutes: 60, averageSpeedKnots: 0, refuelLiters: null, pricePerLiter: null } });
     expect(save()).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Recharger le relevé' }));
-    expect(await screen.findByLabelText('Minutes')).toHaveValue(30);
+    const modify = await screen.findByRole('button', { name: 'Modifier le relevé' });
+    fireEvent.click(modify);
+    expect(screen.getByLabelText('Minutes')).toHaveValue(30);
     expect(confirmation()).not.toBeChecked();
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('prefills a completed GPS trace and shows the saved mission dashboard', async () => {
+    const rpc = vi.fn(async (name: string, args: { p_inputs: SeaOperationConsumptionInputs }) => ({
+      data: name === 'sea_operation_consumption' ? initial : {
+        ...initial, record: { ...saved, ...args.p_inputs, ...calculateSeaOperationConsumption(args.p_inputs, initial.calibration) },
+      }, error: null,
+    }));
+    show(rpc);
+    await screen.findByLabelText('Heures');
+    const xml = '<gpx version="1.1"><trk><trkseg>'
+      + '<trkpt lat="0" lon="0"><time>2026-09-23T08:00:00Z</time></trkpt>'
+      + '<trkpt lat="0" lon="0.001"><time>2026-09-23T08:05:00Z</time></trkpt>'
+      + '</trkseg></trk></gpx>';
+    const file = new File([xml], 'mission.gpx');
+    Object.defineProperty(file, 'text', { value: async () => xml });
+    fireEvent.change(screen.getByLabelText('Importer une trace GPX'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByLabelText('Minutes')).toHaveValue(5));
+    expect(screen.getByLabelText('Vitesse moyenne (nœuds)')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Arrivée réelle (heure de Paris, facultative)')).toHaveValue('2026-09-23T10:05');
+    expect(screen.getByLabelText('Jauge au départ après avitaillement (%)')).toHaveValue(null);
+    enter('Jauge au départ après avitaillement (%)', '80');
+    enter('Jauge à l’arrivée (%)', '60');
+    fireEvent.click(confirmation());
+    fireEvent.click(save());
+    expect(await screen.findByRole('heading', { name: 'Bilan de consommation' })).toBeVisible();
+    expect(screen.getByRole('img', { name: /Profil de vitesse GPS/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Modifier le relevé' })).toBeVisible();
+    expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_consumption', expect.objectContaining({
+      p_inputs: expect.objectContaining({ trace: expect.objectContaining({ pointCount: 2, durationMinutes: 5 }) }),
+    }));
   });
 });

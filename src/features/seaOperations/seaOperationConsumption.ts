@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isSeaOperationConsumptionTrace, type SeaOperationConsumptionTrace } from './seaOperationConsumptionTrace';
 
 export type SeaOperationGaugeUnit = 'percent' | 'cm';
 
@@ -12,6 +13,7 @@ export interface SeaOperationConsumptionInputs {
   pricePerLiter: number | null;
   actualArrival: string | null;
   completed: true;
+  trace?: SeaOperationConsumptionTrace | null;
 }
 
 export interface SeaOperationConsumptionCalibration {
@@ -67,7 +69,7 @@ function gaugeVolume(gauge: number, unit: SeaOperationGaugeUnit, calibration: Se
 export function calculateSeaOperationConsumption(inputs: SeaOperationConsumptionInputs,
   calibration: SeaOperationConsumptionCalibration): SeaOperationConsumptionValues {
   const hours = inputs.durationMinutes / 60;
-  const distanceNm = hours * inputs.averageSpeedKnots;
+  const distanceNm = inputs.trace?.distanceNm ?? hours * inputs.averageSpeedKnots;
   const departureLiters = gaugeVolume(inputs.departureGauge, inputs.gaugeUnit, calibration);
   const arrivalLiters = gaugeVolume(inputs.arrivalGauge, inputs.gaugeUnit, calibration);
   const consumedLiters = departureLiters === null || arrivalLiters === null || departureLiters < arrivalLiters
@@ -102,13 +104,19 @@ function gaugeUnit(value: unknown): value is SeaOperationGaugeUnit {
 const nullableFields = ['refuelLiters', 'pricePerLiter', 'departureLiters', 'arrivalLiters', 'consumedLiters',
   'litersPerHour', 'litersPerNm', 'costEuros'];
 
-export function isSeaOperationConsumptionRecord(value: unknown): value is SeaOperationConsumptionRecord {
+export function isSeaOperationConsumptionRecordFields(value: unknown): value is Omit<SeaOperationConsumptionRecord, 'trace'> {
   const record = object(value);
   return record !== null && number(record.version) && record.completed === true
     && typeof record.updatedAt === 'string' && typeof record.includedInReference === 'boolean'
     && gaugeUnit(record.gaugeUnit) && (record.actualArrival === null || typeof record.actualArrival === 'string')
     && ['durationMinutes', 'averageSpeedKnots', 'departureGauge', 'arrivalGauge', 'distanceNm'].every(key => number(record[key]))
     && nullableFields.every(key => nullableNumber(record[key]));
+}
+
+export function isSeaOperationConsumptionRecord(value: unknown): value is SeaOperationConsumptionRecord {
+  if (!isSeaOperationConsumptionRecordFields(value)) return false;
+  const trace = 'trace' in value ? value.trace : undefined;
+  return trace == null || isSeaOperationConsumptionTrace(trace);
 }
 
 function readConsumption(value: unknown, operationId: string): SeaOperationConsumption {

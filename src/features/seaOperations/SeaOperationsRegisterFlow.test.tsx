@@ -215,6 +215,9 @@ describe('Operation consumption from the register', () => {
     fireEvent.click(form.getByRole('checkbox', { name: 'Je confirme que la navigation est terminée.' }));
     fireEvent.click(form.getByRole('button', { name: 'Enregistrer la consommation' }));
 
+    const dashboard = within(await screen.findByRole('dialog', { name: 'Bilan de consommation' }));
+    expect(dashboard.getByRole('region', { name: 'Soutes au départ et à l’arrivée' })).toBeVisible();
+    fireEvent.click(dashboard.getByRole('button', { name: 'Fermer le bilan' }));
     const metrics = await screen.findByRole('region', { name: 'Carburant du relevé Conso' });
     expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveAttribute('aria-pressed', 'true');
     expect(within(metrics).getByText('1 m³')).toBeVisible();
@@ -234,7 +237,14 @@ describe('Operation consumption from the register', () => {
     const withoutReading = signedGo('C', 'Mission sans relevé');
     const noGo = signedGo('D', 'Mission refusée');
     noGo.draft.decision = 'NO_GO';
-    const rpc = vi.fn().mockResolvedValue({ data: [{ operationId: 'A', record: savedReading }], error: null });
+    const history = { rozel: [], suroit: [], rozelGauge: [] };
+    const trace = { startedAt: '2026-11-05T03:15:00.000Z', endedAt: '2026-11-05T05:15:00.000Z',
+      durationMinutes: 120, distanceNm: 20, averageSpeedKnots: 10, pointCount: 4,
+      segmentCount: 1, gapCount: 0, reorderedPointCount: 0, excludedPointCount: 0 };
+    const reading = { ...savedReading, trace };
+    const rpc = vi.fn().mockImplementation(async name => ({
+      data: name === 'sea_operation_consumption_history' ? history : [{ operationId: 'A', record: reading }], error: null,
+    }));
     const blob = new Blob(['xlsx']);
     buildWorkbook.mockResolvedValue(blob);
     const createObjectURL = vi.fn(() => 'blob:conso-test'), revokeObjectURL = vi.fn();
@@ -245,15 +255,33 @@ describe('Operation consumption from the register', () => {
     fireEvent.click(exportButton());
 
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
-    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_consumption_export', { p_ids: ['A', 'C'] });
-    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([{ operation: selected, consumption: savedReading }]);
+    expect(rpc).toHaveBeenCalledWith('sea_operation_consumption_export', { p_ids: ['A', 'C'] });
+    expect(rpc).toHaveBeenCalledWith('sea_operation_consumption_history');
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([{ operation: selected, consumption: reading }], history);
     expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
     expect(download.mock.contexts[0]).toHaveAttribute('download', expect.stringMatching(/^SeaPilot - Consommations - \d{4}-\d{2}-\d{2}\.xlsx$/));
     await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:conso-test'), { timeout: 1500 });
   });
 
+  it('downloads historical readings when the register has no current operation', async () => {
+    const history = { rozel: [], suroit: [], rozelGauge: [{ sourceRow: 2, cells: [0.1, 459.75] }] };
+    const rpc = vi.fn().mockResolvedValue({ data: history, error: null });
+    const blob = new Blob(['xlsx']);
+    buildWorkbook.mockResolvedValue(blob);
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:history'), revokeObjectURL: vi.fn() }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    mount(['capitaine'], [], rpc);
+    expect(await screen.findByText('Préparez votre première opération en mer')).toBeVisible();
+    expect(exportButton()).toBeEnabled();
+    fireEvent.click(exportButton());
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_consumption_history');
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([], history);
+  });
+
   it('explains that no reading is available when the filtered operation has no saved Conso', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    const rpc = vi.fn().mockImplementation(async name => ({ data: name === 'sea_operation_consumption_history'
+      ? { rozel: [], suroit: [], rozelGauge: [] } : [], error: null }));
     mount(['capitaine'], [signedGo('A')], rpc);
     await screen.findByRole('button', { name: /^Projet A/ });
     fireEvent.click(exportButton());

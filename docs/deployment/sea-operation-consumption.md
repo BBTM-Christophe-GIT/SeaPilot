@@ -8,17 +8,32 @@ ravitaillement avant départ et le prix du fuel HT en €/L. Le relevé
 est enregistré séparément des informations signées. Les comptes autorisés à
 consulter la fiche accèdent à son récapitulatif.
 
-Après l’enregistrement, la carte de l’opération reprend immédiatement le
-relevé confirmé par le serveur. Le bouton **Consos Excel** du ruban exporte
-un fichier `.xlsx` avec les relevés enregistrés des opérations correspondant
-aux filtres du registre. Les groupes Voyage, Jauges, Consommation et
-Avitaillement reprennent les données du relevé et les calculs enregistrés.
+La saisie regroupe le **Trajet**, les **Jauges**, puis **Avitaillement et prix**.
+Une trace GPX horodatée peut préremplir la durée, la vitesse moyenne et l’arrivée
+en heure de Paris. Si le fichier contient plusieurs traces, sélectionner celle de
+la mission. Le fichier est lu dans le navigateur. Seuls les indicateurs, les dates
+et le profil de vitesse réduit sont enregistrés. La durée couvre la période
+enregistrée, arrêts compris. Le calcul de distance additionne les segments
+valables et laisse les coupures de plus de cinq minutes hors de la distance.
+Revenir à la saisie manuelle permet d’ajuster les paramètres si la trace ne
+correspond pas à la mission. Les jauges restent saisies à bord.
+
+Après l’enregistrement, la fenêtre **Bilan de consommation** affiche les
+indicateurs, les volumes comparés des soutes et, pour les relevés GPS, le profil
+de vitesse avec ses coupures. La carte reprend le relevé confirmé par le serveur.
+Le bouton **Consos Excel** exporte les relevés correspondant aux filtres du
+registre, avec la provenance de la distance. Les archives Suroît et Rozel
+forment deux onglets distincts des relevés SeaPilot et sont indépendantes des
+filtres. La courbe de jauge du Rozel occupe un onglet séparé. L’archive contient
+854 relevés datés et 11 points de courbe. Les valeurs des classeurs sont
+conservées, y compris leurs anomalies historiques, et les lignes de préparation
+sans date sont écartées.
 
 La soute de départ est estimée à partir de la jauge. La consommation totale
 correspond à l’écart entre les soutes de départ et d’arrivée. Le ravitaillement
 d’avant départ est déjà compris dans la jauge de départ. Les litres par heure
-utilisent la durée saisie. Les litres par mille utilisent la distance déduite
-de la durée et de la vitesse moyenne. Le montant en euros multiplie les litres
+utilisent la durée du relevé. Les litres par mille utilisent la distance de la
+trace ou, en saisie manuelle, le produit de la durée et de la vitesse moyenne. Le montant en euros multiplie les litres
 consommés par le prix du relevé. Un trajet à vitesse nulle conserve les
 litres par heure et laisse le taux par mille indisponible.
 
@@ -54,4 +69,13 @@ documentée, un régime identifié et des dates qui évitent le double comptage
 avec les classeurs et les relevés existants. Les autres relevés restent
 consultables dans l’opération.
 
-Appliquer `20261106092442_sea_operation_consumption.sql` avant le frontend.
+Pour la version 3.86.0, appliquer les migrations
+`20261106210524_sea_operation_consumption_gps_trace.sql` et
+`20261106210623_sea_operation_consumption_history.sql` avant le frontend. Charger
+l’archive de la société en base depuis les fichiers source, hors du dépôt.
+Préparer le JSON dans un emplacement privé avec
+`python scripts/prepare-sea-operation-consumption-history.py --suroit <classeur-suroit.xlsx> --rozel <classeur-rozel.xlsx> --output <archive-privee.json>`.
+Le JSON est chargé dans `sea_operation_private.consumption_history`
+pour la société correspondante. Contrôler les trois nombres de lignes avant et
+après chargement. L’archive suit le même droit de consultation que le registre.
+Le chargement est indépendant des relevés signés et des références Projet.
