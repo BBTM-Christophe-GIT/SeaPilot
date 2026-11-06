@@ -264,6 +264,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   return <figure aria-labelledby={titleId} onKeyDown={event => {
     if (event.key !== 'Escape' || !pointDetails || event.defaultPrevented) return;
     event.preventDefault();
+    event.stopPropagation();
     closePointDetails();
   }} className={`so-route-map${compact ? ' is-compact' : ''}${filling ? ' is-filling' : ''}${navigationCategoriesAvailable && showNavigationCategories ? ' has-navigation-categories' : ''}`}>
     <header className="so-route-map-heading"><h3 id={titleId}>Carte du parcours</h3><span>{countLabel}</span>

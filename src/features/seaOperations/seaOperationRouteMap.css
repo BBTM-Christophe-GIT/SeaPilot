@@ -1,6 +1,6 @@
 .so-route-map { min-width: 0; max-width: 100%; margin: var(--sp-space-4) 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); color: var(--sp-text); background: var(--sp-surface); font-family: var(--sp-font); break-inside: avoid; }
-.so-route-map { --so-isolated-point-color: var(--sp-map-isolated-point); }
-.so-route-map.is-compact { --so-isolated-point-color: var(--sp-success); }
+.so-route-map { --so-isolated-point-color: var(--sp-map-isolated-point); --so-isolated-point-label: var(--sp-map-isolated-point-label); }
+.so-route-map.is-compact { --so-isolated-point-color: var(--sp-success); --so-isolated-point-label: var(--sp-success); }
 .so-route-map-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-3); margin-bottom: var(--sp-space-2); }
 .so-route-map .so-route-map-heading h3 { margin: 0; color: var(--sp-heading); font-size: .875rem; font-weight: 700; }
 .so-route-map-heading > span { color: var(--sp-muted); font-size: .72rem; }
@@ -31,7 +31,7 @@
 .so-route-map-isolated-points rect { fill: var(--sp-surface); stroke: var(--so-isolated-point-color); stroke-width: 2px; }
 .so-route-map-isolated-cross { fill: none; stroke: var(--so-isolated-point-color); stroke-width: 1px; pointer-events: none; }
 .so-route-map-isolated-icon { color: var(--so-isolated-point-color); }
-.so-route-map-isolated-ordinal { fill: var(--so-isolated-point-color); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
+.so-route-map-isolated-ordinal { fill: var(--so-isolated-point-label); font-family: var(--sp-font); font-size: 11px; font-weight: 700; }
 .so-route-map-pin { fill: var(--sp-surface); stroke: var(--sp-primary); stroke-width: 2px; }
 .so-route-map-ordinal { fill: var(--sp-primary); font-family: var(--sp-font); font-size: 12px; font-weight: 750; }
 .so-route-map-point.is-start .so-route-map-pin { fill: var(--sp-primary); }

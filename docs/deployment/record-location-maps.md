@@ -9,7 +9,7 @@ zone dans le détail. Au clavier, Entrée ou Espace sélectionne le point et
 Échap ferme le détail. En mode placement, le menu du point affiche aussi ses
 coordonnées et sa description.
 
-Les points isolés sont jaune foncé. Les zones et les points isolés sont
+Les points isolés sont jaune doré. Les zones et les points isolés sont
 légèrement translucides. Les limites des catégories de navigation se
 superposent aux zones. La route reste au premier plan, devant les points
 isolés et les limites de navigation.
