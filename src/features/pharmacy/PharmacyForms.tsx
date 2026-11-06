@@ -5,6 +5,12 @@ import { PharmacyIcon } from './PharmacyIcon';
 import { PHARMACY_MEDICAL_SECTIONS, blankPharmacyItem, parsePharmacyQuantity, pharmacyDotationLabel, pharmacyItemStrength, pharmacyMedicalSection, type PharmacyCategory, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection } from './pharmacyModel';
 import './pharmacyItemForm.css';
 
+const stockUnits = [
+  'unité', 'ampoule', 'boîte', 'comprimé', 'dose', 'flacon', 'gélule', 'patch',
+  'pièce', 'sachet', 'suppositoire', 'tube', 'mL', 'litre',
+];
+const otherStockUnit = '__other__';
+
 export function PharmacyItemForm({ item, medicalDotation, medicalSection, categories, categoryRecords, busy, error, onClose, onSave }: {
   item?: PharmacyItem; medicalDotation?: string | null; medicalSection?: PharmacyMedicalSection; categories: string[]; categoryRecords?: PharmacyCategory[]; busy: boolean; error: string;
   onClose: () => void; onSave: (draft: PharmacyItemDraft) => void;
@@ -15,6 +21,7 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, catego
   const originalDotation = item?.required_stock_quantity?.toString().replace('.', ',') ?? item?.required_quantity ?? '';
   const [onboardQuantity, setOnboardQuantity] = useState(originalOnboard);
   const [dotationQuantity, setDotationQuantity] = useState(originalDotation);
+  const [customStockUnit, setCustomStockUnit] = useState(() => !!item?.stock_unit && !stockUnits.includes(item.stock_unit));
   const stockHelpId = useId();
   const suggestions = categoryRecords ? [...new Set(categoryRecords.filter((category) => draft.medical_section && pharmacyMedicalSection(category.medical_section) === draft.medical_section).map((category) => category.name))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true })) : categories;
   const update = <K extends keyof PharmacyItemDraft>(key: K, value: PharmacyItemDraft[K]) => setDraft((old) => ({ ...old, [key]: value }));
@@ -63,7 +70,24 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, catego
         <p id={stockHelpId} className="pharmacy-item-help pharmacy-item-wide">Saisissez les stocks en unités. Pour deux boîtes de trois comprimés, indiquez 6 à bord et 3 unités par boîte.</p>
       </div>
       <div className="pharmacy-item-fields">
-        <label>Unité de stock<input maxLength={100} placeholder="Ex. comprimé" value={draft.stock_unit ?? ''} onChange={(event) => update('stock_unit', event.target.value)} /></label>
+        <div className="pharmacy-item-unit">
+          <label>
+            Unité de stock
+            <select value={customStockUnit ? otherStockUnit : draft.stock_unit ?? ''} onChange={(event) => {
+              const value = event.target.value;
+              setCustomStockUnit(value === otherStockUnit);
+              update('stock_unit', value && value !== otherStockUnit ? value : null);
+            }}>
+              <option value="">Non renseignée</option>
+              {stockUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+              <option value={otherStockUnit}>Autre unité…</option>
+            </select>
+          </label>
+          {customStockUnit ? <label>
+            Préciser l’unité
+            <input maxLength={100} value={draft.stock_unit ?? ''} onChange={(event) => update('stock_unit', event.target.value)} />
+          </label> : null}
+        </div>
         <label>Unités par boîte<input type="number" min={1} step={1} max={1000000} placeholder="Ex. 3" value={draft.package_size ?? ''} onChange={(event) => update('package_size', event.target.value === '' ? null : event.target.valueAsNumber)} /></label>
         <label>Dosage par unité<input maxLength={100} placeholder="Ex. 300 mg" value={draft.strength ?? ''} onChange={(event) => update('strength', event.target.value)} /></label>
       </div>

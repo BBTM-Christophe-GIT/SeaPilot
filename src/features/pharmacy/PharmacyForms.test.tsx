@@ -61,7 +61,7 @@ describe('PharmacyItemForm medical dotation', () => {
     expect(screen.getByLabelText('Date de péremption')).toHaveValue('2027-06-30');
     fireEvent.change(screen.getByLabelText('Stock à bord'), { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Stock de dotation'), { target: { value: '9' } });
-    fireEvent.change(screen.getByLabelText('Unité de stock'), { target: { value: 'comprimé' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Unité de stock' }), { target: { value: 'comprimé' } });
     fireEvent.change(screen.getByLabelText('Unités par boîte'), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText('Dosage par unité'), { target: { value: '300 mg' } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Hors Dotation' }));
@@ -69,5 +69,14 @@ describe('PharmacyItemForm medical dotation', () => {
     expect(screen.queryByLabelText('Date de péremption')).not.toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Enregistrer' }));
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outside_dotation: true, no_expiry: true, expires_on: null, expiry_precision: 'unknown', expiry_text: '', stock_quantity: 6, required_stock_quantity: 9, stock_unit: 'comprimé', package_size: 3, strength: '300 mg' }));
+  });
+  it('keeps a previously saved stock unit outside the list', () => {
+    const article: PharmacyItem = { ...blankPharmacyItem(), id: 1, company_id: 1, vessel_id: 1, designation: 'Article', medical_section: 'equipment', stock_unit: 'rouleau', revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '' };
+    const onSave = vi.fn();
+    render(<PharmacyItemForm item={article} categories={[]} busy={false} error="" onClose={vi.fn()} onSave={onSave} />);
+    expect(screen.getByRole('option', { name: 'Autre unité…', selected: true })).toBeInTheDocument();
+    expect(screen.getByLabelText('Préciser l’unité')).toHaveValue('rouleau');
+    fireEvent.submit(screen.getByRole('dialog'));
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ stock_unit: 'rouleau' }));
   });
 });
