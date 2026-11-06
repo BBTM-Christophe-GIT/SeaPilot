@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.84.3` reprend automatiquement le dernier prix HT applicable
+saisi dans la flotte pour les navires sans tarif propre. Appliquer
+`20261106115307_fleet_fuel_price_fallback.sql` avant le frontend.
+
 La version `3.84.2` utilise le dernier tarif de fuel HT de chaque navire
 dans les estimations Projet et Opération en mer. Le tarif de la flotte
 sert de référence en l’absence d’un prix propre au navire. Appliquer

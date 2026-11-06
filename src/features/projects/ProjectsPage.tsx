@@ -4,7 +4,7 @@ import { useProjectFavorites } from './useProjectFavorites';
 import { ProjectHistory } from './ProjectHistory';
 import { ProjectDetailMap } from './ProjectDetailMap';
 import { ProjectFuelPriceControl } from './ProjectFuelPriceControl';
-import { projectFuelPriceForVessel, type ProjectFuelPrice, type ProjectFuelReference } from './projectFuelEstimate';
+import { applyProjectFuelPrice, projectFuelPriceForVessel, type ProjectFuelPrice, type ProjectFuelReference } from './projectFuelEstimate';
 import { saveProjectFuelPrice } from './projectFuelQueries';
 import './ProjectWorkspace.css';
 import './ProjectDesign.css';
@@ -1259,16 +1259,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     if (mapAccount.current !== account) return;
     setProjectsData(current => {
       const reference = current.fuelReference;
-      if (!reference) return current;
-      if (vesselId == null) {
-        if (reference.price && reference.price.effectiveOn > saved.effectiveOn) return current;
-        return { ...current, fuelReference: { ...reference, price: saved } };
-      }
-      const prices = reference.vesselPrices ?? [];
-      if (prices.some(price => price.vesselId === vesselId && price.effectiveOn > saved.effectiveOn)) return current;
-      return { ...current, fuelReference: { ...reference, vesselPrices: [
-        ...prices.filter(price => price.vesselId !== vesselId), { ...saved, vesselId },
-      ] } };
+      return reference ? { ...current, fuelReference: applyProjectFuelPrice(reference, saved, vesselId) } : current;
     });
   }
 
