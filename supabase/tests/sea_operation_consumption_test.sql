@@ -5,6 +5,7 @@ select ok(not has_table_privilege('authenticated', 'sea_operation_private.consum
   'authenticated accounts can only access the annex through scoped RPCs');
 select ok(not has_function_privilege('anon', 'public.sea_operation_consumption(uuid)', 'EXECUTE'), 'anonymous cannot read Conso');
 select ok(not has_function_privilege('anon', 'public.sea_operation_save_consumption(uuid,integer,jsonb)', 'EXECUTE'), 'anonymous cannot save Conso');
+select ok(not has_table_privilege('anon', 'public.project_fuel_latest_vessel_prices', 'SELECT'), 'anonymous cannot read vessel prices');
 
 insert into public.companies(code, name) values ('conso-other', 'Conso foreign company');
 insert into auth.users(id, email)
@@ -61,13 +62,33 @@ from public.companies where code = 'bbtm'
 on conflict (company_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht;
 insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
 select id, (now() at time zone 'Europe/Paris')::date, 9.99, 'Foreign fixture quote' from public.companies where code = 'conso-other';
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, (now() at time zone 'Europe/Paris')::date, 1.70, 'Company fallback fixture quote'
+from public.companies where code = 'bbtm'
+on conflict (company_id, price_date) do update
+set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = excluded.source_label;
+insert into public.vessel_fuel_price_observations(company_id, vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select company_id, id, (now() at time zone 'Europe/Paris')::date + 1, 9.99, 'Future vessel fixture quote'
+from public.vessels where id = (select vessel_id from conso_fixture where key = 'base');
 
 set local role authenticated;
 select pg_temp.conso_actor(3);
 select is((public.sea_operation_consumption(pg_temp.conso_id('base'))->>'canEdit')::boolean, true, 'signing captain can enter completed GO consumption');
 select is(public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{calibration,kind}', 'rozel', 'Le Rozel has its own gauge curve');
 select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,transitLitersPerNm}')::numeric > 0, 'saved draft can read its own vessel forecast');
-select isnt(public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,pricePerLiter}', '9.9900', 'forecast excludes future and other-company quotes');
+select is((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,pricePerLiter}')::numeric,
+  1.254::numeric, 'Le Rozel uses its workbook price and excludes future, company and foreign quotes');
+select is(public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,priceDate}',
+  '2026-10-31', 'Le Rozel workbook price retains the historical date');
+select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{reference,pricePerLiter}')::numeric,
+  1.115::numeric, 'Suroit uses its own historical workbook price');
+select is(public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{reference,priceDate}',
+  '2026-09-22', 'Suroit workbook price retains the historical date');
+select is((public.sea_operation_consumption(pg_temp.conso_id('missing_calibration'))#>>'{reference,pricePerLiter}')::numeric,
+  1.70::numeric, 'a vessel without its own price falls back to the applicable company quote');
+select throws_ok($$insert into public.vessel_fuel_price_observations(vessel_id, price_date, price_eur_per_liter_ht, source_label)
+  select vessel_id, current_date, 9.99, 'Unauthorised fixture price' from conso_fixture where key = 'base'$$,
+  '42501', null, 'a captain publishes prices only through the signed operation RPC');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('draft'), null, pg_temp.conso_input())$$, '42501', null, 'draft cannot accept a completed annex');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('no_go'), null, pg_temp.conso_input())$$, '42501', null, 'NO GO cannot accept a completed annex');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input() - 'completed')$$,
@@ -83,6 +104,10 @@ select is((response#>>'{record,litersPerHour}')::numeric, 524.826::numeric, 'lit
 select is((response#>>'{record,litersPerNm}')::numeric, 65.603::numeric, 'litres per mile use actual distance') from conso_fixture where key = 'base';
 select is((response#>>'{record,costEuros}')::numeric, 1312.07::numeric, 'estimated cost multiplies liters consumed by quoted price') from conso_fixture where key = 'base';
 select is((response#>>'{reference,pricePerLiter}')::numeric, 1.25::numeric, 'new Conso price is immediately the current map price') from conso_fixture where key = 'base';
+select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))#>>'{reference,pricePerLiter}')::numeric,
+  1.115::numeric, 'a Rozel Conso entry leaves the Suroit price unchanged');
+select is((public.sea_operation_consumption(pg_temp.conso_id('missing_calibration'))#>>'{reference,pricePerLiter}')::numeric,
+  1.70::numeric, 'a Rozel Conso entry leaves the company fallback unchanged');
 select is((response#>>'{record,includedInReference}')::boolean, true, 'valid new calibrated voyage augments the historical reference') from conso_fixture where key = 'base';
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input())$$,
   '40001', null, 'stale version cannot replace a concurrent edit');
@@ -98,15 +123,22 @@ select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id
 select pg_temp.conso_actor(5);
 select is((public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{record,version}')::integer, 1, 'real Marin can consult the voyage recap');
 select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,towageLitersPerNm}')::numeric > 0, 'real Marin gets limited forecast for the visible record');
+select is((select count(*)::integer from public.project_fuel_latest_vessel_prices), 0, 'real Marin cannot list company-wide vessel prices');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'Marin cannot write recap');
 select pg_temp.conso_actor(6);
+select is((select count(*)::integer from public.project_fuel_latest_vessel_prices), 0, 'a foreign admin cannot list another company’s prices');
 select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('base'))$$, '42501', null, 'foreign admin cannot read recap or forecast');
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'foreign admin cannot write recap or price');
 
 select pg_temp.conso_actor(2);
-insert into public.project_fuel_price_observations(price_date, price_eur_per_liter_ht, source_label)
-values ((now() at time zone 'Europe/Paris')::date, 1.80, 'Later dated quote')
-on conflict (company_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = excluded.source_label;
+insert into public.vessel_fuel_price_observations(vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select vessel_id, (now() at time zone 'Europe/Paris')::date, 1.80, 'Later vessel quote'
+from conso_fixture where key = 'base'
+on conflict (company_id, vessel_id, price_date) do update
+set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = excluded.source_label;
+select is((select price_eur_per_liter_ht from public.project_fuel_latest_vessel_prices
+  where vessel_id = (select vessel_id from conso_fixture where key = 'base')),
+  1.80::numeric, 'Direction can read the latest applicable price per vessel after saving it');
 update conso_fixture set response = public.sea_operation_save_consumption(id, 1, pg_temp.conso_input() || '{"durationMinutes":90}') where key = 'base';
 select is((response#>>'{reference,pricePerLiter}')::numeric, 1.80::numeric, 'duration-only correction does not overwrite a later quote') from conso_fixture where key = 'base';
 select is((response#>>'{record,version}')::integer, 2, 'authorized correction advances annex version') from conso_fixture where key = 'base';

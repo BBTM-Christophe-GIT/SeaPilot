@@ -20,7 +20,7 @@ describe('Sea operation fuel metrics', () => {
     const view = render(renderSeaOperationVoyageFuelDetails(consumption, draft, 50));
     const metrics = within(screen.getByRole('region', { name: 'Estimation du carburant' }));
     expect(metrics.getByText('600 L')).toBeVisible();
-    expect(metrics.getByText('900 € HT')).toBeVisible();
+    expect(metrics.getByText('900 € HT')).toHaveAttribute('title', 'Dernier prix du fuel · 1,50 €/L HT');
     expect(metrics.getByText('1,64 t')).toBeVisible();
     expect(metrics.getByText('12 L/NM')).toBeVisible();
     view.rerender(renderSeaOperationVoyageFuelDetails(consumption, { ...draft, vessel: { ...draft.vessel, id: '4' } }, 50));

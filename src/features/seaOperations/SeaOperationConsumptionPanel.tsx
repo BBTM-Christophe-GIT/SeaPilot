@@ -188,7 +188,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
       <NumberField label={`Jauge à l’arrivée (${unit})`} value={values.arrivalGauge} max={maxGauge} onChange={value => change('arrivalGauge', value)} />
       <div className="so-consumption-wide"><CalibrationNote calibration={context.calibration} unit={values.gaugeUnit} /></div>
       <NumberField label="Avitaillement avant départ (L, facultatif)" max={10000000} value={values.refuelLiters} onChange={value => change('refuelLiters', value)} />
-      <NumberField label="Prix du Zaphir TAXABLE HT en €/L" min={.0001} max={10000} step={.0001} value={values.pricePerLiter} onChange={value => change('pricePerLiter', value)} />
+      <NumberField label="Prix du fuel HT en €/L" min={.0001} max={10000} step={.0001} value={values.pricePerLiter} onChange={value => change('pricePerLiter', value)} />
       <p className="so-help so-consumption-wide">Le dernier prix saisi sert de référence à la carte Projet.</p>
       <label className="so-checkbox so-consumption-wide"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Je confirme que la navigation est terminée.</label>
     </fieldset>

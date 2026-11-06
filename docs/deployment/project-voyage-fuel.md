@@ -15,11 +15,17 @@ trajets distincts. Pour intégrer un DPR à la référence, le volume consommé 
 les milles parcourus doivent couvrir le même trajet. Avec une route complète,
 la carte indique quand la référence du navire et du régime est indisponible.
 
-Le prix de **Zaphir TAXABLE - GASOIL Pêche UN1202** est un prix fournisseur
-en €/L HT, daté et accompagné d’une référence de devis ou de facture.
+Le prix du **fuel** est un prix fournisseur en €/L HT, daté et accompagné
+d’une référence de devis ou de facture. Le produit de référence est le
+Zaphir TAXABLE - GASOIL Pêche UN1202.
 Administration et Direction peuvent le renseigner depuis la carte Projet.
-Le calcul utilise le dernier prix applicable enregistré pour la société et
-indique sa date. L’absence de prix laisse le coût indisponible et permet
+Le tarif est enregistré pour le navire principal du projet. Sans navire
+principal, la saisie fixe le tarif de référence de la flotte. Les cartes et
+le PDF utilisent le prix applicable le plus récent du navire, puis celui
+de la flotte si le navire n’a pas de tarif propre. Les relevés Conso mettent
+à jour le prix de leur navire. Le Rozel démarre à 1,254 €/L HT au 31/10/2026
+et le Suroît à 1,115 €/L HT au 22/09/2026, selon leurs classeurs.
+L’absence de prix laisse le coût indisponible et permet
 toujours le calcul du volume et du CO₂. Aucun flux fournisseur accessible
 ne fournit le prix contractuel exact à ce jour. Le prix au litre du gazole
 routier et les moyennes de gazole pêche ne représentent pas ce tarif.

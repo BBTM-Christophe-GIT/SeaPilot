@@ -1,10 +1,11 @@
 import { Euro } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AppDialog } from '../../components/AppDialog';
-import { isProjectFuelPrice, PROJECT_FUEL_PRODUCT, projectFuelCurrentDate, type ProjectFuelPrice } from './projectFuelEstimate';
+import { isProjectFuelPrice, projectFuelCurrentDate, type ProjectFuelPrice } from './projectFuelEstimate';
 
 interface ProjectFuelPriceControlProps {
   price: ProjectFuelPrice | null;
+  vesselName?: string;
   disabled?: boolean;
   onSave: (price: ProjectFuelPrice) => Promise<void>;
 }
@@ -17,7 +18,7 @@ interface FuelPriceDraft {
 
 const priceInputFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4, useGrouping: false });
 
-export function ProjectFuelPriceControl({ price, disabled = false, onSave }: ProjectFuelPriceControlProps) {
+export function ProjectFuelPriceControl({ price, vesselName, disabled = false, onSave }: ProjectFuelPriceControlProps) {
   const [draft, setDraft] = useState<FuelPriceDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -72,7 +73,8 @@ export function ProjectFuelPriceControl({ price, disabled = false, onSave }: Pro
       <Euro aria-hidden="true" size={16} />{price ? 'Actualiser le prix du fuel' : 'Renseigner le prix du fuel'}
     </button>
     {draft ? <AppDialog title="Prix du fuel" eyebrow="Projet · Estimation du trajet"
-      description={`Saisissez le prix hors TVA du ${PROJECT_FUEL_PRODUCT} indiqué sur un devis ou une facture.`}
+      description={vesselName ? `Saisissez le prix hors TVA du fuel pour ${vesselName}, d’après un devis ou une facture.`
+        : 'Saisissez le prix hors TVA du fuel pour la flotte. Il sert de référence aux navires sans tarif propre.'}
       icon={<Euro aria-hidden="true" size={20} />} size="sm" isBusy={busy} onClose={close}
       onSubmit={event => { event.preventDefault(); void submit(); }}
       footer={<div className="app-dialog__actions">

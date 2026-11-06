@@ -49,7 +49,7 @@ describe('Conso after signed navigation', () => {
     enter('Jauge au départ après avitaillement (%)', '80');
     enter('Jauge à l’arrivée (%)', '60');
     enter('Avitaillement avant départ (L, facultatif)', '500');
-    enter('Prix du Zaphir TAXABLE HT en €/L', '1.2');
+    enter('Prix du fuel HT en €/L', '1.2');
 
     const preview = within(screen.getByRole('region', { name: 'Récapitulatif calculé' }));
     expect(preview.getByText('18 NM')).toBeVisible();

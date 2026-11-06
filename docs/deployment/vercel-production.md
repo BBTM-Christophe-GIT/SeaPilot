@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.84.2` utilise le dernier tarif de fuel HT de chaque navire
+dans les estimations Projet et Opération en mer. Le tarif de la flotte
+sert de référence en l’absence d’un prix propre au navire. Appliquer
+`20261106112744_vessel_fuel_prices.sql` avant le frontend.
+
 La version `3.84.1` recadre les cartes Opération en mer sur les coordonnées
 du parcours, des points isolés et des zones, dès l’ouverture et après chaque
 enregistrement. Les ports éloignés du parcours restent renseignés dans la
