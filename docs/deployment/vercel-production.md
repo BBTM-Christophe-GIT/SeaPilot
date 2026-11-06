@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.84.0` ajoute les relevés Conso après navigation, les indicateurs
+carburant sur la carte Opération en mer et l’usage du dernier prix saisi sur
+la carte Projet. Appliquer `20261106092442_sea_operation_consumption.sql`
+avant le frontend. Voir [les relevés Conso](./sea-operation-consumption.md).
+
 La version `3.83.0` ajoute l’estimation de consommation, de coût HT et de
 CO₂ sur la carte Projet et un choix de récapitulatif pour l’annexe PDF.
 Appliquer les deux migrations avant le frontend.
