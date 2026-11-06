@@ -8,6 +8,8 @@ Depuis la version **3.85.0**, **Sans date de péremption** distingue les article
 
 La section d’origine reste conservée dans les données historiques. Elle n’est plus affichée dans le détail ni dans la fenêtre de modification.
 
+Les formulaires d’ajout et de modification distinguent le stock à bord du stock de dotation. La liste **Unité de stock** propose les unités courantes. **Autre unité…** permet de préciser une unité ou de conserver une valeur historique.
+
 **Exporter Excel** dans le ruban télécharge les articles actifs de la dotation du navire sélectionné, avec le stock, la dotation, le conditionnement, le dosage et les statuts. L’export couvre aussi les lignes masquées par les filtres du tableau. Il ne contient aucune donnée du registre médical. Appliquer la migration `20261106133422_pharmacy_medical_stock.sql` avant le déploiement du client ; les valeurs historiques sont conservées.
 
 La cloche et les compteurs par navire réutilisent la même lecture de `pharmacy_inventory_notifications()` dans la session connectée. `pharmacy_notifications()` reste réservée aux échéances datées pour l’accueil et les versions précédentes. Le client relit les alertes toutes les deux minutes lorsque l’onglet est visible. Le retour au premier plan déclenche une lecture si la précédente a commencé il y a au moins 30 secondes. Un enregistrement et **Actualiser l’inventaire** déclenchent une lecture immédiate. Une modification survenue pendant la lecture programme une seule lecture de rattrapage.

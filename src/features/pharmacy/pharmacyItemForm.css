@@ -34,6 +34,12 @@
   grid-column: 1 / -1;
 }
 
+.pharmacy-item-unit {
+  display: grid;
+  gap: var(--sp-space-2);
+  min-width: 0;
+}
+
 .pharmacy-item-form label {
   display: grid;
   gap: var(--sp-space-1);
