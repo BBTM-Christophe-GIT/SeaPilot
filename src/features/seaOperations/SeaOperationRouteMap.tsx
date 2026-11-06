@@ -1,4 +1,4 @@
-import { Eye, MapPin, X } from 'lucide-react';
+import { Clock3, Eye, LogIn, LogOut, MapPin, Route, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { buildSeaOperationRouteMap, routeMapViewportContainingPositions, type RouteMapViewport, type SeaOperationRouteMapGeometry } from './seaOperationRouteMapGeometry';
@@ -102,7 +102,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, voyageSummaryPosition = 'overlay', fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: fit every recorded position, keeping a saved frame only for an empty map. */
@@ -113,6 +113,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   renderSurface?: (geometry: SeaOperationRouteMapGeometry, places: ReturnType<typeof seaOperationMapPlaces> | null) => ReactNode;
   renderOverlay?: (geometry: SeaOperationRouteMapGeometry, context: { places: ReturnType<typeof seaOperationMapPlaces> | null }) => ReactNode;
   renderVoyageDetails?: (distanceNm: number | null) => ReactNode;
+  voyageSummaryPosition?: 'overlay' | 'compact';
   fillAvailableSpace?: boolean;
   showPlaces?: boolean;
   inspectPoints?: boolean;
@@ -142,6 +143,16 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   const clipId = `sea-route-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 900, height: 320 });
+  const compactSummary = !compact && voyageSummaryPosition === 'compact';
+  const [narrowScreen, setNarrowScreen] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 720px)').matches === true);
+  useEffect(() => {
+    if (!compactSummary || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 720px)');
+    const update = () => setNarrowScreen(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, [compactSummary]);
   const [detailedBasemap, setDetailedBasemap] = useState(true);
   const [basemapStatus, setBasemapStatus] = useState<DetailedBasemapStatus>('loading');
   const [showNavigationCategories, setShowNavigationCategories] = useState(false);
@@ -181,13 +192,15 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   const filling = fillAvailableSpace && !compact;
   const width = filling ? size.width : Math.max(280, Math.min(900, Math.round(size.width)));
   const height = compact ? 220 : filling ? size.height : width < 600 ? 280 : 320;
+  const summaryBelowMap = compactSummary ? narrowScreen : width < 600;
   const definedPorts = useMemo(() => resolveSeaOperationMapPorts(departurePort, arrivalPort), [departurePort, arrivalPort]);
   const extraPositions = useMemo(() => [...seaOperationMapExtraPositions(isolatedPoints, zones), ...definedPorts.ports.map(port => port.location)], [isolatedPoints, zones, definedPorts]);
   const displayViewport = useMemo(() => fitAllPositions && (extraPositions.length > 0 || waypoints.some(point => seaWaypointPosition(point) !== null)) ? undefined : ensureZonesVisible
     ? routeMapViewportContainingPositions(viewport, zones.flatMap(zone => seaOperationZonePositions(zone) ?? []), width, height)
     : viewport, [fitAllPositions, extraPositions, waypoints, ensureZonesVisible, viewport, zones, width, height]);
-  // The voyage summary stays on the map; automatic fitting leaves it a clear column.
-  const fitRightInset = !compact && showRouteLegs && waypoints.length > 1 && width >= 600 ? 264 : 0;
+  // Reserve space for the bottom-right summary when fitting an unsaved camera.
+  const hasNavigationSummary = !compact && showRouteLegs && waypoints.length > 1;
+  const fitRightInset = hasNavigationSummary && !summaryBelowMap ? 264 : 0;
   const recordedGeometry = useMemo(() => buildSeaOperationRouteMap(waypoints, width, height, displayViewport, extraPositions, fitRightInset), [waypoints, width, height, displayViewport, extraPositions, fitRightInset]);
   const visualWaypoints = useMemo(() => !compact && previewWaypoint ? waypoints.map(point => point.id === previewWaypoint.id
     ? { ...point, latitude: String(previewWaypoint.position.latitude), longitude: String(previewWaypoint.position.longitude) } : point) : waypoints, [compact, previewWaypoint, waypoints]);
@@ -216,8 +229,9 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     return area(b.vertices) - area(a.vertices);
   }), [presentedZones]);
   const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
-  const voyageDetails = route && waypoints.length > 1 ? renderVoyageDetails?.(route.totalDistanceNm) : null;
-  const summaryHeight = voyageDetails ? 278 : 164;
+  const voyageDetails = !compact && (compactSummary || (route && waypoints.length > 1))
+    ? renderVoyageDetails?.(route?.totalDistanceNm ?? null) : null;
+  const summaryHeight = compactSummary ? 194 : voyageDetails ? 278 : 164;
   const legLabels = useMemo(() => route ? routeLegLabels(recordedGeometry, route.legs, places, summaryHeight) : [], [recordedGeometry, route, places, summaryHeight]);
   const zoneGraphics = useMemo(() => {
     const obstacles: SeaOperationZoneLabelObstacle[] = [
@@ -226,14 +240,14 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
       ...visibleDefinedPorts.map(port => ({ west: port.x - 90, east: port.x + 90, north: port.y - 50, south: port.y + 35 })),
       ...legLabels.map(label => ({ west: label.x - label.width / 2, east: label.x + label.width / 2, north: label.y - 11, south: label.y + 11 })),
     ];
-    if (!compact && showRouteLegs && waypoints.length > 1 && geometry.width >= 600) obstacles.push({ west: geometry.width - 264, east: geometry.width, north: geometry.height - summaryHeight - 6, south: geometry.height });
+    if (hasNavigationSummary && !summaryBelowMap) obstacles.push({ west: geometry.width - 264, east: geometry.width, north: geometry.height - summaryHeight - 6, south: geometry.height });
     for (const city of places?.cities || []) obstacles.push({ west: city.label.anchor === 'end' ? city.label.x - city.name.length * 6 : city.label.x, east: city.label.anchor === 'end' ? city.label.x : city.label.x + city.name.length * 6, north: city.label.y - 12, south: city.label.y + 3 });
     for (const port of places?.markers || []) {
       obstacles.push({ west: port.x - 7, east: port.x + 7, north: port.y - 7, south: port.y + 7 });
       if (port.label) obstacles.push({ west: port.label.anchor === 'end' ? port.label.x - port.ports[0].port.port.length * 6 : port.label.x, east: port.label.anchor === 'end' ? port.label.x : port.label.x + port.ports[0].port.port.length * 6, north: port.label.y - 12, south: port.label.y + 3 });
     }
     return zonePresentation(geometry, layers, visualZones, obstacles, compact);
-  }, [geometry, layers, visualZones, visibleDefinedPorts, legLabels, compact, showRouteLegs, waypoints.length, places, summaryHeight]);
+  }, [geometry, layers, visualZones, visibleDefinedPorts, legLabels, hasNavigationSummary, summaryBelowMap, places, summaryHeight]);
   const voyage = route ? seaOperationVoyageTiming(etd, route.totalDurationMinutes, eta) : null;
   const showLegList = Boolean(route && route.legs.length > 0 && (geometry.width < 600 || legLabels.length < route.legs.length));
   const routeCountLabel = `${geometry.points.length} point${geometry.points.length === 1 ? '' : 's'} géolocalisé${geometry.points.length === 1 ? '' : 's'}`;
@@ -255,13 +269,28 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     return () => observer.disconnect();
   }, []);
 
-  const summaryBelowMap = geometry.width < 600;
   const transitDurationFallback = Boolean(route?.totalDurationLabel && !voyage?.durationLabel);
-  const voyageSummary = route && voyage && geometry.projection && waypoints.length > 1 ? <aside className={`so-route-map-voyage-summary${summaryBelowMap ? ' is-below-map' : ''}`} aria-label="Estimation du parcours">
-    <strong>{route.totalDistanceLabel || 'Distance totale indisponible'}<span className="so-route-map-voyage-duration">{formatSeaOperationVoyageDuration(voyage.durationMinutes ?? route.totalDurationMinutes) || 'Durée indisponible'}</span></strong>
-    <dl><div><dt>ETD</dt><dd>{voyage.etdLabel || 'À renseigner'}</dd></div><div><dt>{eta?.trim() ? 'ETA arrivée' : 'ETA estimée'}</dt><dd>{voyage.etaLabel || 'Indisponible'}</dd></div></dl>
-    {voyage.etaSource === 'waypoint' && <small>Durée ETD → ETA retenue.</small>}
-    {(transitDurationFallback || voyage.etaSource === 'estimated') && <small>Durée estimée à vitesse constante.</small>}
+  const navigationSummary = route && voyage && geometry.projection && waypoints.length > 1 ? {
+    distance: route.totalDistanceLabel || 'Indisponible',
+    duration: formatSeaOperationVoyageDuration(voyage.durationMinutes ?? route.totalDurationMinutes) || 'Indisponible',
+    departure: voyage.etdLabel || 'À renseigner',
+    arrival: voyage.etaLabel || 'Indisponible',
+    arrivalLabel: eta?.trim() ? 'ETA arrivée' : 'ETA estimée',
+    retainedArrival: voyage.etaSource === 'waypoint',
+    constantSpeed: transitDurationFallback || voyage.etaSource === 'estimated',
+  } : null;
+  const voyageSummary = navigationSummary || voyageDetails ? <aside className={`so-route-map-voyage-summary${compactSummary ? ' is-compact-summary' : ''}${summaryBelowMap ? ' is-below-map' : ''}`} aria-label="Estimation du parcours">
+    {navigationSummary && (compactSummary ? <dl className="so-route-map-summary-grid">
+      <div><dt><Route size={14} aria-hidden="true" />Distance</dt><dd>{navigationSummary.distance}</dd></div>
+      <div><dt><Clock3 size={14} aria-hidden="true" />Durée</dt><dd>{navigationSummary.duration}</dd></div>
+      <div><dt><LogOut size={14} aria-hidden="true" />ETD</dt><dd>{navigationSummary.departure}</dd></div>
+      <div><dt><LogIn size={14} aria-hidden="true" />{navigationSummary.arrivalLabel}</dt><dd>{navigationSummary.arrival}</dd></div>
+    </dl> : <>
+      <strong>{navigationSummary.distance === 'Indisponible' ? 'Distance totale indisponible' : navigationSummary.distance}<span className="so-route-map-voyage-duration">{navigationSummary.duration === 'Indisponible' ? 'Durée indisponible' : navigationSummary.duration}</span></strong>
+      <dl><div><dt>ETD</dt><dd>{navigationSummary.departure}</dd></div><div><dt>{navigationSummary.arrivalLabel}</dt><dd>{navigationSummary.arrival}</dd></div></dl>
+    </>)}
+    {navigationSummary?.retainedArrival && <small>Durée ETD → ETA retenue.</small>}
+    {navigationSummary?.constantSpeed && <small>Durée estimée à vitesse constante.</small>}
     {voyageDetails}
   </aside> : null;
 

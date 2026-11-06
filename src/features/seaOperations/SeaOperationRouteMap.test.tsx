@@ -337,6 +337,22 @@ describe('SeaOperationRouteMap', () => {
     expect(points).toEqual(original);
   });
 
+  it('keeps the sea-operation KPIs inside the map on desktop and below the route on mobile', () => {
+    let resizeScreen!: () => void;
+    const media = { matches: false, addEventListener: (_event: string, callback: () => void) => { resizeScreen = callback; }, removeEventListener: vi.fn() };
+    vi.stubGlobal('matchMedia', vi.fn(() => media));
+    const { container } = render(<SeaOperationRouteMap waypoints={channelRoute()} showRouteLegs voyageSummaryPosition="compact"
+      renderVoyageDetails={() => <p>Fuel 900 L</p>} />);
+    const frame = container.querySelector('.so-route-map-frame');
+    const getSummary = () => screen.getByRole('complementary', { name: 'Estimation du parcours' });
+    expect(getSummary().parentElement).toBe(frame);
+    expect(getSummary()).toHaveTextContent('Fuel 900 L');
+    act(() => { media.matches = true; resizeScreen(); });
+    expect(getSummary().previousElementSibling).toBe(frame);
+    expect(getSummary()).toHaveClass('is-below-map');
+    expect(getSummary()).toHaveTextContent('Fuel 900 L');
+  });
+
   it('uses a compact leg list on narrow maps and reports unavailable duration/ETA instead of inventing speed', () => {
     let resize!: ResizeObserverCallback;
     vi.stubGlobal('ResizeObserver', class { constructor(callback: ResizeObserverCallback) { resize = callback; } observe() {} disconnect() {} });

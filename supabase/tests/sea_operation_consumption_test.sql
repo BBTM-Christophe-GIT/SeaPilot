@@ -1,0 +1,169 @@
+begin;
+select no_plan();
+
+select ok(not has_table_privilege('authenticated', 'sea_operation_private.consumption', 'SELECT,INSERT,UPDATE,DELETE'),
+  'authenticated accounts can only access the annex through scoped RPCs');
+select ok(not has_function_privilege('anon', 'public.sea_operation_consumption(uuid)', 'EXECUTE'), 'anonymous cannot read Conso');
+select ok(not has_function_privilege('anon', 'public.sea_operation_save_consumption(uuid,integer,jsonb)', 'EXECUTE'), 'anonymous cannot save Conso');
+
+insert into public.companies(code, name) values ('conso-other', 'Conso foreign company');
+insert into auth.users(id, email)
+select ('b9470000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, 'conso-' || n || '@example.invalid'
+from generate_series(1, 6) n;
+insert into public.profiles(id, email, display_name, active_company_id)
+select actor.id, actor.email, 'Conso actor ' || right(actor.id::text, 1), company.id
+from auth.users actor join public.companies company
+  on company.code = case when right(actor.id::text, 1) = '6' then 'conso-other' else 'bbtm' end
+where actor.id::text like 'b9470000-%';
+insert into public.company_memberships(company_id, user_id, active)
+select active_company_id, id, true from public.profiles where id::text like 'b9470000-%'
+on conflict (company_id, user_id) do update set active = true;
+insert into public.user_roles(user_id, company_id, role_key)
+select id, active_company_id, (array['admin', 'direction', 'capitaine', 'capitaine', 'marin', 'admin'])[right(id::text, 1)::integer]
+from public.profiles where id::text like 'b9470000-%';
+
+insert into public.vessels(company_id, name, active, asset_kind)
+select id, 'CONSO NO CALIBRATION', true, 'vessel' from public.companies where code = 'bbtm';
+create temporary table conso_fixture(key text primary key, id uuid not null, vessel_id bigint, draft jsonb, response jsonb);
+grant all on conso_fixture to authenticated;
+insert into conso_fixture(key, id, vessel_id)
+select fixture.key, gen_random_uuid(), vessel.id
+from (values ('base', 'LE ROZEL'), ('overlap', 'LE ROZEL'), ('historic', 'LE ROZEL'), ('draft', 'LE ROZEL'),
+  ('no_go', 'LE ROZEL'), ('native_cm', 'SUROIT'), ('missing_calibration', 'CONSO NO CALIBRATION')) fixture(key, vessel_name)
+join public.vessels vessel on vessel.name = fixture.vessel_name
+join public.companies company on company.id = vessel.company_id and company.code = 'bbtm';
+update conso_fixture set draft = jsonb_build_object('version', 1, 'project', 'Conso test ' || key,
+  'vessel', jsonb_build_object('id', vessel_id::text, 'departurePort', 'Cherbourg', 'arrivalPort', 'Le Havre'),
+  'applicability', jsonb_build_object('towing', case when key = 'native_cm' then 'yes' else 'no' end), 'waypoints', '[]'::jsonb,
+  'decision', case key when 'no_go' then 'NO_GO' when 'draft' then '' else 'GO' end,
+  'signature', '{"acknowledged":true}'::jsonb);
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, vessel.company_id, vessel.id, case when key = 'draft' then 'draft' else 'signed' end, fixture.draft,
+  'b9470000-0000-0000-0000-000000000003', 'Conso captain', 'b9470000-0000-0000-0000-000000000003', 'Conso captain',
+  case when key <> 'draft' then 'b9470000-0000-0000-0000-000000000003'::uuid end,
+  case when key <> 'draft' then 'Conso captain' end, case when key <> 'draft' then now() end,
+  case when key <> 'draft' then 'Conso captain' end
+from conso_fixture fixture join public.vessels vessel on vessel.id = fixture.vessel_id;
+update conso_fixture fixture set draft = operation.draft from public.sea_operations operation where operation.id = fixture.id;
+create function pg_temp.conso_id(p_key text) returns uuid language sql stable as $$select id from conso_fixture where key = p_key$$;
+create function pg_temp.conso_input() returns jsonb language sql immutable as $$
+  select '{"durationMinutes":120,"averageSpeedKnots":8,"gaugeUnit":"percent","departureGauge":78,"arrivalGauge":69,
+    "refuelLiters":10000.05,"pricePerLiter":1.25,"actualArrival":"2026-11-06T03:00","completed":true}'::jsonb;
+$$;
+create function pg_temp.conso_actor(p_number integer) returns text language sql as $$
+  select set_config('request.jwt.claim.sub', 'b9470000-0000-0000-0000-' || lpad(p_number::text, 12, '0'), true);
+$$;
+
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, (now() at time zone 'Europe/Paris')::date + 1, 9.99, 'Future fixture quote'
+from public.companies where code = 'bbtm'
+on conflict (company_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht;
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, (now() at time zone 'Europe/Paris')::date, 9.99, 'Foreign fixture quote' from public.companies where code = 'conso-other';
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is((public.sea_operation_consumption(pg_temp.conso_id('base'))->>'canEdit')::boolean, true, 'signing captain can enter completed GO consumption');
+select is(public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{calibration,kind}', 'rozel', 'Le Rozel has its own gauge curve');
+select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,transitLitersPerNm}')::numeric > 0, 'saved draft can read its own vessel forecast');
+select isnt(public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,pricePerLiter}', '9.9900', 'forecast excludes future and other-company quotes');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('draft'), null, pg_temp.conso_input())$$, '42501', null, 'draft cannot accept a completed annex');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('no_go'), null, pg_temp.conso_input())$$, '42501', null, 'NO GO cannot accept a completed annex');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input() - 'completed')$$,
+  '22023', null, 'explicit completed confirmation is required');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input() || '{"arrivalGauge":99}')$$,
+  '22023', null, 'arrival gauge cannot exceed departure');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input() || '{"actualArrival":"2026-03-29T02:30"}')$$,
+  '22023', null, 'nonexistent Paris wall time is rejected');
+update conso_fixture set response = public.sea_operation_save_consumption(id, null, pg_temp.conso_input()) where key = 'base';
+select is((response#>>'{record,distanceNm}')::numeric, 16::numeric, 'real distance derives from duration and average speed') from conso_fixture where key = 'base';
+select is((response#>>'{record,consumedLiters}')::numeric, 1049.652::numeric, 'workbook curve subtracts arrival from post-refuel departure gauge') from conso_fixture where key = 'base';
+select is((response#>>'{record,litersPerHour}')::numeric, 524.826::numeric, 'litres per hour use actual duration') from conso_fixture where key = 'base';
+select is((response#>>'{record,litersPerNm}')::numeric, 65.603::numeric, 'litres per mile use actual distance') from conso_fixture where key = 'base';
+select is((response#>>'{record,costEuros}')::numeric, 1312.07::numeric, 'estimated cost multiplies liters consumed by quoted price') from conso_fixture where key = 'base';
+select is((response#>>'{reference,pricePerLiter}')::numeric, 1.25::numeric, 'new Conso price is immediately the current map price') from conso_fixture where key = 'base';
+select is((response#>>'{record,includedInReference}')::boolean, true, 'valid new calibrated voyage augments the historical reference') from conso_fixture where key = 'base';
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), null, pg_temp.conso_input())$$,
+  '40001', null, 'stale version cannot replace a concurrent edit');
+
+update conso_fixture set response = public.sea_operation_save_consumption(id, null, pg_temp.conso_input() || '{"pricePerLiter":null}') where key = 'overlap';
+select is((response#>>'{record,includedInReference}')::boolean, false, 'same vessel and overlapping actual period are counted only once') from conso_fixture where key = 'overlap';
+update conso_fixture set response = public.sea_operation_save_consumption(id, null, pg_temp.conso_input() || '{"actualArrival":"2026-11-05T22:00","pricePerLiter":null}') where key = 'historic';
+select is((response#>>'{record,includedInReference}')::boolean, false, 'voyages inside workbook coverage retain recap but do not duplicate seed') from conso_fixture where key = 'historic';
+
+select pg_temp.conso_actor(4);
+select is((public.sea_operation_consumption(pg_temp.conso_id('base'))->>'canEdit')::boolean, false, 'other captain cannot edit signed voyage consumption');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'other captain write rejected');
+select pg_temp.conso_actor(5);
+select is((public.sea_operation_consumption(pg_temp.conso_id('base'))#>>'{record,version}')::integer, 1, 'real Marin can consult the voyage recap');
+select ok((public.sea_operation_consumption(pg_temp.conso_id('draft'))#>>'{reference,towageLitersPerNm}')::numeric > 0, 'real Marin gets limited forecast for the visible record');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'Marin cannot write recap');
+select pg_temp.conso_actor(6);
+select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('base'))$$, '42501', null, 'foreign admin cannot read recap or forecast');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('base'), 1, pg_temp.conso_input())$$, '42501', null, 'foreign admin cannot write recap or price');
+
+select pg_temp.conso_actor(2);
+insert into public.project_fuel_price_observations(price_date, price_eur_per_liter_ht, source_label)
+values ((now() at time zone 'Europe/Paris')::date, 1.80, 'Later dated quote')
+on conflict (company_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht, source_label = excluded.source_label;
+update conso_fixture set response = public.sea_operation_save_consumption(id, 1, pg_temp.conso_input() || '{"durationMinutes":90}') where key = 'base';
+select is((response#>>'{reference,pricePerLiter}')::numeric, 1.80::numeric, 'duration-only correction does not overwrite a later quote') from conso_fixture where key = 'base';
+select is((response#>>'{record,version}')::integer, 2, 'authorized correction advances annex version') from conso_fixture where key = 'base';
+update conso_fixture set response = public.sea_operation_save_consumption(id, null,
+  pg_temp.conso_input() || '{"gaugeUnit":"cm","departureGauge":208,"arrivalGauge":109,"pricePerLiter":null}') where key = 'native_cm';
+select is((response#>>'{record,consumedLiters}')::numeric, 3395.7::numeric, 'Suroit native sounding uses 34.3 L per centimetre') from conso_fixture where key = 'native_cm';
+update conso_fixture set response = public.sea_operation_save_consumption(id, null,
+  pg_temp.conso_input() || '{"pricePerLiter":null}') where key = 'missing_calibration';
+select is(response#>'{record,consumedLiters}', 'null'::jsonb, 'unsupported vessel without capacity retains readings without fabricating litres') from conso_fixture where key = 'missing_calibration';
+
+reset role;
+select is((select draft from public.sea_operations where id = pg_temp.conso_id('base')), (select draft from conso_fixture where key = 'base'),
+  'saving and correcting Conso preserves the signed JSON');
+select is((select count(*)::integer from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('base')::text),
+  1, 'correcting a contribution replaces the original batch');
+select is((select distance_nm from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('base')::text),
+  12::numeric, 'corrected distance replaces the old contribution');
+set local role authenticated;
+select pg_temp.conso_actor(3);
+update conso_fixture set response = public.sea_operation_save_consumption(id, 2, pg_temp.conso_input() || '{"averageSpeedKnots":0,"pricePerLiter":null}') where key = 'base';
+select is((response#>>'{record,distanceNm}')::numeric, 0::numeric, 'stationary operation can retain fuel measurements') from conso_fixture where key = 'base';
+select is(response#>'{record,litersPerNm}', 'null'::jsonb, 'stationary readings have no litres-per-mile rate') from conso_fixture where key = 'base';
+select ok((response#>>'{record,litersPerHour}')::numeric > 0, 'stationary readings retain litres per hour') from conso_fixture where key = 'base';
+select is((response#>>'{reference,pricePerLiter}')::numeric, 1.80::numeric, 'clearing the trip price does not remove the last entered quote') from conso_fixture where key = 'base';
+update conso_fixture set response = public.sea_operation_save_consumption(id, 3, pg_temp.conso_input() || '{"departureGauge":0.7,"arrivalGauge":0.2,"pricePerLiter":1.47}') where key = 'base';
+select is(response#>'{record,consumedLiters}', 'null'::jsonb, 'the inverse tail of the Rozel curve cannot yield negative consumption') from conso_fixture where key = 'base';
+select is((response#>>'{reference,pricePerLiter}')::numeric, 1.47::numeric, 'explicitly changed trip price becomes the latest quote') from conso_fixture where key = 'base';
+reset role;
+select is((select count(*)::integer from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('base')::text),
+  0, 'correction to a stationary operation removes the old voyage reference');
+
+insert into conso_fixture(key, id, vessel_id, draft)
+select 'revision', gen_random_uuid(), vessel_id, draft from conso_fixture where key = 'native_cm';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select pg_temp.conso_id('revision'), company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name from public.sea_operations where id = pg_temp.conso_id('native_cm');
+insert into sea_operation_private.record_administration(operation_id, superseded_by_id, revised_at, revised_by, revised_by_name)
+values (pg_temp.conso_id('native_cm'), pg_temp.conso_id('revision'), now(), 'b9470000-0000-0000-0000-000000000001', 'Conso admin');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))->>'canEdit')::boolean, false, 'superseded signed version is read-only');
+select is((public.sea_operation_consumption(pg_temp.conso_id('revision'))#>>'{record,version}')::integer, 1, 'a revised plan retains its measured passage');
+update conso_fixture set response = public.sea_operation_save_consumption(id, 1,
+  pg_temp.conso_input() || '{"gaugeUnit":"cm","departureGauge":208,"arrivalGauge":110,"pricePerLiter":null}') where key = 'revision';
+select is((response#>>'{record,version}')::integer, 2, 'revised plan updates the same annex') from conso_fixture where key = 'revision';
+reset role;
+select is((select count(*)::integer from public.vessel_fuel_reference_samples
+  where source_key in ('sea-operation:' || pg_temp.conso_id('native_cm')::text, 'sea-operation:' || pg_temp.conso_id('revision')::text)),
+  1, 'a revision cannot double-count the voyage');
+set local role authenticated;
+select pg_temp.conso_actor(1);
+select lives_ok($$select public.sea_operation_delete(pg_temp.conso_id('revision'), 1)$$, 'admin can remove the current operation');
+select throws_ok($$select public.sea_operation_consumption(pg_temp.conso_id('revision'))$$, '42501', null, 'removed record cannot expose its annex');
+reset role;
+select is((select count(*)::integer from public.vessel_fuel_reference_samples where source_key = 'sea-operation:' || pg_temp.conso_id('native_cm')::text),
+  0, 'removing the logical operation withdraws the fuel sample');
+select * from finish();
+rollback;

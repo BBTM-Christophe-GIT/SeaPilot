@@ -9,11 +9,14 @@ import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
+import type { SeaOperationConsumption } from './seaOperationConsumption';
+import { renderSeaOperationVoyageFuelDetails } from './SeaOperationVoyageFuelMetrics';
 import './seaOperationRegisterMap.css';
 
 interface RegisterMapProps {
   record: SeaOperationRecord | null;
   maxSpeedKnots?: number | null;
+  consumption?: SeaOperationConsumption;
   disabled?: boolean;
   onSave: (draft: SeaOperationPayload, record: SeaOperationRecord) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
@@ -40,7 +43,7 @@ export function SeaOperationRegisterMap(props: RegisterMapProps) {
   </section>;
 }
 
-function RegisterMapContent({ record, maxSpeedKnots, disabled = false, onSave, onDirtyChange }: RegisterMapProps & { record: SeaOperationRecord }) {
+function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = false, onSave, onDirtyChange }: RegisterMapProps & { record: SeaOperationRecord }) {
   const [draft, setDraft] = useState(() => structuredClone(record.draft));
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -133,6 +136,7 @@ function RegisterMapContent({ record, maxSpeedKnots, disabled = false, onSave, o
     {error ? <p className="so-alert so-danger" role="alert">{error}</p> : null}
     <SeaOperationWaypointMapEditor waypoints={draft.waypoints} isolatedPoints={seaOperationPointPresentation(draft, record).points} zones={draft.locationOverlay?.zones}
       readOnly={!editing || !editable || saving || disabled} drawingMode={editing && editable ? 'route' : undefined} maxSpeedKnots={maxSpeedKnots}
+      voyageSummaryPosition="compact" renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(consumption, draft, distanceNm)}
       departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort}
       etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)}
       onAddWaypoint={addWaypoint} onMoveWaypoint={(id, position) => movePoint('waypoints', id, position)}

@@ -1,0 +1,14 @@
+.so-consumption-dialog .app-dialog-backdrop { z-index: 1500; }
+.so-consumption-summary, .so-consumption-preview { margin-block: var(--sp-space-2); padding: var(--sp-space-3); }
+.so-consumption-summary h2, .so-consumption-preview h3 { display: flex; align-items: center; gap: var(--sp-space-2); margin: 0 0 var(--sp-space-2); font-size: .9rem; color: var(--sp-heading); }
+.so-consumption-summary p, .so-consumption-summary small { margin: 0; color: var(--sp-muted); font-size: .75rem; }
+.so-consumption-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); margin: 0; }
+.so-consumption-values dt { color: var(--sp-muted); font-size: .75rem; }
+.so-consumption-values dd { margin: 0; color: var(--sp-heading); font-weight: 650; font-variant-numeric: tabular-nums; }
+.so-consumption-fields, .so-consumption-duration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.so-consumption-duration, .so-consumption-wide { grid-column: 1 / -1; }
+.so-consumption-duration legend { margin-bottom: var(--sp-space-1); color: var(--sp-heading); font-size: .85rem; font-weight: 650; }
+.so-consumption-fields .so-help { margin: 0; }
+.so-consumption-error { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); }
+@media (max-width: 520px) { .so-consumption-fields { grid-template-columns: minmax(0, 1fr); } }
+@media print { .so-consumption-dialog { display: none !important; } }

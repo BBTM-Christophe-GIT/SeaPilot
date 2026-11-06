@@ -5,6 +5,8 @@ import type { SeaOperationPayload } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SeaOperationProjectDocuments } from './SeaOperationProjectDocuments';
 import { SeaOperationRegisterMap } from './SeaOperationRegisterMap';
+import { SeaOperationConsumptionSummary } from './SeaOperationConsumptionPanel';
+import { hasSeaOperationConsumption, useSeaOperationConsumptionContext } from './useSeaOperationConsumption';
 import './seaOperationDocumentLibrary.css';
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
   operationId?: string;
   record: SeaOperationRecord | null;
   maxSpeedKnots?: number | null;
+  consumptionRefresh?: number;
   disabled?: boolean;
   canManageDocuments?: boolean;
   onSave: (draft: SeaOperationPayload, record: SeaOperationRecord) => Promise<void>;
@@ -20,10 +23,11 @@ interface Props {
 }
 
 /** Both panels stay mounted: switching to documents must preserve unsaved map edits. */
-export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, disabled = false, canManageDocuments = false, onSave, onDirtyChange }: Props) {
+export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, consumptionRefresh, disabled = false, canManageDocuments = false, onSave, onDirtyChange }: Props) {
   const id = useId();
   const selectedId = operationId ?? record?.id ?? '';
   const context = useMemo(() => ({ client, accessKey, selectedId }), [client, accessKey, selectedId]);
+  const consumption = useSeaOperationConsumptionContext(client, record?.id, consumptionRefresh, `${accessKey}:${record?.version ?? ''}`);
   const [view, setView] = useState<{ context: typeof context; tab: 'map' | 'documents' } | null>(null);
   const [catalogCount, setCatalogCount] = useState<{ context: typeof context; count: number | null } | null>(null);
   const tab = view?.context === context ? view.tab : 'map';
@@ -39,7 +43,8 @@ export function SeaOperationRegisterPane({ client, accessKey, operationId, recor
       <button type="button" role="tab" id={`${id}-documents-tab`} aria-controls={`${id}-documents`} aria-selected={tab === 'documents'} tabIndex={tab === 'documents' ? 0 : -1} ref={documentsTab} onClick={() => choose('documents')}><FileText aria-hidden="true" size={17} />Documents<span className="so-register-document-count" aria-label={count === null ? 'Nombre de documents non disponible' : `${count} document${count > 1 ? 's' : ''}`}>{count ?? '…'}</span></button>
     </div>
     <div role="tabpanel" id={`${id}-map`} aria-labelledby={`${id}-map-tab`} hidden={tab !== 'map'}>
-      <SeaOperationRegisterMap record={record} disabled={disabled} maxSpeedKnots={maxSpeedKnots} onSave={onSave} onDirtyChange={onDirtyChange} />
+      {record && hasSeaOperationConsumption(record) && <SeaOperationConsumptionSummary {...consumption} />}
+      <SeaOperationRegisterMap record={record} disabled={disabled} maxSpeedKnots={maxSpeedKnots} consumption={consumption.response?.data} onSave={onSave} onDirtyChange={onDirtyChange} />
     </div>
     <div role="tabpanel" id={`${id}-documents`} aria-labelledby={`${id}-documents-tab`} hidden={tab !== 'documents'}>
       <SeaOperationProjectDocuments client={client} projectId={record?.draft.planning?.projectId || ''} accessKey={accessKey} disabled={disabled} canManage={canManageDocuments} onCountChange={setCount} showWithoutProject />

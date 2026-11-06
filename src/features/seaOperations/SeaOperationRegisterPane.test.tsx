@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { fetchSeaOperationProjectDocuments, type SeaOperationProjectDocument } from './seaOperationDocumentQueries';
 import { emptySeaOperation } from './seaOperationModel';
+import type { SeaOperationConsumption } from './seaOperationConsumption';
 import type { SeaOperationRecord } from './seaOperationQueries';
 
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn(), loadSeaOperationProjectDocumentBlob: vi.fn() }));
 vi.mock('../projects/ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span aria-hidden="true">Miniature</span> }));
-vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: () => { const [value, setValue] = useState(''); return <section aria-label="Carte de l’opération"><input aria-label="Point en cours de modification" value={value} onChange={event => setValue(event.target.value)} /></section>; } }));
+const mapProps = vi.hoisted(() => vi.fn());
+vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: (props: Record<string, unknown>) => { mapProps(props); const [value, setValue] = useState(''); return <section aria-label="Carte de l’opération"><input aria-label="Point en cours de modification" value={value} onChange={event => setValue(event.target.value)} /></section>; } }));
 const client = {} as SupabaseClient;
 function record(id = 'A', projectId = '501'): SeaOperationRecord {
   return { id, companyId: 1, version: 1, status: 'draft', draft: { ...emptySeaOperation(), planning: { projectId, operationId: `${id}:12`, date: '2026-10-30', captainPersonId: '' } },
@@ -64,5 +66,27 @@ describe('Sea Operation register Carte/Documents pane', () => {
     fireEvent.click(docs);
     expect(screen.getByText('Sélectionnez un projet dans Armement pour consulter ses documents.')).toBeVisible();
     expect(screen.queryByRole('button', { name: /^Supprimer/ })).not.toBeInTheDocument();
+  });
+
+  it('loads map fuel references for drafts and shares the signed operation’s consumption with its recap', async () => {
+    const detail: SeaOperationConsumption = {
+      operationId: 'A', canEdit: false, record: null,
+      calibration: { kind: 'nominal', defaultGaugeUnit: 'percent', nominalCapacityLiters: 10_000 },
+      reference: { vesselId: 12, transitLitersPerNm: 15, towageLitersPerNm: null, pricePerLiter: 1.1, priceDate: '2026-11-06' },
+    };
+    const saved = { ...detail, record: { durationMinutes: 60, averageSpeedKnots: 10, gaugeUnit: 'percent', departureGauge: 80, arrivalGauge: 70,
+      refuelLiters: null, pricePerLiter: 1.1, actualArrival: null, completed: true, distanceNm: 10, departureLiters: 8000, arrivalLiters: 7000,
+      consumedLiters: 1000, litersPerHour: 1000, litersPerNm: 100, costEuros: 1100, version: 1, includedInReference: false, updatedAt: '2026-11-06T10:00:00Z' } } satisfies SeaOperationConsumption;
+    const rpc = vi.fn().mockResolvedValueOnce({ data: detail, error: null }).mockResolvedValueOnce({ data: saved, error: null });
+    const fixtureClient = { rpc } as unknown as SupabaseClient;
+    const view = render(<SeaOperationRegisterPane {...props} client={fixtureClient} />);
+    await waitFor(() => expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: detail })));
+    expect(screen.queryByRole('region', { name: 'Consommation de l’opération' })).not.toBeInTheDocument();
+    const signed = { ...props.record, status: 'signed' as const, draft: { ...props.record.draft, decision: 'GO' as const } };
+    view.rerender(<SeaOperationRegisterPane {...props} client={fixtureClient} record={signed} consumptionRefresh={1} />);
+    const summary = await screen.findByRole('region', { name: 'Consommation de l’opération' });
+    await waitFor(() => expect(summary).toHaveTextContent('100 L/NM'));
+    expect(mapProps).toHaveBeenLastCalledWith(expect.objectContaining({ consumption: saved }));
+    expect(rpc.mock.calls).toEqual(Array(2).fill(['sea_operation_consumption', { p_id: 'A' }]));
   });
 });
