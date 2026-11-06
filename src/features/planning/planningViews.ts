@@ -10,6 +10,7 @@ import {
   normalizePlanningText,
   hasPlanningPaternityFilter,
   planningPaternityEventMatchesFilters,
+  planningVesselsByName,
   type PlanningCrewEvent,
   type PlanningDateRange,
   type PlanningFilters,
@@ -269,7 +270,7 @@ export function buildPlanningFleetLanes(
       )).filter(Boolean),
     ],
   );
-  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel]));
+  const vesselsByName = planningVesselsByName(overview.vessels);
 
   return [...vesselNames]
     .sort((left, right) => left.localeCompare(right, 'fr'))
@@ -299,11 +300,13 @@ export function buildPlanningCrewLanes(
   preferences: CrewDisplayPreferences = DEFAULT_CREW_PREFERENCES,
 ): PlanningCrewLane[] {
   const peopleById = new Map(overview.people.map((person) => [person.id, person]));
-  const vesselsByName = new Map(overview.vessels.map((vessel) => [vessel.name, vessel.id]));
+  const vesselsByName = planningVesselsByName(overview.vessels);
   const events = eventPool.filter((event) => event.confirmationStatus !== 'cancelled'
     && rangesOverlap(event.startsOn, event.endsOn, range.start, range.end) && crewEventMatchesFilters(event, filters, range))
-    .map((event) => event.vesselId === null && vesselsByName.has(event.vessel)
-      ? { ...event, vesselId: vesselsByName.get(event.vessel)! } : event);
+    .map((event) => {
+      const vessel = vesselsByName.get(event.vessel);
+      return event.vesselId === null && vessel ? { ...event, vesselId: vessel.id } : event;
+    });
   const peopleByName = new Map(overview.people.map((person) => [normalizePlanningText(formatPlanningPerson(person)), person]));
   const groups = new Map<string, PlanningCrewLane>();
   events.forEach((event) => {

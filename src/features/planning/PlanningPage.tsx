@@ -1304,6 +1304,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     setIsSaving(true);
     setPendingMutationId('planning-grid');
     setErrorMessage(null);
+    setStatusMessage(null);
     try {
       await applyPlanningGridCells(effectiveClient, planningGridMutationCells(cells));
       const hydrated = await refreshPlanningGridData(cells);

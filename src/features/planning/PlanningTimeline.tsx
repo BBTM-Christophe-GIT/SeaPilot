@@ -729,9 +729,9 @@ function PlanningCrewTimelineRowContent({
     occupiedDates: new Set(days
       .filter((day) => lane.events.some((event) => event.startsOn <= day.date && event.endsOn >= day.date))
       .map((day) => day.date)),
-    vesselId: lane.events.find((event) => event.vesselId !== null)?.vesselId || lane.vesselId || null,
+    vesselId: (hierarchy ? undefined : lane.events.find((event) => event.vesselId !== null)?.vesselId) ?? lane.vesselId ?? null,
     functionLabel: lane.functionLabel || lane.events[0]?.functionLabel || 'Équipage',
-  }), [days, lane.events, lane.functionLabel, lane.vesselId]);
+  }), [days, hierarchy, lane.events, lane.functionLabel, lane.vesselId]);
   const laneAbsences = useMemo(
     () => absences.filter((absence) => absence.personId === lane.personId),
     [absences, lane.personId],
