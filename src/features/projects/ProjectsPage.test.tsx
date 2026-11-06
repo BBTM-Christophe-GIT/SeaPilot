@@ -1750,11 +1750,11 @@ describe('ProjectsPage', () => {
     );
   });
 
-  it('lets the issuer choose the English commercial-offer template', async () => {
+  it('lets the issuer choose the offer language and override the location appendix for one PDF', async () => {
     const user = userEvent.setup();
-    const { client } = createClient({
+    const { client, rpc } = createClient({
       projects: {
-        data: [{ ...atlantiqueProjectRow, contract_type: 'Offre Commerciale' }],
+        data: [{ ...atlantiqueProjectRow, contract_type: 'Offre Commerciale', location_plan: { ...editableMapPlan(), includeInPdf: false } }],
         error: null,
       },
     });
@@ -1765,12 +1765,18 @@ describe('ProjectsPage', () => {
     await user.click(within(screen.getByRole('region', { name: 'Offre et contrat' })).getByRole('button', { name: 'Émettre le document' }));
     expect(screen.getByRole('radio', { name: /Français/ })).toBeChecked();
     await user.click(screen.getByRole('radio', { name: /English/ }));
+    const appendix = screen.getByRole('combobox', { name: 'Annexe de localisation du PDF' });
+    expect(appendix).toHaveValue('omit');
+    await user.selectOptions(appendix, 'full');
     await user.click(screen.getByRole('button', { name: 'Émettre et télécharger' }));
 
     await waitFor(() => expect(documentGenerationMocks.generateProjectDocument).toHaveBeenCalledWith(
       'offer',
-      expect.objectContaining({ language: 'en' }),
+      expect.objectContaining({ language: 'en', project: expect.objectContaining({
+        locationPlan: expect.objectContaining({ includeInPdf: true, includeVoyageEstimateInPdf: true }),
+      }) }),
     ));
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('projects_set_location');
   });
 
   it.each([

@@ -115,7 +115,7 @@ function groupOverlayTargets(targets: OverlayTarget[]) {
 }
 
 /** Only this wrapper accepts gestures. Moving its viewport never modifies the recorded route. */
-export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort, waypointImport }: {
+export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort, waypointImport, renderVoyageDetails }: {
   waypoints: readonly SeaOperationWaypoint[];
   onAddWaypoint: (position: SeaPosition, port?: { name: string; portKey?: string }) => void;
   onMoveWaypoint?: (id: string, position: SeaPosition) => void;
@@ -138,6 +138,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   departurePort?: string;
   arrivalPort?: string;
   waypointImport?: { trigger: ReactNode; panel: ReactNode };
+  renderVoyageDetails?: (distanceNm: number | null) => ReactNode;
 }) {
   const instructionsId = useId();
   const [placementRequested, setPlacing] = useState(false);
@@ -628,7 +629,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
     <SeaOperationRouteMap waypoints={waypoints} isolatedPoints={isolatedPoints} zones={zones} previewWaypoint={dragPreview?.overlay && dragPreview.overlay.kind !== 'route' ? undefined : dragPreview}
       previewIsolatedPoint={dragPreview?.overlay?.kind === 'point' ? dragPreview : undefined}
       previewZoneVertex={dragPreview?.overlay?.kind === 'vertex' ? { zoneId: dragPreview.overlay.zoneId!, index: dragPreview.overlay.index!, position: dragPreview.position } : undefined}
-      allowDetailedBasemap allowNavigationCategories basemapControlsDisabled={disabled} showPlaces inspectPoints={!placing && !disabled} showRouteLegs={placing || waypoints.length > 1} maxSpeedKnots={maxSpeedKnots} etd={etd} eta={eta} viewport={displayedViewport} departurePort={departurePort} arrivalPort={arrivalPort} onGeometry={recordGeometry} fillAvailableSpace={fullscreen.isFullscreen}
+      allowDetailedBasemap allowNavigationCategories basemapControlsDisabled={disabled} showPlaces inspectPoints={!placing && !disabled} showRouteLegs={placing || waypoints.length > 1} renderVoyageDetails={renderVoyageDetails} maxSpeedKnots={maxSpeedKnots} etd={etd} eta={eta} viewport={displayedViewport} departurePort={departurePort} arrivalPort={arrivalPort} onGeometry={recordGeometry} fillAvailableSpace={fullscreen.isFullscreen}
       onPortSelect={!disabled && !readOnly && !dragPreview ? selectPorts : undefined} renderSurface={!disabled ? (geometry, places) => <>
       <rect className="so-waypoint-map-surface" ref={captureSurface} width={geometry.width} height={geometry.height} role="button" tabIndex={0} aria-label={placing ? 'Zone de placement des waypoints' : 'Zone de navigation de la carte'} aria-describedby={instructionsId} aria-keyshortcuts={placing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Enter Escape' : 'ArrowUp ArrowDown ArrowLeft ArrowRight'} onKeyDown={keyDown} onPointerDown={(event) => pointerDown(event, geometry)} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelGesture} onLostPointerCapture={cancelGesture} />
       <g className="so-waypoint-map-camera-targets">

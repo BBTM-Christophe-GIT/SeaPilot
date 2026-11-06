@@ -1,0 +1,62 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { ProjectFuelPriceControl } from './ProjectFuelPriceControl';
+import { projectFuelCurrentDate } from './projectFuelEstimate';
+
+describe('ProjectFuelPriceControl', () => {
+  it('records a sourced French decimal price once, even with two submissions during the save', async () => {
+    const user = userEvent.setup();
+    let resolveSave!: () => void;
+    const onSave = vi.fn(() => new Promise<void>(resolve => { resolveSave = resolve; }));
+    render(<ProjectFuelPriceControl price={null} onSave={onSave} />);
+    await user.click(screen.getByRole('button', { name: 'Renseigner le prix du fuel' }));
+    const dialog = screen.getByRole('dialog', { name: 'Prix du fuel' });
+    const fields = within(dialog);
+    expect(fields.getByLabelText('Date d’effet')).toHaveValue(projectFuelCurrentDate());
+    await user.type(fields.getByLabelText('Prix HT en €/L'), '1,2345');
+    await user.type(fields.getByLabelText('Référence du devis ou de la facture'), '  Devis Zaphir 784  ');
+    await user.click(fields.getByRole('button', { name: 'Enregistrer le prix' }));
+    fireEvent.submit(dialog);
+    expect(fields.getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ eurosPerLiter: 1.2345, effectiveOn: projectFuelCurrentDate(), source: 'Devis Zaphir 784' });
+    resolveSave();
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  });
+
+  it('validates precision, the observation date and evidence, then preserves the draft when saving fails', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue({ message: 'Rechargez le tarif avant de réessayer.' });
+    const price = { eurosPerLiter: 1.12, effectiveOn: '2024-01-01', source: 'Ancienne facture' };
+    render(<ProjectFuelPriceControl price={price} onSave={onSave} />);
+    await user.click(screen.getByRole('button', { name: 'Actualiser le prix du fuel' }));
+    const dialog = screen.getByRole('dialog', { name: 'Prix du fuel' });
+    const fields = within(dialog);
+    const amount = fields.getByLabelText('Prix HT en €/L');
+    const date = fields.getByLabelText('Date d’effet');
+    const source = fields.getByLabelText('Référence du devis ou de la facture');
+    expect(amount).toHaveValue('1,12');
+    expect(date).toHaveValue(projectFuelCurrentDate());
+    expect(source).toHaveValue('');
+    fireEvent.change(amount, { target: { value: '1,12345' } });
+    fireEvent.submit(dialog);
+    expect(fields.getByRole('alert')).toHaveTextContent('quatre décimales');
+    fireEvent.change(amount, { target: { value: '1.23' } });
+    fireEvent.change(source, { target: { value: '  ' } });
+    fireEvent.submit(dialog);
+    expect(fields.getByRole('alert')).toHaveTextContent('référence du devis');
+    fireEvent.change(source, { target: { value: 'x'.repeat(161) } });
+    fireEvent.submit(dialog);
+    expect(fields.getByRole('alert')).toHaveTextContent('160 caractères');
+    fireEvent.change(source, { target: { value: 'Facture 456' } });
+    fireEvent.change(date, { target: { value: '2999-01-01' } });
+    fireEvent.submit(dialog);
+    expect(fields.getByRole('alert')).toHaveTextContent('date d’effet');
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.change(date, { target: { value: projectFuelCurrentDate() } });
+    await user.click(fields.getByRole('button', { name: 'Enregistrer le prix' }));
+    expect(await fields.findByRole('alert')).toHaveTextContent('Rechargez le tarif');
+    expect(amount).toHaveValue('1.23');
+    expect(source).toHaveValue('Facture 456');
+  });
+});

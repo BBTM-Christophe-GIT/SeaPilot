@@ -73,6 +73,7 @@ enabled = false
 
 const pgTapTests = [
   'projects_phase6_role_matrix_test.sql',
+  'project_voyage_fuel_references_test.sql',
   'dpr_role_matrix_test.sql',
   'working_time_signed_entry_flow_test.sql',
   'working_time_daily_approval_test.sql',

@@ -1,10 +1,13 @@
 import { Pencil, Save, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
 import { seaOperationRouteArrivalEta } from '../seaOperations/seaOperationVoyageSummary';
 import { emptyProjectLocationPlan, parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
+import { normalizeProjectContractType, TOWAGE_CONTRACT_TYPE } from './projectContractOptions';
+import type { ProjectFuelReference } from './projectFuelEstimate';
 import type { ProjectRecord } from './projectQueries';
+import { renderProjectVoyageFuelDetails } from './projectVoyageFuelDetails';
 import './projectDetailMap.css';
 
 const EMPTY_LOCATION = emptyProjectLocationPlan();
@@ -13,6 +16,8 @@ const ignorePlacement = () => {};
 interface ProjectDetailMapProps {
   project: ProjectRecord;
   maxSpeedKnots?: number | null;
+  fuelReference?: ProjectFuelReference;
+  fuelPriceControl?: ReactNode;
   canManage?: boolean;
   disabled?: boolean;
   onSave?: (plan: ProjectLocationPlan, source: ProjectRecord) => Promise<void>;
@@ -24,7 +29,7 @@ export function ProjectDetailMap(props: ProjectDetailMapProps) {
   return <ProjectDetailMapContent {...props} key={`${props.project.id}:${props.project.updatedAt}`} />;
 }
 
-function ProjectDetailMapContent({ project, maxSpeedKnots, canManage = false, disabled = false, onSave, onDirtyChange }: ProjectDetailMapProps) {
+function ProjectDetailMapContent({ project, maxSpeedKnots, fuelReference, fuelPriceControl, canManage = false, disabled = false, onSave, onDirtyChange }: ProjectDetailMapProps) {
   const [plan, setPlan] = useState(() => structuredClone(project.locationPlan ?? EMPTY_LOCATION));
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -63,6 +68,7 @@ function ProjectDetailMapContent({ project, maxSpeedKnots, canManage = false, di
     } finally { if (alive.current) { latest.current.saving = false; setSaving(false); } }
   };
   const hasPoints = plan.waypoints.length > 0 || plan.points.length > 0 || plan.zones.length > 0;
+  const towing = normalizeProjectContractType(project.contractType) === TOWAGE_CONTRACT_TYPE;
   return <section aria-label="Carte du projet" className="project-detail-section">
     <div className="project-context-heading"><div>
       <h3>Carte du projet</h3>
@@ -72,10 +78,11 @@ function ProjectDetailMapContent({ project, maxSpeedKnots, canManage = false, di
       {!editing && canManage && onSave ? <button type="button" className="sp-button sp-button--secondary" disabled={disabled} onClick={() => { latest.current.editing = true; setEditing(true); }}><Pencil size={16} aria-hidden="true" />Modifier la carte</button> : null}
       {editing ? <><button type="button" className="sp-button sp-button--primary" disabled={!dirty || !canManage || !onSave || saving || disabled} onClick={() => { void save(); }}><Save size={16} aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer la carte'}</button>
         <button type="button" className="sp-button sp-button--secondary" disabled={saving} onClick={cancel}><X size={16} aria-hidden="true" />Annuler</button></> : null}
+      {!editing && fuelPriceControl}
     </div>
     {error ? <p className="form-error" role="alert">{error}</p> : null}
     {editing ? <ProjectLocationEditor value={plan} onChange={change} disabled={disabled || saving || !canManage || !onSave}
-      vessel={{ id: project.primaryVesselId ?? undefined, maxSpeedKnots }} projectId={String(project.id)}
+      vessel={{ id: project.primaryVesselId ?? undefined, maxSpeedKnots }} fuelReference={fuelReference} towing={towing} projectId={String(project.id)}
       departurePort={project.deliveryPort} arrivalPort={project.redeliveryPort} /> : <>
     {!hasPoints ? <p className="project-empty-state">Aucun waypoint, point isolé ou zone enregistré pour ce projet.</p> : null}
     <SeaOperationWaypointMapEditor
@@ -84,6 +91,7 @@ function ProjectDetailMapContent({ project, maxSpeedKnots, canManage = false, di
       isolatedPoints={plan.points}
       zones={plan.zones}
       maxSpeedKnots={maxSpeedKnots}
+      renderVoyageDetails={distanceNm => renderProjectVoyageFuelDetails(fuelReference, project.primaryVesselId, distanceNm, towing)}
       etd={plan.waypoints[0]?.eta || plan.etd}
       eta={seaOperationRouteArrivalEta(plan)}
       departurePort={project.deliveryPort}

@@ -122,6 +122,31 @@ describe('Project location appendix', () => {
     expect(map.segments).toHaveLength(2);
   });
 
+  it('exports navigation and commercial estimates only at the chosen level', async () => {
+    const plan = fixture();
+    const options = { projectLabel: 'P1107 - Localisation', maxSpeedKnots: 12, vesselId: 12,
+      fuelReference: { rates: [{ vesselId: 12, towing: false, sampleCount: 5, distanceNm: 100, fuelLiters: 3_000 }],
+        price: { eurosPerLiter: 1.2, effectiveOn: '2026-01-01', source: 'Facture de référence' } } };
+    const full = await generateProjectLocationPdf({ ...plan, includeVoyageEstimateInPdf: true }, options);
+    const navigation = streams(await PDFDocument.load(await generateProjectLocationPdf(plan, options)));
+    const hidden = streams(await PDFDocument.load(await generateProjectLocationPdf({ ...plan, includeVoyageEstimateInPdf: false }, options)));
+    const uncalibrated = streams(await PDFDocument.load(await generateProjectLocationPdf({ ...plan, includeVoyageEstimateInPdf: true }, { ...options, vesselId: 34 })));
+    const details = streams(await PDFDocument.load(full));
+    expect(details).toContain('Consommation de fuel estimée');
+    expect(details).toContain('Coût de fuel estimé');
+    expect(details).toContain('Émissions de CO2 estimées');
+    expect(details).toContain('Sans remorquage');
+    expect(details).toContain('prix du 01/01/2026');
+    expect(navigation).toContain('ETD :');
+    expect(navigation).not.toContain('Consommation de fuel estimée');
+    expect(hidden).toContain('Passage plan');
+    expect(hidden).not.toContain('ETD :');
+    expect(hidden).not.toContain('Consommation de fuel estimée');
+    expect(uncalibrated).toContain('Référence de consommation indisponible');
+    expect(uncalibrated).not.toContain('Consommation de fuel estimée');
+    if (process.env.SEAPILOT_PROJECT_FUEL_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PROJECT_FUEL_QA_OUTPUT, full);
+  });
+
   it('returns the exact original contract when absent, unchecked or empty', async () => {
     const base = new Blob(['untouched contract']); const plan = fixture(); plan.includeInPdf = false;
     for (const location of [null, plan, { ...emptyProjectLocationPlan(), includeInPdf: true }]) {

@@ -13,6 +13,8 @@ import type { SeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import { drawSeaOperationIsolatedPointPdf } from '../seaOperations/seaOperationIsolatedPointPdf';
 import { layoutSeaOperationZoneLabels, seaOperationZoneAppearance } from '../seaOperations/seaOperationZonePresentation';
 import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from '../seaOperations/seaOperationZonePdf';
+import type { ProjectFuelReference } from './projectFuelEstimate';
+import { PROJECT_FUEL_RATE_UNAVAILABLE, projectVoyageFuelDetails } from './projectVoyageFuelDetails';
 
 const BLUE = [12, 85, 152] as const;
 const MUTED = [82, 102, 121] as const;
@@ -24,6 +26,9 @@ export interface ProjectLocationPdfOptions {
   vesselName?: string;
   maxSpeedKnots?: number | null;
   draftMeters?: number | null;
+  fuelReference?: ProjectFuelReference;
+  vesselId?: number | null;
+  towing?: boolean;
   language?: 'fr' | 'en';
   departurePort?: string;
   arrivalPort?: string;
@@ -69,9 +74,16 @@ export function projectLocationVoyage(location: Pick<ProjectLocationPlan, 'waypo
 
 /** Vector-only situational map, shared by project appendices and imported SeaOps overlays. */
 export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeometry, bounds: { x: number; y: number; width: number; height: number },
-  options?: { etd?: string; maxSpeedKnots?: number | null; showVoyage?: boolean; departurePort?: string; arrivalPort?: string; ensureZonesVisible?: boolean }) {
+  options?: { etd?: string; maxSpeedKnots?: number | null; showVoyage?: boolean; departurePort?: string; arrivalPort?: string; ensureZonesVisible?: boolean;
+    showFuelEstimate?: boolean; fuelReference?: ProjectFuelReference; vesselId?: number | null; towing?: boolean }) {
   const unit = (points: number) => points / document.internal.scaleFactor;
-  const fitRightInset = options?.showVoyage && location.waypoints.length > 1
+  const showVoyage = options?.showVoyage && location.waypoints.length > 1;
+  const voyage = projectLocationVoyage({ waypoints: location.waypoints, etd: options?.etd || '' }, options?.maxSpeedKnots);
+  const showFuelEstimate = showVoyage && options?.showFuelEstimate;
+  const fuel = showFuelEstimate ? projectVoyageFuelDetails(options?.fuelReference, options?.vesselId, voyage.route.totalDistanceNm, options?.towing) : null;
+  const fuelUnavailable = showFuelEstimate && !fuel && (voyage.route.totalDistanceNm ?? 0) > 0;
+  const summaryHeight = 67 + (fuel ? fuel.rows.length * 11 + 9 + (fuel.priceBasis ? 9 : 0) : fuelUnavailable ? 20 : 0);
+  const fitRightInset = showVoyage
     ? (Math.min(bounds.width - unit(12), unit(200)) + unit(12)) / bounds.width * 900 : 0;
   const definedPorts = resolveSeaOperationMapPorts(options?.departurePort, options?.arrivalPort);
   const mapHeight = Math.max(160, 900 * bounds.height / bounds.width);
@@ -151,7 +163,7 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
   for (const city of places.cities.slice(0, 50)) obstacles.push(placeLabelObstacle(city.label, city.name));
   for (const port of places.markers.slice(0, 80)) if (port.label) obstacles.push(placeLabelObstacle(port.label, port.ports[0].port.port));
   obstacles.push({ west: bounds.width / unit(1) - 30, east: bounds.width / unit(1), north: 0, south: 26 });
-  if (options?.showVoyage && location.waypoints.length > 1) obstacles.push({ west: bounds.width / unit(1) - 212, east: bounds.width / unit(1), north: bounds.height / unit(1) - 80, south: bounds.height / unit(1) });
+  if (showVoyage) obstacles.push({ west: bounds.width / unit(1) - 212, east: bounds.width / unit(1), north: bounds.height / unit(1) - summaryHeight - 13, south: bounds.height / unit(1) });
   document.setFont('helvetica', 'bold'); document.setFontSize(10);
   const zoneTags = layoutSeaOperationZoneLabels(zoneLayers.map(({ zone, vertices }) => ({ id: zone.id, name: zone.name,
     index: location.zones.findIndex(item => item.id === zone.id), vertices: vertices.map(local) })), bounds.width / unit(1), bounds.height / unit(1), obstacles,
@@ -190,7 +202,6 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
   }
   document.setDrawColor(...BLUE); document.setLineWidth(unit(1.3));
   for (const segment of geometry.segments) { const from = at(segment.from), to = at(segment.to); document.line(from.x, from.y, to.x, to.y); }
-  const voyage = projectLocationVoyage({ waypoints: location.waypoints, etd: options?.etd || '' }, options?.maxSpeedKnots);
   if (options?.showVoyage) for (const leg of voyage.route.legs.slice(0, 20)) {
     const from = geometry.points.find(point => point.index === leg.fromIndex), to = geometry.points.find(point => point.index === leg.toIndex);
     if (!from || !to) continue;
@@ -229,9 +240,9 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     }
   });
   drawDefinedMapPortsPdf(document, geometry, bounds, definedPorts.ports,
-    options?.showVoyage && location.waypoints.length > 1 ? Math.min(bounds.width - unit(12), unit(200)) + unit(12) : 0);
-  if (options?.showVoyage && location.waypoints.length > 1) {
-    const width = Math.min(bounds.width - unit(12), unit(200)), height = unit(67), x = bounds.x + bounds.width - width - unit(6), y = bounds.y + bounds.height - height - unit(6);
+    showVoyage ? Math.min(bounds.width - unit(12), unit(200)) + unit(12) : 0);
+  if (showVoyage) {
+    const width = Math.min(bounds.width - unit(12), unit(200)), height = unit(summaryHeight), x = bounds.x + bounds.width - width - unit(6), y = bounds.y + bounds.height - height - unit(6);
     document.setFillColor(255, 255, 255); document.setDrawColor(209, 220, 230); document.roundedRect(x, y, width, height, unit(3), unit(3), 'FD');
     document.setTextColor(...BLUE); document.setFont('helvetica', 'bold'); document.setFontSize(8);
     document.text(clean(voyage.route.totalDistanceLabel || 'Distance indisponible'), x + unit(7), y + unit(12));
@@ -239,6 +250,19 @@ export function drawProjectLocationMapPdf(document: jsPDF, location: LocationGeo
     document.setFontSize(7); document.text(duration, x + unit(7), y + unit(23));
     document.setTextColor(...MUTED); write(`ETD : ${voyage.timing.etdLabel || 'À renseigner'}`, x + unit(7), y + unit(44), 6.5);
     write(`ETA : ${voyage.timing.etaLabel || 'Indisponible'}`, x + unit(7), y + unit(57), 6.5);
+    if (fuel) {
+      let rowY = y + unit(68);
+      for (const { label, value } of fuel.rows) {
+        write(label.replace('CO₂', 'CO2'), x + unit(7), rowY, 6.5);
+        write(value.replace('CO₂', 'CO2'), x + width - unit(7), rowY, 6.5, 'right');
+        rowY += unit(11);
+      }
+      write(fuel.rate, x + unit(7), rowY - unit(2), 6.5);
+      if (fuel.priceBasis) write(fuel.priceBasis, x + unit(7), rowY + unit(7), 6.5);
+    } else if (fuelUnavailable) {
+      document.setFontSize(6.5);
+      document.text(document.splitTextToSize(PROJECT_FUEL_RATE_UNAVAILABLE, width - unit(14)), x + unit(7), y + unit(68));
+    }
   }
   document.setTextColor(...BLUE); write('N', bounds.x + bounds.width - unit(12), bounds.y + unit(12), 8, 'center');
   if (geometry.scale) {
@@ -269,7 +293,11 @@ export async function generateProjectLocationPdf(plan: ProjectLocationPlan, opti
   document.text(options.language === 'en' ? 'APPENDIX - LOCATION / PASSAGE PLAN' : 'ANNEXE - LOCALISATION / PASSAGE PLAN', left, 32);
   document.setFont('helvetica', 'normal'); document.setFontSize(9); document.setTextColor(...MUTED);
   document.text(clean(`${options.projectLabel}${options.vesselName ? ` · ${options.vesselName}` : ''}`), left, 48);
-  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, { etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: true, departurePort: options.departurePort, arrivalPort: options.arrivalPort, ensureZonesVisible: true });
+  drawProjectLocationMapPdf(document, plan, { x: left, y: 60, width, height: 190 }, {
+    etd: plan.etd, maxSpeedKnots: options.maxSpeedKnots, showVoyage: plan.includeVoyageEstimateInPdf !== false,
+    departurePort: options.departurePort, arrivalPort: options.arrivalPort, ensureZonesVisible: true,
+    showFuelEstimate: plan.includeVoyageEstimateInPdf === true, fuelReference: options.fuelReference, vesselId: options.vesselId, towing: options.towing,
+  });
   document.setFontSize(6.5); document.setTextColor(...MUTED);
   document.text('Fond Natural Earth · Tracé indicatif · Distances directes, sans routage · Coordonnées WGS84', left, 260);
   let y = drawSeaOperationZoneLegendPdf(document, plan.zones, { y: 274, left, right: left, top: 34, bottom: 26, fontSize: 7 });

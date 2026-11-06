@@ -24,6 +24,7 @@ import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
 import bimcoPage04Url from './assets/contract-previews/bimco-p144-page-04.png';
 import { ProjectStyledContractPreview } from './ProjectStyledContractPreview';
 import { ProjectLocationPreview } from './ProjectLocationPreview';
+import type { ProjectFuelReference } from './projectFuelEstimate';
 import { hasProjectLocationContent } from './projectLocation';
 import { resolveSeaOperationMapPorts } from '../seaOperations/seaOperationMapPlaces';
 import { buildStyledContract, contractPreviewFields } from './projectStyledContract';
@@ -53,6 +54,7 @@ import {
 interface ProjectContractPreviewProps {
   client?: Pick<ClientRecord, 'address' | 'city' | 'country' | 'name' | 'postalCode' | 'representedBy' | 'siret'>;
   emitter?: ProjectDocumentEmitter;
+  fuelReference?: ProjectFuelReference;
   form: ProjectWriteInput;
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
@@ -516,7 +518,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           {currentPage <= contractPageCount && contractType === COMMERCIAL_OFFER_CONTRACT_TYPE ? <OfferPreview {...props} /> : null}
           {currentPage <= contractPageCount && styledDocument ? <ProjectStyledContractPreview document={styledDocument} page={currentPage} signatureUrl={props.emitter?.signatureUrl} /> : null}
           {currentPage <= contractPageCount && contractType === BIMCO_CONTRACT_TYPE ? <BimcoPreview page={currentPage} values={bimcoValues} /> : null}
-          {currentPage > contractPageCount && hasAppendix && locationPlan ? <ProjectLocationPreview plan={locationPlan} projectLabel={`${props.projectCode} - ${props.form.title}`} maxSpeedKnots={props.vessel?.maxSpeedKnots} draftMeters={props.vessel?.draftMeters} departurePort={props.form.deliveryPort} arrivalPort={props.form.redeliveryPort} /> : null}
+          {currentPage > contractPageCount && hasAppendix && locationPlan ? <ProjectLocationPreview plan={locationPlan} projectLabel={`${props.projectCode} - ${props.form.title}`} maxSpeedKnots={props.vessel?.maxSpeedKnots} draftMeters={props.vessel?.draftMeters} departurePort={props.form.deliveryPort} arrivalPort={props.form.redeliveryPort} fuelReference={props.fuelReference} vesselId={props.vessel?.id} towing={contractType === TOWAGE_CONTRACT_TYPE} /> : null}
         </div>
       </section>
       <aside className="project-contract-completeness" aria-label="Complétude du document">

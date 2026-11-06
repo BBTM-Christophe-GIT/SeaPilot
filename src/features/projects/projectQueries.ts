@@ -1,3 +1,5 @@
+import type { ProjectFuelReference } from './projectFuelEstimate';
+import { fetchProjectFuelReference } from './projectFuelQueries';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FleetAssetKind } from '../fleet/fleetQueries';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
@@ -635,6 +637,7 @@ export interface ProjectsData {
   towedAssets: ProjectTowedAssetRecord[];
   vessels: VesselRecord[];
   warnings: ProjectsDataWarning[];
+  fuelReference?: ProjectFuelReference;
 }
 
 export interface ProjectMetrics {
@@ -1095,7 +1098,7 @@ const OPTIONAL_SOURCES: Array<{
 ];
 
 export async function fetchProjectsData(client: SupabaseClient): Promise<ProjectsData> {
-  const [projectsResult, contractsResult, hirePeriodsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult, towedAssetsResult] =
+  const [projectsResult, contractsResult, hirePeriodsResult, projectDocumentsResult, contractDocumentsResult, operationDocumentsResult, occurrencesResult, clientsResult, vesselsResult, towedAssetsResult, fuelReferenceResult] =
     await Promise.allSettled([
       fetchProjects(client),
       fetchProjectContracts(client),
@@ -1107,6 +1110,7 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
       fetchClients(client),
       fetchVessels(client),
       fetchProjectTowedAssets(client),
+      fetchProjectFuelReference(client),
     ]);
 
   if (projectsResult.status === 'rejected') {
@@ -1138,5 +1142,6 @@ export async function fetchProjectsData(client: SupabaseClient): Promise<Project
     towedAssets: towedAssetsResult.status === 'fulfilled' ? towedAssetsResult.value : [],
     vessels: vesselsResult.status === 'fulfilled' ? vesselsResult.value : [],
     warnings,
+    ...(fuelReferenceResult.status === 'fulfilled' ? { fuelReference: fuelReferenceResult.value } : {}),
   };
 }

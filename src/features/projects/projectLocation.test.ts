@@ -41,6 +41,14 @@ describe('optional project location plan', () => {
     expect(hasProjectLocationContent(second)).toBe(false); expect(hasProjectLocationContent({ ...second, includeInPdf: true })).toBe(false);
     expect(hasProjectLocationContent(first)).toBe(true); expect(hasProjectLocationContent({ ...second, etd: '2026-10-27T09:00' })).toBe(true);
   });
+  it('preserves explicit voyage estimate export modes and keeps the legacy preference absent', () => {
+    const plan = emptyProjectLocationPlan();
+    expect(parseProjectLocationPlan(plan)).not.toHaveProperty('includeVoyageEstimateInPdf');
+    for (const includeVoyageEstimateInPdf of [true, false]) {
+      expect(parseProjectLocationPlan({ ...plan, includeVoyageEstimateInPdf })).toHaveProperty('includeVoyageEstimateInPdf', includeVoyageEstimateInPdf);
+      expect(() => parseProjectLocationOverlay({ version: 1, points: [], zones: [], includeVoyageEstimateInPdf })).toThrow('localisation');
+    }
+  });
   it('keeps route, isolated points and incomplete zones together without changing manual times or coordinates', () => {
     const source = { ...emptyProjectLocationPlan(), etd: '2026-10-27T09:07', charts: '7120 - 7421', waypoints: [{ ...point(), etaMode: 'manual' as const, eta: '09:07' }],
       points: [point('isolated')], zones: [{ id: 'zone', name: 'Zone de travail', vertices: [{ latitude: '49°', longitude: '' }] }] };
@@ -54,7 +62,7 @@ describe('optional project location plan', () => {
     expect(result.waypoints[0]).toEqual({ ...point(), ukcMode: 'automatic' });
   });
   it.each([
-    { version: 2 }, { includeInPdf: 'true' }, { waypoints: [{ ...point(), denseTraffic: 'false' }] }, { waypoints: [{ ...point(), etaMode: 'other' }] },
+    { version: 2 }, { includeInPdf: 'true' }, { includeVoyageEstimateInPdf: 'true' }, { waypoints: [{ ...point(), denseTraffic: 'false' }] }, { waypoints: [{ ...point(), etaMode: 'other' }] },
     { waypoints: [point(), point()] }, { waypoints: [point()], points: [point()] },
     { points: [point('zone')], zones: [{ id: 'zone', name: '', vertices: [] }] }, { zones: [{ id: '', name: '', vertices: [] }] },
     { zones: [{ id: 'zone', name: '', vertices: [{ latitude: 49, longitude: '' }] }] },
