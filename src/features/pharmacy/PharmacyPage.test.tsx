@@ -159,8 +159,8 @@ describe('PharmacyPage', () => {
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await user.click(screen.getByRole('button', { name: 'Modifier ARTICLE SOURCE' }));
     const dialog = screen.getByRole('dialog', { name: 'Modifier l’article' });
-    await user.clear(within(dialog).getByLabelText('Quantité à bord'));
-    await user.type(within(dialog).getByLabelText('Quantité à bord'), '30 × 300 mg');
+    await user.clear(within(dialog).getByLabelText('Stock à bord'));
+    await user.type(within(dialog).getByLabelText('Stock à bord'), '30 × 300 mg');
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié');
     expect(savePharmacyItem).toHaveBeenCalledWith(client, 1, expect.objectContaining({ quantity: '30 × 300 mg', expires_on: '2099-10-01' }), item);
@@ -640,7 +640,7 @@ describe('PharmacyPage', () => {
     expect(table.querySelector('.pharmacy-category-row')).not.toHaveTextContent('Médicaments source B');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
     await user.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
-    expect(within(screen.getByRole('complementary')).getByText('Médicaments source B')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).queryByText('Médicaments source B')).not.toBeInTheDocument();
     await user.selectOptions(types, 'dotation c');
     expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
     expect(screen.getByRole('option', { name: 'CATÉGORIE C VIDE' })).toBeInTheDocument();
@@ -828,7 +828,8 @@ describe('PharmacyPage', () => {
     expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Catégorie' }), parentB.name);
     await user.click(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' }));
-    expect(within(screen.getByRole('complementary')).getByText('Médicaments source B')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).getByText('Matériel médical et objets de pansement')).toBeInTheDocument();
+    expect(within(screen.getByRole('complementary')).queryByText('Médicaments source B')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'medicines');
     expect(screen.getByRole('combobox', { name: 'Catégorie' })).toHaveValue('');
     expect(screen.queryByText('Détail de l’article')).not.toBeInTheDocument();

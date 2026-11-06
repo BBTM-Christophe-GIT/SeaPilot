@@ -59,8 +59,8 @@ describe('PharmacyItemForm medical dotation', () => {
     const onSave = vi.fn();
     render(<PharmacyItemForm item={article} categories={[]} busy={false} error="" onClose={vi.fn()} onSave={onSave} />);
     expect(screen.getByLabelText('Date de péremption')).toHaveValue('2027-06-30');
-    fireEvent.change(screen.getByLabelText('Quantité à bord'), { target: { value: '6' } });
-    fireEvent.change(screen.getByLabelText('Quantité réglementaire'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Stock à bord'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Stock de dotation'), { target: { value: '9' } });
     fireEvent.change(screen.getByLabelText('Unité de stock'), { target: { value: 'comprimé' } });
     fireEvent.change(screen.getByLabelText('Unités par boîte'), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText('Dosage par unité'), { target: { value: '300 mg' } });

@@ -1,0 +1,140 @@
+.pharmacy-item-form {
+  display: grid;
+  gap: var(--sp-space-3);
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+}
+
+.pharmacy-item-form:not(:first-child) {
+  margin-top: var(--sp-space-3);
+}
+
+.pharmacy-item-fields,
+.pharmacy-item-stock {
+  display: grid;
+  gap: var(--sp-space-2) var(--sp-space-3);
+}
+
+.pharmacy-item-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+@media (min-width: 701px) {
+  .pharmacy-item-classification {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}
+
+.pharmacy-item-stock {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pharmacy-item-wide {
+  grid-column: 1 / -1;
+}
+
+.pharmacy-item-form label {
+  display: grid;
+  gap: var(--sp-space-1);
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.pharmacy-item-form .pharmacy-item-stock-card {
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface-subtle);
+  color: var(--sp-heading);
+  font-size: var(--sp-subtitle-size);
+}
+
+.pharmacy-item-form .pharmacy-item-stock-card.is-onboard {
+  background: var(--sp-primary-soft);
+  color: var(--sp-primary);
+}
+
+.pharmacy-page .pharmacy-item-form :is(input:not([type="checkbox"]), select, textarea) {
+  min-height: var(--sp-control-height);
+  border-color: var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+}
+
+.pharmacy-page .pharmacy-item-form input[readonly] {
+  background: var(--sp-surface-subtle);
+  color: var(--sp-muted);
+}
+
+.pharmacy-item-form textarea {
+  resize: vertical;
+}
+
+.pharmacy-item-help {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.pharmacy-item-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-1) var(--sp-space-5);
+}
+
+.pharmacy-item-form .pharmacy-item-check {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  gap: var(--sp-space-2);
+  min-height: var(--sp-control-height);
+}
+
+.pharmacy-page .pharmacy-item-check input {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  accent-color: var(--sp-primary);
+}
+
+.pharmacy-page .pharmacy-item-form :is(input, select, textarea):focus-visible {
+  outline-color: var(--sp-focus);
+}
+
+@media (max-width: 700px) {
+  .pharmacy-item-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pharmacy-item-wide-on-small,
+  .pharmacy-item-fields > .pharmacy-item-check {
+    grid-column: 1 / -1;
+  }
+
+  .pharmacy-page .pharmacy-item-form :is(input:not([type="checkbox"]), select, textarea) {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .pharmacy-item-fields,
+  .pharmacy-item-stock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (pointer: coarse) {
+  .pharmacy-page .pharmacy-item-form :is(input:not([type="checkbox"]), select, textarea),
+  .pharmacy-item-form .pharmacy-item-check {
+    min-height: 44px;
+  }
+}
