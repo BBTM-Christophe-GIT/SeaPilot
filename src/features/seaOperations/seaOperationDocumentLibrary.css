@@ -20,3 +20,34 @@
   .so-project-document-library { padding: var(--sp-space-3); }
   .so-register-detail-tabs > button { flex: 1; }
 }
+
+.so-register-sheet, .so-register-sheet-empty { padding: var(--sp-space-3); min-width: 0; }
+.so-register-sheet-actions, .so-register-sheet-download { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1); }
+.so-register-sheet-actions { margin-bottom: var(--sp-space-2); }
+.so-register-sheet-actions:empty { display: none; }
+.so-register-sheet-download { margin-inline-start: auto; }
+.so-page .so-register-sheet-actions .sp-button { gap: var(--sp-space-1); padding-inline: var(--sp-space-2); }
+.so-register-sheet-count { color: var(--sp-muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.so-register-sheet-download button[aria-expanded=true] > svg { transform: rotate(180deg); }
+.so-register-sheet-export {
+  min-width: 0; margin: 0 0 var(--sp-space-2); padding: var(--sp-space-1) var(--sp-space-2) var(--sp-space-2);
+  border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle);
+}
+.so-register-sheet-export legend { padding-inline: var(--sp-space-1); color: var(--sp-heading); font-size: .82rem; font-weight: 700; }
+.so-register-sheet-checks { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2) var(--sp-space-3); }
+.so-register-sheet-checks label { display: inline-flex; align-items: center; gap: var(--sp-space-1); font-size: .8rem; }
+.so-register-sheet-checks input { accent-color: var(--sp-primary); }
+.so-register-sheet-scroller { max-height: 75vh; min-width: 0; overflow: auto; background: var(--sp-canvas); padding: var(--sp-space-2); }
+.so-register-sheet-scroller:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -2px; }
+.so-register-sheet .so-document-preview { width: 100%; max-width: 794px; min-height: 0; overflow: hidden; }
+.so-register-sheet .so-document-preview .so-print { padding: clamp(16px, 3vw, 40px); }
+.so-register-sheet .so-print .so-word-header, .so-register-sheet .so-print .so-word-footer { width: 100%; margin-inline: 0; }
+.so-register-sheet .so-print .so-word-header { margin-top: 0; }
+@media (max-width: 640px) {
+  .so-page .so-register-detail-tabs > button { padding-inline: var(--sp-space-1); gap: var(--sp-space-1); }
+  .so-register-sheet-download { margin-inline-start: 0; }
+  .so-register-sheet-checks label { min-height: 32px; }
+  .so-register-sheet .so-document-preview .so-print-passage-section { overflow-x: auto; }
+  .so-register-sheet .so-document-preview .so-print-passage { min-width: 520px; }
+}
+@media print { .so-register-sheet { display: none !important; } }

@@ -121,6 +121,29 @@ async function landscapeBodies(bytes: Uint8Array): Promise<string[]> {
   });
 }
 
+it('exports only selected fiche sections and lists the authorized mission documents', async () => {
+  const generated = await generateSeaOperationPdf(voyageFixture(), {
+    templateBytes: await template(),
+    sections: ['documents', 'decision'],
+    documents: [{ title: 'PLAN-OPERATION-PDF', fileName: 'plan.pdf', categoryLabel: 'Navigation', subcategoryLabel: '', expiresOn: null }],
+  });
+  const text = (await generatedBodies(generated.bytes)).join('\n');
+  expect(text).toContain('PLAN-OPERATION-PDF');
+  expect(text).toContain('Horodatage de signature');
+  expect(text).not.toContain('Inspection avant appareillage');
+  expect(text).not.toContain('3 - Passage Plan');
+  expect(text).not.toContain('Personnel spécial');
+  expect(await landscapeBodies(generated.bytes)).toHaveLength(0);
+});
+
+it('starts in landscape when Passage Plan is the only requested section', async () => {
+  const generated = await generateSeaOperationPdf(voyageFixture(), { templateBytes: await template(), sections: ['passage'] });
+  const pages = (await PDFDocument.load(generated.bytes)).getPages();
+  expect(pages.length).toBeGreaterThan(0);
+  expect(pages.every(page => page.getWidth() > page.getHeight())).toBe(true);
+  expect((await generatedBodies(generated.bytes)).join('\n')).not.toContain('Horodatage de signature');
+});
+
 async function generatedBodies(bytes: Uint8Array): Promise<string[]> {
   const document = await PDFDocument.load(bytes);
   return document.getPages().map((page) => {

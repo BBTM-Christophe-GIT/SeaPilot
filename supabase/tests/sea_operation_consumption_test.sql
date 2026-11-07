@@ -223,6 +223,8 @@ set local role authenticated;
 select pg_temp.conso_actor(3);
 select is((public.sea_operation_consumption(pg_temp.conso_id('native_cm'))->>'canEdit')::boolean, false, 'superseded signed version is read-only');
 select is((public.sea_operation_consumption(pg_temp.conso_id('revision'))#>>'{record,version}')::integer, 1, 'a revised plan retains its measured passage');
+select is(public.sea_operation_register_consumption(array[pg_temp.conso_id('native_cm'), pg_temp.conso_id('revision')], false)->'recordedOperationIds',
+  jsonb_build_array(pg_temp.conso_id('revision')), 'register status follows the current signed revision and its matching annex');
 select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('native_cm'), pg_temp.conso_id('revision')]),
   jsonb_build_array(jsonb_build_object('operationId', pg_temp.conso_id('revision'),
     'record', public.sea_operation_consumption(pg_temp.conso_id('revision'))->'record')),
@@ -306,6 +308,171 @@ select lives_ok($$update conso_fixture set response = public.sea_operation_save_
   pg_temp.conso_gps_input() || '{"trace":null}') where key = 'base'$$, 'signing Capitaine can explicitly remove the GPS trace');
 select is(response#>>'{record,trace}', null::text, 'explicit removal clears the GPS provenance') from conso_fixture where key = 'base';
 select is((response#>>'{record,distanceNm}')::numeric, 18.25::numeric, 'distance falls back to duration times speed after removal') from conso_fixture where key = 'base';
+reset role;
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_register_consumption(uuid[],boolean)', 'EXECUTE'),
+  'anonymous cannot consult register consumption');
+insert into public.vessel_fuel_reference_samples(company_id, vessel_id, towing, source_key, source_label, voyage_count, distance_nm, fuel_liters)
+select vessel.company_id, vessel.id, sample.towing, sample.source_key, 'Register average fixture', 1, sample.distance_nm, sample.fuel_liters
+from public.vessels vessel
+cross join (values (false, 'register-other-one', 10, 40), (false, 'register-other-two', 30, 60), (true, 'register-towage', 10, 55))
+  sample(towing, source_key, distance_nm, fuel_liters)
+where vessel.id = (select vessel_id from conso_fixture where key = 'missing_calibration');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is(public.sea_operation_register_consumption(array[pg_temp.conso_id('base'), pg_temp.conso_id('base'), pg_temp.conso_id('draft'),
+    pg_temp.conso_id('no_go'), pg_temp.conso_id('native_cm'), pg_temp.conso_id('revision')], false),
+  jsonb_build_object('recordedOperationIds', jsonb_build_array(pg_temp.conso_id('base')), 'vesselAverages', '[]'::jsonb),
+  'a real Capitaine sees status for current signed GO readings, without duplicates, drafts, NO GO, removed or superseded plans');
+select throws_ok($$select public.sea_operation_register_consumption(array_fill(pg_temp.conso_id('base'), array[201]), true)$$,
+  '22023', null, 'the register status batch is bounded');
+select pg_temp.conso_actor(5);
+select is(public.sea_operation_register_consumption(array[pg_temp.conso_id('base')], false)->'recordedOperationIds',
+  jsonb_build_array(pg_temp.conso_id('base')), 'a real Marin sees recorded consumption status');
+select is((average->>'otherLitersPerNm')::numeric, 2.5::numeric, 'other passages average total litres per total distance')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') average
+where (average->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'missing_calibration');
+select is((average->>'towageLitersPerNm')::numeric, 5.5::numeric, 'a real Marin sees the separate towage average')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') average
+where (average->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'missing_calibration');
+select is((select count(*)::integer from public.vessel_fuel_reference_samples), 0, 'register averages do not grant a real Marin access to source samples');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_register_consumption(array[pg_temp.conso_id('base')], true),
+  '{"recordedOperationIds":[],"vesselAverages":[]}'::jsonb, 'foreign admins receive only their own company statuses and fleet');
+reset role;
+
+update public.vessels set fuel_capacity_m3 = 10 where id = (
+  select vessel.id from public.vessels vessel join public.companies company on company.id = vessel.company_id
+  where company.code = 'bbtm' and vessel.name = 'GOURY' and vessel.asset_kind = 'vessel' and vessel.active
+  order by vessel.id limit 1
+);
+insert into conso_fixture(key, id, vessel_id, draft)
+select voyage.key, gen_random_uuid(), vessel.id, base.draft || jsonb_build_object(
+    'project', 'Live GOURY ' || voyage.key,
+    'vessel', jsonb_set(base.draft->'vessel', '{id}', to_jsonb(vessel.id::text)),
+    'applicability', jsonb_build_object('towing', voyage.towing))
+from conso_fixture base
+cross join (values ('goury_other', 'no'), ('goury_towage', 'yes'), ('goury_unknown', ''), ('goury_overlap', 'no')) voyage(key, towing)
+join lateral (
+  select vessel.id from public.vessels vessel join public.companies company on company.id = vessel.company_id
+  where company.code = 'bbtm' and vessel.name = 'GOURY' and vessel.asset_kind = 'vessel' and vessel.active
+  order by vessel.id limit 1
+) vessel on true
+where base.key = 'base';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('base') and fixture.key in ('goury_other', 'goury_towage', 'goury_unknown', 'goury_overlap');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_other'), null,
+  pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":70,"pricePerLiter":null,"actualArrival":"2026-11-06T04:00"}')$$,
+  'a real Capitaine can confirm a nominally calibrated GOURY passage');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_towage'), null,
+  pg_temp.conso_input() || '{"departureGauge":70,"arrivalGauge":70,"pricePerLiter":null,"actualArrival":"2026-11-06T06:00"}')$$,
+  'a calibrated towage reading can confirm zero fuel on a positive passage distance');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_unknown'), null,
+  pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":50,"pricePerLiter":null,"actualArrival":"2026-11-06T08:00"}')$$,
+  'a reading with unspecified towage can be recorded');
+select pg_temp.conso_actor(5);
+select is((rate->>'otherLitersPerNm')::numeric, 62.5::numeric, 'a real Marin sees the actual GOURY rate for classified passages')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_other');
+select is((rate->>'towageLitersPerNm')::numeric, 0::numeric, 'a calibrated zero-fuel towage rate is distinct from a missing rate')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_towage');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_register_consumption(array[pg_temp.conso_id('goury_other')], true),
+  '{"recordedOperationIds":[],"vesselAverages":[]}'::jsonb, 'foreign admins cannot obtain the live GOURY rate or status');
+select pg_temp.conso_actor(3);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_overlap'), null,
+  pg_temp.conso_input() || '{"departureGauge":90,"arrivalGauge":70,"pricePerLiter":null,"actualArrival":"2026-11-06T03:30"}')$$,
+  'a second Conso record can describe an overlapping voyage');
+select is((rate->>'otherLitersPerNm')::numeric, 125::numeric, 'only the last confirmed overlapping voyage contributes to the live rate')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_other');
+reset role;
+
+insert into public.vessel_fuel_reference_samples(company_id, vessel_id, towing, source_key, source_label, voyage_count, distance_nm, fuel_liters)
+select operation.company_id, operation.vessel_id, false, 'sea-operation:' || operation.id::text, 'Register duplicate fixture', 1, 16, 800
+from public.sea_operations operation where operation.id = pg_temp.conso_id('goury_other');
+set local role authenticated;
+select pg_temp.conso_actor(5);
+select is((rate->>'otherLitersPerNm')::numeric, 50::numeric, 'a reference takes precedence over the original and overlapping live readings')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_other');
+reset role;
+
+insert into public.vessel_fuel_price_observations(company_id, vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select company_id, vessel_id, (now() at time zone 'Europe/Paris')::date, 1.56, 'Register vessel price fixture'
+from public.sea_operations where id = pg_temp.conso_id('base')
+on conflict (company_id, vessel_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht;
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select company_id, (now() at time zone 'Europe/Paris')::date, 1.75, 'Register fallback price fixture'
+from public.sea_operations where id = pg_temp.conso_id('base')
+on conflict (company_id, price_date) do update set price_eur_per_liter_ht = excluded.price_eur_per_liter_ht;
+insert into public.vessel_fuel_price_observations(company_id, vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select company_id, vessel_id, (now() at time zone 'Europe/Paris')::date + 1, 9.99, 'Future GOURY price fixture'
+from public.sea_operations where id = pg_temp.conso_id('goury_other');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is((rate->>'pricePerLiter')::numeric, 1.56::numeric, 'a real Capitaine sees the vessel tariff ahead of a newer fleet price')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'base');
+select pg_temp.conso_actor(5);
+select is((rate->>'pricePerLiter')::numeric, 1.75::numeric, 'a real Marin sees the fleet fallback and excludes the future vessel tariff')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_other');
+select is((select count(*)::integer from public.vessel_fuel_price_observations), 0, 'scoped chart prices do not grant Marin access to tariff records');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_register_consumption('{}', true)->'vesselAverages', '[]'::jsonb, 'foreign admins cannot access fleet chart prices');
+reset role;
+
+with calendar as (
+  select (now() at time zone 'Europe/Paris')::date as today,
+    date_trunc('month', now() at time zone 'Europe/Paris')::date - 1 as previous_day
+)
+insert into sea_operation_private.consumption_history(company_id, data)
+select company.id, jsonb_build_object('rozel', '[]'::jsonb, 'rozelGauge', '[]'::jsonb, 'suroit', jsonb_build_array(
+  jsonb_build_object('sourceRow', 8, 'cells', jsonb_build_array('Cherbourg', 'Le Havre', 20,
+    today - date '1899-12-30', today - date '1899-12-30' + 0.1, 'NON', null, null, 90, 80, null, null, 200, null, null, 400)),
+  jsonb_build_object('sourceRow', 9, 'cells', jsonb_build_array('Cherbourg', 'Le Havre', 30,
+    previous_day - date '1899-12-30', previous_day - date '1899-12-30' + 0.1, 'NON', null, null, 90, 80, null, null, 450, null, null, null)),
+  jsonb_build_object('sourceRow', 10, 'cells', jsonb_build_array('Le Havre', 'Cherbourg', 30,
+    today - date '1899-12-30' + 0.2, today - date '1899-12-30' + 0.3, 'NON', null, null, 90, 80, null, null, 100, null, null, null))
+)) from public.companies company cross join calendar where company.code = 'bbtm';
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_other'), 1,
+  pg_temp.conso_input() || jsonb_build_object('departureGauge', 80, 'arrivalGauge', 70, 'pricePerLiter', 2,
+    'actualArrival', to_char((now() at time zone 'Europe/Paris')::date, 'YYYY-MM-DD"T00:00"')))$$,
+  'a real Capitaine can save the current month passage at a known price');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_overlap'), 1,
+  pg_temp.conso_input() || jsonb_build_object('departureGauge', 90, 'arrivalGauge', 70, 'pricePerLiter', null,
+    'actualArrival', to_char(date_trunc('month', now() at time zone 'Europe/Paris') - interval '12 hours', 'YYYY-MM-DD"T"HH24:MI')))$$,
+  'a previous month passage can be confirmed without a saved price');
+select pg_temp.conso_actor(5);
+select is(rate->'monthly'->'other', '{"current":{"litersPerNm":62.5,"costPerNm":125},"previous":{"litersPerNm":125,"costPerNm":null}}'::jsonb,
+  'a real Marin sees monthly live readings with the saved cost only where available')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'goury_other');
+select is(rate->'monthly'->'other', '{"current":{"litersPerNm":6,"costPerNm":20},"previous":{"litersPerNm":15,"costPerNm":null}}'::jsonb,
+  'monthly Suroît rates are weighted and cost uses only the distance with a stored cost')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'native_cm');
+select is(rate->'monthly'->'towage', '{"current":{"litersPerNm":null,"costPerNm":null},"previous":{"litersPerNm":null,"costPerNm":null}}'::jsonb,
+  'a month and regime without measurements remains unavailable')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = (select vessel_id from conso_fixture where key = 'native_cm');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_register_consumption('{}', true)->'vesselAverages', '[]'::jsonb,
+  'foreign admins cannot access monthly consumption trends');
 reset role;
 select * from finish();
 rollback;

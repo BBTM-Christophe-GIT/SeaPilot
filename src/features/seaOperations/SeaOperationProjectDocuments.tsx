@@ -13,13 +13,13 @@ interface SeaOperationProjectDocumentsProps {
   showWithoutProject?: boolean;
   accessKey?: string;
   canManage?: boolean;
-  onCountChange?: (count: number | null) => void;
+  onCatalogChange?: (documents: readonly SeaOperationProjectDocument[] | null) => void;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Impossible de consulter les documents du projet. Réessayez.';
 
 /** Sea-only catalogue and byte access; optional manager deletion keeps its own server guard. */
-export function SeaOperationProjectDocuments({ client, projectId, disabled = false, showWithoutProject = false, accessKey = '', canManage = false, onCountChange }: SeaOperationProjectDocumentsProps) {
+export function SeaOperationProjectDocuments({ client, projectId, disabled = false, showWithoutProject = false, accessKey = '', canManage = false, onCatalogChange }: SeaOperationProjectDocumentsProps) {
   const titleId = useId();
   const [attempt, setAttempt] = useState(0);
   const context = useMemo(() => ({ client, projectId, attempt, accessKey, canManage }), [client, projectId, attempt, accessKey, canManage]);
@@ -49,7 +49,7 @@ export function SeaOperationProjectDocuments({ client, projectId, disabled = fal
 
   const currentCatalog = catalog?.context === context ? catalog : null;
   const currentViewer = viewer?.context === context ? viewer : null;
-  useEffect(() => { onCountChange?.(!projectId ? 0 : currentCatalog && !currentCatalog.error ? currentCatalog.documents.length : null); }, [currentCatalog, onCountChange, projectId]);
+  useEffect(() => { onCatalogChange?.(!projectId ? [] : currentCatalog && !currentCatalog.error ? currentCatalog.documents : null); }, [currentCatalog, onCatalogChange, projectId]);
 
   async function openDocument(document: SeaOperationProjectDocument) {
     if (disabled || document.projectId !== projectId) return;

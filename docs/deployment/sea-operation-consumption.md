@@ -22,10 +22,13 @@ Après l’enregistrement, la fenêtre **Bilan de consommation** affiche les
 indicateurs, les volumes comparés des soutes et, pour les relevés GPS, le profil
 de vitesse avec ses coupures. La carte reprend le relevé confirmé par le serveur.
 Le bouton **Consos Excel** exporte les relevés correspondant aux filtres du
-registre, avec la provenance de la distance. Les archives Suroît et Rozel
-forment deux onglets distincts des relevés SeaPilot et sont indépendantes des
-filtres. La courbe de jauge du Rozel occupe un onglet séparé. L’archive contient
-854 relevés datés et 11 points de courbe. Les valeurs des classeurs sont
+registre, avec la provenance de la distance. Chaque navire possède son onglet.
+Les archives Suroît et Rozel sont intégrées à l’onglet de leur navire et restent
+indépendantes des filtres. La colonne Source distingue les relevés historiques
+des relevés SeaPilot. La courbe de jauge est en annexe dans l’onglet du Rozel identifié par son
+immatriculation. Les conversions des autres navires suivent leur propre
+calibrage. Le classeur exporte les volumes enregistrés.
+L’archive contient 854 relevés datés et 11 points de courbe. Les valeurs des classeurs sont
 conservées, y compris leurs anomalies historiques, et les lignes de préparation
 sans date sont écartées.
 
@@ -79,3 +82,38 @@ Le JSON est chargé dans `sea_operation_private.consumption_history`
 pour la société correspondante. Contrôler les trois nombres de lignes avant et
 après chargement. L’archive suit le même droit de consultation que le registre.
 Le chargement est indépendant des relevés signés et des références Projet.
+
+
+## Registre par navire et fiche à télécharger
+
+Le registre groupe les opérations par navire, année et mois, selon la date de
+l’opération et le calendrier de Paris. L’année et le mois en cours s’ouvrent par
+défaut. Une recherche ou un filtre ouvre les branches correspondantes.
+La pastille Conso indique la présence d’un relevé sur les fiches GO signées.
+
+Le graphique au-dessus du registre affiche les autres manœuvres pour chaque
+navire, ainsi que le remorquage pour Le Rozel, Landemer et le Suroît. Il affiche
+les litres par mille nautique et le coût estimé en euros HT par mille nautique.
+Le coût multiplie la consommation moyenne par le dernier prix HT du navire,
+ou par le dernier prix de la flotte si le navire n’a pas de tarif propre. Dans chaque régime, la moyenne divise le volume total par
+la distance totale. Pour le Rozel et le Suroît, elle utilise les trajets de
+référence. Pour les autres navires, elle inclut aussi les relevés de missions
+GO avec une arrivée réelle, une distance positive et un volume calculable,
+en écartant les doublons de trajet. Une absence de données reste distincte
+d’une consommation nulle. Les indicateurs de tendance comparent les relevés
+du mois en cours à ceux du mois précédent, selon la date d’arrivée à Paris.
+La consommation est pondérée par la distance parcourue. La tendance de coût
+utilise les coûts enregistrés et la distance des passages correspondants.
+La tendance reste indisponible lorsqu’un des deux mois est sans donnée.
+
+Entre Carte et Documents, l’onglet Fiche affiche la fiche conservée et les
+actions de consultation et de modification autorisées. Le volet **Sections PDF** de la barre compacte permet de choisir Armement, Documents, Contrôle avant appareillage, Passage Plan
+et Décision du Capitaine. La rubrique Documents liste les références visibles
+des pièces du projet. Les fichiers se consultent et se téléchargent dans
+l’onglet Documents.
+
+Pour la version 3.87.0, appliquer `20261107063257_sea_operation_register_consumption.sql` et
+`20261107064910_sea_operation_live_fleet_consumption.sql`, puis
+`20261107065640_sea_operation_fleet_consumption_prices.sql` et
+`20261107070210_sea_operation_monthly_consumption_trends.sql` avant le frontend. Le RPC du registre utilise les droits de consultation
+existants et lit le statut des opérations par lots de 200.
