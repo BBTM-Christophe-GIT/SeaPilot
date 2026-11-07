@@ -96,6 +96,14 @@ async function openFixture(linked = true) {
       <Route path="modules/seaOperations" element={<SeaOperationsPage />} />
     </Route></Routes></MemoryRouter>);
   });
+  await act(async () => {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Rechercher une opération' }), { target: { value: stored.draft.project } });
+  });
+  await act(async () => {
+    const register = within(screen.getByRole('list', { name: 'Opérations par navire, année et mois' }));
+    fireEvent.click(register.getByRole('button', { name: name => name.startsWith(stored.draft.project) }));
+  });
+  fireEvent.click(screen.getByRole('tab', { name: 'Fiche' }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ouvrir la fiche' })); });
   expect(screen.getByRole('dialog', { name: 'Fiche Opération en Mer' })).toBeVisible();
   return () => structuredClone(stored);

@@ -1,0 +1,110 @@
+.so-register-tree,
+.so-register-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.so-register-tree {
+  display: grid;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3);
+}
+
+.so-register-tree ul:not([hidden]) {
+  display: grid;
+  gap: var(--sp-space-1);
+  margin-block: var(--sp-space-1);
+  margin-inline-start: var(--sp-space-2);
+  padding-inline-start: var(--sp-space-2);
+  border-inline-start: 1px solid var(--sp-border);
+}
+
+.so-page .so-register-tree button.so-tree-disclosure {
+  display: flex;
+  justify-content: flex-start;
+  min-height: var(--sp-control-height);
+  width: 100%;
+  padding: var(--sp-space-1) var(--sp-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  text-align: start;
+}
+
+.so-page .so-register-tree .so-tree-vessel > button.so-tree-disclosure {
+  background: var(--sp-surface-subtle);
+  border-color: var(--sp-border);
+  color: var(--sp-heading);
+}
+
+.so-page .so-register-tree button.so-tree-disclosure:hover:not(:disabled) {
+  background: var(--sp-primary-soft);
+  border-color: var(--sp-border-strong);
+}
+
+.so-tree-disclosure > svg { flex: none; color: var(--sp-primary); }
+.so-tree-branch-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.so-tree-count { color: var(--sp-muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+
+.so-register-tree .so-tree-chip {
+  display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
+  align-items: center;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+}
+
+.so-page .so-register-tree .so-tree-chip > button.so-record {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  padding: var(--sp-space-2);
+  border-radius: var(--sp-control-radius);
+  border: 0;
+  background: transparent;
+  color: var(--sp-text);
+  text-align: start;
+}
+
+.so-page .so-register-tree .so-tree-chip > button.so-record:hover:not(:disabled),
+.so-register-tree .so-tree-chip[data-selected=true] { background: var(--sp-primary-soft); }
+
+.so-register-tree .so-tree-chip[data-selected=true] {
+  border-color: var(--sp-primary);
+  box-shadow: inset 3px 0 var(--sp-primary);
+}
+
+.so-tree-chip-content { display: grid; gap: var(--sp-space-1); }
+.so-tree-chip-content > strong { font-size: .875rem; overflow-wrap: anywhere; }
+.so-tree-chip-details { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); color: var(--sp-muted); font-size: .75rem; font-weight: 400; overflow-wrap: anywhere; }
+.so-tree-chip-details .so-badge { padding: 0 var(--sp-space-1); line-height: 1.5; white-space: normal; }
+.so-tree-chip-details .so-tree-conso-recorded { background: var(--sp-success); border-color: var(--sp-success); color: var(--sp-surface); }
+
+.so-register-tree .so-tree-chip > .so-record-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-space-2);
+  width: auto;
+  justify-content: flex-end;
+  padding: var(--sp-space-1) var(--sp-space-2) var(--sp-space-1) 0;
+}
+
+@media (max-width: 520px) {
+  .so-register-tree ul:not([hidden]) { margin-inline-start: var(--sp-space-1); padding-inline-start: var(--sp-space-1); }
+}
+
+@media (max-width: 380px) {
+  .so-register-tree .so-tree-chip > .so-record-actions { flex-direction: column; align-items: stretch; }
+}
+
+@media (pointer: coarse) {
+  .so-page .so-register-tree button.so-tree-disclosure,
+  .so-page .so-register-tree .so-tree-chip > button.so-record,
+  .so-page .so-register-tree .so-tree-chip > .so-record-actions button { min-height: 44px; }
+}

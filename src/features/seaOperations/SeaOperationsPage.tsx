@@ -1,6 +1,6 @@
 import { Fragment, cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileSpreadsheet, FileText, Fuel, Map, Pencil, Plus, Printer, Save, Search, Ship, Trash2 } from 'lucide-react';
+import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileSpreadsheet, FileText, Map, Pencil, Plus, Printer, Save, Search, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -28,6 +28,11 @@ import { SeaOperationRecordedWeather } from './SeaOperationRecordedWeather';
 import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
+import { SeaOperationRegisterTree } from './SeaOperationRegisterTree';
+import { SeaOperationFleetConsumption } from './SeaOperationFleetConsumption';
+import { fetchSeaOperationRegisterConsumption, type SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
+import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import type { SeaOperationPdfSection } from './seaOperationPdfSections';
 import { SeaOperationConsumptionDialog } from './SeaOperationConsumptionPanel';
 import type { SeaOperationConsumption } from './seaOperationConsumption';
 import { fetchSeaOperationConsumptionExport, fetchSeaOperationConsumptionHistory } from './seaOperationConsumptionExportQuery';
@@ -208,6 +213,9 @@ export function SeaOperationsPage() {
   const [recordActionError, setRecordActionError] = useState('');
   const [consumptionAction, setConsumptionAction] = useState<ConsumptionAction | null>(null);
   const [consumptionRefresh, setConsumptionRefresh] = useState(0);
+  const [registerConsumption, setRegisterConsumption] = useState<{
+    client: SupabaseClient; accessKey: string; ids: string; result?: SeaOperationRegisterConsumption; error?: string;
+  }>();
   const [consumptionSave, setConsumptionSave] = useState<{ client: SupabaseClient; accessKey: string; data: SeaOperationConsumption } | null>(null);
   const consumptionExportRequest = useRef<object | null>(null);
   const [mapRecord, setMapRecord] = useState<SeaOperationRecord | null>(null);
@@ -229,6 +237,7 @@ export function SeaOperationsPage() {
   const currentClient = useRef(client);
   const mutationRunning = useRef(false);
   const recordActionSequence = useRef(0);
+  const currentAccess = currentClient.current === client;
   const account = data ? recoveryKey(data) : '';
   const accessKey = `${account}:${roles.join(',')}`;
   const actionContext = useRef({ client, account, accessKey });
@@ -236,7 +245,7 @@ export function SeaOperationsPage() {
   const consumptionDialog = consumptionAction?.client === client && consumptionAction.accessKey === accessKey
     ? consumptionAction : null;
   const savedConsumption = consumptionSave?.client === client && consumptionSave.accessKey === accessKey ? consumptionSave.data : undefined;
-  const formConsumption = useSeaOperationConsumptionContext(client, editing && currentClient.current === client ? record?.id : undefined, consumptionRefresh,
+  const formConsumption = useSeaOperationConsumptionContext(client, editing && currentAccess ? record?.id : undefined, consumptionRefresh,
     `${accessKey}:${record?.version ?? ''}`, savedConsumption).response?.data;
   const formMaxSpeedKnots = data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id)?.maxSpeedKnots;
   const selectedWindowMission = planning?.choices.find(choice => choice.operationId === draft.planning?.operationId && choice.date === draft.planning?.date);
@@ -252,6 +261,26 @@ export function SeaOperationsPage() {
   const captainPersonId = draft.transit?.captainPersonId ?? draft.planning?.captainPersonId;
   const selectedCaptain = captains?.find(captain => captain.personId === captainPersonId);
   const sortedVessels = useMemo(() => [...(data?.vessels ?? [])].sort(compareFleetAssets), [data?.vessels]);
+  const registerConsumptionIds = data?.records.filter(hasSeaOperationConsumption).map(item => item.id).sort().join(',') ?? '';
+  useEffect(() => {
+    if (!account || !currentAccess) return;
+    let active = true;
+    const context = { client, accessKey, ids: registerConsumptionIds };
+    void fetchSeaOperationRegisterConsumption(client, registerConsumptionIds ? registerConsumptionIds.split(',') : []).then(result => {
+      if (active) setRegisterConsumption({ ...context, result });
+    }).catch((reason: unknown) => {
+      if (active) setRegisterConsumption(current => ({
+        ...context, result: current?.client === client && current.accessKey === accessKey && current.ids === registerConsumptionIds
+          ? current.result : undefined, error: errorMessage(reason),
+      }));
+    });
+    return () => { active = false; };
+  }, [account, accessKey, client, consumptionRefresh, currentAccess, registerConsumptionIds]);
+  const registerConsumptionState = registerConsumption?.client === client && registerConsumption.accessKey === accessKey
+    && registerConsumption.ids === registerConsumptionIds ? registerConsumption : undefined;
+  const recordedOperationIds = registerConsumptionState?.result?.recordedOperationIds;
+  const completedOperationIds = recordedOperationIds && savedConsumption?.record
+    ? new Set([...recordedOperationIds, savedConsumption.operationId]) : recordedOperationIds;
   const recordedClientLocked = Boolean(record?.draft.client.trim() && sameClientContext(record.draft, draft));
   const clientLocked = recordedClientLocked || Boolean(selectedMission?.client.trim());
   const selectedClientValue = clientLocked && draft.client ? '__retained' : draft.clientId || (draft.client ? '__existing' : '');
@@ -737,6 +766,7 @@ export function SeaOperationsPage() {
   const remember = (saved: SeaOperationRecord) => {
     clearRecovery(data);
     setRecord(saved); setDraft(saved.draft); setDirty(false);
+    setMapRecord(current => current?.id === saved.id ? saved : current);
     setProjectPortsContext(saved.projectPorts && data ? { client, account: recoveryKey(data), ports: saved.projectPorts } : null);
     const ports = saved.projectPorts;
     if (ports && data && currentClient.current === client && loadedAccount.current === recoveryKey(data)) {
@@ -749,7 +779,7 @@ export function SeaOperationsPage() {
   };
   async function open(item: Pick<SeaOperationRecord, 'id'>) {
     if (!confirmLeave()) return;
-    clearMapSelection();
+    if (mapDirty || mapSelectionId !== item.id) clearMapSelection();
     allowAutomaticMission.current = false;
     editorOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const request = ++loadSequence.current;
@@ -783,9 +813,9 @@ export function SeaOperationsPage() {
     if (!data || busy || exporting || mutationRunning.current || recordAction
       || (kind === 'revise' ? item.status !== 'signed' || !item.canRevise : !item.canDelete)) return;
     if (!confirmLeave()) return;
-    clearMapSelection();
+    if (kind === 'delete' || mapDirty || mapSelectionId !== item.id) clearMapSelection();
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    editorOpener.current = opener?.closest('.so-record-entry')?.querySelector<HTMLButtonElement>('.so-record') || editorOpener.current;
+    editorOpener.current = opener?.closest('.so-record-entry')?.querySelector<HTMLButtonElement>('.so-record') || opener;
     setRecordActionError(''); setRecordAction({ kind, record: item, client, account: recoveryKey(data) });
   }
   async function confirmRecordAction() {
@@ -806,6 +836,7 @@ export function SeaOperationsPage() {
         const revised = await reviseSeaOperation(action.client, { id: action.record.id, version: action.record.version });
         if (!isCurrent()) return;
         remember(revised);
+        if (mapSelectionId === action.record.id) { setMapSelectionId(revised.id); setMapRecord(revised); }
         setData((current) => current ? { ...current, records: current.records.filter((item) => item.id !== action.record.id) } : current);
         setPlanningDate(seaOperationContextDate(revised.draft) || revised.draft.vessel.etd.slice(0, 10) || seaOperationToday());
         allowAutomaticMission.current = false;
@@ -911,6 +942,23 @@ export function SeaOperationsPage() {
     } catch (reason) { setError(errorMessage(reason)); revealFormFeedback(); }
     finally { setExportingPdf(false); }
   }
+  async function exportSelectedPdf(item: SeaOperationRecord, sections: readonly SeaOperationPdfSection[]) {
+    if (busy || exporting || !sections.length || item.id !== latestMapRecord.current?.id
+      || item.version !== latestMapRecord.current.version) return;
+    const selection = mapLoadSequence.current;
+    const isCurrent = () => selection === mapLoadSequence.current && actionContext.current.client === client
+      && actionContext.current.accessKey === accessKey;
+    setExportingPdf(true); setError('');
+    try {
+      const projectId = item.draft.planning?.projectId;
+      const [signatureImage, documents] = await Promise.all([
+        sections.includes('decision') ? loadSeaOperationSignature(client, item) : null,
+        sections.includes('documents') && projectId ? fetchSeaOperationProjectDocuments(client, projectId) : [],
+      ]);
+      if (isCurrent()) await exportSeaOperationPdf(item, { sections, documents, signatureImage }, isCurrent);
+    } catch (reason) { if (isCurrent()) setError(errorMessage(reason)); }
+    finally { setExportingPdf(false); }
+  }
   const records = (data?.records || []).filter((item) => {
     const matches = `${item.draft.project} ${item.draft.client} ${item.draft.vessel.name}`.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr'));
     return matches && (status === 'all' || (status === 'draft' ? item.status === 'draft' : item.status === 'signed' && item.draft.decision === status));
@@ -935,12 +983,12 @@ export function SeaOperationsPage() {
         const consumption = byId.get(operation.id);
         return consumption ? [{ operation, consumption }] : [];
       });
-      if (!rows.length && !history.rozel.length && !history.suroit.length && !history.rozelGauge.length) {
+      if (!data.vessels.length && !rows.length && !history.rozel.length && !history.suroit.length && !history.rozelGauge.length) {
         setNotice('Aucun relevé de consommation enregistré pour les opérations affichées.');
         return;
       }
       const { buildSeaOperationConsumptionWorkbook } = await import('./seaOperationConsumptionWorkbook');
-      const blob = await buildSeaOperationConsumptionWorkbook(rows, history);
+      const blob = await buildSeaOperationConsumptionWorkbook(rows, history, data.vessels);
       if (!isCurrent()) return;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -961,26 +1009,22 @@ export function SeaOperationsPage() {
   return <div className="so-page"><div className="so-screen" inert={hasRecordDialog || undefined} aria-hidden={hasRecordDialog || undefined}>
     <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Map size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
     <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow><ModuleRibbonGroup label="Opérations">
-      <ModuleRibbonCommand disabled={busy || exporting || !data} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />
-      <ModuleRibbonCommand disabled={busy || exporting || !data} icon={<FileSpreadsheet size={22} aria-hidden="true" />}
+      <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />
+      <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess} icon={<FileSpreadsheet size={22} aria-hidden="true" />}
         label={exportingConsumption ? 'Export en cours…' : 'Consos Excel'} aria-label="Exporter les consommations en Excel"
         aria-busy={exportingConsumption} title="Exporter les relevés des opérations affichées et l’historique disponible" onClick={() => void exportConsumption()} />
     </ModuleRibbonGroup></ModuleRibbon>
     {!editing && error && <div className="so-alert so-danger" tabIndex={-1} role="alert"><AlertTriangle size={19} /><span>{error}</span>{!data && <button onClick={() => { setError(''); void fetchSeaOperationData(client).then(applyData).catch((reason: unknown) => setError(errorMessage(reason))); }}>Réessayer</button>}</div>}
     {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
-    {!data && !error && <p role="status">Chargement des opérations en mer…</p>}
-    {data && <>
-      <div className="so-metrics">{[['Fiches enregistrées', data.records.length], ['En préparation', data.records.filter((item) => item.status === 'draft').length], ['Décisions GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'GO').length], ['Décisions NO GO', data.records.filter((item) => item.status === 'signed' && item.draft.decision === 'NO_GO').length]].map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>)}</div>
-      <div className="so-register-workspace"><section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Sélectionnez une opération pour afficher sa carte.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
-      {records.length ? <div className="so-records">{records.map((item) => <div className="so-record-entry" key={item.id}>
-        <button className="so-record" aria-pressed={mapSelectionId === item.id} aria-controls="sea-operation-register-map" disabled={busy || exporting} onClick={() => void selectMapOperation(item)}><span className="so-record-icon"><Ship size={21} /></span><span><strong>{item.draft.project || 'Opération sans titre'}</strong><small>{item.draft.vessel.name || 'Navire à renseigner'} · {item.draft.client || 'Client à renseigner'}</small></span><span className={`so-badge ${item.status === 'draft' ? '' : item.draft.decision === 'GO' ? 'is-go' : 'is-nogo'}`}>{item.status === 'draft' ? 'Brouillon' : item.draft.decision === 'NO_GO' ? 'NO GO' : 'GO'}</span><span className="so-record-date">{formatDate(item.updatedAt)}<small>{item.updatedByName}</small></span><ChevronRight size={18} /></button>
-        <div className="so-record-actions" role="group" aria-label={`Actions pour ${item.draft.project || 'Opération sans titre'}`}>
-          <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => void open(item)}><Eye size={16} />Ouvrir la fiche</button>
-          {hasSeaOperationConsumption(item) && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => openConsumption(item)}><Fuel size={16} aria-hidden="true" />Conso</button>}
-          {((item.status === 'draft' && item.canEdit) || item.canRevise) && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => item.status === 'draft' ? void open(item) : requestRecordAction('revise', item)}><Pencil size={16} />Modifier</button>}
-          {item.canDelete && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', item)}><Trash2 size={16} />Supprimer</button>}
-        </div>
-      </div>)}</div> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
+    {(!data || !currentAccess) && !error && <p role="status">Chargement des opérations en mer…</p>}
+    {data && currentAccess && <>
+      <SeaOperationFleetConsumption vessels={sortedVessels} averages={registerConsumptionState?.result?.vesselAverages}
+        error={registerConsumptionState?.error} onRetry={() => setConsumptionRefresh(value => value + 1)} />
+      <div className="so-register-workspace"><section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Sélectionnez une opération pour consulter sa carte, sa fiche ou ses documents.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
+      {records.length ? <SeaOperationRegisterTree records={records} vessels={sortedVessels} selectedId={mapSelectionId}
+        disabled={busy || exporting} consumption={completedOperationIds}
+        filterKey={search.trim() || status !== 'all' ? JSON.stringify([search.trim(), status]) : undefined}
+        onSelect={selectMapOperation} onConsumption={openConsumption} onDelete={item => requestRecordAction('delete', item)} /> : <div className="so-empty"><Compass size={42} /><h3>{search || status !== 'all' ? 'Aucune opération correspondante' : 'Préparez votre première opération en mer'}</h3><p>Renseignez la mission puis les contrôles du formulaire GO / NO GO.</p>{!search && status === 'all' && <button onClick={create}><Plus size={16} />Créer une opération</button>}</div>}</section>
       <div id="sea-operation-register-map" className="so-register-map-pane" aria-busy={mapLoading}>
         {mapLoading ? <p className="so-map-loading" role="status">Chargement de la carte de l’opération…</p> : null}
         {mapError ? <div className="so-alert so-danger" role="alert"><span>{mapError}</span><button type="button" className="so-secondary" onClick={() => { const item = data.records.find(value => value.id === mapSelectionId); if (item) void selectMapOperation(item); }}>Réessayer</button></div> : null}
@@ -988,12 +1032,15 @@ export function SeaOperationsPage() {
           maxSpeedKnots={data.vessels.find(value => String(value.id) === mapRecord?.draft.vessel.id)?.maxSpeedKnots}
           consumptionRefresh={consumptionRefresh}
           savedConsumption={savedConsumption}
-          onSave={saveMapOperation} onDirtyChange={setMapDirty} />
+          onSave={saveMapOperation} onDirtyChange={setMapDirty}
+          onOpen={item => void open(item)}
+          onModify={item => item.status === 'draft' ? void open(item) : requestRecordAction('revise', item)}
+          onDownload={(item, sections) => void exportSelectedPdf(item, sections)} />
       </div></div>
       <p className="so-source">Référence : formulaire « GO / NO GO – Opération en Mer », OPE-FOR-10-C.</p>
     </>}
 
-    {editing && <div className="so-editor-modal"><AppDialog
+    {editing && currentAccess && <div className="so-editor-modal"><AppDialog
       size="fullscreen"
       title={record ? 'Fiche Opération en Mer' : 'Nouvelle opération en mer'}
       eyebrow={signed ? 'CONSULTATION' : record ? 'PRÉPARATION' : 'CRÉATION'}
@@ -1214,5 +1261,5 @@ export function SeaOperationsPage() {
         setConsumptionRefresh(value => value + 1);
         setNotice('La consommation de l’opération a été enregistrée.');
       }} />}
-    {record && <SeaOperationPrint record={record} />}</div>;
+    {record && currentAccess && <SeaOperationPrint record={record} />}</div>;
 }

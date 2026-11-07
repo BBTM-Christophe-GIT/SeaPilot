@@ -1,5 +1,15 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.87.0` organise le registre des opérations en mer par navire,
+année et mois, affiche la consommation et le coût HT par mille selon le régime,
+compare les deux derniers mois et ajoute une pastille de suivi Conso. L’onglet Fiche permet un téléchargement par section,
+et l’export Excel regroupe les relevés dans un onglet par navire. Appliquer
+`20261107063257_sea_operation_register_consumption.sql` et
+`20261107064910_sea_operation_live_fleet_consumption.sql`, puis
+`20261107065640_sea_operation_fleet_consumption_prices.sql` et
+`20261107070210_sea_operation_monthly_consumption_trends.sql` avant le frontend.
+Voir [le registre et les relevés Conso](./sea-operation-consumption.md).
+
 La version `3.86.0` réorganise le relevé Conso, préremplit les paramètres de
 navigation à partir d’une trace GPX horodatée et affiche le bilan graphique de
 la mission. L’export Excel ajoute les archives Suroît et Rozel. Appliquer les

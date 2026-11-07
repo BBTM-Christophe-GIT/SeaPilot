@@ -44,6 +44,9 @@ describe('Sea Operation register Carte/Documents pane', () => {
     vi.mocked(fetchSeaOperationProjectDocuments).mockImplementation(async (_client, projectId) => projectId === '501' ? slow : [{ ...document, projectId: '502' }, { ...document, id: 'project:42', projectId: '502', fileName: 'second.pdf' }]);
     const view = render(<SeaOperationRegisterPane {...props} />);
     const map = screen.getByRole('tab', { name: /^Carte$/ }); map.focus(); fireEvent.keyDown(map, { key: 'ArrowRight' });
+    const fiche = screen.getByRole('tab', { name: 'Fiche' });
+    expect(fiche).toHaveFocus();
+    fireEvent.keyDown(fiche, { key: 'ArrowRight' });
     expect(screen.getByRole('tab', { name: /^Documents/ })).toHaveFocus();
     view.rerender(<SeaOperationRegisterPane {...props} record={record('B', '502')} />);
     expect(screen.getByRole('tab', { name: /^Carte$/ })).toHaveAttribute('aria-selected', 'true');

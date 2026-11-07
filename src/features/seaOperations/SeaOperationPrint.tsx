@@ -5,6 +5,7 @@ import {
   SEA_OPERATION_SOURCE, SEA_OPERATION_SUPPLY_ITEMS,
 } from './seaOperationModel';
 import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPayload, SeaOperationPortService } from './seaOperationModel';
+import type { SeaOperationProjectDocument } from './seaOperationDocumentQueries';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
@@ -71,7 +72,11 @@ const dapaqPreparerLabels: Record<SeaOperationPayload['dapaq']['preparedBy'], st
 };
 
 /** Complete printable content with the original Word chrome and the authorized RH signature image. */
-export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOperationRecord; signatureImageUrl?: string | null }) {
+export function SeaOperationPrint({ record, signatureImageUrl, documents }: {
+  record: SeaOperationRecord;
+  signatureImageUrl?: string | null;
+  documents?: readonly SeaOperationProjectDocument[];
+}) {
   const form = record.draft;
   const signed = record.status === 'signed';
   const radioContacts = signed ? [] : seaOperationRadioContacts(form.waypoints).contacts;
@@ -125,6 +130,15 @@ export function SeaOperationPrint({ record, signatureImageUrl }: { record: SeaOp
         <PrintField label="ETA – Date et heure">{dateText(vessel.eta)}</PrintField>
       </dl>
     </section>
+
+    {documents && <section className="so-print-section">
+      <h2>Documents de la mission</h2>
+      {documents.length ? <table><thead><tr><th>Document</th><th>Fichier</th><th>Classement</th><th>Échéance</th></tr></thead>
+        <tbody>{documents.map(item => <tr key={item.id}>
+          <td>{item.title}</td><td>{item.fileName}</td><td>{[item.categoryLabel, item.subcategoryLabel].filter(Boolean).join(' / ')}</td>
+          <td>{item.expiresOn ? dateText(item.expiresOn) : '—'}</td>
+        </tr>)}</tbody></table> : <p>Aucun document disponible pour cette opération.</p>}
+    </section>}
 
     <section className="so-print-section">
       <h2>1 – Informations navire</h2>

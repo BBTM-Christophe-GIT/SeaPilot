@@ -5,11 +5,12 @@ import type { ComponentProps } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SeaOperationRegisterMap } from './SeaOperationRegisterMap';
 import { SeaOperationsPage } from './SeaOperationsPage';
-import { emptySeaOperation } from './seaOperationModel';
+import { emptySeaOperation, seaOperationToday } from './seaOperationModel';
 import { fetchSeaOperationData, fetchSeaOperationDetail, saveSeaOperation, type SeaOperationData, type SeaOperationRecord } from './seaOperationQueries';
 import { captureSeaOperationValidationWeather } from './seaOperationValidationWeather';
 import { captureSeaOperationValidationUkc } from './seaOperationValidationUkc';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
+import { exportSeaOperationPdf } from './seaOperationPdf';
 import { renderSeaOperationVoyageFuelDetails } from './SeaOperationVoyageFuelMetrics';
 import type { SeaOperationConsumption } from './seaOperationConsumption';
 import type { RoleKey } from '../permissions/roles';
@@ -17,6 +18,7 @@ import type { RoleKey } from '../permissions/roles';
 type MapProps = ComponentProps<typeof SeaOperationRegisterMap>;
 const { mapSpy, buildWorkbook } = vi.hoisted(() => ({ mapSpy: vi.fn(), buildWorkbook: vi.fn() }));
 vi.mock('./seaOperationQueries', () => ({ fetchSeaOperationData: vi.fn(), fetchSeaOperationDetail: vi.fn(), saveSeaOperation: vi.fn() }));
+vi.mock('./seaOperationPdf', () => ({ exportSeaOperationPdf: vi.fn() }));
 vi.mock('./seaOperationConsumptionWorkbook', () => ({ buildSeaOperationConsumptionWorkbook: buildWorkbook }));
 vi.mock('./seaOperationDocumentQueries', () => ({ fetchSeaOperationProjectDocuments: vi.fn(), createSeaOperationProjectDocumentUrl: vi.fn(), loadSeaOperationProjectDocumentBlob: vi.fn() }));
 vi.mock('../projects/ProjectDocumentThumbnail', () => ({ ProjectDocumentThumbnail: () => <span aria-hidden="true">Miniature</span> }));
@@ -29,18 +31,23 @@ vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: (props: M
   </section>;
 } }));
 
+const today = seaOperationToday();
+const emptyRegisterConsumption = { recordedOperationIds: [], vesselAverages: [] };
+
 function fixture(id: string, canEdit = true): SeaOperationRecord {
   return { id, companyId: 1, version: 3, status: 'draft', draft: { ...emptySeaOperation(), project: `Projet ${id}`, vessel: { ...emptySeaOperation().vessel, id: '12', name: 'GOURY' } },
-    createdBy: 'captain', createdByName: 'Capitaine', createdAt: '2026-10-28T08:00:00Z', updatedBy: 'captain', updatedByName: 'Capitaine', updatedAt: '2026-10-28T08:00:00Z',
+    createdBy: 'captain', createdByName: 'Capitaine', createdAt: today + 'T08:00:00Z', updatedBy: 'captain', updatedByName: 'Capitaine', updatedAt: today + 'T08:00:00Z',
     signedBy: null, signedByName: null, signedAt: null, captainName: null, canEdit, canSign: false };
 }
 const first = fixture('A'), second = fixture('B');
 const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
-function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>) {
+function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>, vesselNames = ['GOURY']) {
   const actor = roles?.[0] || 'captain';
-  const client = { fixture: `authenticated-${actor}`, rpc } as unknown as SupabaseClient;
-  const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: [{ id: 12, name: 'GOURY', lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false }] };
+  const client = { fixture: `authenticated-${actor}`, rpc: rpc ?? (async (name: string) => ({
+    data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption : null, error: null,
+  })) } as unknown as SupabaseClient;
+  const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: vesselNames.map((name, index) => ({ id: 12 + index, name, lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false })) };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
   vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => structuredClone(records.find(record => record.id === id)!));
   const app = (value: SupabaseClient) => <MemoryRouter><Routes><Route element={<Outlet context={{ client: value, roles }} />}><Route path="/" element={<SeaOperationsPage />} /></Route></Routes></MemoryRouter>;
@@ -159,7 +166,7 @@ describe('Operation register map integration', () => {
 
 function signedGo(id: string, project = `Projet ${id}`): SeaOperationRecord {
   const operation = fixture(id, false);
-  return { ...operation, status: 'signed', signedBy: 'captain', signedByName: 'Capitaine', signedAt: '2026-11-05T10:00:00Z',
+  return { ...operation, status: 'signed', signedBy: 'captain', signedByName: 'Capitaine', signedAt: today + 'T10:00:00Z',
     captainName: 'Capitaine', draft: { ...operation.draft, project, decision: 'GO' } };
 }
 
@@ -192,6 +199,7 @@ describe('Operation consumption from the register', () => {
     const afterSaveRead = vi.fn(() => reload.promise);
     let didSave = false;
     const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'sea_operation_register_consumption') return { data: emptyRegisterConsumption, error: null };
       if (name === 'sea_operation_save_consumption') {
         didSave = true;
         return { data: saved, error: null };
@@ -220,6 +228,7 @@ describe('Operation consumption from the register', () => {
     fireEvent.click(dashboard.getByRole('button', { name: 'Fermer le bilan' }));
     const metrics = await screen.findByRole('region', { name: 'Carburant du relevé Conso' });
     expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveTextContent('Conso renseignée');
     expect(within(metrics).getByText('1 m³')).toBeVisible();
     expect(within(metrics).getByText(/1\s200 € HT/)).toBeVisible();
     expect(within(metrics).getByText('2,73 t')).toBeVisible();
@@ -243,21 +252,22 @@ describe('Operation consumption from the register', () => {
       segmentCount: 1, gapCount: 0, reorderedPointCount: 0, excludedPointCount: 0 };
     const reading = { ...savedReading, trace };
     const rpc = vi.fn().mockImplementation(async name => ({
-      data: name === 'sea_operation_consumption_history' ? history : [{ operationId: 'A', record: reading }], error: null,
+      data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption
+        : name === 'sea_operation_consumption_history' ? history : [{ operationId: 'A', record: reading }], error: null,
     }));
     const blob = new Blob(['xlsx']);
     buildWorkbook.mockResolvedValue(blob);
     const createObjectURL = vi.fn(() => 'blob:conso-test'), revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
     const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    mount(['marin'], [selected, signedGo('B', 'Transit hors filtre'), withoutReading, noGo], rpc);
+    const { data } = mount(['marin'], [selected, signedGo('B', 'Transit hors filtre'), withoutReading, noGo], rpc);
     fireEvent.change(await screen.findByLabelText('Rechercher une opération'), { target: { value: 'Mission' } });
     fireEvent.click(exportButton());
 
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
     expect(rpc).toHaveBeenCalledWith('sea_operation_consumption_export', { p_ids: ['A', 'C'] });
     expect(rpc).toHaveBeenCalledWith('sea_operation_consumption_history');
-    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([{ operation: selected, consumption: reading }], history);
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([{ operation: selected, consumption: reading }], history, data.vessels);
     expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
     expect(download.mock.contexts[0]).toHaveAttribute('download', expect.stringMatching(/^SeaPilot - Consommations - \d{4}-\d{2}-\d{2}\.xlsx$/));
     await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:conso-test'), { timeout: 1500 });
@@ -265,27 +275,93 @@ describe('Operation consumption from the register', () => {
 
   it('downloads historical readings when the register has no current operation', async () => {
     const history = { rozel: [], suroit: [], rozelGauge: [{ sourceRow: 2, cells: [0.1, 459.75] }] };
-    const rpc = vi.fn().mockResolvedValue({ data: history, error: null });
+    const rpc = vi.fn().mockImplementation(async name => ({
+      data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption : history, error: null,
+    }));
     const blob = new Blob(['xlsx']);
     buildWorkbook.mockResolvedValue(blob);
     vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:history'), revokeObjectURL: vi.fn() }));
     const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    mount(['capitaine'], [], rpc);
+    const { data } = mount(['capitaine'], [], rpc);
     expect(await screen.findByText('Préparez votre première opération en mer')).toBeVisible();
     expect(exportButton()).toBeEnabled();
     fireEvent.click(exportButton());
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
-    expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_consumption_history');
-    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([], history);
+    expect(rpc).toHaveBeenCalledWith('sea_operation_consumption_history');
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([], history, data.vessels);
   });
 
-  it('explains that no reading is available when the filtered operation has no saved Conso', async () => {
-    const rpc = vi.fn().mockImplementation(async name => ({ data: name === 'sea_operation_consumption_history'
-      ? { rozel: [], suroit: [], rozelGauge: [] } : [], error: null }));
-    mount(['capitaine'], [signedGo('A')], rpc);
+  it('exports the registered vessel even when it has no reading', async () => {
+    const history = { rozel: [], suroit: [], rozelGauge: [] };
+    const rpc = vi.fn().mockImplementation(async name => ({ data: name === 'sea_operation_register_consumption'
+      ? emptyRegisterConsumption : name === 'sea_operation_consumption_history' ? history : [], error: null }));
+    const { data } = mount(['capitaine'], [signedGo('A')], rpc);
+    buildWorkbook.mockResolvedValue(new Blob(['xlsx']));
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:empty-fleet'), revokeObjectURL: vi.fn() }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     await screen.findByRole('button', { name: /^Projet A/ });
     fireEvent.click(exportButton());
-    expect(await screen.findByText('Aucun relevé de consommation enregistré pour les opérations affichées.')).toBeVisible();
-    expect(buildWorkbook).not.toHaveBeenCalled();
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(buildWorkbook).toHaveBeenCalledExactlyOnceWith([], history, data.vessels);
+  });
+
+  it('shows weighted fuel and cost per mile and limits towage to the three towage vessels', async () => {
+    const rpc = vi.fn(async () => ({ error: null, data: {
+      recordedOperationIds: ['A'],
+      vesselAverages: [
+        { vesselId: 12, towageLitersPerNm: 99, otherLitersPerNm: 0, pricePerLiter: 1.2 },
+        { vesselId: 13, towageLitersPerNm: 11.5, otherLitersPerNm: 8, pricePerLiter: 1.2, monthly: {
+          currentMonth: '2026-11', previousMonth: '2026-10',
+          towage: { current: { litersPerNm: 12, costPerNm: 14 }, previous: { litersPerNm: 10, costPerNm: 15 } },
+          other: { current: { litersPerNm: 8, costPerNm: null }, previous: { litersPerNm: 8, costPerNm: 10 } },
+        } },
+        { vesselId: 14, towageLitersPerNm: 9, otherLitersPerNm: 7, pricePerLiter: null },
+        { vesselId: 15, towageLitersPerNm: 10, otherLitersPerNm: 6, pricePerLiter: 1.4 },
+      ],
+    } }));
+    mount(['marin'], [signedGo('A'), signedGo('B')], rpc, ['GOURY', 'LE ROZEL', 'LANDEMER', 'SUROÎT']);
+    const chart = within(await screen.findByRole('region', { name: 'Consommation moyenne par navire' }));
+    const vessel = async (name: string) => within((await chart.findByRole('heading', { name })).closest('li')!);
+    const goury = await vessel('GOURY');
+    expect(goury.getByText('0 L/NM')).toBeVisible();
+    expect(goury.getByText(/0,00\s€\/NM/)).toBeVisible();
+    expect(goury.queryByText('Remorquage')).not.toBeInTheDocument();
+    expect(goury.queryByText('99 L/NM')).not.toBeInTheDocument();
+    const rozel = await vessel('LE ROZEL');
+    expect(rozel.getByText('Remorquage')).toBeVisible();
+    expect(rozel.getByText('11,5 L/NM')).toBeVisible();
+    expect(rozel.getByText(/13,80\s€\/NM/)).toBeVisible();
+    expect(rozel.getByRole('img', { name: /Consommation en hausse.*novembre 2026.*octobre 2026/ })).toBeVisible();
+    expect(rozel.getByRole('img', { name: /Coût HT en baisse/ })).toBeVisible();
+    expect(rozel.getByRole('img', { name: /Consommation stable/ })).toBeVisible();
+    expect(rozel.getByRole('img', { name: /Coût HT.*Comparaison.*indisponible/ })).toBeVisible();
+    expect((await vessel('LANDEMER')).getByText('Remorquage')).toBeVisible();
+    expect((await vessel('SUROÎT')).getByText('Remorquage')).toBeVisible();
+    expect(screen.getByRole('button', { name: /^Projet A/ })).toHaveTextContent('Conso renseignée');
+    expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveTextContent('Conso non renseignée');
+  });
+
+  it('offers the fiche and only the selected PDF sections to a read-only Marin', async () => {
+    const operation = fixture('A', false);
+    mount(['marin'], [operation]);
+    await select();
+    await waitFor(() => expect(props().record?.id).toBe('A'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Fiche' }));
+    const fiche = within(screen.getByRole('tabpanel', { name: 'Fiche' }));
+    expect(fiche.getByRole('article', { name: 'Fiche imprimable Opération en Mer' })).toBeVisible();
+    expect(fiche.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    const options = fiche.getByRole('button', { name: /Sections PDF/ });
+    expect(options).toHaveAttribute('aria-expanded', 'false');
+    expect(fiche.queryByRole('checkbox', { name: 'Armement' })).not.toBeInTheDocument();
+    fireEvent.click(options);
+    expect(options).toHaveAttribute('aria-expanded', 'true');
+    for (const name of ['Armement', 'Documents', 'Passage Plan', 'Décision du Capitaine']) {
+      fireEvent.click(fiche.getByRole('checkbox', { name }));
+    }
+    fireEvent.click(fiche.getByRole('button', { name: 'Télécharger la fiche' }));
+    await waitFor(() => expect(exportSeaOperationPdf).toHaveBeenCalledWith(operation, {
+      sections: ['checks'], documents: [], signatureImage: null,
+    }, expect.any(Function)));
+    expect(fetchSeaOperationProjectDocuments).not.toHaveBeenCalled();
   });
 });
