@@ -79,6 +79,13 @@ l’estimation à partir des DPR et des prix du carburant.
 
 ## Saisie et bilan d’un relevé
 
+Sur le LANDEMER, Conso demande les pourcentages Bâbord et Tribord au départ
+après avitaillement et à l’arrivée. Chaque table convertit la jauge en volume
+par interpolation entre les points fournis, jusqu’à 12 357 L par cuve. Les
+volumes sont additionnés pour obtenir les soutes totales. Leur différence
+donne la consommation. Les anciens relevés à jauge globale restent consultables
+et peuvent être complétés par des mesures séparées si elles sont disponibles.
+
 La saisie regroupe le **Trajet**, les **Jauges**, puis **Avitaillement et prix**.
 Le bouton **Enregistrer la consommation** valide directement le relevé lorsque
 les champs requis sont valides.

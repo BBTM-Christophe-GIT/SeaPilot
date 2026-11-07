@@ -16,17 +16,18 @@
 .so-consumption-values dd, .so-consumption-trip dd {
   margin: 0; color: var(--sp-heading); font-weight: 650; font-variant-numeric: tabular-nums;
 }
-.so-consumption-fields, .so-consumption-section, .so-consumption-duration { min-width: 0; margin: 0; }
+.so-consumption-fields, .so-consumption-section, .so-consumption-duration, .so-consumption-tank-gauges { min-width: 0; margin: 0; }
 .so-consumption-fields { display: grid; gap: var(--sp-space-3); padding: 0; border: 0; }
 .so-consumption-section {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-2) var(--sp-space-3);
   padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle);
 }
 .so-consumption-section > legend { padding-inline: var(--sp-space-1); color: var(--sp-heading); font-size: .95rem; font-weight: 700; }
-.so-consumption-duration {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 6.25rem)); gap: var(--sp-space-2); grid-column: 1 / -1; padding: 0; border: 0;
-}
-.so-consumption-duration legend { margin-bottom: var(--sp-space-1); color: var(--sp-heading); font-size: .8rem; font-weight: 650; }
+.so-consumption-duration, .so-consumption-tank-gauges { display: grid; gap: var(--sp-space-2); padding: 0; border: 0; }
+.so-consumption-duration { grid-template-columns: repeat(2, minmax(0, 6.25rem)); grid-column: 1 / -1; }
+.so-consumption-tank-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.so-consumption-duration legend, .so-consumption-tank-gauges legend { margin-bottom: var(--sp-space-1); color: var(--sp-heading); font-size: .8rem; font-weight: 650; }
+.so-consumption-gauge-mode { display: flex; align-items: center; gap: var(--sp-space-2); flex-wrap: wrap; }
 .so-consumption-wide { grid-column: 1 / -1; }
 .so-consumption-import { display: grid; gap: var(--sp-space-2); padding-bottom: var(--sp-space-2); border-bottom: 1px solid var(--sp-border); }
 .so-consumption-import .so-field-label { display: flex; align-items: center; gap: var(--sp-space-1); }

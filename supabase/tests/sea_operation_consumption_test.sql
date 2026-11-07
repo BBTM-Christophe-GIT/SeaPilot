@@ -871,5 +871,99 @@ select is(pg_temp.goury_billing_history(2024)->>'costSource', 'billing',
 select pg_temp.conso_actor(6);
 select throws_ok($$select pg_temp.goury_billing_history(2024)$$, '42501', null, 'foreign accounts cannot receive GOURY billing totals');
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select is(sea_operation_private.landemer_tank_liters(0), 0::numeric, 'the LANDEMER table includes the empty tank');
+select is(sea_operation_private.landemer_tank_liters(0.5), 62::numeric, 'decimal gauges interpolate between adjacent table rows');
+select is(sea_operation_private.landemer_tank_liters(98.989), 12232::numeric, 'the LANDEMER table preserves its high precision breakpoints');
+select is(sea_operation_private.landemer_tank_liters(100), 12357::numeric, 'each full LANDEMER tank is 12,357 liters');
+
+with landemer as (
+  update public.vessels vessel
+  set registration_number = '941334', fuel_tank_capacities_liters = array[12357, 12357]::numeric[]
+  from public.companies company where vessel.company_id = company.id and company.code = 'bbtm' and vessel.imo_number = '9059262'
+  returning vessel.id
+)
+insert into conso_fixture(key, id, vessel_id, draft)
+select 'landemer', gen_random_uuid(), landemer.id, base.draft || jsonb_build_object(
+  'project', 'LANDEMER calibrated Conso', 'vessel', jsonb_set(base.draft->'vessel', '{id}', to_jsonb(landemer.id::text)))
+from landemer cross join conso_fixture base where base.key = 'goury_other';
+
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('goury_other') and fixture.key = 'landemer';
+
+create function pg_temp.landemer_inputs() returns jsonb language sql stable as $$
+  select (pg_temp.conso_input() - array['departureGauge', 'arrivalGauge']) || jsonb_build_object(
+    'actualArrival', to_char(pg_temp.fuel_day(0), 'YYYY-MM-DD"T00:00"'),
+    'tankGauges', '{"departure":{"port":47.439,"starboard":100},"arrival":{"port":60.442,"starboard":10.601}}'::jsonb
+  );
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is(public.sea_operation_consumption(pg_temp.conso_id('landemer'))->'calibration',
+  '{"kind":"nominal","defaultGaugeUnit":"percent","nominalCapacityLiters":24714,"tankCalibration":"landemer-v1"}'::jsonb,
+  'official LANDEMER supplies an additive tank calibration');
+select ok(not (public.sea_operation_consumption(pg_temp.conso_id('goury_other'))->'calibration' ? 'tankCalibration'),
+  'other vessels keep their existing calibration contract');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('goury_other'), 2, pg_temp.landemer_inputs())$$,
+  '22023', null, 'paired readings are restricted to the official LANDEMER');
+
+update conso_fixture set response = public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), null,
+  pg_temp.conso_input() || jsonb_build_object('actualArrival', null))
+where key = 'landemer';
+select is((response->'record'->>'departureLiters')::numeric, 19276.920::numeric,
+  'old aggregate LANDEMER submissions retain the nominal calculation')
+from conso_fixture where key = 'landemer';
+select ok(not (response->'record' ? 'tankGauges'), 'old aggregate readings never fabricate individual gauges')
+from conso_fixture where key = 'landemer';
+
+update conso_fixture set response = public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 1, pg_temp.landemer_inputs())
+where key = 'landemer';
+select is(response->'record'->'tankGauges', pg_temp.landemer_inputs()->'tankGauges', 'raw four tank readings are saved exactly')
+from conso_fixture where key = 'landemer';
+select is(array[(response->'record'->>'departureLiters')::numeric, (response->'record'->>'arrivalLiters')::numeric,
+  (response->'record'->>'consumedLiters')::numeric], array[18219,8779,9440]::numeric[],
+  'both calibrated tanks are summed and fuel may move between tanks during a passage')
+from conso_fixture where key = 'landemer';
+select is((response->'record'->>'arrivalGauge')::numeric, round(877900::numeric / 24714, 6),
+  'the old scalar field represents the calibrated volume as a percentage of total capacity')
+from conso_fixture where key = 'landemer';
+select is((pg_temp.fuel_row('landemer')->>'fuelLiters')::numeric, 8779::numeric,
+  'the refuel anchor uses calibrated arrival liters');
+
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 1, pg_temp.landemer_inputs())$$,
+  '40001', null, 'stale paired writes cannot replace the current reading');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2,
+  jsonb_set(pg_temp.landemer_inputs(), '{tankGauges,arrival,starboard}', '100.001'))$$,
+  '22023', null, 'individual gauge percentages above 100 are rejected');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2,
+  jsonb_set(pg_temp.landemer_inputs(), '{tankGauges,arrival,starboard}', '10.6012'))$$,
+  '22023', null, 'individual gauge percentages beyond three decimals are rejected');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2,
+  pg_temp.landemer_inputs() #- '{tankGauges,arrival,starboard}')$$, '22023', null, 'both sides are required at each point');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2,
+  jsonb_set(pg_temp.landemer_inputs(), '{tankGauges,arrival,starboard}', '100'))$$,
+  '22023', null, 'a rise in combined calibrated fuel is invalid after departure');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2, pg_temp.conso_input())$$,
+  '22023', null, 'an older client cannot replace paired gauges with aggregate values');
+
+update conso_fixture set response = public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 2,
+  pg_temp.conso_input() || jsonb_build_object('departureGauge', response->'record'->'departureGauge',
+    'arrivalGauge', response->'record'->'arrivalGauge', 'actualArrival', response->'record'->'actualArrival'))
+where key = 'landemer';
+select is(response->'record'->'tankGauges', pg_temp.landemer_inputs()->'tankGauges',
+  'old clients can preserve identical gauge readings while editing other fields')
+from conso_fixture where key = 'landemer';
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('landemer')])->0->'record'->'tankGauges',
+  pg_temp.landemer_inputs()->'tankGauges', 'the existing export RPC includes raw paired gauges');
+select pg_temp.conso_actor(5);
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 3, pg_temp.landemer_inputs())$$,
+  '42501', null, 'a real Marin remains unable to save tank readings');
+reset role;
 select * from finish();
 rollback;
