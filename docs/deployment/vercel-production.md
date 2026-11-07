@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version 3.87.1 affiche en rouge la pastille « Conso non renseignée »
+sur les opérations en mer éligibles à la saisie et permet d’enregistrer un
+relevé valide directement depuis le formulaire Conso.
+
 La version `3.87.0` organise le registre des opérations en mer par navire,
 année et mois, affiche la consommation et le coût HT par mille selon le régime,
 compare les deux derniers mois et ajoute une pastille de suivi Conso. L’onglet Fiche permet un téléchargement par section,

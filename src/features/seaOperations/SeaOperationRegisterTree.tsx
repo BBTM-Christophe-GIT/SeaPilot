@@ -91,6 +91,9 @@ function OperationChip({ entry, selectedId, disabled, consumption, onSelect, onC
   const decision = record.status === 'draft' ? 'Brouillon' : record.draft.decision === 'NO_GO' ? 'NO GO' : 'GO';
   const consumptionStatus = !canOpenConsumption ? 'Conso non applicable'
     : hasReading ? 'Conso renseignée' : hasReading === false ? 'Conso non renseignée' : 'Conso à vérifier';
+  const consumptionTone = canOpenConsumption && hasReading !== undefined
+    ? hasReading ? ' so-tree-conso-recorded' : ' so-tree-conso-missing'
+    : '';
   return <li className="so-record-entry so-tree-chip" data-selected={selectedId === record.id}>
     <button type="button" className="so-record" aria-pressed={selectedId === record.id} aria-controls="sea-operation-register-map" disabled={disabled} onClick={() => onSelect(record)}>
       <span className="so-tree-chip-content">
@@ -99,7 +102,7 @@ function OperationChip({ entry, selectedId, disabled, consumption, onSelect, onC
           {date && <time dateTime={date}>{shortDate.format(new Date(`${date}T12:00:00Z`))}</time>}
           {record.draft.client && <span>{record.draft.client}</span>}
           <span className={`so-badge${record.status === 'signed' ? decision === 'GO' ? ' is-go' : ' is-nogo' : ''}`}>{decision}</span>
-          <span className={`so-badge${canOpenConsumption && hasReading ? ' so-tree-conso-recorded' : ''}`}>
+          <span className={`so-badge${consumptionTone}`}>
             {consumptionStatus}
           </span>
         </span>

@@ -156,7 +156,6 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
   const [tracks, setTracks] = useState<ReturnType<typeof parseSeaOperationConsumptionTrace>>([]);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -175,7 +174,6 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
   function useTrace(next: SeaOperationConsumptionTrace) {
     setTrace(next);
     setTracks([]);
-    setConfirmed(false);
     setValues(current => ({
       ...current, hours: String(Math.floor(next.durationMinutes / 60)), minutes: String(next.durationMinutes % 60),
       averageSpeedKnots: String(next.averageSpeedKnots), actualArrival: parisArrivalInput(next.endedAt),
@@ -208,7 +206,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || importing || tracks.length > 0 || conflict || !confirmed || !preview?.inputs || !context.canEdit) return;
+    if (submitting.current || importing || tracks.length > 0 || conflict || !preview?.inputs || !context.canEdit) return;
     submitting.current = true;
     setSaving(true);
     setError('');
@@ -229,7 +227,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
   return <AppDialog size="lg" eyebrow="Relevé de mission" title="Consommation de carburant" description={description} icon={<Fuel size={22} aria-hidden="true" />}
     isBusy={saving} onClose={onClose} onSubmit={event => void submit(event)}
     footer={<div className="app-dialog__actions"><button type="button" className="sp-button sp-button--secondary" disabled={saving} onClick={onClose}>Annuler</button>
-      <button type="submit" className="sp-button sp-button--primary" disabled={saving || importing || tracks.length > 0 || conflict || !confirmed || !preview?.inputs}>{saving ? 'Enregistrement…' : 'Enregistrer la consommation'}</button></div>}>
+      <button type="submit" className="sp-button sp-button--primary" disabled={saving || importing || tracks.length > 0 || conflict || !preview?.inputs}>{saving ? 'Enregistrement…' : 'Enregistrer la consommation'}</button></div>}>
     <fieldset className="so-consumption-fields" disabled={saving}>
       <fieldset className="so-consumption-section"><legend>Trajet</legend>
         <div className="so-consumption-import so-consumption-wide">
@@ -254,9 +252,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
               <p className="so-help">{parisDateTime.format(new Date(trace.startedAt))} → {parisDateTime.format(new Date(trace.endedAt))} · {decimal.format(trace.pointCount)} points</p>
               {traceHasWarnings && <p className="so-help">La trace comporte des coupures ou des points corrigés. Vérifiez que sa période couvre la mission.</p>}
             </div>
-            <button type="button" className="sp-button sp-button--secondary" disabled={importing} onClick={() => {
-              setTrace(null); setConfirmed(false);
-            }}>Revenir à la saisie manuelle</button>
+            <button type="button" className="sp-button sp-button--secondary" disabled={importing} onClick={() => setTrace(null)}>Revenir à la saisie manuelle</button>
           </div>}
           {!trace && <p className="so-help">Une trace horodatée préremplit la durée, la vitesse moyenne et l’arrivée. Les jauges se saisissent à bord.</p>}
         </div>
@@ -287,7 +283,6 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
         <NumberField label="Prix du fuel HT en €/L" min={.0001} max={10000} step={.0001} value={values.pricePerLiter} onChange={value => change('pricePerLiter', value)} />
         <p className="so-help so-consumption-wide">Le dernier prix saisi sert de référence à la carte Projet.</p>
       </fieldset>
-      <label className="so-checkbox so-consumption-wide so-consumption-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Je confirme que la navigation est terminée.</label>
     </fieldset>
     {preview?.result && <section className="sp-panel so-consumption-preview" aria-label="Récapitulatif calculé"><h3>Récapitulatif calculé</h3><ConsumptionReadout result={preview.result} /></section>}
     {(error || preview?.error) && <p className="so-alert so-danger" role="alert">{error || preview?.error}</p>}

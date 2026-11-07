@@ -38,7 +38,6 @@
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-space-2);
   padding: var(--sp-space-2) var(--sp-space-3); background: var(--sp-primary-soft); border-radius: var(--sp-control-radius);
 }
-.so-consumption-confirm { padding: var(--sp-space-2) var(--sp-space-3); }
 .so-consumption-error { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); }
 .so-consumption-charts { display: grid; gap: var(--sp-space-3); margin-block: var(--sp-space-3); }
 .so-consumption-chart, .so-consumption-trip {

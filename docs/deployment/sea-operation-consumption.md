@@ -9,6 +9,8 @@ est enregistré séparément des informations signées. Les comptes autorisés �
 consulter la fiche accèdent à son récapitulatif.
 
 La saisie regroupe le **Trajet**, les **Jauges**, puis **Avitaillement et prix**.
+Le bouton **Enregistrer la consommation** valide directement le relevé lorsque
+les champs requis sont valides.
 Une trace GPX horodatée peut préremplir la durée, la vitesse moyenne et l’arrivée
 en heure de Paris. Si le fichier contient plusieurs traces, sélectionner celle de
 la mission. Le fichier est lu dans le navigateur. Seuls les indicateurs, les dates

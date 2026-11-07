@@ -84,6 +84,7 @@
 .so-tree-chip-details { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); color: var(--sp-muted); font-size: .75rem; font-weight: 400; overflow-wrap: anywhere; }
 .so-tree-chip-details .so-badge { padding: 0 var(--sp-space-1); line-height: 1.5; white-space: normal; }
 .so-tree-chip-details .so-tree-conso-recorded { background: var(--sp-success); border-color: var(--sp-success); color: var(--sp-surface); }
+.so-tree-chip-details .so-tree-conso-missing { background: var(--sp-danger); border-color: var(--sp-danger); color: var(--sp-surface); }
 
 .so-register-tree .so-tree-chip > .so-record-actions {
   display: flex;

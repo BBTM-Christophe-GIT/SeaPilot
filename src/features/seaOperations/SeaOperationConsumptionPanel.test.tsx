@@ -35,14 +35,15 @@ function show(rpc: ReturnType<typeof vi.fn>) {
 function enter(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
-const confirmation = () => screen.getByRole('checkbox', { name: 'Je confirme que la navigation est terminée.' });
 const save = () => screen.getByRole('button', { name: 'Enregistrer la consommation' });
 
 describe('Conso after signed navigation', () => {
-  it('calculates the readout from the entered quantities and requires an explicit completion confirmation', async () => {
+  it('calculates the readout and saves a valid form without a confirmation checkbox', async () => {
     const rpc = vi.fn(async (name: string) => ({ data: name === 'sea_operation_consumption' ? initial : { ...initial, record: saved }, error: null }));
     const { onSaved } = show(rpc);
     await screen.findByLabelText('Heures');
+    expect(save()).toBeDisabled();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     enter('Heures', '1');
     enter('Minutes', '30');
     enter('Vitesse moyenne (nœuds)', '12');
@@ -58,8 +59,7 @@ describe('Conso after signed navigation', () => {
     expect(preview.getByText(/1\s333,33 L\/h/)).toBeVisible();
     expect(preview.getByText('111,11 L/NM')).toBeVisible();
     expect(preview.getByText(/2\s400,00\s€/)).toBeVisible();
-    expect(save()).toBeDisabled();
-    fireEvent.click(confirmation());
+    expect(save()).toBeEnabled();
     fireEvent.click(save());
     await waitFor(() => expect(onSaved).toHaveBeenCalledExactlyOnceWith({ ...initial, record: saved }));
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: operation.id, p_expected_version: null, p_inputs: values });
@@ -102,7 +102,6 @@ describe('Conso after signed navigation', () => {
     enter('Jauge à l’arrivée (%)', '60');
     expect(screen.getByText('0 NM')).toBeVisible();
     expect(screen.getByText(/2\s000 L\/h/)).toBeVisible();
-    fireEvent.click(confirmation());
     fireEvent.click(save());
     expect(await screen.findByRole('alert')).toHaveTextContent('Relevez la version actualisée.');
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_consumption', { p_id: operation.id, p_expected_version: null,
@@ -112,7 +111,7 @@ describe('Conso after signed navigation', () => {
     const modify = await screen.findByRole('button', { name: 'Modifier le relevé' });
     fireEvent.click(modify);
     expect(screen.getByLabelText('Minutes')).toHaveValue(30);
-    expect(confirmation()).not.toBeChecked();
+    expect(save()).toBeEnabled();
     expect(onSaved).not.toHaveBeenCalled();
   });
 
@@ -137,7 +136,6 @@ describe('Conso after signed navigation', () => {
     expect(screen.getByLabelText('Jauge au départ après avitaillement (%)')).toHaveValue(null);
     enter('Jauge au départ après avitaillement (%)', '80');
     enter('Jauge à l’arrivée (%)', '60');
-    fireEvent.click(confirmation());
     fireEvent.click(save());
     expect(await screen.findByRole('heading', { name: 'Bilan de consommation' })).toBeVisible();
     expect(screen.getByRole('img', { name: /Profil de vitesse GPS/ })).toBeVisible();
