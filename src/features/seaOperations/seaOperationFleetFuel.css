@@ -16,9 +16,14 @@
   background: var(--sp-surface-subtle); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius);
 }
 .so-fuel-card[data-expanded="true"] { border-color: var(--sp-focus); }
+.so-fuel-card-heading { display: flex; align-items: flex-start; gap: var(--sp-space-1); }
 .so-fuel-card h3 {
-  display: grid; place-items: center; min-height: 2.2em; overflow-wrap: anywhere;
+  display: grid; place-items: center; flex: 1; min-width: 0; min-height: 2.2em; overflow-wrap: anywhere;
   font-size: .75rem; line-height: 1.1; text-align: center;
+}
+.so-fuel-critical {
+  display: inline-grid; place-items: center; flex: none; width: 17px; height: 17px;
+  border-radius: 50%; background: var(--sp-danger); color: var(--sp-surface);
 }
 .so-fuel-card-illustration { display: flex; justify-content: center; align-items: center; gap: var(--sp-space-1); }
 .so-fuel-card-photo {
@@ -48,10 +53,6 @@
 }
 .so-fuel-card-values strong { color: var(--sp-heading); font-size: .92rem; overflow-wrap: anywhere; }
 .so-fuel-card-values span { color: var(--sp-primary); font-size: .71rem; font-weight: 700; }
-.so-fuel-card-values .so-fuel-critical {
-  display: inline-grid; place-items: center; align-self: center; width: 17px; height: 17px;
-  border-radius: 50%; background: var(--sp-danger); color: var(--sp-surface);
-}
 .so-page button.so-fuel-card-toggle { width: 100%; padding: 0; }
 .so-fuel-card[data-expanded="true"] .so-fuel-card-toggle svg { transform: rotate(180deg); }
 .so-fuel-details-panel:not([hidden]) { display: grid; min-width: 0; gap: var(--sp-space-4); margin-top: var(--sp-space-3); }
@@ -68,25 +69,6 @@
 .so-fuel-card-metric > small { color: var(--sp-muted); font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
 .so-fuel-metric-primary { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); }
 .so-fuel-metric-primary strong { color: var(--sp-heading); font-size: 1.25rem; line-height: 1.3; font-variant-numeric: tabular-nums; }
-.so-fuel-metric-primary > span {
-  padding: 0 var(--sp-space-1); border-radius: var(--sp-control-radius);
-  background: var(--sp-primary-soft); color: var(--sp-primary); font-size: .75rem; font-weight: 700;
-}
-.so-fuel-metric-primary[data-level="warning"] > span { background: var(--sp-warning-soft); color: var(--sp-warning); }
-.so-fuel-metric-primary[data-level="critical"] > span { background: var(--sp-canvas); color: var(--sp-danger); }
-.so-fuel-stock-track {
-  position: relative; height: 16px; overflow: hidden; border: 1px solid var(--sp-border-strong);
-  border-radius: var(--sp-control-radius); background: var(--sp-canvas);
-}
-.so-fuel-stock-track[data-level="unknown"] { border-style: dashed; }
-.so-fuel-stock-track > span { display: block; height: 100%; background: var(--sp-category-marine); }
-.so-fuel-stock-track[data-level="warning"] > span { background: var(--sp-warning); }
-.so-fuel-stock-track[data-level="critical"] > span { background: var(--sp-danger); }
-.so-fuel-stock-track:not([data-level="unknown"])::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(to right, transparent 0 calc(25% - 1px), var(--sp-surface) calc(25% - 1px) 25%);
-  opacity: .55;
-}
 .so-fuel-stock-source { font-weight: 650; }
 .so-fuel-stock-breakdown {
   display: grid; gap: var(--sp-space-1); margin: 0; padding: var(--sp-space-2); list-style: none;
@@ -95,16 +77,6 @@
 .so-fuel-stock-breakdown li { display: flex; align-items: center; gap: var(--sp-space-2); }
 .so-fuel-stock-breakdown svg, .so-fuel-stock-minus { width: 13px; flex: 0 0 auto; color: var(--sp-primary); }
 .so-fuel-stock-minus { text-align: center; font-weight: 700; }
-.so-fuel-speed-scale { display: grid; gap: var(--sp-space-1); padding-top: var(--sp-space-1); }
-.so-fuel-speed-track { position: relative; height: 6px; margin-block: var(--sp-space-2); border-radius: var(--sp-control-radius); background: var(--sp-border); }
-.so-fuel-speed-track > span { display: block; width: 50%; height: 100%; border-radius: var(--sp-control-radius); background: var(--sp-category-marine); }
-.so-fuel-speed-track > svg {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); box-sizing: content-box; padding: 2px;
-  border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface); color: var(--sp-category-marine);
-}
-.so-fuel-speed-scale > div:last-child { display: grid; grid-template-columns: repeat(3, 1fr); color: var(--sp-muted); font-size: .7rem; }
-.so-fuel-speed-scale > div:last-child span:nth-child(2) { text-align: center; }
-.so-fuel-speed-scale > div:last-child span:last-child { text-align: right; }
 .so-fuel-metric-empty { align-content: center; min-height: 1.6rem; }
 .so-fuel-autonomy-evidence {
   display: flex; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); padding: var(--sp-space-2);

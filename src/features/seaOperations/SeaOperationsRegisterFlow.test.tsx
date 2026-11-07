@@ -223,9 +223,40 @@ describe('Operation consumption from the register', () => {
       expect(card.querySelector('.so-fuel-card-tank')).toHaveAttribute('data-level', vessel.level);
       expect(within(card).getByText(vessel.text)).toBeVisible();
       const alert = within(card).queryByRole('img', { name: /carburant critique/i });
-      if (vessel.level === 'critical') expect(alert).toBeVisible();
-      else expect(alert).not.toBeInTheDocument();
+      if (vessel.level === 'critical') {
+        expect(alert).toBeVisible();
+        expect(title.parentElement).toContainElement(alert);
+      } else expect(alert).not.toBeInTheDocument();
     }
+  });
+
+  it('shows fuel per nautical mile at the selected speed and labels the stock gauge', async () => {
+    mount(['capitaine'], [], undefined, ['LE ROZEL', 'GOURY'], () => [
+      { ...stock, vesselName: 'LE ROZEL', maxSpeedKnots: 11, fuelLiters: 11432.6, capacityLiters: 16569,
+        rateLitersPerHour: 40.7, rateSampleCount: 87 },
+      { ...stock, vesselId: 13, fuelLiters: 1000, capacityLiters: 3000 },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Détails carburant · LE ROZEL' }));
+
+    const autonomy = within(screen.getByRole('region', { name: 'Autonomie estimée' }));
+    expect(autonomy.getByText('Vitesse retenue')).toBeVisible();
+    expect(autonomy.getByText('5,5 nd')).toBeVisible();
+    expect(autonomy.getByText('Vmax')).toBeVisible();
+    expect(autonomy.getByText('11 nd')).toBeVisible();
+    expect(autonomy.getByText('7,4 L/NM')).toBeVisible();
+    expect(autonomy.getByText('87 relevés comparables')).toBeVisible();
+
+    const meter = screen.getByRole('meter', { name: 'Stock de carburant' });
+    expect(meter).toHaveAttribute('data-level', 'normal');
+    expect(within(meter).getByText(/69\s%/)).toBeVisible();
+    expect(within(meter).getByText('11,433 m³')).toBeVisible();
+    expect(within(meter).getByText('16,569 m³')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Détails carburant · GOURY' }));
+    const lowMeter = screen.getByRole('meter', { name: 'Stock de carburant' });
+    expect(lowMeter).toHaveAttribute('data-level', 'warning');
+    expect(within(lowMeter).getByText(/1\s000 L/)).toBeVisible();
+    expect(within(lowMeter).getByText('3 m³')).toBeVisible();
   });
 
   it('opens annual history for GOURY and shows the cost source of the selected year', async () => {

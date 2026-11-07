@@ -17,7 +17,10 @@ permet au Capitaine affecté ou à un responsable habilité de saisir le stock a
 début de la date choisie, en litres ou en pourcentage de la capacité des cuves
 principales. La date du jour en heure de Paris est proposée par défaut.
 La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge
-et s’accompagne d’une pastille d’alerte.
+et s’accompagne d’une pastille d’alerte en haut à droite de la carte du navire.
+Dans la carte **Stock**, la jauge indique le pourcentage et le volume au
+repère du niveau courant, ainsi que la capacité totale à droite. Ces volumes
+s’affichent en m³ au-delà de 1 000 L et en litres jusqu’à 1 000 L inclus.
 
 Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
 principales et la capacité de chacune en litres. Une seule s’affiche comme
@@ -46,8 +49,10 @@ sans remorquage, sur les trajets comparables entre 40 et 60 % de la vitesse
 maximale. Les passages valides des classeurs Rozel et Suroît peuvent aussi
 alimenter ce calcul. Le total des litres rapporté au total des heures pondère
 ces relevés par leur durée. Les heures estimées multipliées par la vitesse cible donnent
-les milles nautiques. Le bandeau indique les données manquantes quand un calcul
-est impossible.
+les milles nautiques. Le cadran affiche la vitesse maximale et la vitesse retenue.
+La consommation à cette vitesse s’affiche en L/NM en divisant le débit horaire
+par la vitesse retenue en nœuds. Le bandeau indique les données manquantes quand
+un calcul est impossible.
 
 ### Cumul annuel par navire
 
