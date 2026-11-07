@@ -68,6 +68,26 @@ describe('fleetQueries', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
+  it('persists trimmed names alongside capacities for three main tanks', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { id: 1, company_id: 1, name: 'Navire test', active: true,
+      fuel_tank_capacities_liters: [1000, 2000, 3000], fuel_tank_names: ['Avant', 'Arrière', 'Réserve'] }, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select }) });
+    const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
+    await expect(saveFleetVessel(client, { ...EMPTY_INPUT, id: 1, name: 'Navire test',
+      fuelTankCapacitiesLiters: [1000, 2000, 3000], fuelTankNames: [' Avant ', 'Arrière', 'Réserve'] }))
+      .resolves.toMatchObject({ fuelTankNames: ['Avant', 'Arrière', 'Réserve'] });
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ fuel_tank_names: ['Avant', 'Arrière', 'Réserve'] }));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('fuel_tank_names'));
+  });
+
+  it('rejects duplicate fuel tank names before writing', async () => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: 'Navire test', fuelTankCapacitiesLiters: [1, 2, 3],
+      fuelTankNames: [' Avant ', 'Arrière', 'AVANT'] })).rejects.toThrow('nom différent');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('reads nullable draft measurements from the canonical vessel column', async () => {
     const secondOrder = vi.fn().mockResolvedValue({ data: [
       { id: 1, company_id: 1, name: 'Navire test A', active: true, draft_m: '3.25' },

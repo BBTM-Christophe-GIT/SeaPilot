@@ -1,5 +1,5 @@
 import { compareFleetAssets } from './fleetDisplay';
-import { isFleetFuelTankCapacity, isFleetFuelTankList, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
+import { FLEET_FUEL_TANK_NAMES_ERROR, isFleetFuelTankCapacity, isFleetFuelTankList, isFleetFuelTankNames, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
 import { isVesselWeatherMatrix, parseVesselWeatherMatrix, type VesselWeatherMatrix } from './vesselWeatherMatrix';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -17,7 +17,7 @@ const FLEET_VESSEL_SELECT = [
   'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
   'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
-  'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'daily_fuel_tank_capacity_liters',
+  'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'fuel_tank_names', 'daily_fuel_tank_capacity_liters',
   'range_description', 'deck_equipment',
   'electronics_communications', 'accommodation', 'liability_insurer', 'weather_matrix',
 ].join(', ');
@@ -76,6 +76,7 @@ interface FleetVesselRow {
   bollard_pull_tonnes: number | string | null;
   fuel_capacity_m3: number | string | null;
   fuel_tank_capacities_liters?: (number | string)[] | null;
+  fuel_tank_names?: string[] | null;
   daily_fuel_tank_capacity_liters?: number | string | null;
   range_description: string | null;
   deck_equipment: string | null;
@@ -200,6 +201,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
   const tankCapacities = Array.isArray(row.fuel_tank_capacities_liters) ? row.fuel_tank_capacities_liters.map(Number) : null;
   const dailyTankCapacity = numberOrNull(row.daily_fuel_tank_capacity_liters);
   if ((row.fuel_tank_capacities_liters != null && !isFleetFuelTankList(tankCapacities))
+    || (row.fuel_tank_names != null && !isFleetFuelTankNames(row.fuel_tank_names, tankCapacities?.length ?? 0))
     || (dailyTankCapacity !== null && !isFleetFuelTankCapacity(dailyTankCapacity))) {
     throw new Error('La configuration carburant reçue pour ce navire est invalide.');
   }
@@ -225,7 +227,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     mainEngine: row.main_engine || '', mainEnginePowerKw: numberOrNull(row.main_engine_power_kw),
     bowThrusterPowerKw: numberOrNull(row.bow_thruster_power_kw), gensets: row.gensets || '',
     maxSpeedKnots: numberOrNull(row.max_speed_knots), bollardPullTonnes: numberOrNull(row.bollard_pull_tonnes),
-    fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), fuelTankCapacitiesLiters: tankCapacities,
+    fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), fuelTankCapacitiesLiters: tankCapacities, fuelTankNames: row.fuel_tank_names ?? null,
     dailyFuelTankCapacityLiters: dailyTankCapacity, rangeDescription: row.range_description || '',
     deckEquipment: row.deck_equipment || '', electronicsCommunications: row.electronics_communications || '',
     accommodation: row.accommodation || '', liabilityInsurer: row.liability_insurer || '',
@@ -249,6 +251,11 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
   if (input.fuelTankCapacitiesLiters != null && !isFleetFuelTankList(input.fuelTankCapacitiesLiters)) {
     throw new Error(`Renseignez une capacité en litres valide pour chacune des cuves principales (1 à ${MAX_FLEET_FUEL_TANKS}).`);
   }
+  const fuelTankNames = Array.isArray(input.fuelTankNames)
+    ? input.fuelTankNames.map(name => typeof name === 'string' ? name.trim() : name) : input.fuelTankNames;
+  if (fuelTankNames != null && !isFleetFuelTankNames(fuelTankNames, input.fuelTankCapacitiesLiters?.length ?? 0)) {
+    throw new Error(FLEET_FUEL_TANK_NAMES_ERROR);
+  }
   if (input.dailyFuelTankCapacityLiters != null && !isFleetFuelTankCapacity(input.dailyFuelTankCapacityLiters)) {
     throw new Error('Renseignez une capacité en litres valide pour la caisse journalière.');
   }
@@ -271,6 +278,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     bollard_pull_tonnes: input.bollardPullTonnes,
     ...(input.fuelCapacityM3 === undefined ? {} : { fuel_capacity_m3: input.fuelCapacityM3 }),
     ...(input.fuelTankCapacitiesLiters === undefined ? {} : { fuel_tank_capacities_liters: input.fuelTankCapacitiesLiters }),
+    ...(fuelTankNames === undefined ? {} : { fuel_tank_names: fuelTankNames }),
     ...(input.dailyFuelTankCapacityLiters === undefined ? {} : { daily_fuel_tank_capacity_liters: input.dailyFuelTankCapacityLiters }),
     range_description: optional(input.rangeDescription), deck_equipment: optional(input.deckEquipment),
     electronics_communications: optional(input.electronicsCommunications), accommodation: optional(input.accommodation),

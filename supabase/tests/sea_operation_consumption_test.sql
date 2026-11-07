@@ -531,8 +531,8 @@ select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_ot
 select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_same_day'), null,
   pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":40,"actualArrival":null,"pricePerLiter":null}')$$,
   'the signing Capitaine can save a same-day Conso without an explicit arrival');
-select is(pg_temp.fuel_row('goury_other')->>'source', 'operation', 'same-day first recording replaces the earlier baseline');
-select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 4400::numeric, 'nominal arrival conversion uses the configured main tanks');
+select is(pg_temp.fuel_row('goury_other')->>'source', 'operation', 'a same-day refuel replaces the earlier timestamped baseline with a compatible source');
+select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 4400::numeric, 'the converted arrival already includes the refuel quantity');
 select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_backfill'), null,
   pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":20,"actualArrival":null,"pricePerLiter":null}')$$,
   'the signing Capitaine can backfill an older operation');
@@ -593,6 +593,109 @@ select pg_temp.conso_actor(6);
 select is(public.sea_operation_fleet_fuel(), '[]'::jsonb, 'foreign admin cannot list stock from another company');
 select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'liters', 1)$$,
   '42501', null, 'foreign admin cannot set the baseline');
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_save_fuel_baseline(bigint,text,numeric,date)', 'EXECUTE'),
+  'anonymous accounts cannot set dated stock');
+update public.vessels set fuel_tank_capacities_liters = array[6000,4000,1000], fuel_tank_names = array['Avant','Milieu','Arrière']
+where id = pg_temp.fuel_vessel('goury_other');
+select is((select fuel_tank_names from public.vessels where id = pg_temp.fuel_vessel('goury_other')),
+  array['Avant','Milieu','Arrière']::text[], 'three configured tanks can be named');
+select throws_ok($$update public.vessels set fuel_tank_names = array['Avant','AVANT','Arrière'] where id = pg_temp.fuel_vessel('goury_other')$$,
+  '23514', null, 'duplicate case-insensitive tank names are rejected');
+select throws_ok($$update public.vessels set fuel_tank_names = array['Avant','Milieu'] where id = pg_temp.fuel_vessel('goury_other')$$,
+  '23514', null, 'tank names must match configured tank count');
+
+with fixture(key, name, acronym, capacity_m3) as (values
+  ('fuel_dpr', 'CONSO STOCK DPR', null, 10), ('fuel_br71_name', 'BR - 71', null, null),
+  ('fuel_br71_acronym', 'CONSO STOCK EXCLUDED', 'BR-71', null)), inserted as (
+  insert into public.vessels(company_id, name, acronym, active, asset_kind, fuel_capacity_m3)
+  select company.id, fixture.name, fixture.acronym, true, 'vessel', fixture.capacity_m3 from public.companies company cross join fixture
+  where company.code = 'bbtm' returning id, name
+)
+insert into conso_fixture(key, id, vessel_id) select fixture.key, gen_random_uuid(), inserted.id from inserted join fixture using (name);
+
+insert into conso_fixture(key, id, vessel_id, draft)
+select sample.key, gen_random_uuid(), pg_temp.fuel_vessel('fuel_dpr'), base.draft || jsonb_build_object(
+  'project', sample.key, 'vessel', jsonb_set(base.draft->'vessel', '{id}', to_jsonb(pg_temp.fuel_vessel('fuel_dpr')::text)))
+from conso_fixture base cross join (values ('fuel_dpr_refuel'), ('fuel_dpr_plain')) sample(key) where base.key = 'goury_other';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('goury_other') and fixture.key in ('fuel_dpr_refuel', 'fuel_dpr_plain');
+
+create function pg_temp.fuel_day(p_days integer) returns date language sql stable as $$
+  select (now() at time zone 'Europe/Paris')::date + p_days;
+$$;
+with samples(n, day_offset, status, liters, deleted, version_no) as (values
+  (1,-3,'validated',100,false,1), (2,-3,'validated',200,false,2), (3,-3,'validated',null,false,1),
+  (4,-1,'validated',90,false,1), (5,-1,'validated',0,false,2), (6,0,'validated',100,false,1),
+  (7,0,'draft',900,false,1), (8,0,'submitted',900,false,1), (9,0,'reopened',900,false,2),
+  (10,0,'validated',900,true,1), (11,1,'validated',900,false,1), (12,-4,'validated',900,false,1)
+), actor as (select 'b9470000-0000-0000-0000-000000000001'::uuid as id), inserted as (
+  insert into public.dpr_reports(company_id, vessel_id, report_date, status, dpr_number, unlisted_project_name,
+    issuer_user_id, issuer_name_snapshot, created_by, submitted_by, submitted_at, validated_by, validated_at, version_no, deleted_by, deleted_at, deletion_reason)
+  select company.id, pg_temp.fuel_vessel('fuel_dpr'), pg_temp.fuel_day(sample.day_offset), sample.status, 1900000000 + sample.n,
+    'DPR fuel fixture ' || sample.n, actor.id, 'Conso admin', actor.id, actor.id, now() - interval '1 hour',
+    actor.id, now() - (20 - sample.n) * interval '1 minute', sample.version_no,
+    case when sample.deleted then actor.id end, case when sample.deleted then now() end, case when sample.deleted then 'fixture' end
+  from public.companies company cross join samples sample cross join actor where company.code = 'bbtm' returning id, company_id, dpr_number
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters)
+select inserted.id, inserted.company_id, samples.liters from inserted join samples on inserted.dpr_number = 1900000000 + samples.n;
+
+with batch as (
+  insert into public.migration_batches(company_id, migration_key, source_site_url, mode, status, rules_version)
+  select id, 'stock-dpr-history-fixture', 'https://example.invalid', 'historical-load', 'completed', 'fixture'
+  from public.companies where code = 'bbtm' returning id, company_id
+), inserted as (
+  insert into public.dpr_reports(company_id, vessel_id, report_date, status, dpr_number, issuer_name_snapshot,
+    source_label, migration_batch_id, source_modified_at)
+  select company_id, pg_temp.fuel_vessel('fuel_dpr'), pg_temp.fuel_day(-2), 'validated', 1900000013,
+    'Historic stock DPR', 'sharepoint', id, now() - interval '2 days' from batch returning id, company_id
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters) select id, company_id, 50 from inserted;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is(pg_temp.fuel_row('fuel_br71_name'), null::jsonb, 'the normalized BR71 name is excluded from stock');
+select is(pg_temp.fuel_row('fuel_br71_acronym'), null::jsonb, 'the normalized BR71 acronym is excluded from stock');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_br71_acronym'), 'liters', 1, pg_temp.fuel_day(0))$$,
+  '42501', null, 'the excluded asset cannot receive a dated stock baseline');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 1, pg_temp.fuel_day(1))$$,
+  '22023', null, 'a future stock date is rejected');
+select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 1000, pg_temp.fuel_day(-3))->>'fuelLiters')::numeric,
+  650::numeric, 'the dated opening balance deducts validated vessel-day DPRs inclusive, including migrated history');
+select is((pg_temp.fuel_row('fuel_dpr')->>'deductedFuelLiters')::numeric, 350::numeric,
+  'one latest non-null final reading per day counts, including an authoritative zero');
+select pg_temp.conso_actor(5);
+select is((pg_temp.fuel_row('fuel_dpr')->>'fuelLiters')::numeric, 650::numeric, 'a real Marin can read the scoped vessel total');
+select is((select count(*) from public.dpr_reports where vessel_id = pg_temp.fuel_vessel('fuel_dpr')), 0::bigint,
+  'the scoped fuel total does not grant a real Marin raw DPR access');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 1, pg_temp.fuel_day(0))$$,
+  '42501', null, 'a real Marin cannot save a dated stock reference');
+select pg_temp.conso_actor(3);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_dpr_plain'), null,
+  pg_temp.conso_input() || jsonb_build_object('departureGauge', 85, 'arrivalGauge', 80, 'refuelLiters', null,
+    'pricePerLiter', null, 'actualArrival', to_char(pg_temp.fuel_day(0), 'YYYY-MM-DD"T00:00"')))$$,
+  'a plain Conso may be recorded after the dated opening balance');
+select is((pg_temp.fuel_row('fuel_dpr')->>'fuelLiters')::numeric, 650::numeric, 'plain Conso does not overwrite or additionally deduct stock');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_dpr_refuel'), null,
+  pg_temp.conso_input() || jsonb_build_object('departureGauge', 80, 'arrivalGauge', 70, 'refuelLiters', 2500,
+    'pricePerLiter', null, 'actualArrival', to_char(pg_temp.fuel_day(-2), 'YYYY-MM-DD"T18:00"')))$$,
+  'a signed Conso refuel provides an arrival gauge anchor');
+select is(pg_temp.fuel_row('fuel_dpr')->>'source', 'operation', 'the active refuel uses the existing operation source on the wire');
+select is((pg_temp.fuel_row('fuel_dpr')->>'fuelLiters')::numeric, 6900::numeric,
+  'refuel uses converted arrival without adding the loaded quantity or deducting the anchor day');
+select is((pg_temp.fuel_row('fuel_dpr')->>'refuelLiters')::numeric, 2500::numeric, 'the loaded liters are separate from the measured arrival gauge');
+select pg_temp.conso_actor(2);
+select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 50, pg_temp.fuel_day(0))->>'fuelLiters')::numeric,
+  0::numeric, 'a newer dated opening balance takes precedence and the remaining stock has a zero floor');
+select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 600)->>'fuelLiters')::numeric,
+  600::numeric, 'the old timestamp-style API does not deduct its measurement day');
 reset role;
 select * from finish();
 rollback;

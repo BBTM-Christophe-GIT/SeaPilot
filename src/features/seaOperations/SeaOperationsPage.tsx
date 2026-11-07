@@ -29,9 +29,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { SeaOperationRegisterTree } from './SeaOperationRegisterTree';
-import { SeaOperationFleetConsumption } from './SeaOperationFleetConsumption';
-import { SeaOperationFleetFuel, SeaOperationFuelBaselineDialog, useSeaOperationFleetFuel } from './SeaOperationFleetFuel';
-import type { SeaOperationFleetFuelLevel } from './seaOperationFleetFuelQuery';
+import { orderedFleetFuelLevels, SeaOperationFleetFuel, SeaOperationFuelBaselineDialog, useSeaOperationFleetFuel } from './SeaOperationFleetFuel';
 import { fetchSeaOperationRegisterConsumption, type SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
 import type { SeaOperationPdfSection } from './seaOperationPdfSections';
@@ -214,7 +212,7 @@ export function SeaOperationsPage() {
   const [recordAction, setRecordAction] = useState<RecordAction | null>(null);
   const [recordActionError, setRecordActionError] = useState('');
   const [consumptionAction, setConsumptionAction] = useState<ConsumptionAction | null>(null);
-  const [fuelAction, setFuelAction] = useState<{ vessel: SeaOperationFleetFuelLevel; client: SupabaseClient; accessKey: string } | null>(null);
+  const [fuelAction, setFuelAction] = useState<{ client: SupabaseClient; accessKey: string } | null>(null);
   const [consumptionRefresh, setConsumptionRefresh] = useState(0);
   const [registerConsumption, setRegisterConsumption] = useState<{
     client: SupabaseClient; accessKey: string; ids: string; result?: SeaOperationRegisterConsumption; error?: string;
@@ -1025,10 +1023,9 @@ export function SeaOperationsPage() {
     {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
     {(!data || !currentAccess) && !error && <p role="status">Chargement des opérations en mer…</p>}
     {data && currentAccess && <>
-      <SeaOperationFleetFuel {...fleetFuel} disabled={editing || busy || exporting}
-        onSetBaseline={vessel => setFuelAction({ vessel, client, accessKey })} />
-      <SeaOperationFleetConsumption vessels={sortedVessels} averages={registerConsumptionState?.result?.vesselAverages}
-        error={registerConsumptionState?.error} onRetry={() => setConsumptionRefresh(value => value + 1)} />
+      <SeaOperationFleetFuel key={accessKey} {...fleetFuel} disabled={editing || busy || exporting}
+        onOpenSettings={() => setFuelAction({ client, accessKey })} averages={registerConsumptionState?.result?.vesselAverages}
+        averagesError={registerConsumptionState?.error} onRetryAverages={() => setConsumptionRefresh(value => value + 1)} />
       <div className="so-register-workspace"><section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Sélectionnez une opération pour consulter sa carte, sa fiche ou ses documents.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>
       {records.length ? <SeaOperationRegisterTree records={records} vessels={sortedVessels} selectedId={mapSelectionId}
         disabled={busy || exporting} consumption={completedOperationIds}
@@ -1270,7 +1267,8 @@ export function SeaOperationsPage() {
         setConsumptionRefresh(value => value + 1);
         setNotice('La consommation de l’opération a été enregistrée.');
       }} />}
-    {fuelDialog && <SeaOperationFuelBaselineDialog client={client} vessel={fuelDialog.vessel} onClose={() => setFuelAction(null)} onSaved={() => {
+    {fuelDialog && <SeaOperationFuelBaselineDialog client={client} vessels={orderedFleetFuelLevels(fleetFuel.rows ?? []).filter(vessel => vessel.canSetBaseline)}
+      onClose={() => setFuelAction(null)} onSaved={() => {
       if (actionContext.current.client !== fuelDialog.client || actionContext.current.accessKey !== fuelDialog.accessKey) return;
       setFuelAction(null);
       fleetFuel.reload();

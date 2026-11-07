@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.89.0` regroupe les indicateurs de carburant dans une rangée de
+cartes par navire et décompte les DPR validés depuis une référence datée ou un
+avitaillement Conso. Appliquer `20261107122032_sea_operation_fleet_fuel_dpr_deductions.sql`
+avant le frontend. Voir [les règles du stock](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.88.0` ajoute le niveau de carburant et l’autonomie estimée par
 navire dans le registre des opérations en mer. Appliquer
 `20261107114236_sea_operation_fleet_fuel_stock.sql` avant le frontend.
