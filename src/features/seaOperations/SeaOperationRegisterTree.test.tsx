@@ -70,9 +70,9 @@ describe('SeaOperationRegisterTree', () => {
     const events = callbacks();
     render(<SeaOperationRegisterTree records={[recorded, missing, draft]} vessels={fleet} selectedId={null} consumption={new Set([recorded.id])} {...events} />);
 
-    expect(screen.getByRole('button', { name: /^Mission Renseignée/ })).toHaveTextContent('Conso renseignée');
-    expect(screen.getByRole('button', { name: /^Mission À compléter/ })).toHaveTextContent('Conso non renseignée');
-    expect(screen.getByRole('button', { name: /^Mission Brouillon/ })).toHaveTextContent('Conso non applicable');
+    expect(screen.getByText('Conso renseignée')).toHaveClass('so-tree-conso-recorded');
+    expect(screen.getByText('Conso non renseignée')).toHaveClass('so-tree-conso-missing');
+    expect(screen.getByText('Conso non applicable')).not.toHaveClass('so-tree-conso-missing');
     expect(screen.queryByRole('group', { name: 'Actions pour Mission Brouillon' })).not.toBeInTheDocument();
     const actions = within(screen.getByRole('group', { name: 'Actions pour Mission À compléter' }));
     fireEvent.click(actions.getByRole('button', { name: 'Conso' }));

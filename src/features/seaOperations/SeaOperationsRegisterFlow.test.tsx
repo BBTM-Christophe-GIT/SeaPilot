@@ -220,7 +220,6 @@ describe('Operation consumption from the register', () => {
     ]) {
       fireEvent.change(form.getByLabelText(label), { target: { value } });
     }
-    fireEvent.click(form.getByRole('checkbox', { name: 'Je confirme que la navigation est terminée.' }));
     fireEvent.click(form.getByRole('button', { name: 'Enregistrer la consommation' }));
 
     const dashboard = within(await screen.findByRole('dialog', { name: 'Bilan de consommation' }));
