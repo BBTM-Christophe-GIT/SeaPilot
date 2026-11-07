@@ -1,0 +1,28 @@
+.so-speed-dial {
+  display: grid;
+  grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-space-3);
+  min-width: 0;
+}
+
+.so-speed-dial svg { display: block; width: 100%; height: auto; }
+.so-speed-dial-track, .so-speed-dial-progress { fill: none; stroke-width: 6; stroke-linecap: round; }
+.so-speed-dial-track { stroke: var(--sp-border-strong); }
+.so-speed-dial-progress { stroke: var(--sp-primary); }
+.so-speed-dial-tick { stroke: var(--sp-muted); stroke-width: 1.3; stroke-linecap: round; }
+.so-speed-dial-needle { stroke: var(--sp-heading); stroke-width: 2.5; stroke-linecap: round; }
+.so-speed-dial-hub { fill: var(--sp-heading); }
+
+.so-speed-dial-values {
+  display: grid;
+  gap: var(--sp-space-1);
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: .75rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.so-speed-dial-values dd { margin: 0; }
+.so-speed-dial-values strong { color: var(--sp-heading); font-size: 1.125rem; }
+.so-speed-dial-values > div + div { display: flex; flex-wrap: wrap; gap: 0 var(--sp-space-1); }

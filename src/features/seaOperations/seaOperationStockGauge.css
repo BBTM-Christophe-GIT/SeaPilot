@@ -1,0 +1,71 @@
+.so-stock-gauge {
+  --so-stock-color: var(--sp-category-marine);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-space-1);
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.so-stock-gauge[data-level="warning"] { --so-stock-color: var(--sp-warning); }
+.so-stock-gauge[data-level="critical"] { --so-stock-color: var(--sp-danger); }
+.so-stock-gauge[data-level="unknown"] { --so-stock-color: var(--sp-muted); }
+
+.so-stock-gauge-current {
+  display: flex;
+  position: relative;
+  inset-inline-start: var(--so-stock-position);
+  /* Keep the marker inside the current label as it reaches either end. */
+  transform: translateX(calc(-1 * var(--so-stock-position)));
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--sp-space-1);
+  color: var(--so-stock-color);
+  font-size: .875rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.so-stock-gauge-current svg { flex: none; }
+
+.so-stock-gauge-track {
+  position: relative;
+  height: 16px;
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-canvas);
+}
+
+.so-stock-gauge[data-level="unknown"] .so-stock-gauge-track { border-style: dashed; }
+
+.so-stock-gauge-fill {
+  display: block;
+  width: var(--so-stock-position);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--so-stock-color);
+}
+
+.so-stock-gauge-marker {
+  position: absolute;
+  inset-block: -2px;
+  inset-inline-start: var(--so-stock-position);
+  transform: translateX(calc(-1 * var(--so-stock-position)));
+  width: 4px;
+  border: 1px solid var(--sp-surface);
+  border-radius: var(--sp-control-radius);
+  background: var(--so-stock-color);
+}
+
+.so-stock-gauge-capacity {
+  color: var(--sp-muted);
+  font-size: .75rem;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.so-stock-gauge-capacity strong { color: var(--sp-heading); }

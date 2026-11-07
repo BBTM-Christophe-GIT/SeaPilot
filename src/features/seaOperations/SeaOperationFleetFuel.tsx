@@ -5,6 +5,8 @@ import { AppDialog } from '../../components/AppDialog';
 import { compareFleetAssets, fleetIllustration, normalizeFleetName } from '../fleet/fleetDisplay';
 import { fleetConsumptionScale, SeaOperationVesselConsumption } from './SeaOperationFleetConsumption';
 import { SeaOperationFleetFuelHistory } from './SeaOperationFleetFuelHistory';
+import { SeaOperationSpeedDial } from './SeaOperationSpeedDial';
+import { SeaOperationStockGauge } from './SeaOperationStockGauge';
 import {
   fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelBaseline,
   type FleetFuelUnit, type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
@@ -24,7 +26,7 @@ const liters = (value: number) => `${number.format(value)} L`;
 function tankLevel(fuelLiters: number | null, capacityLiters: number | null) {
   const fill = fuelLiters !== null && capacityLiters !== null && capacityLiters > 0 ? fuelLiters / capacityLiters : null;
   const level = fill === null ? 'unknown' : fill < .25 ? 'critical' : fill <= .35 ? 'warning' : 'normal';
-  return { fill, level, fillPercent: `${Math.min((fill ?? 0) * 100, 100)}%` };
+  return { fill, level, fillPercent: `${Math.min((fill ?? 0) * 100, 100)}%` } as const;
 }
 
 type ConsumptionDetails = {
@@ -69,7 +71,7 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
     baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters } = vessel;
   const cruise = maxSpeedKnots && maxSpeedKnots > 0 ? maxSpeedKnots / 2 : null;
   const hours = cruise !== null && fuelLiters !== null && rateLitersPerHour && rateLitersPerHour > 0 ? fuelLiters / rateLitersPerHour : null;
-  const { fill, level, fillPercent } = tankLevel(fuelLiters, capacityLiters);
+  const { fill, level } = tankLevel(fuelLiters, capacityLiters);
   const volumeUnit = fuelVolumeUnit(capacityLiters);
   const sourceLabel = source === 'refuel' ? 'Avitaillement Conso' : source === 'baseline' ? 'Stock de référence' : 'Arrivée Conso';
   const missingAutonomy = !cruise ? 'Vitesse maximale à renseigner' : fuelLiters === null
@@ -78,14 +80,7 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
   return <>
     <section className="so-fuel-card-metric" aria-label="Stock">
       <h3><span><ClipboardList size={16} aria-hidden="true" /></span>Stock</h3>
-      <div className="so-fuel-metric-primary" data-level={level}>
-        <strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
-        {fill !== null && <span>{percent.format(fill)}</span>}
-      </div>
-      <div className="so-fuel-stock-track" data-level={level} aria-hidden="true">
-        {fill !== null && <span style={{ width: fillPercent }} />}
-      </div>
-      <small>{capacityLiters === null ? 'Capacité à renseigner' : `${formatFuelVolume(capacityLiters, volumeUnit)} de capacité`}</small>
+      <SeaOperationStockGauge fuelLiters={fuelLiters} capacityLiters={capacityLiters} fill={fill} level={level} />
       {source && (baselineDate || measuredAt) && <small className="so-fuel-stock-source">{sourceLabel}{' · '}{baselineDate
         ? <time dateTime={baselineDate}>{referenceDate.format(new Date(`${baselineDate}T12:00:00Z`))}</time>
         : measuredAt && <time dateTime={measuredAt}>{measuredDate.format(new Date(measuredAt))}</time>}</small>}
@@ -100,15 +95,10 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
       {hours !== null && cruise !== null
         ? <div className="so-fuel-metric-primary"><strong>{number.format(hours)} h · {number.format(hours * cruise)} NM</strong></div>
         : <small className="so-fuel-metric-empty">{missingAutonomy}</small>}
-      {cruise !== null && maxSpeedKnots !== null && <>
-        <div className="so-fuel-speed-scale" aria-hidden="true">
-          <div className="so-fuel-speed-track"><span /><Ship size={16} /></div>
-          <div><span>0 nd</span><span>50 %</span><span>{number.format(maxSpeedKnots)} nd</span></div>
-        </div>
-        <small>{number.format(cruise)} nd · 50 % de la vitesse max</small>
-      </>}
-      {hours !== null && rateLitersPerHour !== null && <small className="so-fuel-autonomy-evidence">
-        <b>{formatFuelVolume(rateLitersPerHour, volumeUnit)}/h</b><span>{rateSampleCount} {rateSampleCount === 1 ? 'relevé comparable' : 'relevés comparables'}</span>
+      {cruise !== null && maxSpeedKnots !== null && <SeaOperationSpeedDial speedKnots={cruise} maxSpeedKnots={maxSpeedKnots} />}
+      {hours !== null && cruise !== null && rateLitersPerHour !== null && <small className="so-fuel-autonomy-evidence">
+        <b title="Consommation estimée à la vitesse retenue">{number.format(rateLitersPerHour / cruise)} L/NM</b>
+        <span>{rateSampleCount} {rateSampleCount === 1 ? 'relevé comparable' : 'relevés comparables'}</span>
       </small>}
     </section>
     <section className="so-fuel-card-metric so-fuel-averages-card" aria-label="Moyennes">
@@ -157,7 +147,11 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
   const volumeUnit = fuelVolumeUnit(capacityLiters);
 
   return <li className="so-fuel-card" data-expanded={expanded}>
-    <h3>{vesselName}</h3>
+    <div className="so-fuel-card-heading">
+      <h3>{vesselName}</h3>
+      {level === 'critical' && <span className="so-fuel-critical" role="img" aria-label="Carburant critique · moins de 25 %" title="Carburant critique · moins de 25 %">
+        <TriangleAlert size={12} aria-hidden="true" /></span>}
+    </div>
     <div className="so-fuel-card-illustration" aria-hidden="true">
       <span className="so-fuel-card-photo">{photo ? <img src={photo} alt="" loading="lazy" /> : <Ship size={28} />}</span>
       <span className="so-fuel-card-tank" data-level={level}>
@@ -168,8 +162,6 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
     <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
       {fill !== null && <span>{percent.format(fill)}</span>}
       {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
-      {level === 'critical' && <span className="so-fuel-critical" role="img" aria-label="Carburant critique · moins de 25 %" title="Carburant critique · moins de 25 %">
-        <TriangleAlert size={12} aria-hidden="true" /></span>}
     </div>
     <button type="button" className="sp-button sp-button--secondary so-secondary so-fuel-card-toggle"
       aria-label={`Détails carburant · ${vesselName}`} title={`Détails carburant · ${vesselName}`}
