@@ -1,4 +1,5 @@
 import { compareFleetAssets } from './fleetDisplay';
+import { isFleetFuelTankCapacity, isFleetFuelTankList, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
 import { isVesselWeatherMatrix, parseVesselWeatherMatrix, type VesselWeatherMatrix } from './vesselWeatherMatrix';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -16,7 +17,8 @@ const FLEET_VESSEL_SELECT = [
   'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
   'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
-  'bollard_pull_tonnes', 'fuel_capacity_m3', 'range_description', 'deck_equipment',
+  'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'daily_fuel_tank_capacity_liters',
+  'range_description', 'deck_equipment',
   'electronics_communications', 'accommodation', 'liability_insurer', 'weather_matrix',
 ].join(', ');
 
@@ -73,6 +75,8 @@ interface FleetVesselRow {
   max_speed_knots: number | string | null;
   bollard_pull_tonnes: number | string | null;
   fuel_capacity_m3: number | string | null;
+  fuel_tank_capacities_liters?: (number | string)[] | null;
+  daily_fuel_tank_capacity_liters?: number | string | null;
   range_description: string | null;
   deck_equipment: string | null;
   electronics_communications: string | null;
@@ -80,7 +84,7 @@ interface FleetVesselRow {
   liability_insurer: string | null;
 }
 
-export interface FleetVessel {
+export interface FleetVessel extends FleetFuelCapacity {
   id: number;
   companyId: number;
   name: string;
@@ -132,7 +136,6 @@ export interface FleetVessel {
   gensets: string;
   maxSpeedKnots: number | null;
   bollardPullTonnes: number | null;
-  fuelCapacityM3: number | null;
   rangeDescription: string;
   deckEquipment: string;
   electronicsCommunications: string;
@@ -140,7 +143,7 @@ export interface FleetVessel {
   liabilityInsurer: string;
 }
 
-export interface SaveFleetVesselInput {
+export interface SaveFleetVesselInput extends Partial<FleetFuelCapacity> {
   id?: number;
   name: string;
   acronym: string;
@@ -176,7 +179,6 @@ export interface SaveFleetVesselInput {
   gensets: string;
   maxSpeedKnots: number | null;
   bollardPullTonnes: number | null;
-  fuelCapacityM3: number | null;
   rangeDescription: string;
   deckEquipment: string;
   electronicsCommunications: string;
@@ -195,6 +197,12 @@ function numberOrNull(value: number | string | null | undefined): number | null 
 function mapFleetVessel(row: FleetVesselRow): FleetVessel {
   const weatherMatrix = parseVesselWeatherMatrix(row.weather_matrix);
   if (row.weather_matrix != null && !weatherMatrix) throw new Error('La matrice Hs × période reçue pour ce navire est invalide.');
+  const tankCapacities = Array.isArray(row.fuel_tank_capacities_liters) ? row.fuel_tank_capacities_liters.map(Number) : null;
+  const dailyTankCapacity = numberOrNull(row.daily_fuel_tank_capacity_liters);
+  if ((row.fuel_tank_capacities_liters != null && !isFleetFuelTankList(tankCapacities))
+    || (dailyTankCapacity !== null && !isFleetFuelTankCapacity(dailyTankCapacity))) {
+    throw new Error('La configuration carburant reçue pour ce navire est invalide.');
+  }
   return {
     id: Number(row.id), companyId: Number(row.company_id), name: row.name, acronym: row.acronym || '',
     assetKind: row.asset_kind || 'vessel', typeLabel: row.type_label || '', unitTypeLabel: row.unit_type_label || '',
@@ -217,7 +225,8 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     mainEngine: row.main_engine || '', mainEnginePowerKw: numberOrNull(row.main_engine_power_kw),
     bowThrusterPowerKw: numberOrNull(row.bow_thruster_power_kw), gensets: row.gensets || '',
     maxSpeedKnots: numberOrNull(row.max_speed_knots), bollardPullTonnes: numberOrNull(row.bollard_pull_tonnes),
-    fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), rangeDescription: row.range_description || '',
+    fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), fuelTankCapacitiesLiters: tankCapacities,
+    dailyFuelTankCapacityLiters: dailyTankCapacity, rangeDescription: row.range_description || '',
     deckEquipment: row.deck_equipment || '', electronicsCommunications: row.electronics_communications || '',
     accommodation: row.accommodation || '', liabilityInsurer: row.liability_insurer || '',
   };
@@ -237,6 +246,12 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     throw new Error(`Le tirant d’eau doit être supérieur à 0 et inférieur ou égal à ${MAX_FLEET_DRAFT_METERS} m.`);
   }
   if (input.weatherMatrix != null && !isVesselWeatherMatrix(input.weatherMatrix)) throw new Error('La matrice Hs × période du navire est invalide.');
+  if (input.fuelTankCapacitiesLiters != null && !isFleetFuelTankList(input.fuelTankCapacitiesLiters)) {
+    throw new Error(`Renseignez une capacité en litres valide pour chacune des cuves principales (1 à ${MAX_FLEET_FUEL_TANKS}).`);
+  }
+  if (input.dailyFuelTankCapacityLiters != null && !isFleetFuelTankCapacity(input.dailyFuelTankCapacityLiters)) {
+    throw new Error('Renseignez une capacité en litres valide pour la caisse journalière.');
+  }
   const payload = {
     name, acronym: optional(input.acronym), asset_kind: input.assetKind, type_label: optional(input.typeLabel),
     unit_type_label: optional(input.unitTypeLabel), registration_number: optional(input.registrationNumber),
@@ -253,7 +268,10 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     lightship_tonnes: input.lightshipTonnes, deadweight_tonnes: input.deadweightTonnes, safe_manning: input.safeManning,
     main_engine: optional(input.mainEngine), main_engine_power_kw: input.mainEnginePowerKw,
     bow_thruster_power_kw: input.bowThrusterPowerKw, gensets: optional(input.gensets), max_speed_knots: input.maxSpeedKnots,
-    bollard_pull_tonnes: input.bollardPullTonnes, fuel_capacity_m3: input.fuelCapacityM3,
+    bollard_pull_tonnes: input.bollardPullTonnes,
+    ...(input.fuelCapacityM3 === undefined ? {} : { fuel_capacity_m3: input.fuelCapacityM3 }),
+    ...(input.fuelTankCapacitiesLiters === undefined ? {} : { fuel_tank_capacities_liters: input.fuelTankCapacitiesLiters }),
+    ...(input.dailyFuelTankCapacityLiters === undefined ? {} : { daily_fuel_tank_capacity_liters: input.dailyFuelTankCapacityLiters }),
     range_description: optional(input.rangeDescription), deck_equipment: optional(input.deckEquipment),
     electronics_communications: optional(input.electronicsCommunications), accommodation: optional(input.accommodation),
     liability_insurer: optional(input.liabilityInsurer),

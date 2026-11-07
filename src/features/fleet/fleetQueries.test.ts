@@ -36,6 +36,38 @@ describe('fleetQueries', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
+  it('stores the main and daily tanks separately and retains the original m³ capacity', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { id: 1, company_id: 1, name: 'Navire test', active: true,
+      fuel_capacity_m3: '19.5', fuel_tank_capacities_liters: [5000.5, '2500.25'], daily_fuel_tank_capacity_liters: '300' }, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select }) });
+    const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, id: 1, name: 'Navire test', fuelCapacityM3: 19.5 };
+
+    await expect(saveFleetVessel(client, { ...input, fuelTankCapacitiesLiters: [5000.5, 2500.25], dailyFuelTankCapacityLiters: 300 }))
+      .resolves.toMatchObject({ fuelCapacityM3: 19.5, fuelTankCapacitiesLiters: [5000.5, 2500.25], dailyFuelTankCapacityLiters: 300 });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      fuel_capacity_m3: 19.5, fuel_tank_capacities_liters: [5000.5, 2500.25], daily_fuel_tank_capacity_liters: 300,
+    }));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('daily_fuel_tank_capacity_liters'));
+
+    await saveFleetVessel(client, input);
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('fuel_tank_capacities_liters');
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('daily_fuel_tank_capacity_liters');
+  });
+
+  it.each([[], [0], [0.0001], [Infinity], [10_000_001], Array<number>(21).fill(100)].map(fuelTankCapacitiesLiters => ({ fuelTankCapacitiesLiters })))('rejects invalid main tank capacities before any write (%j)', async ({ fuelTankCapacitiesLiters }) => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: 'Navire test', fuelTankCapacitiesLiters })).rejects.toThrow('cuves principales');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid daily tank capacity before any write', async () => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: 'Navire test', dailyFuelTankCapacityLiters: -1 })).rejects.toThrow('caisse journalière');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('reads nullable draft measurements from the canonical vessel column', async () => {
     const secondOrder = vi.fn().mockResolvedValue({ data: [
       { id: 1, company_id: 1, name: 'Navire test A', active: true, draft_m: '3.25' },

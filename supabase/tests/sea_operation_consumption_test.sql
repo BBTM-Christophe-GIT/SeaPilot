@@ -474,5 +474,125 @@ select pg_temp.conso_actor(6);
 select is(public.sea_operation_register_consumption('{}', true)->'vesselAverages', '[]'::jsonb,
   'foreign admins cannot access monthly consumption trends');
 reset role;
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_fleet_fuel()', 'EXECUTE'), 'anonymous cannot see fuel stock');
+select ok(not has_table_privilege('authenticated', 'sea_operation_private.fuel_baselines', 'SELECT,INSERT,UPDATE,DELETE'),
+  'fuel baselines are accessible only via scoped RPCs');
+create function pg_temp.fuel_vessel(p_key text) returns bigint language sql stable as $$
+  select vessel_id from conso_fixture where key = p_key;
+$$;
+create function pg_temp.fuel_row(p_key text) returns jsonb language sql stable as $$
+  select row_data from jsonb_array_elements(public.sea_operation_fleet_fuel()) row_data
+  where (row_data->>'vesselId')::bigint = pg_temp.fuel_vessel(p_key);
+$$;
+
+update public.vessels set fuel_tank_capacities_liters = array[6000,5000]::numeric[], daily_fuel_tank_capacity_liters = 300,
+  max_speed_knots = 12 where id = pg_temp.fuel_vessel('goury_other');
+select is((select fuel_capacity_m3 from public.vessels where id = pg_temp.fuel_vessel('goury_other')), 10::numeric,
+  'detailed configuration preserves the legacy fuel capacity');
+select throws_ok($$update public.vessels set fuel_tank_capacities_liters = array[1000,-10] where id = pg_temp.fuel_vessel('goury_other')$$,
+  '23514', null, 'invalid main tank configuration is rejected');
+
+with created as (
+  insert into public.vessels(company_id, name, active, asset_kind)
+  select id, 'CONSO STOCK OFFICE ONLY', true, 'vessel' from public.companies where code = 'bbtm' returning id
+)
+insert into conso_fixture(key, id, vessel_id) select 'fuel_office_only', gen_random_uuid(), id from created;
+
+select pg_temp.conso_actor(1);
+insert into public.people(company_id, user_id, first_name, last_name, function_label, grade_label, active)
+select active_company_id, id, 'Conso', 'Capitaine affecté', 'Capitaine', 'Capitaine 200', true
+from public.profiles where id = 'b9470000-0000-0000-0000-000000000003';
+insert into public.planning_assignments(company_id, vessel_id, crew_person_id, captain_person_id, starts_on, ends_on, assignment_role, confirmation_status)
+select company_id, pg_temp.fuel_vessel('goury_other'), id, id, (now() at time zone 'Europe/Paris')::date,
+  (now() at time zone 'Europe/Paris')::date + 1, 'Capitaine', 'confirmed'
+from public.people where user_id = 'b9470000-0000-0000-0000-000000000003';
+
+insert into conso_fixture(key, id, vessel_id, draft)
+select voyage.key, gen_random_uuid(), base.vessel_id, base.draft || jsonb_build_object('project', 'Fuel stock ' || voyage.key,
+  'transit', jsonb_build_object('date', (now() at time zone 'Europe/Paris')::date - voyage.days_ago,
+    'captainPersonId', person.id::text))
+from conso_fixture base cross join (values ('fuel_same_day',0), ('fuel_backfill',1), ('fuel_transit_1',5),
+  ('fuel_transit_2',4), ('fuel_outside_speed',3)) voyage(key, days_ago)
+cross join public.people person
+where base.key = 'goury_other' and person.user_id = 'b9470000-0000-0000-0000-000000000003';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('goury_other') and fixture.key in ('fuel_same_day', 'fuel_backfill', 'fuel_transit_1', 'fuel_transit_2', 'fuel_outside_speed');
+
+set local role authenticated;
+select pg_temp.conso_actor(3);
+select is((pg_temp.fuel_row('goury_other')->>'capacityLiters')::numeric, 11000::numeric, 'main fuel stock capacity excludes the day tank');
+select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'percent', 50)->>'fuelLiters')::numeric,
+  5500::numeric, 'the assigned real Capitaine can set a percentage baseline');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_same_day'), null,
+  pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":40,"actualArrival":null,"pricePerLiter":null}')$$,
+  'the signing Capitaine can save a same-day Conso without an explicit arrival');
+select is(pg_temp.fuel_row('goury_other')->>'source', 'operation', 'same-day first recording replaces the earlier baseline');
+select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 4400::numeric, 'nominal arrival conversion uses the configured main tanks');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_backfill'), null,
+  pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":20,"actualArrival":null,"pricePerLiter":null}')$$,
+  'the signing Capitaine can backfill an older operation');
+select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 4400::numeric, 'an older business date cannot supersede a newer stock');
+select is(public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'liters', 6000)->>'source', 'baseline',
+  'a new baseline takes precedence over previous operations');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_same_day'), 1,
+  pg_temp.conso_input() || '{"departureGauge":80,"arrivalGauge":30,"actualArrival":null,"pricePerLiter":null}')$$,
+  'the Capitaine can correct the older same-day Conso');
+select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 6000::numeric, 'an undated correction retains its original stock ordering');
+
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_transit_1'), null,
+  pg_temp.conso_input() || jsonb_build_object('averageSpeedKnots', 6, 'departureGauge', 80, 'arrivalGauge', 70,
+    'pricePerLiter', null, 'actualArrival', to_char((now() at time zone 'Europe/Paris')::date - 5, 'YYYY-MM-DD"T12:00"')))$$,
+  'a confirmed two-hour transit supplies an autonomy sample');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_transit_2'), null,
+  pg_temp.conso_input() || jsonb_build_object('durationMinutes', 240, 'averageSpeedKnots', 6, 'departureGauge', 80, 'arrivalGauge', 50,
+    'pricePerLiter', null, 'actualArrival', to_char((now() at time zone 'Europe/Paris')::date - 4, 'YYYY-MM-DD"T12:00"')))$$,
+  'a confirmed four-hour transit supplies an autonomy sample');
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('fuel_outside_speed'), null,
+  pg_temp.conso_input() || jsonb_build_object('averageSpeedKnots', 9, 'departureGauge', 80, 'arrivalGauge', 40,
+    'pricePerLiter', null, 'actualArrival', to_char((now() at time zone 'Europe/Paris')::date - 3, 'YYYY-MM-DD"T12:00"')))$$,
+  'a faster transit can be stored without contaminating the near-speed rate');
+select is((pg_temp.fuel_row('goury_other')->>'rateSampleCount')::integer, 2, 'only actual dated transits near half maximum speed count');
+select is(round((pg_temp.fuel_row('goury_other')->>'rateLitersPerHour')::numeric, 3), 733.333::numeric,
+  'autonomy consumption divides total liters by total elapsed hours');
+select pg_temp.conso_actor(4);
+select is(pg_temp.fuel_row('goury_other')->>'canSetBaseline', 'false', 'an unassigned real Capitaine can read the visible vessel without baseline write rights');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'liters', 1)$$,
+  '42501', null, 'another Capitaine cannot set the baseline');
+select pg_temp.conso_actor(5);
+select is((pg_temp.fuel_row('goury_other')->>'fuelLiters')::numeric, 6000::numeric, 'a real Marin can consult the visible stock');
+select is(pg_temp.fuel_row('fuel_office_only'), null::jsonb, 'a real Marin does not see an unassigned vessel without operations');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'liters', 1)$$,
+  '42501', null, 'a real Marin cannot set a baseline');
+select pg_temp.conso_actor(2);
+select is(pg_temp.fuel_row('fuel_office_only')->>'canSetBaseline', 'true', 'Direction sees active vessels even without operations');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_office_only'), 'percent', 50)$$,
+  '22023', null, 'percentage input requires a main tank capacity');
+select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_office_only'), 'liters', 12.345)->>'fuelLiters')::numeric,
+  12.345::numeric, 'manual liters are available without a known capacity');
+reset role;
+update public.vessels set max_speed_knots = 12 where id = pg_temp.fuel_vessel('native_cm');
+with calendar as (select (now() at time zone 'Europe/Paris')::date - 30 - date '1899-12-30' + 0.5 as excel_departure)
+update sea_operation_private.consumption_history history
+set data = jsonb_set(history.data, '{suroit}', jsonb_build_array(
+  jsonb_build_object('sourceRow', 14, 'cells', jsonb_build_array('Cherbourg', 'Le Havre', 12,
+    excel_departure, excel_departure + 2::numeric / 24, 'NON', null, null, 90, 80, null, null, 240)),
+  jsonb_build_object('sourceRow', 15, 'cells', jsonb_build_array('Cherbourg', 'Le Havre', 12,
+    excel_departure, excel_departure + 2::numeric / 24, 'NON', null, null, 90, 80, null, null, 120))))
+from calendar where history.company_id = (select id from public.companies where code = 'bbtm');
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is((pg_temp.fuel_row('native_cm')->>'rateSampleCount')::integer, 1, 'duplicate genuine-vessel workbook intervals count once');
+select is(round((pg_temp.fuel_row('native_cm')->>'rateLitersPerHour')::numeric, 3), 60::numeric,
+  'historical transit autonomy uses recorded dates and liters');
+select pg_temp.conso_actor(6);
+select is(public.sea_operation_fleet_fuel(), '[]'::jsonb, 'foreign admin cannot list stock from another company');
+select throws_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('goury_other'), 'liters', 1)$$,
+  '42501', null, 'foreign admin cannot set the baseline');
+reset role;
 select * from finish();
 rollback;

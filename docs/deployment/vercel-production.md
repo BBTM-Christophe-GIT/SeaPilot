@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.88.0` ajoute le niveau de carburant et l’autonomie estimée par
+navire dans le registre des opérations en mer. Appliquer
+`20261107114236_sea_operation_fleet_fuel_stock.sql` avant le frontend.
+Voir [le suivi du stock de carburant](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version 3.87.1 affiche en rouge la pastille « Conso non renseignée »
 sur les opérations en mer éligibles à la saisie et permet d’enregistrer un
 relevé valide directement depuis le formulaire Conso.
