@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateSeaOperationConsumption, type SeaOperationConsumptionInputs } from './seaOperationConsumption';
+import { calculateSeaOperationConsumption, landemerTankVolumeLiters, type SeaOperationConsumptionInputs } from './seaOperationConsumption';
 
 const inputs: SeaOperationConsumptionInputs = {
   durationMinutes: 1200,
@@ -36,6 +36,26 @@ describe('sea operation consumption preview', () => {
     expect(result.litersPerHour).toBeCloseTo(169.785);
     expect(result.litersPerNm).toBeNull();
     expect(result.costEuros).toBeNull();
+  });
+
+  it('uses the supplied LANDEMER table points and interpolates between adjacent readings', () => {
+    expect(landemerTankVolumeLiters(0)).toBe(0);
+    expect(landemerTankVolumeLiters(98.989)).toBe(12_232);
+    expect(landemerTankVolumeLiters(100)).toBe(12_357);
+    expect(landemerTankVolumeLiters(53.94)).toBeCloseTo(6665.4382, 4);
+    expect(landemerTankVolumeLiters(100.001)).toBeNull();
+  });
+
+  it('sums separately calibrated LANDEMER tanks and permits a transfer between tanks', () => {
+    const calibration = { kind: 'nominal', defaultGaugeUnit: 'percent', nominalCapacityLiters: 24_714, tankCalibration: 'landemer-v1' } as const;
+    const result = calculateSeaOperationConsumption({ ...inputs, tankGauges: {
+      departure: { port: 100, starboard: 60.442 }, arrival: { port: 47.439, starboard: 34.616 },
+    } }, calibration);
+    expect(result).toMatchObject({ departureLiters: 19_826, arrivalLiters: 10_139, consumedLiters: 9687 });
+    expect(calculateSeaOperationConsumption({ ...inputs, tankGauges: {
+      departure: { port: 47.439, starboard: 100 }, arrival: { port: 60.442, starboard: 34.616 },
+    } }, calibration)).toMatchObject({ departureLiters: 18_219, arrivalLiters: 11_746, consumedLiters: 6473 });
+    expect(calculateSeaOperationConsumption({ ...inputs, departureGauge: 50 }, calibration).departureLiters).toBe(12_357);
   });
 
   it('keeps duration and distance usable when capacity or a valid gauge conversion is missing', () => {

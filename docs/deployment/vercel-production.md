@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.91.0` calcule la consommation du LANDEMER à partir des jauges
+Bâbord et Tribord saisies dans Conso. Appliquer
+`20261107210224_sea_operation_landemer_tank_calibration.sql` avant le frontend.
+
 La version `3.90.1` affiche les cumuls sur les courbes et met en valeur
 le stock, l’autonomie et les moyennes du navire dans le bandeau Carburant.
 Les volumes passent en m³ à partir d’une capacité de 3 000 L. Appliquer
