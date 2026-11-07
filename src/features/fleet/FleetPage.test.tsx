@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,6 +71,56 @@ describe('FleetPage', () => {
     expect(await screen.findByText('La brochure de GOURY a été éditée.')).toBeInTheDocument();
   });
 
+  it('configures the main tanks in liters and keeps the daily tank separate from the total', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    const fuel = within(await screen.findByRole('region', { name: 'Carburant' }));
+    expect(fuel.getByText('Capacité historique')).toBeVisible();
+    expect(fuel.getByText('110 000 L')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const tankCount = dialog.getByRole('combobox', { name: 'Nombre de cuves principales' });
+    expect(tankCount).toHaveValue('0');
+    expect(dialog.queryByRole('spinbutton', { name: 'Cuve 1 (L)' })).not.toBeInTheDocument();
+    await user.selectOptions(tankCount, '2');
+    fireEvent.change(dialog.getByRole('spinbutton', { name: 'Cuve 1 (L)' }), { target: { value: '7000' } });
+    fireEvent.change(dialog.getByRole('spinbutton', { name: 'Cuve 2 (L)' }), { target: { value: '5000' } });
+    const dailyTank = dialog.getByRole('checkbox', { name: 'Caisse journalière' });
+    expect(dailyTank).not.toBeChecked();
+    await user.click(dailyTank);
+    fireEvent.change(dialog.getByRole('spinbutton', { name: 'Capacité de la caisse journalière (L)' }), { target: { value: '800' } });
+    const saved = { ...baseVessel, fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800 };
+    vi.mocked(saveFleetVessel).mockResolvedValue(saved);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([saved, office, quay]);
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
+    }));
+    expect(vi.mocked(saveFleetVessel).mock.lastCall?.[1]).not.toHaveProperty('fuelCapacityM3');
+    const detail = within(screen.getByRole('region', { name: 'Carburant' }));
+    expect(detail.getByText('12 000 L')).toBeVisible();
+    expect(detail.getByText('800 L')).toBeVisible();
+    expect(detail.queryByText('12 800 L')).not.toBeInTheDocument();
+    expect(detail.queryByText('110 000 L')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const updateDialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    expect(updateDialog.getByRole('spinbutton', { name: 'Cuve 2 (L)' })).toHaveValue(5000);
+    expect(updateDialog.getByRole('checkbox', { name: 'Caisse journalière' })).toBeChecked();
+    await user.click(updateDialog.getByRole('checkbox', { name: 'Caisse journalière' }));
+    expect(updateDialog.queryByRole('spinbutton', { name: 'Capacité de la caisse journalière (L)' })).not.toBeInTheDocument();
+    const withoutDailyTank = { ...saved, dailyFuelTankCapacityLiters: null };
+    vi.mocked(saveFleetVessel).mockResolvedValue(withoutDailyTank);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([withoutDailyTank, office, quay]);
+    await user.click(updateDialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(saveFleetVessel).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: null,
+    }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Modifier l’actif' })).not.toBeInTheDocument());
+    expect(within(screen.getByRole('region', { name: 'Carburant' })).queryByText('800 L')).not.toBeInTheDocument();
+  });
+
   it('keeps an unknown vessel draft empty and saves an explicitly entered measurement', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
@@ -138,11 +188,17 @@ describe('FleetPage', () => {
 
   it.each(['marin', 'capitaine'] as const)('exposes the saved matrix read-only for a real %s profile fixture', async (role) => {
     const user = userEvent.setup();
-    vi.mocked(fetchFleetVessels).mockResolvedValue([{ ...baseVessel, weatherMatrix: GOURY_WEATHER_MATRIX }, office, quay]);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([{
+      ...baseVessel, weatherMatrix: GOURY_WEATHER_MATRIX, fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
+    }, office, quay]);
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={[role]} /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'GOURY' });
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
+    const fuel = within(screen.getByRole('region', { name: 'Carburant' }));
+    expect(fuel.getByText('12 000 L')).toBeVisible();
+    expect(fuel.getByText('800 L')).toBeVisible();
+    expect(fuel.queryByRole('spinbutton')).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Conditions météo limites' }));
     const table = screen.getByRole('table', { name: 'Matrice Hs × période de GOURY' });
     expect(within(table).getAllByText('Confortable').length).toBeGreaterThan(0);

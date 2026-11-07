@@ -8,6 +8,38 @@ ravitaillement avant départ et le prix du fuel HT en €/L. Le relevé
 est enregistré séparément des informations signées. Les comptes autorisés à
 consulter la fiche accèdent à son récapitulatif.
 
+## Carburant et autonomie de la flotte
+
+Le bandeau **Carburant et autonomie** du registre affiche le dernier niveau
+connu de chaque navire visible. Le Capitaine affecté ou un responsable habilité
+peut saisir un état de départ en litres ou en pourcentage de la capacité des
+cuves principales. La saisie date le relevé à l’enregistrement. Les profils en
+lecture seule consultent le niveau et sa provenance.
+
+Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
+principales et la capacité de chacune en litres. La case **Caisse journalière**
+affiche un champ séparé pour sa capacité. Le calcul du stock nominal additionne
+les cuves principales. Il reprend l’ancienne capacité totale si leurs volumes
+individuels ne sont pas renseignés.
+
+Après un relevé Conso sur une fiche GO signée, la dernière arrivée connue
+alimente le bandeau avec son volume converti selon le calibrage du navire.
+L’heure d’arrivée réelle ou la fin GPX date la mesure. Sans ces données, la
+première saisie Conso date la mesure lorsqu’elle intervient le jour de la
+mission. Un relevé ancien saisi tardivement conserve sa date de mission et
+laisse la priorité à un état de départ plus récent.
+
+L’autonomie estimée utilise la moitié de la vitesse maximale renseignée dans
+Navires. Elle divise le stock par la consommation horaire observée en transit
+sans remorquage, sur les trajets comparables entre 40 et 60 % de la vitesse
+maximale. Les passages valides des classeurs Rozel et Suroît peuvent aussi
+alimenter ce calcul. Le total des litres rapporté au total des heures pondère
+ces relevés par leur durée. Les heures estimées multipliées par la vitesse cible donnent
+les milles nautiques. Le bandeau indique les données manquantes quand un calcul
+est impossible.
+
+## Saisie et bilan d’un relevé
+
 La saisie regroupe le **Trajet**, les **Jauges**, puis **Avitaillement et prix**.
 Le bouton **Enregistrer la consommation** valide directement le relevé lorsque
 les champs requis sont valides.

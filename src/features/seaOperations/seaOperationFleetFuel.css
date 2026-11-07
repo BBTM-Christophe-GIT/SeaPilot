@@ -1,0 +1,49 @@
+.so-fleet-fuel { min-width: 0; margin-bottom: var(--sp-space-4); padding: var(--sp-space-4); }
+.so-fleet-fuel-heading { display: flex; align-items: flex-start; gap: var(--sp-space-3); }
+.so-fleet-fuel-icon {
+  display: grid; flex: 0 0 auto; place-items: center; width: 40px; height: 40px;
+  border-radius: var(--sp-control-radius); background: var(--sp-primary-soft); color: var(--sp-primary);
+}
+.so-fleet-fuel h2, .so-fleet-fuel h3 { margin: 0; color: var(--sp-heading); }
+.so-fleet-fuel h2 { font-size: 1rem; }
+.so-fleet-fuel p { margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: .8rem; }
+.so-fleet-fuel-vessels {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: var(--sp-space-3); padding: 0; margin: var(--sp-space-3) 0 0; list-style: none;
+}
+.so-fleet-fuel-vessels:focus-visible { outline: 3px solid var(--sp-focus); outline-offset: 3px; }
+.so-fuel-card {
+  display: flex; flex-direction: column; gap: var(--sp-space-3); min-width: 0; padding: var(--sp-space-3);
+  background: var(--sp-surface-subtle); border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius);
+}
+.so-fuel-card-heading { display: flex; align-items: center; gap: var(--sp-space-2); }
+.so-fuel-card h3 { overflow-wrap: anywhere; font-size: .85rem; line-height: 1.25; }
+.so-fuel-card-photo {
+  display: grid; place-items: center; width: 60px; height: 40px; flex: 0 0 auto;
+  border-radius: var(--sp-control-radius); overflow: hidden; color: var(--sp-primary); background: var(--sp-primary-soft);
+}
+.so-fuel-card-photo img { width: 100%; height: 100%; object-fit: cover; }
+.so-fuel-card-level, .so-fuel-card-range > div, .so-fuel-card-footer { display: grid; gap: var(--sp-space-1); }
+.so-fuel-card-level > span, .so-fuel-card-range span { color: var(--sp-muted); font-size: .72rem; font-weight: 600; }
+.so-fuel-card-values { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--sp-space-1); }
+.so-fuel-card-values strong { color: var(--sp-heading); font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.so-fuel-card-values span { color: var(--sp-primary); font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.so-fuel-card-meter { height: 8px; overflow: hidden; border-radius: var(--sp-control-radius); background: var(--sp-border); }
+.so-fuel-card-meter > span { display: block; height: 100%; background: var(--sp-category-marine); }
+.so-fuel-card small { color: var(--sp-muted); font-size: .72rem; line-height: 1.35; }
+.so-fuel-card-range { display: flex; gap: var(--sp-space-2); align-items: flex-start; padding: var(--sp-space-2); background: var(--sp-primary-soft); border-radius: var(--sp-control-radius); }
+.so-fuel-card-range svg { flex: 0 0 auto; color: var(--sp-primary); }
+.so-fuel-card-range strong { color: var(--sp-heading); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.so-fuel-card-footer { margin-top: auto; }
+.so-fuel-card-footer button { width: 100%; }
+.so-fleet-fuel-status { display: flex; gap: var(--sp-space-2); align-items: center; flex-wrap: wrap; margin-top: var(--sp-space-2); }
+.so-fuel-baseline-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-space-3); border: 0; padding: 0; margin: 0; min-width: 0; }
+@media (max-width: 720px) {
+  .so-fleet-fuel { padding: var(--sp-space-3); }
+  .so-fleet-fuel-vessels { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: min(82%, 16rem); overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: var(--sp-space-1); }
+  .so-fuel-card { scroll-snap-align: start; }
+  .so-fleet-fuel-vessels:has(> :only-child) { grid-auto-columns: 100%; }
+}
+@media (max-width: 420px) {
+  .so-fuel-baseline-fields { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-2); }
+}

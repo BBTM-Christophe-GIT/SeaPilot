@@ -1,5 +1,6 @@
 import type { jsPDF as JsPdf } from 'jspdf';
 import type autoTableType from 'jspdf-autotable';
+import { fleetMainFuelCapacityLiters } from './fleetFuel';
 import type { FleetVessel } from './fleetQueries';
 
 const NAVY: [number, number, number] = [8, 38, 67];
@@ -140,10 +141,12 @@ export async function buildFleetBrochurePdf(vessel: FleetVessel, photoUrl: strin
     ['Port', vessel.registrationPort], ['Indicatif', vessel.callSign], ['MMSI', vessel.mmsi],
   ]), 14, 72, 87);
   addSectionTitle(doc, 'Dimensions & capacités', 109, 66);
+  const fuelCapacityLiters = fleetMainFuelCapacityLiters(vessel);
   addSpecsTable(doc, autoTable, rows([
     ['Longueur hors tout', vessel.lengthOverall], ['Largeur hors tout', vessel.beamOverallM, ' m'], ['Jauge brute', vessel.grossTonnage, ' UMS'],
     ['Déplacement lège', vessel.lightshipTonnes, ' t'], ['Port en lourd', vessel.deadweightTonnes, ' t'],
-    ['Effectif minimal', vessel.safeManning], ['Personnes à bord', vessel.maxPeople], ['Carburant', vessel.fuelCapacityM3, ' m³'],
+    ['Effectif minimal', vessel.safeManning], ['Personnes à bord', vessel.maxPeople],
+    ['Carburant', fuelCapacityLiters === null ? null : fuelCapacityLiters / 1000, ' m³'],
   ]), 109, 72, 87);
 
   addSectionTitle(doc, 'Propulsion & performances', 14, 165);

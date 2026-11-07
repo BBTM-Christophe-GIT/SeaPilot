@@ -1,0 +1,35 @@
+.fleet-dialog-grid > .fleet-fuel-heading,
+.fleet-dialog-grid > .fleet-fuel-daily { grid-column: 1 / -1; }
+
+.fleet-dialog-grid > .fleet-fuel-first-tank { grid-column-start: 1; }
+
+.fleet-fuel-daily {
+  display: grid;
+  grid-template-columns: inherit;
+  align-items: end;
+  gap: inherit;
+}
+
+.fleet-fuel-legacy {
+  align-self: end;
+  margin: 0;
+  color: var(--sp-muted);
+}
+
+.fleet-dialog-grid .fleet-fuel-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.fleet-dialog-grid .fleet-fuel-check input {
+  min-height: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--sp-primary);
+}
+
+@media (pointer: coarse) {
+  .fleet-dialog-grid .fleet-fuel-check { min-height: 44px; }
+}

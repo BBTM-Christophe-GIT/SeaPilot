@@ -13,6 +13,7 @@ import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries
 import { exportSeaOperationPdf } from './seaOperationPdf';
 import { renderSeaOperationVoyageFuelDetails } from './SeaOperationVoyageFuelMetrics';
 import type { SeaOperationConsumption } from './seaOperationConsumption';
+import type { SeaOperationFleetFuelLevel } from './seaOperationFleetFuelQuery';
 import type { RoleKey } from '../permissions/roles';
 
 type MapProps = ComponentProps<typeof SeaOperationRegisterMap>;
@@ -42,11 +43,14 @@ function fixture(id: string, canEdit = true): SeaOperationRecord {
 const first = fixture('A'), second = fixture('B');
 const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
-function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>, vesselNames = ['GOURY']) {
+function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>,
+  vesselNames = ['GOURY'], readFuel: () => SeaOperationFleetFuelLevel[] = () => []) {
   const actor = roles?.[0] || 'captain';
-  const client = { fixture: `authenticated-${actor}`, rpc: rpc ?? (async (name: string) => ({
+  const registerRpc = rpc ?? (async (name: string) => ({
     data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption : null, error: null,
-  })) } as unknown as SupabaseClient;
+  }));
+  const client = { fixture: `authenticated-${actor}`, rpc: async (...args: [string, Record<string, unknown>]) =>
+    args[0] === 'sea_operation_fleet_fuel' ? { data: readFuel(), error: null } : registerRpc(...args) } as unknown as SupabaseClient;
   const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: vesselNames.map((name, index) => ({ id: 12 + index, name, lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false })) };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
   vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => structuredClone(records.find(record => record.id === id)!));
@@ -191,6 +195,38 @@ function exportButton() {
 }
 
 describe('Operation consumption from the register', () => {
+  const stock: SeaOperationFleetFuelLevel = { vesselId: 12, vesselName: 'GOURY', lengthOverall: '36', maxSpeedKnots: 20,
+    capacityLiters: 10_000, fuelLiters: null, measuredAt: null, source: null, canSetBaseline: true,
+    rateLitersPerHour: null, rateSampleCount: 0 };
+  const fleetFuel = () => within(screen.getByRole('region', { name: 'Carburant et autonomie' }));
+
+  it('saves an initial level in percent and refreshes the vessel’s stock', async () => {
+    let fuel = stock;
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'sea_operation_save_fuel_baseline') {
+        fuel = { ...stock, fuelLiters: 6050, measuredAt: '2026-11-07T09:00:00Z', source: 'baseline' };
+        return { data: fuel, error: null };
+      }
+      return { data: emptyRegisterConsumption, error: null };
+    });
+    mount(['capitaine'], [], rpc, ['GOURY'], () => [fuel]);
+    const banner = within(await screen.findByRole('region', { name: 'Carburant et autonomie' }));
+    fireEvent.click(await banner.findByRole('button', { name: 'Saisir l’état de départ · GOURY' }));
+    const form = within(screen.getByRole('dialog', { name: 'État de départ du carburant' }));
+    const save = form.getByRole('button', { name: 'Enregistrer le niveau' });
+    expect(save).toBeDisabled();
+    fireEvent.change(form.getByLabelText('Unité'), { target: { value: 'percent' } });
+    const value = form.getByLabelText('Niveau en pourcentage');
+    fireEvent.change(value, { target: { value: '101' } });
+    expect(save).toBeDisabled();
+    fireEvent.change(value, { target: { value: '60.5' } });
+    fireEvent.click(save);
+    await waitFor(() => expect(fleetFuel().getByText(/6\s050 L/)).toBeVisible());
+    expect(fleetFuel().getByText(/60,5\s%/)).toBeVisible();
+    expect(fleetFuel().getByText('Aucun relevé à une vitesse comparable')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_baseline', { p_vessel_id: 12, p_unit: 'percent', p_value: 60.5 });
+  });
+
   it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {
     const operations = [signedGo('A'), signedGo('B')];
     const saved: SeaOperationConsumption = { ...initialConsumption('B'), record: savedReading,
@@ -207,7 +243,9 @@ describe('Operation consumption from the register', () => {
       if (didSave) return afterSaveRead();
       return { data: initialConsumption(String(args.p_id)), error: null };
     });
-    mount(['capitaine'], operations, rpc);
+    mount(['capitaine'], operations, rpc, ['GOURY'], () => [didSave
+      ? { ...stock, fuelLiters: 7000, measuredAt: '2026-11-07T09:00:00Z', source: 'operation', rateLitersPerHour: 500, rateSampleCount: 1 }
+      : stock]);
     await select('A');
     expect(await screen.findByRole('region', { name: 'Estimation du carburant' })).toHaveTextContent('596 L');
 
@@ -232,6 +270,7 @@ describe('Operation consumption from the register', () => {
     expect(within(metrics).getByText(/1\s200 € HT/)).toBeVisible();
     expect(within(metrics).getByText('2,73 t')).toBeVisible();
     expect(within(metrics).getByText('50 L/NM')).toBeVisible();
+    expect(await fleetFuel().findByText('14 h · 140 NM')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: 'B', p_expected_version: null,
       p_inputs: expect.objectContaining({ durationMinutes: 120, pricePerLiter: 1.2, completed: true }) });
     await waitFor(() => expect(afterSaveRead).toHaveBeenCalled());
