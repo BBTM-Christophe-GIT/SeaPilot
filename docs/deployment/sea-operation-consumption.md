@@ -16,6 +16,8 @@ l’autonomie, les moyennes et leurs tendances. Le bouton **Paramètres carburan
 permet au Capitaine affecté ou à un responsable habilité de saisir le stock au
 début de la date choisie, en litres ou en pourcentage de la capacité des cuves
 principales. La date du jour en heure de Paris est proposée par défaut.
+La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge
+et s’accompagne d’une pastille d’alerte.
 
 Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
 principales et la capacité de chacune en litres. Une seule s’affiche comme
@@ -46,6 +48,21 @@ alimenter ce calcul. Le total des litres rapporté au total des heures pondère
 ces relevés par leur durée. Les heures estimées multipliées par la vitesse cible donnent
 les milles nautiques. Le bandeau indique les données manquantes quand un calcul
 est impossible.
+
+### Cumul annuel par navire
+
+Le chevron ouvre les indicateurs du navire sur toute la largeur du bandeau.
+Les courbes cumulent les litres consommés et le coût HT estimé mois après mois
+depuis janvier. Le filtre ouvre l’année en cours par défaut et propose les
+années où le navire dispose de DPR valides. Les indicateurs de stock,
+d’autonomie, de moyennes et de tendance se trouvent sous les courbes.
+
+Le cumul retient un seul DPR validé par jour, avec la même règle de sélection
+que le stock. Le coût utilise le dernier prix HT applicable à la date du DPR
+pour le navire, ou le prix de référence de la flotte à cette date. Les litres
+sans tarif restent dans le cumul de consommation et sont signalés à côté du
+coût estimé. Les mois à venir restent sans valeur. Le bouton **Exporter en PNG**
+télécharge les courbes du navire et de l’année affichés.
 
 ## Saisie et bilan d’un relevé
 

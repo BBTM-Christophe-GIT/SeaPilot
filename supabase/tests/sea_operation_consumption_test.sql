@@ -697,5 +697,90 @@ select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr
 select is((public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_dpr'), 'liters', 600)->>'fuelLiters')::numeric,
   600::numeric, 'the old timestamp-style API does not deduct its measurement day');
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_fleet_fuel_history(bigint,integer)', 'EXECUTE'),
+  'anonymous accounts cannot query annual vessel consumption');
+with samples(n, report_day, status, liters) as (values
+  (1, date '2024-01-05', 'validated', 0), (2, date '2024-02-01', 'validated', 100),
+  (3, date '2024-03-01', 'validated', 80), (4, date '2024-03-15', 'validated', 120),
+  (5, date '2024-04-30', 'validated', 100), (6, date '2024-05-01', 'validated', 100),
+  (7, date '2024-05-20', 'validated', 200), (8, date '2024-05-20', 'validated', 50),
+  (9, date '2024-05-20', 'draft', 900)
+), actor as (select 'b9470000-0000-0000-0000-000000000001'::uuid as id), inserted as (
+  insert into public.dpr_reports(company_id, vessel_id, report_date, status, dpr_number, unlisted_project_name,
+    issuer_user_id, issuer_name_snapshot, created_by, submitted_by, submitted_at, validated_by, validated_at)
+  select company.id, pg_temp.fuel_vessel('fuel_dpr'), sample.report_day, sample.status, 1900000100 + sample.n,
+    'Annual stock fixture ' || sample.n, actor.id, 'Conso admin', actor.id, actor.id, now() - interval '1 hour',
+    actor.id, now() - (20 - sample.n) * interval '1 minute'
+  from public.companies company cross join samples sample cross join actor where company.code = 'bbtm' returning id, company_id, dpr_number
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters)
+select inserted.id, inserted.company_id, samples.liters from inserted join samples on inserted.dpr_number = 1900000100 + samples.n;
+
+with inserted as (
+  insert into public.dpr_reports(company_id, vessel_id, report_date, status, dpr_number, issuer_name_snapshot,
+    source_label, migration_batch_id, source_modified_at)
+  select company_id, pg_temp.fuel_vessel('fuel_dpr'), date '2023-12-28', 'validated', 1900000110,
+    'Historic annual fuel', 'sharepoint', id, now() - interval '3 days'
+  from public.migration_batches where migration_key = 'stock-dpr-history-fixture' returning id, company_id
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters) select id, company_id, 60 from inserted;
+
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, date '2024-01-02', 99, 'Foreign annual quote' from public.companies where code = 'conso-other';
+insert into public.vessel_fuel_price_observations(company_id, vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select id, pg_temp.fuel_vessel('goury_other'), date '2024-04-20', 5, 'First fleet observation' from public.companies where code = 'bbtm';
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, date '2024-03-11', 1.25, 'Latest backdated fleet observation' from public.companies where code = 'bbtm';
+insert into public.vessel_fuel_price_observations(company_id, vessel_id, price_date, price_eur_per_liter_ht, source_label)
+select company.id, pg_temp.fuel_vessel('fuel_dpr'), quote.price_day, quote.price, 'Annual vessel quote'
+from public.companies company cross join (values (date '2024-05-01', 2), (date '2024-05-10', 2.5)) quote(price_day, price)
+where company.code = 'bbtm';
+insert into public.project_fuel_price_observations(company_id, price_date, price_eur_per_liter_ht, source_label)
+select id, date '2024-05-19', 9, 'Later company observation' from public.companies where code = 'bbtm';
+
+create function pg_temp.annual_fuel_month(p_year integer, p_month integer) returns jsonb language sql stable as $$
+  select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), p_year)->'months'->(p_month - 1);
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(5);
+select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)->'years',
+  (select jsonb_agg(year order by year desc) from (select distinct year from (values
+    (extract(year from pg_temp.fuel_day(0))::integer), (extract(year from pg_temp.fuel_day(-4))::integer), (2024), (2023)
+  ) fixture(year)) years), 'real Marin receives available canonical DPR years');
+select is(jsonb_array_length(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)->'months'),
+  12, 'the annual result always has twelve ordered calendar months');
+select is(pg_temp.annual_fuel_month(2024, 1), '{"month":1,"liters":0,"costEuros":0,"unpricedLiters":0}'::jsonb,
+  'an observed zero is distinct from an empty month');
+select is(pg_temp.annual_fuel_month(2024, 2), '{"month":2,"liters":100,"costEuros":null,"unpricedLiters":100}'::jsonb,
+  'a vessel without an applicable local tariff does not inherit a future or foreign tariff');
+select is(pg_temp.annual_fuel_month(2024, 3), '{"month":3,"liters":200,"costEuros":150,"unpricedLiters":80}'::jsonb,
+  'historical costs sum only the priced subset of a month');
+select is(pg_temp.annual_fuel_month(2024, 4), '{"month":4,"liters":100,"costEuros":500,"unpricedLiters":0}'::jsonb,
+  'a later recorded backdated quote does not override a newer effective fleet tariff');
+select is(pg_temp.annual_fuel_month(2024, 5), '{"month":5,"liters":150,"costEuros":325,"unpricedLiters":0}'::jsonb,
+  'own dated tariffs take precedence and the latest final vessel/day DPR is counted once');
+select is(pg_temp.annual_fuel_month(2024, 12), '{"month":12,"liters":null,"costEuros":null,"unpricedLiters":0}'::jsonb,
+  'an empty month leaves both charts unobserved');
+select is(pg_temp.annual_fuel_month(2023, 12), '{"month":12,"liters":60,"costEuros":null,"unpricedLiters":60}'::jsonb,
+  'a validated historical import participates in its report year');
+select is((pg_temp.annual_fuel_month(extract(year from pg_temp.fuel_day(0))::integer,
+    extract(month from pg_temp.fuel_day(0))::integer)->>'liters')::numeric,
+  (select sum(liters)::numeric from (values (-4,900),(-3,200),(-2,50),(-1,0),(0,100)) sample(day_offset, liters)
+    where date_trunc('month', pg_temp.fuel_day(sample.day_offset)::timestamp) = date_trunc('month', pg_temp.fuel_day(0)::timestamp)),
+  'a validated DPR dated tomorrow is excluded even within the current month');
+select throws_ok($$select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_office_only'), 2024)$$,
+  '42501', null, 'a real Marin cannot query a vessel outside their stock scope');
+select pg_temp.conso_actor(2);
+select throws_ok($$select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_br71_acronym'), 2024)$$,
+  '42501', null, 'annual charts exclude BR71 even for office profiles');
+select throws_ok($$select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), extract(year from pg_temp.fuel_day(0))::integer + 1)$$,
+  '22023', null, 'future chart years are rejected');
+select pg_temp.conso_actor(6);
+select throws_ok($$select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)$$,
+  '42501', null, 'foreign admins cannot query annual fuel data');
+reset role;
 select * from finish();
 rollback;

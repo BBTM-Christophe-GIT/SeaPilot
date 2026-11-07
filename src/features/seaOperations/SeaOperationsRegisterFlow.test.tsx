@@ -34,6 +34,7 @@ vi.mock('./SeaOperationRegisterMap', () => ({ SeaOperationRegisterMap: (props: M
 
 const today = seaOperationToday();
 const emptyRegisterConsumption = { recordedOperationIds: [], vesselAverages: [] };
+const emptyFuelMonths = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, liters: null, costEuros: null, unpricedLiters: 0 }));
 
 function fixture(id: string, canEdit = true): SeaOperationRecord {
   return { id, companyId: 1, version: 3, status: 'draft', draft: { ...emptySeaOperation(), project: `Projet ${id}`, vessel: { ...emptySeaOperation().vessel, id: '12', name: 'GOURY' } },
@@ -44,13 +45,17 @@ const first = fixture('A'), second = fixture('B');
 const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
 function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>,
-  vesselNames = ['GOURY'], readFuel: () => SeaOperationFleetFuelLevel[] = () => []) {
+  vesselNames = ['GOURY'], readFuel: () => SeaOperationFleetFuelLevel[] = () => [],
+  readHistory: (id: number, year: number) => unknown = () => ({ years: [], months: emptyFuelMonths })) {
   const actor = roles?.[0] || 'captain';
   const registerRpc = rpc ?? (async (name: string) => ({
     data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption : null, error: null,
   }));
   const client = { fixture: `authenticated-${actor}`, rpc: async (...args: [string, Record<string, unknown>]) =>
-    args[0] === 'sea_operation_fleet_fuel' ? { data: readFuel(), error: null } : registerRpc(...args) } as unknown as SupabaseClient;
+    args[0] === 'sea_operation_fleet_fuel' ? { data: readFuel(), error: null }
+      : args[0] === 'sea_operation_fleet_fuel_history'
+        ? { data: await readHistory(Number(args[1].p_vessel_id), Number(args[1].p_year)), error: null }
+        : registerRpc(...args) } as unknown as SupabaseClient;
   const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: vesselNames.map((name, index) => ({ id: 12 + index, name, lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false })) };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
   vi.mocked(fetchSeaOperationDetail).mockImplementation(async (_client, id) => structuredClone(records.find(record => record.id === id)!));
@@ -200,6 +205,51 @@ describe('Operation consumption from the register', () => {
     baselineDate: null, baselineFuelLiters: null, deductedFuelLiters: null, refuelLiters: null,
     rateLitersPerHour: null, rateSampleCount: 0 };
   const fleetFuel = () => within(screen.getByRole('region', { name: 'Carburant de la flotte' }));
+
+  it('uses the exact thresholds for warning and critical fuel gauges', async () => {
+    const levels = [
+      { name: 'GOURY', fuelLiters: 2400, level: 'critical' },
+      { name: 'LANDEMER', fuelLiters: 2500, level: 'warning' },
+      { name: 'LE ROZEL', fuelLiters: 3500, level: 'warning' },
+      { name: 'SUROÎT', fuelLiters: 3501, level: 'normal' },
+      { name: 'HOLENN EUSA', fuelLiters: null, level: 'unknown' },
+    ];
+    mount(['marin'], [], undefined, levels.map(vessel => vessel.name), () => levels.map((vessel, index) => ({
+      ...stock, vesselId: 12 + index, vesselName: vessel.name, fuelLiters: vessel.fuelLiters, canSetBaseline: false,
+    })));
+    for (const vessel of levels) {
+      const title = await screen.findByRole('heading', { name: vessel.name });
+      const card = title.closest('li')!;
+      expect(card.querySelector('.so-fuel-card-tank')).toHaveAttribute('data-level', vessel.level);
+      const alert = within(card).queryByRole('img', { name: /carburant critique/i });
+      if (vessel.level === 'critical') expect(alert).toBeVisible();
+      else expect(alert).not.toBeInTheDocument();
+    }
+  });
+
+  it('opens annual history for the selected vessel and changes the reporting year', async () => {
+    const currentYear = Number(today.slice(0, 4));
+    const readHistory = vi.fn((_id: number, year: number) => ({ years: [currentYear, currentYear - 1], months: [
+      { month: 1, liters: year === currentYear ? 2100 : 800, costEuros: year === currentYear ? 2500 : 960, unpricedLiters: 0 },
+      ...emptyFuelMonths.slice(1),
+    ] }));
+    mount(['marin'], [], undefined, ['GOURY', 'LE ROZEL'], () => [stock, { ...stock, vesselId: 13, vesselName: 'LE ROZEL' }], readHistory);
+    const toggle = await screen.findByRole('button', { name: 'Détails carburant · LE ROZEL' });
+    expect(readHistory).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    const panel = within(screen.getByRole('region', { name: 'Indicateurs carburant · LE ROZEL' }));
+    const yearSelect = await panel.findByRole('combobox', { name: /année/i });
+    expect(yearSelect).toHaveValue(String(currentYear));
+    await panel.findByRole('option', { name: String(currentYear - 1) });
+    expect(readHistory).toHaveBeenCalledWith(13, currentYear);
+    fireEvent.change(yearSelect, { target: { value: String(currentYear - 1) } });
+    await waitFor(() => expect(readHistory).toHaveBeenCalledWith(13, currentYear - 1));
+    expect(panel.getByRole('combobox', { name: /année/i })).toHaveValue(String(currentYear - 1));
+    expect(panel.getByText('Autonomie estimée')).toBeVisible();
+    expect(panel.getByText('Moyennes')).toBeVisible();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole('region', { name: 'Indicateurs carburant · LE ROZEL' })).not.toBeInTheDocument();
+  });
 
   it('saves a dated stock reference in percent from the fleet settings', async () => {
     let fuel = stock;
@@ -380,10 +430,8 @@ describe('Operation consumption from the register', () => {
     expect(chart.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
     expect(chart.queryByText('Remorquage')).not.toBeInTheDocument();
     const vessel = async (name: string) => {
-      const card = within((await chart.findByRole('heading', { name })).closest('li')!);
-      fireEvent.click(card.getByRole('button', { name: `Détails carburant · ${name}` }));
-      await card.findByText('Moyennes');
-      return card;
+      fireEvent.click(chart.getByRole('button', { name: `Détails carburant · ${name}` }));
+      return within(await chart.findByRole('region', { name: `Indicateurs carburant · ${name}` }));
     };
     const goury = await vessel('GOURY');
     expect(goury.getByText('0 L/NM')).toBeVisible();

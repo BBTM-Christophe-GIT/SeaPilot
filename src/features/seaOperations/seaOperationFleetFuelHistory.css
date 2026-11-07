@@ -1,0 +1,59 @@
+.so-fuel-history {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  gap: var(--sp-space-3);
+  padding-top: var(--sp-space-3);
+  border-top: 1px solid var(--sp-border);
+}
+
+.so-fuel-history-heading,
+.so-fuel-history-controls,
+.so-fuel-history-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-2);
+  flex-wrap: wrap;
+}
+
+.so-fuel-history-heading { justify-content: space-between; }
+.so-fuel-history-heading h3 { color: var(--sp-heading); }
+.so-fuel-history-controls label,
+.so-fuel-history-month label { display: flex; align-items: center; gap: var(--sp-space-2); font-weight: 600; }
+.so-fuel-history select {
+  min-height: var(--sp-control-height);
+  max-width: 100%;
+  padding-inline: var(--sp-space-2);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+}
+
+.so-fuel-history-plot {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+.so-fuel-history-plot svg { display: block; width: 100%; height: auto; }
+.so-fuel-history .so-fuel-history-coverage { margin: 0; color: var(--sp-warning); }
+.so-fuel-history-month { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-3); }
+.so-fuel-history-month dl { display: flex; flex-wrap: wrap; gap: var(--sp-space-4); margin: 0; }
+.so-fuel-history-month dt { color: var(--sp-muted); font-size: .78rem; }
+.so-fuel-history-month dd { color: var(--sp-heading); font-weight: 650; margin: 0; }
+.so-fuel-history-table summary { width: fit-content; color: var(--sp-primary); font-weight: 650; cursor: pointer; }
+.so-fuel-history-table-scroll { overflow-x: auto; margin-top: var(--sp-space-2); }
+.so-fuel-history-table table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.so-fuel-history-table th, .so-fuel-history-table td { border-bottom: 1px solid var(--sp-border); padding: var(--sp-space-2); white-space: nowrap; }
+.so-fuel-history-table thead { background: var(--sp-surface-subtle); }
+.so-fuel-history-table th:first-child { text-align: left; }
+.so-fuel-history-table th:not(:first-child), .so-fuel-history-table td { text-align: right; }
+.so-fuel-history-table td { font-variant-numeric: tabular-nums; }
+.so-fuel-history-table small { color: var(--sp-muted); font-weight: 500; }
+
+@media (pointer: coarse) {
+  .so-fuel-history select { min-height: 44px; }
+}
