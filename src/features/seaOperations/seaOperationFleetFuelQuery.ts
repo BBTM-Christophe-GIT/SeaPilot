@@ -8,7 +8,11 @@ export interface SeaOperationFleetFuelLevel {
   capacityLiters: number | null;
   fuelLiters: number | null;
   measuredAt: string | null;
-  source: 'baseline' | 'operation' | null;
+  source: 'baseline' | 'operation' | 'refuel' | null;
+  baselineDate: string | null;
+  baselineFuelLiters: number | null;
+  deductedFuelLiters: number | null;
+  refuelLiters: number | null;
   canSetBaseline: boolean;
   rateLitersPerHour: number | null;
   rateSampleCount: number;
@@ -24,15 +28,20 @@ const quantity = (value: unknown): value is number | null =>
 function fuelLevel(value: unknown): SeaOperationFleetFuelLevel {
   if (!value || typeof value !== 'object') throw new Error(invalidResponse);
   const { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters,
-    measuredAt, source, canSetBaseline, rateLitersPerHour, rateSampleCount } = value as Record<string, unknown>;
+    measuredAt, source, baselineDate = null, baselineFuelLiters = null, deductedFuelLiters = null, refuelLiters = null,
+    canSetBaseline, rateLitersPerHour, rateSampleCount } = value as Record<string, unknown>;
   if (typeof vesselId !== 'number' || !Number.isSafeInteger(vesselId) || vesselId <= 0 || typeof vesselName !== 'string'
     || lengthOverall !== null && typeof lengthOverall !== 'string' || !quantity(maxSpeedKnots) || !quantity(capacityLiters)
     || !quantity(fuelLiters) || measuredAt !== null && (typeof measuredAt !== 'string' || !Number.isFinite(Date.parse(measuredAt)))
     || source !== null && source !== 'baseline' && source !== 'operation' || typeof canSetBaseline !== 'boolean'
+    || baselineDate !== null && (typeof baselineDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(baselineDate))
+    || !quantity(baselineFuelLiters) || !quantity(deductedFuelLiters) || !quantity(refuelLiters)
     || !quantity(rateLitersPerHour) || typeof rateSampleCount !== 'number' || !Number.isSafeInteger(rateSampleCount) || rateSampleCount < 0) {
     throw new Error(invalidResponse);
   }
-  return { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters, measuredAt, source,
+  const stockSource = source === 'operation' && refuelLiters !== null && refuelLiters > 0 ? 'refuel' : source;
+  return { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters, measuredAt, source: stockSource,
+    baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters,
     canSetBaseline, rateLitersPerHour, rateSampleCount };
 }
 
@@ -43,7 +52,7 @@ export async function fetchSeaOperationFleetFuel(client: SupabaseClient) {
   return (data as unknown[]).map(fuelLevel);
 }
 
-export async function saveSeaOperationFuelBaseline(client: SupabaseClient, vesselId: number, unit: FleetFuelUnit, value: number) {
-  const { error } = await client.rpc('sea_operation_save_fuel_baseline', { p_vessel_id: vesselId, p_unit: unit, p_value: value });
+export async function saveSeaOperationFuelBaseline(client: SupabaseClient, vesselId: number, unit: FleetFuelUnit, value: number, date: string) {
+  const { error } = await client.rpc('sea_operation_save_fuel_baseline', { p_vessel_id: vesselId, p_unit: unit, p_value: value, p_date: date });
   if (error) throw error;
 }

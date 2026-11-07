@@ -10,24 +10,33 @@ consulter la fiche accèdent à son récapitulatif.
 
 ## Carburant et autonomie de la flotte
 
-Le bandeau **Carburant et autonomie** du registre affiche le dernier niveau
-connu de chaque navire visible. Le Capitaine affecté ou un responsable habilité
-peut saisir un état de départ en litres ou en pourcentage de la capacité des
-cuves principales. La saisie date le relevé à l’enregistrement. Les profils en
-lecture seule consultent le niveau et sa provenance.
+Le bandeau **Carburant de la flotte** affiche le niveau de chaque navire visible
+sur une rangée, hors BR71. Le chevron de la carte ouvre la provenance du stock,
+l’autonomie, les moyennes et leurs tendances. Le bouton **Paramètres carburant**
+permet au Capitaine affecté ou à un responsable habilité de saisir le stock au
+début de la date choisie, en litres ou en pourcentage de la capacité des cuves
+principales. La date du jour en heure de Paris est proposée par défaut.
 
 Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
-principales et la capacité de chacune en litres. La case **Caisse journalière**
+principales et la capacité de chacune en litres. Une seule s’affiche comme
+**Cuve**, deux comme **Cuve Bâbord** et **Cuve Tribord**. Au-delà de deux, chaque
+cuve reçoit un nom personnalisé. La case **Caisse journalière**
 affiche un champ séparé pour sa capacité. Le calcul du stock nominal additionne
 les cuves principales. Il reprend l’ancienne capacité totale si leurs volumes
 individuels ne sont pas renseignés.
 
-Après un relevé Conso sur une fiche GO signée, la dernière arrivée connue
-alimente le bandeau avec son volume converti selon le calibrage du navire.
-L’heure d’arrivée réelle ou la fin GPX date la mesure. Sans ces données, la
-première saisie Conso date la mesure lorsqu’elle intervient le jour de la
-mission. Un relevé ancien saisi tardivement conserve sa date de mission et
-laisse la priorité à un état de départ plus récent.
+Le stock courant soustrait le champ **Consommation de carburant en L** des DPR
+validés depuis la date de référence, incluse. Un seul DPR renseigné est pris
+par navire et par jour. En cas de doublon, un DPR SeaPilot prime sur un import
+historique, puis la validation la plus récente prévaut. Les anciens états de
+départ horodatés décomptent les DPR à partir du lendemain de la saisie.
+
+Si un relevé Conso sur une fiche GO signée enregistre un avitaillement positif,
+le stock calculé à l’arrivée devient la référence lorsqu’il est plus récent.
+Le décompte reprend le lendemain de l’arrivée, dont la jauge intègre déjà le
+carburant embarqué et consommé en route. L’arrivée réelle, la fin GPX ou la
+date de mission déterminent l’ordre des mesures. En l’absence de référence
+datée ou d’avitaillement, la dernière arrivée Conso connue fournit le niveau.
 
 L’autonomie estimée utilise la moitié de la vitesse maximale renseignée dans
 Navires. Elle divise le stock par la consommation horaire observée en transit
