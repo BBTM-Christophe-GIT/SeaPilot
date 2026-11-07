@@ -28,9 +28,12 @@ export interface SeaOperationFleetFuelMonth {
   unpricedLiters: number;
 }
 
+export type SeaOperationFleetFuelCostSource = 'dpr' | 'billing';
+
 interface SeaOperationFleetFuelHistory {
   years: number[];
   months: SeaOperationFleetFuelMonth[];
+  costSource: SeaOperationFleetFuelCostSource;
 }
 
 const invalidResponse = 'Le niveau de carburant reçu est invalide.';
@@ -65,14 +68,14 @@ export async function fetchSeaOperationFleetFuel(client: SupabaseClient) {
 }
 
 export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, vesselId: number, year: number): Promise<SeaOperationFleetFuelHistory> {
-  const { data, error } = await client.rpc('sea_operation_fleet_fuel_history', { p_vessel_id: vesselId, p_year: year });
+  const { data, error } = await client.rpc('sea_operation_fleet_fuel_history', { p_vessel_id: vesselId, p_year: year, p_include_billing: true });
   if (error) throw error;
   const invalidHistory = 'L’historique annuel de carburant reçu est invalide.';
   if (!data || typeof data !== 'object') throw new Error(invalidHistory);
-  const { years, months } = data as Record<string, unknown>;
+  const { years, months, costSource = 'dpr' } = data as Record<string, unknown>;
   if (!Array.isArray(years) || !years.every((value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 1900 && value <= 9999)
-    || !Array.isArray(months) || months.length !== 12) throw new Error(invalidHistory);
-  return { years: years as number[], months: months.map((value: unknown, index) => {
+    || !Array.isArray(months) || months.length !== 12 || costSource !== 'dpr' && costSource !== 'billing') throw new Error(invalidHistory);
+  return { years: years as number[], costSource, months: months.map((value: unknown, index) => {
     if (!value || typeof value !== 'object') throw new Error(invalidHistory);
     const { month, liters, costEuros, unpricedLiters } = value as Record<string, unknown>;
     if (month !== index + 1 || !quantity(liters) || !quantity(costEuros) || !quantity(unpricedLiters)

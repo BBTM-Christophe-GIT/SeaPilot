@@ -4,6 +4,7 @@ import type { SeaOperationRegisterConsumption } from './seaOperationRegisterCons
 import './seaOperationFleetConsumption.css';
 
 type FleetAverages = SeaOperationRegisterConsumption['vesselAverages'];
+type FleetConsumptionScale = { fuel: number; cost: number };
 
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
 const euros = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -38,14 +39,15 @@ function Trend({ label, value, previous, months, precision, format }: {
 }
 
 export function fleetConsumptionScale(vessels: readonly { vesselId: number; vesselName: string }[], averages?: FleetAverages) {
-  return vessels.reduce((maximum, vessel) => {
+  return vessels.reduce<FleetConsumptionScale>((maximum, vessel) => {
     const rate = averages?.get(vessel.vesselId);
-    return Math.max(maximum, showsTowage(vessel.vesselName) ? rate?.towageLitersPerNm ?? 0 : 0, rate?.otherLitersPerNm ?? 0);
-  }, 1);
+    const fuel = Math.max(showsTowage(vessel.vesselName) ? rate?.towageLitersPerNm ?? 0 : 0, rate?.otherLitersPerNm ?? 0);
+    return { fuel: Math.max(maximum.fuel, fuel), cost: Math.max(maximum.cost, fuel * (rate?.pricePerLiter ?? 0)) };
+  }, { fuel: 1, cost: 1 });
 }
 
 export function SeaOperationVesselConsumption({ vessel, averages, scale, error, onRetry }: {
-  vessel: { vesselId: number; vesselName: string }; averages?: FleetAverages; scale: number; error?: string; onRetry: () => void;
+  vessel: { vesselId: number; vesselName: string }; averages?: FleetAverages; scale: FleetConsumptionScale; error?: string; onRetry: () => void;
 }) {
   if (error) return <div className="so-fleet-consumption-status">
     <p role="alert">Moyennes indisponibles.</p>
@@ -58,21 +60,27 @@ export function SeaOperationVesselConsumption({ vessel, averages, scale, error, 
   return <dl className="so-vessel-consumption" aria-label="Consommation moyenne et coût HT par mille nautique">
     {(showsTowage(vessel.vesselName) ? [towage, other] : [other]).map(({ key, label, monthlyKey, icon: Icon, style }) => {
       const value = rate?.[key] ?? null;
+      const cost = value === null || price === null ? null : value * price;
       const months = rate?.monthly;
       const trend = months?.[monthlyKey];
       return <div key={key} className={style}>
         <dt><Icon size={13} aria-hidden="true" />{label}</dt>
         <dd className="so-fleet-consumption-values">
           {value === null ? <span>Sans référence</span> : <>
-            <span><Droplet size={12} aria-hidden="true" /><span>{fuelLabel(value)}</span>
-              <Trend label="Consommation" value={trend?.current.litersPerNm} previous={trend?.previous.litersPerNm}
-                months={months} precision={10} format={fuelLabel} /></span>
-            <span><Euro size={12} aria-hidden="true" /><span>{price === null ? 'Prix indisponible' : costLabel(value * price)}</span>
-              <Trend label="Coût HT" value={trend?.current.costPerNm} previous={trend?.previous.costPerNm}
-                months={months} precision={100} format={costLabel} /></span>
+            <div className="so-fleet-consumption-measure">
+              <span><Droplet size={13} aria-hidden="true" />Carburant</span>
+              <span><b>{fuelLabel(value)}</b><Trend label="Consommation" value={trend?.current.litersPerNm}
+                previous={trend?.previous.litersPerNm} months={months} precision={10} format={fuelLabel} /></span>
+              <span className="so-fleet-consumption-track" aria-hidden="true"><span style={{ width: (value / scale.fuel * 100) + '%' }} /></span>
+            </div>
+            <div className="so-fleet-consumption-measure is-cost">
+              <span><Euro size={13} aria-hidden="true" />Coût HT</span>
+              <span><b>{cost === null ? 'Prix indisponible' : costLabel(cost)}</b><Trend label="Coût HT" value={trend?.current.costPerNm}
+                previous={trend?.previous.costPerNm} months={months} precision={100} format={costLabel} /></span>
+              {cost !== null && <span className="so-fleet-consumption-track" aria-hidden="true"><span style={{ width: (cost / scale.cost * 100) + '%' }} /></span>}
+            </div>
           </>}
         </dd>
-        {value !== null && <dd className="so-fleet-consumption-track" aria-hidden="true"><span style={{ width: (value / scale * 100) + '%' }} /></dd>}
       </div>;
     })}
   </dl>;

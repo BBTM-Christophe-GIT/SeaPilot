@@ -1,18 +1,23 @@
 .so-vessel-consumption { display: grid; gap: var(--sp-space-2); margin: 0; }
-.so-vessel-consumption > div { display: grid; gap: var(--sp-space-1); font-size: .7rem; }
-.so-vessel-consumption dt { display: flex; gap: var(--sp-space-1); align-items: flex-start; color: var(--sp-muted); }
+.so-vessel-consumption > div { display: grid; gap: var(--sp-space-2); padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle); font-size: .75rem; }
+.so-vessel-consumption dt { display: flex; gap: var(--sp-space-1); align-items: center; color: var(--sp-heading); font-weight: 650; }
 .so-vessel-consumption dt svg, .so-fleet-consumption-values svg { flex: 0 0 auto; }
-.so-vessel-consumption dd { margin: 0; font-weight: 650; color: var(--sp-heading); font-variant-numeric: tabular-nums; }
-.so-fleet-consumption-values { display: grid; gap: var(--sp-space-1); }
-.so-fleet-consumption-values > span { display: flex; align-items: center; gap: var(--sp-space-1); }
+.so-vessel-consumption dt svg { color: var(--sp-primary); }
+.so-vessel-consumption dd { margin: 0; color: var(--sp-muted); font-variant-numeric: tabular-nums; }
+.so-fleet-consumption-values { display: grid; gap: var(--sp-space-2); }
+.so-fleet-consumption-measure { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-space-1); }
+.so-fleet-consumption-measure > span:not(.so-fleet-consumption-track) { display: flex; align-items: center; gap: var(--sp-space-1); }
+.so-fleet-consumption-measure > span:nth-child(2) { justify-content: flex-end; text-align: right; }
+.so-fleet-consumption-measure > span:first-child svg { color: var(--sp-category-marine); }
+.so-fleet-consumption-measure.is-cost > span:first-child svg { color: var(--sp-primary); }
+.so-fleet-consumption-measure b { color: var(--sp-heading); font-weight: 700; }
 .so-fleet-trend {
   display: inline-grid; place-items: center; width: 1rem; height: 1rem; flex: 0 0 auto;
   border-radius: var(--sp-control-radius); background: var(--sp-canvas); color: var(--sp-muted);
 }
 .so-fleet-trend.is-up { background: var(--sp-warning-soft); color: var(--sp-warning); }
 .so-fleet-trend.is-down { background: var(--sp-primary-soft); color: var(--sp-success); }
-.so-fleet-consumption-values > span + span { color: var(--sp-muted); font-weight: 550; }
-.so-fleet-consumption-track { display: block; height: 5px; background: var(--sp-border); border-radius: var(--sp-control-radius); overflow: hidden; }
-.so-fleet-consumption-track > span { display: block; height: 100%; background: var(--sp-primary); }
-.so-vessel-consumption .is-other .so-fleet-consumption-track > span { background: var(--sp-category-marine); }
+.so-fleet-consumption-track { display: block; grid-column: 1 / -1; height: 5px; background: var(--sp-border); border-radius: var(--sp-control-radius); overflow: hidden; }
+.so-fleet-consumption-track > span { display: block; height: 100%; background: var(--sp-category-marine); }
+.so-fleet-consumption-measure.is-cost .so-fleet-consumption-track > span { background: var(--sp-primary); }
 .so-fleet-consumption-status { display: grid; gap: var(--sp-space-1); }

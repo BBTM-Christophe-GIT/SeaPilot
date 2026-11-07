@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.90.1` affiche les cumuls sur les courbes et met en valeur
+le stock, l’autonomie et les moyennes du navire dans le bandeau Carburant.
+Les volumes passent en m³ à partir d’une capacité de 3 000 L. Appliquer
+`20261107205125_sea_operation_goury_annual_fuel_invoices.sql` avant le frontend
+pour le coût du GOURY issu de la facturation.
+
 La version `3.90.0` ajoute les courbes annuelles de carburant et de coût HT
 dans les indicateurs du navire, avec choix de l’année et export PNG. Les
 jauges du bandeau signalent les stocks bas et critiques. Appliquer

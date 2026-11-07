@@ -46,7 +46,7 @@ const props = () => mapSpy.mock.lastCall![0] as MapProps;
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(accept => { resolve = accept; }); return { promise, resolve }; }
 function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string, args: Record<string, unknown>) => Promise<unknown>,
   vesselNames = ['GOURY'], readFuel: () => SeaOperationFleetFuelLevel[] = () => [],
-  readHistory: (id: number, year: number) => unknown = () => ({ years: [], months: emptyFuelMonths })) {
+  readHistory: (id: number, year: number, includeBilling: boolean) => unknown = () => ({ years: [], months: emptyFuelMonths })) {
   const actor = roles?.[0] || 'captain';
   const registerRpc = rpc ?? (async (name: string) => ({
     data: name === 'sea_operation_register_consumption' ? emptyRegisterConsumption : null, error: null,
@@ -54,7 +54,7 @@ function mount(roles?: RoleKey[], records = [first, second], rpc?: (name: string
   const client = { fixture: `authenticated-${actor}`, rpc: async (...args: [string, Record<string, unknown>]) =>
     args[0] === 'sea_operation_fleet_fuel' ? { data: readFuel(), error: null }
       : args[0] === 'sea_operation_fleet_fuel_history'
-        ? { data: await readHistory(Number(args[1].p_vessel_id), Number(args[1].p_year)), error: null }
+        ? { data: await readHistory(Number(args[1].p_vessel_id), Number(args[1].p_year), args[1].p_include_billing === true), error: null }
         : registerRpc(...args) } as unknown as SupabaseClient;
   const data: SeaOperationData = { companyId: 1, actorId: actor, actorName: actor, records, vessels: vesselNames.map((name, index) => ({ id: 12 + index, name, lengthOverall: '36', registrationImo: '', maxSpeedKnots: 12, canSign: false })) };
   vi.mocked(fetchSeaOperationData).mockResolvedValue(data);
@@ -206,49 +206,54 @@ describe('Operation consumption from the register', () => {
     rateLitersPerHour: null, rateSampleCount: 0 };
   const fleetFuel = () => within(screen.getByRole('region', { name: 'Carburant de la flotte' }));
 
-  it('uses the exact thresholds for warning and critical fuel gauges', async () => {
+  it('uses the exact gauge thresholds and changes volume units at 3000 liters of capacity', async () => {
     const levels = [
-      { name: 'GOURY', fuelLiters: 2400, level: 'critical' },
-      { name: 'LANDEMER', fuelLiters: 2500, level: 'warning' },
-      { name: 'LE ROZEL', fuelLiters: 3500, level: 'warning' },
-      { name: 'SUROÎT', fuelLiters: 3501, level: 'normal' },
-      { name: 'HOLENN EUSA', fuelLiters: null, level: 'unknown' },
+      { name: 'GOURY', capacityLiters: 10_000, fuelLiters: 2400, level: 'critical', text: '2,4 m³' },
+      { name: 'LANDEMER', capacityLiters: 3000, fuelLiters: 750, level: 'warning', text: '0,75 m³' },
+      { name: 'LE ROZEL', capacityLiters: 2000, fuelLiters: 700, level: 'warning', text: '700 L' },
+      { name: 'SUROÎT', capacityLiters: 2999, fuelLiters: 1050, level: 'normal', text: /1\s050 L/ },
+      { name: 'HOLENN EUSA', capacityLiters: null, fuelLiters: 100, level: 'unknown', text: '100 L' },
     ];
     mount(['marin'], [], undefined, levels.map(vessel => vessel.name), () => levels.map((vessel, index) => ({
-      ...stock, vesselId: 12 + index, vesselName: vessel.name, fuelLiters: vessel.fuelLiters, canSetBaseline: false,
+      ...stock, vesselId: 12 + index, vesselName: vessel.name, capacityLiters: vessel.capacityLiters, fuelLiters: vessel.fuelLiters, canSetBaseline: false,
     })));
     for (const vessel of levels) {
       const title = await screen.findByRole('heading', { name: vessel.name });
       const card = title.closest('li')!;
       expect(card.querySelector('.so-fuel-card-tank')).toHaveAttribute('data-level', vessel.level);
+      expect(within(card).getByText(vessel.text)).toBeVisible();
       const alert = within(card).queryByRole('img', { name: /carburant critique/i });
       if (vessel.level === 'critical') expect(alert).toBeVisible();
       else expect(alert).not.toBeInTheDocument();
     }
   });
 
-  it('opens annual history for the selected vessel and changes the reporting year', async () => {
+  it('opens annual history for GOURY and shows the cost source of the selected year', async () => {
     const currentYear = Number(today.slice(0, 4));
-    const readHistory = vi.fn((_id: number, year: number) => ({ years: [currentYear, currentYear - 1], months: [
-      { month: 1, liters: year === currentYear ? 2100 : 800, costEuros: year === currentYear ? 2500 : 960, unpricedLiters: 0 },
-      ...emptyFuelMonths.slice(1),
-    ] }));
+    const readHistory = vi.fn((_id: number, year: number) => ({ years: [currentYear, currentYear - 1],
+      costSource: year === currentYear ? 'billing' : 'dpr', months: [
+        { month: 1, liters: year === currentYear ? 2100 : 800, costEuros: year === currentYear ? 2500 : 960, unpricedLiters: 0 },
+        ...emptyFuelMonths.slice(1),
+      ] }));
     mount(['marin'], [], undefined, ['GOURY', 'LE ROZEL'], () => [stock, { ...stock, vesselId: 13, vesselName: 'LE ROZEL' }], readHistory);
-    const toggle = await screen.findByRole('button', { name: 'Détails carburant · LE ROZEL' });
+    const toggle = await screen.findByRole('button', { name: 'Détails carburant · GOURY' });
     expect(readHistory).not.toHaveBeenCalled();
     fireEvent.click(toggle);
-    const panel = within(screen.getByRole('region', { name: 'Indicateurs carburant · LE ROZEL' }));
+    const panel = within(screen.getByRole('region', { name: 'Indicateurs carburant · GOURY' }));
     const yearSelect = await panel.findByRole('combobox', { name: /année/i });
     expect(yearSelect).toHaveValue(String(currentYear));
     await panel.findByRole('option', { name: String(currentYear - 1) });
-    expect(readHistory).toHaveBeenCalledWith(13, currentYear);
+    expect(readHistory).toHaveBeenCalledWith(12, currentYear, true);
+    expect(await panel.findByText(/Projet.*Facturation.*Fuel/)).toBeVisible();
     fireEvent.change(yearSelect, { target: { value: String(currentYear - 1) } });
-    await waitFor(() => expect(readHistory).toHaveBeenCalledWith(13, currentYear - 1));
+    await waitFor(() => expect(readHistory).toHaveBeenCalledWith(12, currentYear - 1, true));
+    expect(await panel.findByRole('img', { name: /coût cumulé estimé/i })).toBeVisible();
+    expect(panel.queryByText(/Projet.*Facturation.*Fuel/)).not.toBeInTheDocument();
     expect(panel.getByRole('combobox', { name: /année/i })).toHaveValue(String(currentYear - 1));
     expect(panel.getByText('Autonomie estimée')).toBeVisible();
     expect(panel.getByText('Moyennes')).toBeVisible();
     fireEvent.click(toggle);
-    expect(screen.queryByRole('region', { name: 'Indicateurs carburant · LE ROZEL' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Indicateurs carburant · GOURY' })).not.toBeInTheDocument();
   });
 
   it('saves a dated stock reference in percent from the fleet settings', async () => {
@@ -276,11 +281,11 @@ describe('Operation consumption from the register', () => {
     expect(save).toBeDisabled();
     fireEvent.change(value, { target: { value: '60.5' } });
     fireEvent.click(save);
-    await waitFor(() => expect(fleetFuel().getByText(/5\s600 L/)).toBeVisible());
+    await waitFor(() => expect(fleetFuel().getByText('5,6 m³')).toBeVisible());
     expect(fleetFuel().getByText(/56\s%/)).toBeVisible();
     expect(fleetFuel().queryByText(/déduits via DPR/)).not.toBeInTheDocument();
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
-    expect(fleetFuel().getByText('450 L déduits via DPR')).toBeVisible();
+    expect(fleetFuel().getByText('0,45 m³ déduits via DPR')).toBeVisible();
     expect(fleetFuel().getByText('Aucun relevé à une vitesse comparable')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_baseline', { p_vessel_id: 12, p_unit: 'percent', p_value: 60.5, p_date: baselineDate });
   });
@@ -329,11 +334,11 @@ describe('Operation consumption from the register', () => {
     expect(within(metrics).getByText(/1\s200 € HT/)).toBeVisible();
     expect(within(metrics).getByText('2,73 t')).toBeVisible();
     expect(within(metrics).getByText('50 L/NM')).toBeVisible();
-    expect(await fleetFuel().findByText(/6\s800 L/)).toBeVisible();
+    expect(await fleetFuel().findByText('6,8 m³')).toBeVisible();
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
     expect(fleetFuel().getByText('13,6 h · 136 NM')).toBeVisible();
     expect(fleetFuel().getByText(/Avitaillement Conso/)).toBeVisible();
-    expect(fleetFuel().getByText('200 L déduits via DPR')).toBeVisible();
+    expect(fleetFuel().getByText('0,2 m³ déduits via DPR')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: 'B', p_expected_version: null,
       p_inputs: expect.objectContaining({ durationMinutes: 120, pricePerLiter: 1.2, refuelLiters: 1800, completed: true }) });
     await waitFor(() => expect(afterSaveRead).toHaveBeenCalled());

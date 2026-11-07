@@ -3,6 +3,7 @@ interface HistoryImageLabels {
   year: number;
   asOf: string;
   costNote: string;
+  costSourceLabel: string;
 }
 
 const themeTokens = ['--sp-surface', '--sp-surface-subtle', '--sp-heading', '--sp-muted', '--sp-border', '--sp-border-strong',
@@ -18,7 +19,7 @@ export async function buildSeaOperationFleetFuelHistoryPng(svg: SVGSVGElement, l
   for (const token of themeTokens) clone.style.setProperty(token, theme(token));
   const source = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' });
   const padding = 16, scale = 2;
-  const header = labels.asOf ? 80 : 62;
+  const header = 62 + (labels.asOf ? 18 : 0) + (labels.costSourceLabel ? 18 : 0);
   const canvas = document.createElement('canvas');
   canvas.width = width * scale;
   canvas.height = (height + header + (labels.costNote ? 44 : 10)) * scale;
@@ -42,7 +43,8 @@ export async function buildSeaOperationFleetFuelHistoryPng(svg: SVGSVGElement, l
     context.fillStyle = theme('--sp-muted') || 'black';
     context.font = `12px ${font}`;
     context.fillText('Historique annuel du carburant · DPR validés', padding, 44, width - padding * 2);
-    if (labels.asOf) context.fillText(labels.asOf, padding, 62, width - padding * 2);
+    if (labels.costSourceLabel) context.fillText(labels.costSourceLabel, padding, 62, width - padding * 2);
+    if (labels.asOf) context.fillText(labels.asOf, padding, header - 18, width - padding * 2);
     context.drawImage(image, 0, header, width, height);
     if (labels.costNote) {
       let line = '';

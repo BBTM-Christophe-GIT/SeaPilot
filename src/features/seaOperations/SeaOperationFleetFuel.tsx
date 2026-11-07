@@ -7,8 +7,9 @@ import { fleetConsumptionScale, SeaOperationVesselConsumption } from './SeaOpera
 import { SeaOperationFleetFuelHistory } from './SeaOperationFleetFuelHistory';
 import {
   fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelBaseline,
-  type FleetFuelUnit, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
+  type FleetFuelUnit, type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
 } from './seaOperationFleetFuelQuery';
+import { formatFuelVolume, fuelVolumeUnit } from './seaOperationFuelVolume';
 import { seaOperationToday } from './seaOperationModel';
 import type { SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
 import { consumptionErrorMessage } from './useSeaOperationConsumption';
@@ -19,6 +20,12 @@ const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFracti
 const measuredDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
 const referenceDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeZone: 'UTC' });
 const liters = (value: number) => `${number.format(value)} L`;
+
+function tankLevel(fuelLiters: number | null, capacityLiters: number | null) {
+  const fill = fuelLiters !== null && capacityLiters !== null && capacityLiters > 0 ? fuelLiters / capacityLiters : null;
+  const level = fill === null ? 'unknown' : fill < .25 ? 'critical' : fill <= .35 ? 'warning' : 'normal';
+  return { fill, level, fillPercent: `${Math.min((fill ?? 0) * 100, 100)}%` };
+}
 
 type ConsumptionDetails = {
   averages?: SeaOperationRegisterConsumption['vesselAverages'];
@@ -56,39 +63,59 @@ export function useSeaOperationFleetFuel(client: SupabaseClient, accessKey: stri
 }
 
 function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }: ConsumptionDetails & {
-  vessel: SeaOperationFleetFuelLevel; scale: number;
+  vessel: SeaOperationFleetFuelLevel; scale: ReturnType<typeof fleetConsumptionScale>;
 }) {
   const { fuelLiters, capacityLiters, maxSpeedKnots, rateLitersPerHour, rateSampleCount, source, measuredAt,
     baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters } = vessel;
   const cruise = maxSpeedKnots && maxSpeedKnots > 0 ? maxSpeedKnots / 2 : null;
   const hours = cruise !== null && fuelLiters !== null && rateLitersPerHour && rateLitersPerHour > 0 ? fuelLiters / rateLitersPerHour : null;
+  const { fill, level, fillPercent } = tankLevel(fuelLiters, capacityLiters);
+  const volumeUnit = fuelVolumeUnit(capacityLiters);
   const sourceLabel = source === 'refuel' ? 'Avitaillement Conso' : source === 'baseline' ? 'Stock de référence' : 'Arrivée Conso';
   const missingAutonomy = !cruise ? 'Vitesse maximale à renseigner' : fuelLiters === null
     ? 'Niveau à renseigner' : 'Aucun relevé à une vitesse comparable';
 
   return <>
-    <div className="so-fuel-card-metric">
-      <strong><ClipboardList size={14} aria-hidden="true" /> Stock</strong>
-      <small>{capacityLiters === null ? 'Capacité à renseigner' : `${liters(capacityLiters)} de capacité`}</small>
-      {source && (baselineDate || measuredAt) && <small>{sourceLabel}{' · '}{baselineDate
+    <section className="so-fuel-card-metric" aria-label="Stock">
+      <h3><span><ClipboardList size={16} aria-hidden="true" /></span>Stock</h3>
+      <div className="so-fuel-metric-primary" data-level={level}>
+        <strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
+        {fill !== null && <span>{percent.format(fill)}</span>}
+      </div>
+      <div className="so-fuel-stock-track" data-level={level} aria-hidden="true">
+        {fill !== null && <span style={{ width: fillPercent }} />}
+      </div>
+      <small>{capacityLiters === null ? 'Capacité à renseigner' : `${formatFuelVolume(capacityLiters, volumeUnit)} de capacité`}</small>
+      {source && (baselineDate || measuredAt) && <small className="so-fuel-stock-source">{sourceLabel}{' · '}{baselineDate
         ? <time dateTime={baselineDate}>{referenceDate.format(new Date(`${baselineDate}T12:00:00Z`))}</time>
         : measuredAt && <time dateTime={measuredAt}>{measuredDate.format(new Date(measuredAt))}</time>}</small>}
-      {baselineFuelLiters !== null && <small>{liters(baselineFuelLiters)} de référence</small>}
-      {refuelLiters !== null && <small>{liters(refuelLiters)} avitaillés</small>}
-      {deductedFuelLiters !== null && <small>{liters(deductedFuelLiters)} déduits via DPR</small>}
-    </div>
-    <div className="so-fuel-card-metric">
-      <strong><Gauge size={14} aria-hidden="true" /> Autonomie estimée</strong>
-      {cruise !== null && <small>{number.format(cruise)} nd · 50 % de la vitesse max</small>}
-      {hours !== null && cruise !== null ? <>
-        <b>{number.format(hours)} h · {number.format(hours * cruise)} NM</b>
-        <small>{rateSampleCount} {rateSampleCount === 1 ? 'relevé comparable' : 'relevés comparables'}</small>
-      </> : <small>{missingAutonomy}</small>}
-    </div>
-    <div className="so-fuel-card-metric">
-      <strong title="L/NM et coût HT au dernier prix applicable. Tendance par rapport au mois précédent."><BarChart3 size={14} aria-hidden="true" /> Moyennes</strong>
+      {(baselineFuelLiters !== null || deductedFuelLiters !== null || refuelLiters !== null) && <ul className="so-fuel-stock-breakdown" aria-label="Calcul du stock">
+        {baselineFuelLiters !== null && <li><ClipboardList size={13} aria-hidden="true" /><span>{formatFuelVolume(baselineFuelLiters, volumeUnit)} de référence</span></li>}
+        {deductedFuelLiters !== null && <li><span className="so-fuel-stock-minus" aria-hidden="true">−</span><span>{formatFuelVolume(deductedFuelLiters, volumeUnit)} déduits via DPR</span></li>}
+        {refuelLiters !== null && <li><Fuel size={13} aria-hidden="true" /><span>{formatFuelVolume(refuelLiters, volumeUnit)} avitaillés</span></li>}
+      </ul>}
+    </section>
+    <section className="so-fuel-card-metric" aria-label="Autonomie estimée">
+      <h3><span><Gauge size={16} aria-hidden="true" /></span>Autonomie estimée</h3>
+      {hours !== null && cruise !== null
+        ? <div className="so-fuel-metric-primary"><strong>{number.format(hours)} h · {number.format(hours * cruise)} NM</strong></div>
+        : <small className="so-fuel-metric-empty">{missingAutonomy}</small>}
+      {cruise !== null && maxSpeedKnots !== null && <>
+        <div className="so-fuel-speed-scale" aria-hidden="true">
+          <div className="so-fuel-speed-track"><span /><Ship size={16} /></div>
+          <div><span>0 nd</span><span>50 %</span><span>{number.format(maxSpeedKnots)} nd</span></div>
+        </div>
+        <small>{number.format(cruise)} nd · 50 % de la vitesse max</small>
+      </>}
+      {hours !== null && rateLitersPerHour !== null && <small className="so-fuel-autonomy-evidence">
+        <b>{formatFuelVolume(rateLitersPerHour, volumeUnit)}/h</b><span>{rateSampleCount} {rateSampleCount === 1 ? 'relevé comparable' : 'relevés comparables'}</span>
+      </small>}
+    </section>
+    <section className="so-fuel-card-metric so-fuel-averages-card" aria-label="Moyennes">
+      <h3 title="L/NM et coût HT au dernier prix applicable. Tendance par rapport au mois précédent."><span><BarChart3 size={16} aria-hidden="true" /></span>Moyennes</h3>
+      <small>Tendance par rapport au mois précédent</small>
       <SeaOperationVesselConsumption vessel={vessel} averages={averages} scale={scale} error={averagesError} onRetry={onRetryAverages} />
-    </div>
+    </section>
   </>;
 }
 
@@ -97,7 +124,8 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
   const [year, setYear] = useState(currentYear);
   const [retry, setRetry] = useState(0);
   const [response, setResponse] = useState<{
-    client: SupabaseClient; key: string; years: number[]; months?: SeaOperationFleetFuelMonth[]; error?: string;
+    client: SupabaseClient; key: string; years: number[]; months?: SeaOperationFleetFuelMonth[];
+    costSource?: SeaOperationFleetFuelCostSource; error?: string;
   }>();
   const key = `${vessel.vesselId}:${year}:${refresh}:${retry}`;
   const reload = useCallback(() => setRetry(value => value + 1), []);
@@ -116,8 +144,8 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
 
   const current = response?.client === client && response.key === key ? response : undefined;
   const years = [...new Set([currentYear, year, ...(response?.client === client ? response.years : [])])].sort((a, b) => b - a);
-  return <SeaOperationFleetFuelHistory vesselName={vessel.vesselName} year={year} years={years} months={current?.months}
-    loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
+  return <SeaOperationFleetFuelHistory vesselName={vessel.vesselName} year={year} years={years} months={current?.months} volumeUnit={fuelVolumeUnit(vessel.capacityLiters)}
+    costSource={current?.costSource} loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
 }
 
 function FuelCard({ vessel, detailId, expanded, onToggle }: {
@@ -125,19 +153,19 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
 }) {
   const { vesselName, fuelLiters, capacityLiters } = vessel;
   const photo = fleetIllustration({ name: vesselName, assetKind: 'vessel' });
-  const fill = fuelLiters !== null && capacityLiters !== null && capacityLiters > 0 ? fuelLiters / capacityLiters : null;
-  const level = fill === null ? 'unknown' : fill < .25 ? 'critical' : fill <= .35 ? 'warning' : 'normal';
+  const { fill, level, fillPercent } = tankLevel(fuelLiters, capacityLiters);
+  const volumeUnit = fuelVolumeUnit(capacityLiters);
 
   return <li className="so-fuel-card" data-expanded={expanded}>
     <h3>{vesselName}</h3>
     <div className="so-fuel-card-illustration" aria-hidden="true">
       <span className="so-fuel-card-photo">{photo ? <img src={photo} alt="" loading="lazy" /> : <Ship size={28} />}</span>
       <span className="so-fuel-card-tank" data-level={level}>
-        <span className="so-fuel-card-tank-fill" style={{ height: `${Math.min((fill ?? 0) * 100, 100)}%` }} />
+        <span className="so-fuel-card-tank-fill" style={{ height: fillPercent }} />
         <Fuel size={13} />
       </span>
     </div>
-    <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : liters(fuelLiters)}</strong>
+    <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
       {fill !== null && <span>{percent.format(fill)}</span>}
       {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
       {level === 'critical' && <span className="so-fuel-critical" role="img" aria-label="Carburant critique · moins de 25 %" title="Carburant critique · moins de 25 %">
