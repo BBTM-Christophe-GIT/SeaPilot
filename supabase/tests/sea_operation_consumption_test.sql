@@ -782,5 +782,94 @@ select pg_temp.conso_actor(6);
 select throws_ok($$select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)$$,
   '42501', null, 'foreign admins cannot query annual fuel data');
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_fleet_fuel_history(bigint,integer,boolean)', 'EXECUTE'),
+  'anonymous accounts cannot query billing totals');
+
+with projects as (
+  insert into public.projects(company_id, title, source_label, primary_vessel_id, secondary_vessel_id, secondary_vessel_name)
+  select company.id, sample.title, 'seapilot', pg_temp.fuel_vessel('goury_other'), sample.secondary_id, sample.secondary_name
+  from public.companies company cross join (values
+    ('Goury billing fixture', null::bigint, null::text),
+    ('Goury mixed billing fixture', pg_temp.fuel_vessel('fuel_dpr'), null::text),
+    ('Goury unresolved billing fixture', null::bigint, 'Unlinked other vessel')
+  ) sample(title, secondary_id, secondary_name)
+  where company.code = 'bbtm'
+  returning id, company_id
+)
+insert into public.project_billing_periods(company_id, project_id, period_month)
+select company_id, id, date '2024-07-01' from projects;
+
+with samples(n, vessel, report_day, liters) as (values
+  (1, pg_temp.fuel_vessel('goury_other'), date '2024-02-10', 200),
+  (2, pg_temp.fuel_vessel('goury_other'), date '2023-12-01', 100),
+  (3, pg_temp.fuel_vessel('fuel_dpr'), date '2024-02-11', null::integer)
+), inserted as (
+  insert into public.dpr_reports(company_id, project_id, vessel_id, report_date, status, dpr_number,
+    issuer_user_id, issuer_name_snapshot, created_by, submitted_by, submitted_at, validated_by, validated_at)
+  select project.company_id, project.id, sample.vessel, sample.report_day, 'validated', 1900000120 + sample.n,
+    actor.id, 'Conso admin', actor.id, actor.id, now(), actor.id, now()
+  from public.projects project cross join samples sample
+  cross join (select 'b9470000-0000-0000-0000-000000000001'::uuid as id) actor
+  where project.title = 'Goury mixed billing fixture' returning id, company_id, dpr_number
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters)
+select inserted.id, inserted.company_id, sample.liters
+from inserted join samples sample on inserted.dpr_number = 1900000120 + sample.n
+where sample.liters is not null;
+
+with invoices(project_title, invoice_day, amount, currency, specialties, dpr_number) as (values
+  ('Goury billing fixture', date '2024-01-01', 100.25, 'EUR', array['  FuEL  ', 'fuel'], null::integer),
+  ('Goury mixed billing fixture', date '2024-01-31', 50, 'EUR', array['Fuel'], 1900000121),
+  ('Goury billing fixture', date '2024-06-01', 0, 'EUR', array['Fuel'], null),
+  ('Goury billing fixture', date '2022-01-01', 10, 'EUR', array['Fuel'], null),
+  ('Goury billing fixture', date '2024-01-05', 500, 'EUR', array['Fuel services'], null),
+  ('Goury billing fixture', date '2024-01-05', 500, 'USD', array['Fuel'], null),
+  ('Goury mixed billing fixture', date '2024-01-05', 500, 'EUR', array['Fuel'], null),
+  ('Goury mixed billing fixture', date '2024-01-05', 500, 'EUR', array['Fuel'], 1900000123),
+  ('Goury unresolved billing fixture', date '2024-01-05', 500, 'EUR', array['Fuel'], null),
+  ('Goury billing fixture', pg_temp.fuel_day(1), 500, 'EUR', array['Fuel'], null)
+)
+insert into public.project_chargeable_expenses(company_id, project_id, billing_period_id, category, supplier,
+  invoice_date, amount_ht, amount_ttc, currency, supplier_specialties, dpr_report_id)
+select project.company_id, project.id, period.id, 'port', 'Fuel fixture supplier', invoice.invoice_day, invoice.amount,
+  invoice.amount * 1.2, invoice.currency, invoice.specialties, report.id
+from invoices invoice join public.projects project on project.title = invoice.project_title
+join public.project_billing_periods period on period.company_id = project.company_id and period.project_id = project.id
+left join public.dpr_reports report on report.company_id = project.company_id and report.project_id = project.id
+  and report.dpr_number = invoice.dpr_number;
+
+create function pg_temp.goury_billing_history(p_year integer) returns jsonb language sql stable as $$
+  select public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('goury_other'), p_year, true);
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(5);
+select is(pg_temp.goury_billing_history(2024)->>'costSource', 'billing',
+  'a scoped real Marin receives billing as the GOURY cost source');
+select is(pg_temp.goury_billing_history(2024)->'months'->0,
+  '{"month":1,"liters":null,"costEuros":150.25,"unpricedLiters":0}'::jsonb,
+  'invoice dates and HT euros determine totals, with direct DPR links resolving mixed projects');
+select is(pg_temp.goury_billing_history(2024)->'months'->1,
+  '{"month":2,"liters":200,"costEuros":null,"unpricedLiters":0}'::jsonb,
+  'the whole billing year keeps DPR liters and does not add DPR estimated costs');
+select is(pg_temp.goury_billing_history(2024)->'months'->5->>'costEuros', '0.00', 'a real zero invoice is an observation');
+select is(pg_temp.goury_billing_history(2024)->'years', '[2024,2023,2022]'::jsonb,
+  'invoice-only years are available and future invoices are excluded');
+select is(pg_temp.goury_billing_history(2023), public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('goury_other'), 2023)
+  || '{"costSource":"dpr","years":[2024,2023,2022]}'::jsonb, 'a year without invoices uses the original DPR estimate');
+select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('goury_other'), 2024, false),
+  public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('goury_other'), 2024) || '{"costSource":"dpr"}'::jsonb,
+  'the previous DPR-only behavior remains available');
+select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024, true),
+  public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024) || '{"costSource":"dpr"}'::jsonb,
+  'other vessels retain exactly the original estimate');
+select pg_temp.conso_actor(3);
+select is(pg_temp.goury_billing_history(2024)->>'costSource', 'billing',
+  'a scoped real Capitaine receives GOURY billing aggregates');
+select pg_temp.conso_actor(6);
+select throws_ok($$select pg_temp.goury_billing_history(2024)$$, '42501', null, 'foreign accounts cannot receive GOURY billing totals');
+reset role;
 select * from finish();
 rollback;

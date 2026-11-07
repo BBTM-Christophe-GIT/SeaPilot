@@ -18,8 +18,7 @@
 
 .so-fuel-history-heading { justify-content: space-between; }
 .so-fuel-history-heading h3 { color: var(--sp-heading); }
-.so-fuel-history-controls label,
-.so-fuel-history-month label { display: flex; align-items: center; gap: var(--sp-space-2); font-weight: 600; }
+.so-fuel-history-controls label { display: flex; align-items: center; gap: var(--sp-space-2); font-weight: 600; }
 .so-fuel-history select {
   min-height: var(--sp-control-height);
   max-width: 100%;
@@ -32,6 +31,7 @@
 }
 
 .so-fuel-history-plot {
+  position: relative;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--sp-border);
@@ -39,11 +39,9 @@
   background: var(--sp-surface);
 }
 .so-fuel-history-plot svg { display: block; width: 100%; height: auto; }
+.so-fuel-history-month-slider { position: absolute; inset: 0; cursor: crosshair; touch-action: manipulation; }
+.so-fuel-history .so-fuel-history-plot [role="slider"].so-fuel-history-month-slider:focus-visible { outline: 2px solid var(--sp-focus); outline-offset: -3px; }
 .so-fuel-history .so-fuel-history-coverage { margin: 0; color: var(--sp-warning); }
-.so-fuel-history-month { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-3); }
-.so-fuel-history-month dl { display: flex; flex-wrap: wrap; gap: var(--sp-space-4); margin: 0; }
-.so-fuel-history-month dt { color: var(--sp-muted); font-size: .78rem; }
-.so-fuel-history-month dd { color: var(--sp-heading); font-weight: 650; margin: 0; }
 .so-fuel-history-table summary { width: fit-content; color: var(--sp-primary); font-weight: 650; cursor: pointer; }
 .so-fuel-history-table-scroll { overflow-x: auto; margin-top: var(--sp-space-2); }
 .so-fuel-history-table table { width: 100%; border-collapse: collapse; font-size: .8rem; }

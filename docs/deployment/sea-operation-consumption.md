@@ -54,15 +54,28 @@ est impossible.
 Le chevron ouvre les indicateurs du navire sur toute la largeur du bandeau.
 Les courbes cumulent les litres consommés et le coût HT estimé mois après mois
 depuis janvier. Le filtre ouvre l’année en cours par défaut et propose les
-années où le navire dispose de DPR valides. Les indicateurs de stock,
-d’autonomie, de moyennes et de tendance se trouvent sous les courbes.
+années où le navire dispose de DPR valides. Les étiquettes sur les courbes
+indiquent le cumul à la date du jour pour l’année en cours et à la fin de
+l’année pour les années passées. Sélectionner un autre mois sur le graphique
+déplace les étiquettes. Le tableau **Données mensuelles** reste consultable.
+Sous les courbes, la jauge de stock, la vitesse et la portée estimée, puis
+les barres des moyennes présentent les indicateurs du navire.
+Les volumes sont affichés en m³ à partir d’une capacité totale de 3 000 L.
+Ils sont affichés en litres pour les capacités inférieures ou inconnues.
 
 Le cumul retient un seul DPR validé par jour, avec la même règle de sélection
 que le stock. Le coût utilise le dernier prix HT applicable à la date du DPR
 pour le navire, ou le prix de référence de la flotte à cette date. Les litres
 sans tarif restent dans le cumul de consommation et sont signalés à côté du
 coût estimé. Les mois à venir restent sans valeur. Le bouton **Exporter en PNG**
-télécharge les courbes du navire et de l’année affichés.
+télécharge les courbes du navire et de l’année affichés avec les étiquettes
+du mois sélectionné.
+
+Pour le GOURY, si l’année contient des dépenses éligibles de spécialité **Fuel**
+dans **Projet → Facturation**, le coût cumule leurs montants HT en euros à la
+date de facture. La courbe de volume continue de s’appuyer sur les DPR. Si
+aucune facture exploitable n’est disponible pour cette année, le coût reprend
+l’estimation à partir des DPR et des prix du carburant.
 
 ## Saisie et bilan d’un relevé
 
