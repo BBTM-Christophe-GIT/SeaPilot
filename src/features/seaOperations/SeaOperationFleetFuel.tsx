@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BarChart3, ChevronDown, ClipboardList, Fuel, Gauge, Settings2, Ship } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { BarChart3, ChevronDown, ClipboardList, Fuel, Gauge, Settings2, Ship, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { compareFleetAssets, fleetIllustration, normalizeFleetName } from '../fleet/fleetDisplay';
 import { fleetConsumptionScale, SeaOperationVesselConsumption } from './SeaOperationFleetConsumption';
+import { SeaOperationFleetFuelHistory } from './SeaOperationFleetFuelHistory';
 import {
-  fetchSeaOperationFleetFuel, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelBaseline,
-  type FleetFuelUnit, type SeaOperationFleetFuelLevel,
+  fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelBaseline,
+  type FleetFuelUnit, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
 } from './seaOperationFleetFuelQuery';
 import { seaOperationToday } from './seaOperationModel';
 import type { SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
@@ -91,39 +92,70 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
   </>;
 }
 
-function FuelCard({ vessel, expanded, onToggle, ...details }: ConsumptionDetails & {
-  vessel: SeaOperationFleetFuelLevel; expanded: boolean; onToggle: () => void; scale: number;
+function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vessel: SeaOperationFleetFuelLevel; refresh: number }) {
+  const currentYear = Number(seaOperationToday().slice(0, 4));
+  const [year, setYear] = useState(currentYear);
+  const [retry, setRetry] = useState(0);
+  const [response, setResponse] = useState<{
+    client: SupabaseClient; key: string; years: number[]; months?: SeaOperationFleetFuelMonth[]; error?: string;
+  }>();
+  const key = `${vessel.vesselId}:${year}:${refresh}:${retry}`;
+  const reload = useCallback(() => setRetry(value => value + 1), []);
+
+  useEffect(() => {
+    let active = true;
+    void fetchSeaOperationFleetFuelHistory(client, vessel.vesselId, year).then(result => {
+      if (active) setResponse({ client, key, ...result });
+    }).catch(() => {
+      if (active) setResponse(previous => ({ client, key, years: previous?.client === client ? previous.years : [],
+        error: 'L’historique annuel de carburant est indisponible.' }));
+    });
+    window.addEventListener('focus', reload);
+    return () => { active = false; window.removeEventListener('focus', reload); };
+  }, [client, key, reload, vessel.vesselId, year]);
+
+  const current = response?.client === client && response.key === key ? response : undefined;
+  const years = [...new Set([currentYear, year, ...(response?.client === client ? response.years : [])])].sort((a, b) => b - a);
+  return <SeaOperationFleetFuelHistory vesselName={vessel.vesselName} year={year} years={years} months={current?.months}
+    loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
+}
+
+function FuelCard({ vessel, detailId, expanded, onToggle }: {
+  vessel: SeaOperationFleetFuelLevel; detailId: string; expanded: boolean; onToggle: () => void;
 }) {
   const { vesselName, fuelLiters, capacityLiters } = vessel;
-  const detailId = useId();
   const photo = fleetIllustration({ name: vesselName, assetKind: 'vessel' });
   const fill = fuelLiters !== null && capacityLiters !== null && capacityLiters > 0 ? fuelLiters / capacityLiters : null;
+  const level = fill === null ? 'unknown' : fill < .25 ? 'critical' : fill <= .35 ? 'warning' : 'normal';
 
   return <li className="so-fuel-card" data-expanded={expanded}>
     <h3>{vesselName}</h3>
     <div className="so-fuel-card-illustration" aria-hidden="true">
       <span className="so-fuel-card-photo">{photo ? <img src={photo} alt="" loading="lazy" /> : <Ship size={28} />}</span>
-      <span className="so-fuel-card-tank" data-unknown={fill === null}>
+      <span className="so-fuel-card-tank" data-level={level}>
         <span className="so-fuel-card-tank-fill" style={{ height: `${Math.min((fill ?? 0) * 100, 100)}%` }} />
         <Fuel size={13} />
       </span>
     </div>
     <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : liters(fuelLiters)}</strong>
-      {fill !== null && <span>{percent.format(fill)}</span>}</div>
+      {fill !== null && <span>{percent.format(fill)}</span>}
+      {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
+      {level === 'critical' && <span className="so-fuel-critical" role="img" aria-label="Carburant critique · moins de 25 %" title="Carburant critique · moins de 25 %">
+        <TriangleAlert size={12} aria-hidden="true" /></span>}
+    </div>
     <button type="button" className="sp-button sp-button--secondary so-secondary so-fuel-card-toggle"
       aria-label={`Détails carburant · ${vesselName}`} title={`Détails carburant · ${vesselName}`}
       aria-expanded={expanded} aria-controls={detailId} onClick={onToggle}><ChevronDown size={16} aria-hidden="true" /></button>
-    <div id={detailId} className="so-fuel-card-details" hidden={!expanded}>
-      {expanded && <FuelDetails vessel={vessel} {...details} />}
-    </div>
   </li>;
 }
 
-export function SeaOperationFleetFuel({ rows, error, reload, disabled, onOpenSettings, ...details }: ReturnType<typeof useSeaOperationFleetFuel> & ConsumptionDetails & {
-  disabled: boolean; onOpenSettings: () => void;
+export function SeaOperationFleetFuel({ client, historyRefresh, rows, error, reload, disabled, onOpenSettings, ...details }: ReturnType<typeof useSeaOperationFleetFuel> & ConsumptionDetails & {
+  client: SupabaseClient; historyRefresh: number; disabled: boolean; onOpenSettings: () => void;
 }) {
   const [expandedVesselId, setExpandedVesselId] = useState<number | null>(null);
+  const detailId = useId();
   const vessels = rows && orderedFleetFuelLevels(rows);
+  const expandedVessel = vessels?.find(vessel => vessel.vesselId === expandedVesselId);
   const scale = fleetConsumptionScale(vessels ?? [], details.averages);
   return <section className="sp-panel so-fleet-fuel" aria-labelledby="so-fleet-fuel-title">
     <header className="so-fleet-fuel-heading"><Fuel size={20} aria-hidden="true" /><h2 id="so-fleet-fuel-title">Carburant de la flotte</h2>
@@ -134,9 +166,16 @@ export function SeaOperationFleetFuel({ rows, error, reload, disabled, onOpenSet
       <button type="button" className="sp-button sp-button--secondary so-secondary" onClick={reload}>Réessayer les niveaux</button></div>
       : !vessels ? <p role="status">Chargement des niveaux de carburant…</p>
         : vessels.length ? <ul className="so-fleet-fuel-vessels" aria-label="Niveaux de carburant par navire" tabIndex={vessels.length > 1 ? 0 : undefined}>
-          {vessels.map(vessel => <FuelCard key={vessel.vesselId} vessel={vessel} expanded={vessel.vesselId === expandedVesselId}
-            onToggle={() => setExpandedVesselId(value => value === vessel.vesselId ? null : vessel.vesselId)} scale={scale} {...details} />)}
+          {vessels.map(vessel => <FuelCard key={vessel.vesselId} vessel={vessel} detailId={detailId} expanded={vessel.vesselId === expandedVesselId}
+            onToggle={() => setExpandedVesselId(value => value === vessel.vesselId ? null : vessel.vesselId)} />)}
         </ul> : <p>Aucun navire disponible.</p>}
+    <section id={detailId} className="so-fuel-details-panel" aria-label={expandedVessel ? `Indicateurs carburant · ${expandedVessel.vesselName}` : undefined}
+      hidden={!expandedVessel}>
+      {expandedVessel && <>
+        <FuelHistory key={expandedVessel.vesselId} client={client} vessel={expandedVessel} refresh={historyRefresh} />
+        <div className="so-fuel-existing-metrics"><FuelDetails vessel={expandedVessel} scale={scale} {...details} /></div>
+      </>}
+    </section>
   </section>;
 }
 

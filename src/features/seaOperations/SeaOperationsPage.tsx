@@ -1023,7 +1023,7 @@ export function SeaOperationsPage() {
     {!editing && notice && <div className="so-alert so-success" role="status"><CheckCircle2 size={18} />{notice}</div>}
     {(!data || !currentAccess) && !error && <p role="status">Chargement des opérations en mer…</p>}
     {data && currentAccess && <>
-      <SeaOperationFleetFuel key={accessKey} {...fleetFuel} disabled={editing || busy || exporting}
+      <SeaOperationFleetFuel key={accessKey} {...fleetFuel} client={client} historyRefresh={consumptionRefresh} disabled={editing || busy || exporting}
         onOpenSettings={() => setFuelAction({ client, accessKey })} averages={registerConsumptionState?.result?.vesselAverages}
         averagesError={registerConsumptionState?.error} onRetryAverages={() => setConsumptionRefresh(value => value + 1)} />
       <div className="so-register-workspace"><section className="so-register sp-panel"><header><div><h2>Registre des opérations</h2><p>Sélectionnez une opération pour consulter sa carte, sa fiche ou ses documents.</p></div><div className="so-filters sp-filters"><label className="so-search"><Search size={17} /><input aria-label="Rechercher une opération" placeholder="Projet, client ou navire…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><select aria-label="Filtrer par état" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Tous les états</option><option value="draft">Brouillons</option><option value="GO">GO signés</option><option value="NO_GO">NO GO signés</option></select></div></header>

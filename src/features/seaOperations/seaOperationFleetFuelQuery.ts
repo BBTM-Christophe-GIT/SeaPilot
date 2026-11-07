@@ -21,6 +21,18 @@ export interface SeaOperationFleetFuelLevel {
 export type FleetFuelUnit = 'liters' | 'percent';
 export const MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY = 10_000_000;
 
+export interface SeaOperationFleetFuelMonth {
+  month: number;
+  liters: number | null;
+  costEuros: number | null;
+  unpricedLiters: number;
+}
+
+interface SeaOperationFleetFuelHistory {
+  years: number[];
+  months: SeaOperationFleetFuelMonth[];
+}
+
 const invalidResponse = 'Le niveau de carburant reçu est invalide.';
 const quantity = (value: unknown): value is number | null =>
   value === null || typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -50,6 +62,23 @@ export async function fetchSeaOperationFleetFuel(client: SupabaseClient) {
   if (error) throw error;
   if (!Array.isArray(data)) throw new Error(invalidResponse);
   return (data as unknown[]).map(fuelLevel);
+}
+
+export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, vesselId: number, year: number): Promise<SeaOperationFleetFuelHistory> {
+  const { data, error } = await client.rpc('sea_operation_fleet_fuel_history', { p_vessel_id: vesselId, p_year: year });
+  if (error) throw error;
+  const invalidHistory = 'L’historique annuel de carburant reçu est invalide.';
+  if (!data || typeof data !== 'object') throw new Error(invalidHistory);
+  const { years, months } = data as Record<string, unknown>;
+  if (!Array.isArray(years) || !years.every((value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 1900 && value <= 9999)
+    || !Array.isArray(months) || months.length !== 12) throw new Error(invalidHistory);
+  return { years: years as number[], months: months.map((value: unknown, index) => {
+    if (!value || typeof value !== 'object') throw new Error(invalidHistory);
+    const { month, liters, costEuros, unpricedLiters } = value as Record<string, unknown>;
+    if (month !== index + 1 || !quantity(liters) || !quantity(costEuros) || !quantity(unpricedLiters)
+      || unpricedLiters === null || unpricedLiters > (liters ?? 0)) throw new Error(invalidHistory);
+    return { month, liters, costEuros, unpricedLiters };
+  }) };
 }
 
 export async function saveSeaOperationFuelBaseline(client: SupabaseClient, vesselId: number, unit: FleetFuelUnit, value: number, date: string) {

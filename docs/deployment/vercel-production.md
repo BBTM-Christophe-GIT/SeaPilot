@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.90.0` ajoute les courbes annuelles de carburant et de coût HT
+dans les indicateurs du navire, avec choix de l’année et export PNG. Les
+jauges du bandeau signalent les stocks bas et critiques. Appliquer
+`20261107201926_sea_operation_fleet_fuel_history.sql` avant le frontend.
+Voir [le cumul annuel](./sea-operation-consumption.md#cumul-annuel-par-navire).
+
 La version `3.89.0` regroupe les indicateurs de carburant dans une rangée de
 cartes par navire et décompte les DPR validés depuis une référence datée ou un
 avitaillement Conso. Appliquer `20261107122032_sea_operation_fleet_fuel_dpr_deductions.sql`
