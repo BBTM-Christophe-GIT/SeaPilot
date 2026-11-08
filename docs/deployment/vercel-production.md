@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.92.0` ajoute le groupe Fuel au ruban Opération en mer, la saisie
+datée par cuve et le nom de la caisse journalière dans Navires. Appliquer
+`20261108050458_sea_operation_fuel_tank_readings.sql` avant le frontend.
+Voir [les indicateurs carburant](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.91.1` affiche un cadran de vitesse et une consommation en L/NM
 dans l’autonomie estimée. La jauge de stock repère le niveau courant et la
 capacité totale. La pastille critique passe en haut à droite de la carte du navire.

@@ -965,5 +965,124 @@ select pg_temp.conso_actor(5);
 select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('landemer'), 3, pg_temp.landemer_inputs())$$,
   '42501', null, 'a real Marin remains unable to save tank readings');
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select ok(not has_table_privilege('authenticated', 'sea_operation_private.fuel_tank_readings', 'SELECT,INSERT,UPDATE,DELETE'),
+  'detailed tank readings can only be accessed through scoped RPCs');
+select ok(not has_function_privilege('anon', 'public.sea_operation_fuel_tanks(bigint,date)', 'EXECUTE'),
+  'anonymous users cannot read tank levels');
+select ok(not has_function_privilege('anon', 'public.sea_operation_save_fuel_tanks(bigint,date,integer,jsonb)', 'EXECUTE'),
+  'anonymous users cannot save tank levels');
+select throws_ok($$update public.vessels set daily_fuel_tank_name = 'Unconfigured'
+  where id = pg_temp.fuel_vessel('fuel_office_only')$$, '23514', null, 'a named day tank requires a capacity');
+
+update public.vessels set fuel_tank_capacities_liters = array[7000,3000]::numeric[],
+  daily_fuel_tank_capacity_liters = 200, daily_fuel_tank_name = 'Caisse moteur'
+where id = pg_temp.fuel_vessel('fuel_office_only');
+select throws_ok($$update public.vessels set daily_fuel_tank_name = ' Caisse moteur '
+  where id = pg_temp.fuel_vessel('fuel_office_only')$$, '23514', null, 'a day tank name is stored without leading or trailing whitespace');
+select throws_ok($$update public.vessels set daily_fuel_tank_name = repeat('a', 81)
+  where id = pg_temp.fuel_vessel('fuel_office_only')$$, '23514', null, 'a day tank name has at most 80 characters');
+update public.vessels set daily_fuel_tank_capacity_liters = 100 where id = pg_temp.fuel_vessel('landemer');
+
+with samples(n, day_offset, liters) as (values (1,-3,800), (2,-2,100), (3,-1,200)), inserted as (
+  insert into public.dpr_reports(company_id, vessel_id, report_date, status, dpr_number, unlisted_project_name,
+    issuer_user_id, issuer_name_snapshot, created_by, submitted_by, submitted_at, validated_by, validated_at)
+  select company.id, pg_temp.fuel_vessel('fuel_office_only'), pg_temp.fuel_day(sample.day_offset), 'validated', 1900000150 + sample.n,
+    'Tank stock fixture ' || sample.n, actor.id, 'Conso admin', actor.id, actor.id, now(), actor.id, now()
+  from public.companies company cross join samples sample
+  cross join (select 'b9470000-0000-0000-0000-000000000001'::uuid as id) actor where company.code = 'bbtm'
+  returning id, company_id, dpr_number
+)
+insert into public.dpr_daily_metrics(dpr_id, company_id, fuel_consumed_liters)
+select inserted.id, inserted.company_id, sample.liters from inserted join samples sample on inserted.dpr_number = 1900000150 + sample.n;
+
+create function pg_temp.soutes_inputs() returns jsonb language sql immutable as $$
+  select '[{"key":"day","unit":"liters","value":150},{"key":"main-2","unit":"m3","value":2.1},
+    {"key":"main-1","unit":"percent","value":50}]'::jsonb;
+$$;
+create function pg_temp.soutes_read(p_key text, p_days integer) returns jsonb language sql stable as $$
+  select public.sea_operation_fuel_tanks(pg_temp.fuel_vessel(p_key), pg_temp.fuel_day(p_days));
+$$;
+create function pg_temp.soutes_save(p_key text, p_days integer, p_version integer, p_inputs jsonb) returns jsonb language sql as $$
+  select public.sea_operation_save_fuel_tanks(pg_temp.fuel_vessel(p_key), pg_temp.fuel_day(p_days), p_version, p_inputs);
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is(pg_temp.soutes_read('fuel_office_only', -2)->'tanks', '[
+  {"key":"main-1","name":"Cuve Bâbord","capacityLiters":7000},
+  {"key":"main-2","name":"Cuve Tribord","capacityLiters":3000},
+  {"key":"day","name":"Caisse moteur","capacityLiters":200}]'::jsonb, 'the scoped read uses real fleet configuration and the personalized day tank name');
+select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading', 'null'::jsonb,
+  'legacy stock has no fabricated per-tank readings');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null, pg_temp.soutes_inputs() - 0)$$,
+  '22023', null, 'a configured day tank reading is required');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null,
+  jsonb_set(pg_temp.soutes_inputs(), '{1,value}', '3.001'))$$, '22023', null, 'the converted m³ value cannot exceed tank capacity');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null,
+  jsonb_set(pg_temp.soutes_inputs(), '{0,value}', '150.0001'))$$, '22023', null, 'all reading values are limited to three decimals');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null,
+  jsonb_set(pg_temp.soutes_inputs(), '{1,key}', '"main-1"'))$$, '22023', null, 'duplicate tank keys cannot replace a missing tank');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', 1, null, pg_temp.soutes_inputs())$$,
+  '22023', null, 'a future tank reading date is rejected');
+select is((pg_temp.soutes_save('fuel_office_only', -2, null, pg_temp.soutes_inputs())->'reading'->>'mainLiters')::numeric, 5600::numeric,
+  'a single save converts percentages and m³, and excludes the day tank from the stock anchor');
+select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->'tanks', '[
+  {"key":"main-1","name":"Cuve Bâbord","capacityLiters":7000,"unit":"percent","value":50,"liters":3500},
+  {"key":"main-2","name":"Cuve Tribord","capacityLiters":3000,"unit":"m3","value":2.1,"liters":2100},
+  {"key":"day","name":"Caisse moteur","capacityLiters":200,"unit":"liters","value":150,"liters":150}]'::jsonb,
+  'readings reopen with entered units and a snapshot of their tank configuration');
+select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 5300::numeric,
+  'stock subtracts validated DPR use from the reading date, inclusive');
+select is(pg_temp.soutes_read('fuel_office_only', -1)->'reading', 'null'::jsonb, 'another date starts without readings');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null, pg_temp.soutes_inputs())$$,
+  '40001', null, 'a stale new form cannot overwrite an existing reading');
+select lives_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_office_only'), 'liters', 5000, pg_temp.fuel_day(-2))$$,
+  'existing clients can still adjust the total directly');
+select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->>'superseded', 'true',
+  'an old-client baseline change supersedes rather than deletes the same-day detail');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, 1, pg_temp.soutes_inputs())$$,
+  '40001', null, 'an old-client baseline change invalidates a previously opened detailed form');
+select is(pg_temp.soutes_save('fuel_office_only', -2, 2, pg_temp.soutes_inputs())->'reading'->>'superseded', 'false',
+  'a fresh detailed save updates the reference again');
+
+select is(pg_temp.soutes_read('landemer', 0)->'tanks'->0->>'calibration', 'landemer-v1',
+  'official LANDEMER main tanks advertise their physical curve');
+select ok(not (pg_temp.soutes_read('landemer', 0)->'tanks'->2 ? 'calibration'),
+  'LANDEMER day tank has no main-tank curve');
+select is((pg_temp.soutes_save('landemer', 0, null, '[
+  {"key":"main-1","unit":"percent","value":98.989},{"key":"main-2","unit":"percent","value":10.601},
+  {"key":"day","unit":"percent","value":0}]')->'reading'->>'mainLiters')::numeric, 13542::numeric,
+  'each LANDEMER percentage uses the established individual curve and zero is valid for the day tank');
+select is(pg_temp.soutes_read('missing_calibration', 0)->'tanks',
+  '[{"key":"main-1","name":"Cuve","capacityLiters":null}]'::jsonb,
+  'vessels without detailed configuration retain a single aggregate input');
+select throws_ok($$select pg_temp.soutes_save('missing_calibration', 0, null, '[{"key":"main-1","unit":"percent","value":25}]')$$,
+  '22023', null, 'an unknown nominal capacity cannot convert a percentage');
+select is((pg_temp.soutes_save('missing_calibration', 0, null, '[{"key":"main-1","unit":"m3","value":1.25}]')
+  ->'reading'->>'mainLiters')::numeric, 1250::numeric, 'a capacity-free legacy vessel accepts a total volume');
+
+select pg_temp.conso_actor(3);
+select is(pg_temp.soutes_read('goury_other', 0)->'tanks'->2->>'name', 'Arrière',
+  'the dialog preserves names of the configured main tanks');
+select is((pg_temp.soutes_save('goury_other', 0, null, '[
+  {"key":"main-1","unit":"liters","value":600},{"key":"main-2","unit":"liters","value":500},
+  {"key":"main-3","unit":"liters","value":0},
+  {"key":"day","unit":"liters","value":0}]')->'reading'->>'mainLiters')::numeric, 1100::numeric,
+  'a real assigned Capitaine can save all tank levels');
+select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, 3, pg_temp.soutes_inputs())$$,
+  '42501', null, 'a Capitaine cannot save readings for an unassigned vessel');
+select pg_temp.conso_actor(5);
+select is(pg_temp.soutes_read('goury_other', 0)->>'canSetBaseline', 'false',
+  'a real Marin can read scoped tank levels without editing rights');
+select throws_ok($$select pg_temp.soutes_save('goury_other', 0, 1, pg_temp.soutes_inputs())$$,
+  '42501', null, 'a Marin cannot save tank readings');
+select throws_ok($$select pg_temp.soutes_read('fuel_office_only', 0)$$,
+  '42501', null, 'a Marin cannot read tank levels outside their fleet scope');
+select pg_temp.conso_actor(6);
+select throws_ok($$select pg_temp.soutes_read('goury_other', 0)$$,
+  '42501', null, 'foreign admins cannot read tank levels');
+reset role;
 select * from finish();
 rollback;

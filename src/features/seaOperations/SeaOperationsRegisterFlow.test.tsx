@@ -196,7 +196,7 @@ const savedReading = {
 
 function exportButton() {
   return within(screen.getByRole('navigation', { name: 'Commandes Opération en Mer' }))
-    .getByRole('button', { name: 'Exporter les consommations en Excel' });
+    .getByRole('button', { name: 'Export Excel' });
 }
 
 describe('Operation consumption from the register', () => {
@@ -299,8 +299,12 @@ describe('Operation consumption from the register', () => {
       return { data: emptyRegisterConsumption, error: null };
     });
     mount(['capitaine'], [], rpc, ['GOURY'], () => [fuel]);
-    const banner = within(await screen.findByRole('region', { name: 'Carburant de la flotte' }));
-    fireEvent.click(await banner.findByRole('button', { name: 'Paramètres carburant' }));
+    const fuelRibbon = within(screen.getByRole('group', { name: 'Fuel' }));
+    expect(fuelRibbon.getByRole('button', { name: 'Export Excel' }).querySelector('img')).toHaveAttribute('src', '/icons/microsoft-excel.svg');
+    const parameters = await fuelRibbon.findByRole('button', { name: 'Paramètres carburant' });
+    expect(fuelRibbon.getByRole('button', { name: 'Soutes' })).toBeEnabled();
+    expect(fleetFuel().queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
+    fireEvent.click(parameters);
     const form = within(screen.getByRole('dialog', { name: 'Paramètres carburant' }));
     expect(form.getByLabelText('Date de référence')).toHaveValue(today);
     fireEvent.change(form.getByLabelText('Date de référence'), { target: { value: baselineDate } });
@@ -463,7 +467,10 @@ describe('Operation consumption from the register', () => {
     const chart = within(await screen.findByRole('region', { name: 'Carburant de la flotte' }));
     await chart.findByRole('heading', { name: 'GOURY' });
     expect(chart.queryByRole('heading', { name: 'BR 71' })).not.toBeInTheDocument();
-    expect(chart.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
+    const fuelRibbon = within(screen.getByRole('group', { name: 'Fuel' }));
+    expect(fuelRibbon.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
+    expect(fuelRibbon.queryByRole('button', { name: 'Soutes' })).not.toBeInTheDocument();
+    expect(fuelRibbon.getByRole('button', { name: 'Export Excel' })).toBeEnabled();
     expect(chart.queryByText('Remorquage')).not.toBeInTheDocument();
     const vessel = async (name: string) => {
       fireEvent.click(chart.getByRole('button', { name: `Détails carburant · ${name}` }));

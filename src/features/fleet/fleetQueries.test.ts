@@ -38,22 +38,32 @@ describe('fleetQueries', () => {
 
   it('stores the main and daily tanks separately and retains the original m³ capacity', async () => {
     const single = vi.fn().mockResolvedValue({ data: { id: 1, company_id: 1, name: 'Navire test', active: true,
-      fuel_capacity_m3: '19.5', fuel_tank_capacities_liters: [5000.5, '2500.25'], daily_fuel_tank_capacity_liters: '300' }, error: null });
+      fuel_capacity_m3: '19.5', fuel_tank_capacities_liters: [5000.5, '2500.25'],
+      daily_fuel_tank_capacity_liters: '300', daily_fuel_tank_name: 'Caisse service' }, error: null });
     const select = vi.fn().mockReturnValue({ single });
     const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select }) });
     const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
     const input = { ...EMPTY_INPUT, id: 1, name: 'Navire test', fuelCapacityM3: 19.5 };
 
-    await expect(saveFleetVessel(client, { ...input, fuelTankCapacitiesLiters: [5000.5, 2500.25], dailyFuelTankCapacityLiters: 300 }))
-      .resolves.toMatchObject({ fuelCapacityM3: 19.5, fuelTankCapacitiesLiters: [5000.5, 2500.25], dailyFuelTankCapacityLiters: 300 });
+    await expect(saveFleetVessel(client, { ...input, fuelTankCapacitiesLiters: [5000.5, 2500.25],
+      dailyFuelTankCapacityLiters: 300, dailyFuelTankName: ' Caisse service ' }))
+      .resolves.toMatchObject({ fuelCapacityM3: 19.5, fuelTankCapacitiesLiters: [5000.5, 2500.25],
+        dailyFuelTankCapacityLiters: 300, dailyFuelTankName: 'Caisse service' });
     expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
-      fuel_capacity_m3: 19.5, fuel_tank_capacities_liters: [5000.5, 2500.25], daily_fuel_tank_capacity_liters: 300,
+      fuel_capacity_m3: 19.5, fuel_tank_capacities_liters: [5000.5, 2500.25],
+      daily_fuel_tank_capacity_liters: 300, daily_fuel_tank_name: 'Caisse service',
     }));
-    expect(select).toHaveBeenCalledWith(expect.stringContaining('daily_fuel_tank_capacity_liters'));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('daily_fuel_tank_name'));
 
     await saveFleetVessel(client, input);
     expect(update.mock.lastCall?.[0]).not.toHaveProperty('fuel_tank_capacities_liters');
     expect(update.mock.lastCall?.[0]).not.toHaveProperty('daily_fuel_tank_capacity_liters');
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('daily_fuel_tank_name');
+
+    await saveFleetVessel(client, { ...input, dailyFuelTankCapacityLiters: null });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      daily_fuel_tank_capacity_liters: null, daily_fuel_tank_name: null,
+    }));
   });
 
   it.each([[], [0], [0.0001], [Infinity], [10_000_001], Array<number>(21).fill(100)].map(fuelTankCapacitiesLiters => ({ fuelTankCapacitiesLiters })))('rejects invalid main tank capacities before any write (%j)', async ({ fuelTankCapacitiesLiters }) => {
@@ -65,6 +75,13 @@ describe('fleetQueries', () => {
   it('rejects an invalid daily tank capacity before any write', async () => {
     const client = { from: vi.fn() } as unknown as SupabaseClient;
     await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: 'Navire test', dailyFuelTankCapacityLiters: -1 })).rejects.toThrow('caisse journalière');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('rejects an overlong daily tank name before any write', async () => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: 'Navire test',
+      dailyFuelTankCapacityLiters: 300, dailyFuelTankName: 'é'.repeat(81) })).rejects.toThrow('80 caractères');
     expect(client.from).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@
 
 .fleet-fuel-tank { display: grid; gap: var(--sp-space-2); min-width: 0; }
 .fleet-fuel-tank label { overflow-wrap: anywhere; }
+.fleet-fuel-daily-name { overflow-wrap: anywhere; }
 .fleet-fuel-names-error { margin: 0; color: var(--sp-danger); }
 
 .fleet-fuel-daily {
@@ -22,6 +23,7 @@
 }
 
 .fleet-dialog-grid .fleet-fuel-check {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 8px;

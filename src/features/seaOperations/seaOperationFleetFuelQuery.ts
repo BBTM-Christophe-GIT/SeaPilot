@@ -21,6 +21,35 @@ export interface SeaOperationFleetFuelLevel {
 export type FleetFuelUnit = 'liters' | 'percent';
 export const MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY = 10_000_000;
 
+export type FleetFuelTankUnit = FleetFuelUnit | 'm3';
+
+export interface FleetFuelTankInput {
+  key: string;
+  unit: FleetFuelTankUnit;
+  value: number;
+}
+
+export interface FleetFuelTank {
+  key: string;
+  name: string;
+  capacityLiters: number | null;
+  calibration?: 'landemer-v1';
+}
+
+export interface SeaOperationFuelTanks {
+  vesselId: number;
+  date: string;
+  canSetBaseline: boolean;
+  tanks: FleetFuelTank[];
+  reading: {
+    version: number;
+    savedAt: string;
+    mainLiters: number;
+    superseded: boolean;
+    tanks: Array<FleetFuelTank & FleetFuelTankInput & { liters: number }>;
+  } | null;
+}
+
 export interface SeaOperationFleetFuelMonth {
   month: number;
   liters: number | null;
@@ -86,5 +115,54 @@ export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, 
 
 export async function saveSeaOperationFuelBaseline(client: SupabaseClient, vesselId: number, unit: FleetFuelUnit, value: number, date: string) {
   const { error } = await client.rpc('sea_operation_save_fuel_baseline', { p_vessel_id: vesselId, p_unit: unit, p_value: value, p_date: date });
+  if (error) throw error;
+}
+
+const invalidTanks = 'Le relevé des soutes reçu est invalide.';
+
+function fuelTank(value: unknown): FleetFuelTank {
+  if (!value || typeof value !== 'object') throw new Error(invalidTanks);
+  const { key, name, capacityLiters, calibration } = value as Record<string, unknown>;
+  if (typeof key !== 'string' || !/^(main-[1-9]\d*|day)$/.test(key) || typeof name !== 'string' || !name.trim()
+    || !quantity(capacityLiters) || capacityLiters === 0 || calibration != null && calibration !== 'landemer-v1') {
+    throw new Error(invalidTanks);
+  }
+  return { key, name, capacityLiters, calibration: calibration ?? undefined };
+}
+
+function fuelTankReading(data: unknown, vesselId: number, date: string): SeaOperationFuelTanks {
+  if (!data || typeof data !== 'object') throw new Error(invalidTanks);
+  const result = data as Record<string, unknown>;
+  if (result.vesselId !== vesselId || result.date !== date || typeof result.canSetBaseline !== 'boolean' || !Array.isArray(result.tanks)) {
+    throw new Error(invalidTanks);
+  }
+  const tanks = result.tanks.map(fuelTank);
+  const response = { vesselId, date, canSetBaseline: result.canSetBaseline, tanks };
+  if (result.reading === null) return { ...response, reading: null };
+  if (!result.reading || typeof result.reading !== 'object') throw new Error(invalidTanks);
+  const { version, savedAt, mainLiters, superseded, tanks: recorded } = result.reading as Record<string, unknown>;
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1
+    || typeof savedAt !== 'string' || !Number.isFinite(Date.parse(savedAt)) || !quantity(mainLiters) || mainLiters === null
+    || typeof superseded !== 'boolean' || !Array.isArray(recorded)) throw new Error(invalidTanks);
+  return { ...response, reading: { version, savedAt, mainLiters, superseded, tanks: recorded.map((item: unknown) => {
+    const tank = fuelTank(item);
+    const { unit, value, liters } = item as Record<string, unknown>;
+    if (unit !== 'percent' && unit !== 'liters' && unit !== 'm3'
+      || !quantity(value) || value === null || !quantity(liters) || liters === null) throw new Error(invalidTanks);
+    return { ...tank, unit, value, liters };
+  }) } };
+}
+
+export async function fetchSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string) {
+  const { data, error } = await client.rpc('sea_operation_fuel_tanks', { p_vessel_id: vesselId, p_date: date });
+  if (error) throw error;
+  return fuelTankReading(data, vesselId, date);
+}
+
+export async function saveSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string,
+  version: number | null, readings: readonly FleetFuelTankInput[]) {
+  const { error } = await client.rpc('sea_operation_save_fuel_tanks', {
+    p_vessel_id: vesselId, p_date: date, p_expected_version: version, p_readings: readings,
+  });
   if (error) throw error;
 }
