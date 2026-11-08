@@ -1,10 +1,11 @@
 .so-speed-dial {
   display: grid;
-  grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 5rem) minmax(0, 1fr);
   align-items: center;
   gap: var(--sp-space-3);
   min-width: 0;
 }
+.so-speed-dial[data-scale="unknown"] .so-speed-dial-track { stroke-dasharray: 3 4; }
 
 .so-speed-dial svg { display: block; width: 100%; height: auto; }
 .so-speed-dial-track, .so-speed-dial-progress { fill: none; stroke-width: 6; stroke-linecap: round; }
@@ -24,5 +25,6 @@
   font-variant-numeric: tabular-nums;
 }
 .so-speed-dial-values dd { margin: 0; }
+.so-speed-dial-values > div:first-child dt { color: var(--sp-heading); font-weight: 650; }
 .so-speed-dial-values strong { color: var(--sp-heading); font-size: 1.125rem; }
 .so-speed-dial-values > div + div { display: flex; flex-wrap: wrap; gap: 0 var(--sp-space-1); }

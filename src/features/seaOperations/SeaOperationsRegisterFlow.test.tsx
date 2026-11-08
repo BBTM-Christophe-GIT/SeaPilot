@@ -230,21 +230,26 @@ describe('Operation consumption from the register', () => {
     }
   });
 
-  it('shows fuel per nautical mile at the selected speed and labels the stock gauge', async () => {
+  it('shows both measured autonomy regimes and labels the stock gauge', async () => {
     mount(['capitaine'], [], undefined, ['LE ROZEL', 'GOURY'], () => [
       { ...stock, vesselName: 'LE ROZEL', maxSpeedKnots: 11, fuelLiters: 11432.6, capacityLiters: 16569,
-        rateLitersPerHour: 40.7, rateSampleCount: 87 },
+        navigationProfiles: { normal: { speedKnots: 5.5, litersPerNm: 7.4, sampleCount: 87 },
+          towing: { speedKnots: 4.2, litersPerNm: 13.4, sampleCount: 25 } } },
       { ...stock, vesselId: 13, fuelLiters: 1000, capacityLiters: 3000 },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Détails carburant · LE ROZEL' }));
 
     const autonomy = within(screen.getByRole('region', { name: 'Autonomie estimée' }));
-    expect(autonomy.getByText('Vitesse retenue')).toBeVisible();
-    expect(autonomy.getByText('5,5 nd')).toBeVisible();
-    expect(autonomy.getByText('Vmax')).toBeVisible();
-    expect(autonomy.getByText('11 nd')).toBeVisible();
-    expect(autonomy.getByText('7,4 L/NM')).toBeVisible();
-    expect(autonomy.getByText('87 relevés comparables')).toBeVisible();
+    const normal = within(autonomy.getByRole('region', { name: 'Vitesse moyenne', exact: true }));
+    expect(normal.getByText('5,5 nd')).toBeVisible();
+    expect(normal.getByText('11 nd')).toBeVisible();
+    expect(normal.getByText('7,4 L/NM')).toBeVisible();
+    expect(normal.getByText('87 relevés')).toBeVisible();
+    expect(normal.getByText(/280,9 h · 1\s544,9 NM/)).toBeVisible();
+    const towing = within(autonomy.getByRole('region', { name: 'Vitesse moyenne en remorque' }));
+    expect(towing.getByText('4,2 nd')).toBeVisible();
+    expect(towing.getByText('13,4 L/NM')).toBeVisible();
+    expect(towing.getByText('203,1 h · 853,2 NM')).toBeVisible();
 
     const meter = screen.getByRole('meter', { name: 'Stock de carburant' });
     expect(meter).toHaveAttribute('data-level', 'normal');
@@ -329,7 +334,7 @@ describe('Operation consumption from the register', () => {
     expect(fleetFuel().queryByText(/déduits via DPR/)).not.toBeInTheDocument();
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
     expect(fleetFuel().getByText('0,45 m³ déduits via DPR')).toBeVisible();
-    expect(fleetFuel().getByText('Aucun relevé à une vitesse comparable')).toBeVisible();
+    expect(within(fleetFuel().getByRole('region', { name: 'Vitesse moyenne', exact: true })).getByText('Aucun relevé de vitesse')).toBeVisible();
     const latest = fleetFuel().getByRole('region', { name: 'Dernier relevé Soutes' });
     expect(latest.querySelector('time')).toHaveAttribute('datetime', `${baselineDate}T14:30`);
     expect(latest.querySelector('time')).toHaveTextContent('14:30');
@@ -357,7 +362,8 @@ describe('Operation consumption from the register', () => {
     });
     mount(['capitaine'], operations, rpc, ['GOURY'], () => [didSave
       ? { ...stock, fuelLiters: 6800, measuredAt: '2026-11-06T09:00:00Z', source: 'operation', baselineDate: '2026-11-06',
-        baselineFuelLiters: 7000, deductedFuelLiters: 200, refuelLiters: 1800, rateLitersPerHour: 500, rateSampleCount: 1 }
+        baselineFuelLiters: 7000, deductedFuelLiters: 200, refuelLiters: 1800,
+        navigationProfiles: { normal: { speedKnots: 10, litersPerNm: 50, sampleCount: 1 }, towing: null } }
       : stock]);
     await select('A');
     expect(await screen.findByRole('region', { name: 'Estimation du carburant' })).toHaveTextContent('596 L');

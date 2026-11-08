@@ -10,7 +10,7 @@ describe('project location copied when selecting a sea-operation mission', () =>
     const icons = ['buoy', 'pin', 'platform', 'wind-farm', 'mooring', 'anchor'] as const;
     const plan = { ...emptyProjectLocationPlan(), waypoints: [point('route')], points: icons.map((isolatedPointIcon, index) => ({ ...point(`isolated-${index}`), isolatedPointIcon })) };
     const original = structuredClone(plan); let id = 0;
-    const copied = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, null, () => `new-${++id}`);
+    const copied = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, null, { newId: () => `new-${++id}` });
     expect(copied.locationOverlay!.points.map(point => point.isolatedPointIcon)).toEqual(icons);
     expect(copied.waypoints[0]).not.toHaveProperty('isolatedPointIcon'); expect(isSeaOperationPayload(copied)).toBe(true);
     expect(copied.locationOverlay!.points[0]).not.toBe(plan.points[0]);
@@ -32,7 +32,7 @@ describe('project location copied when selecting a sea-operation mission', () =>
     const draft = emptySeaOperation(); draft.vessel.etd = '2026-10-27T08:00';
     const original = structuredClone(plan); let id = 0;
     // Deliberately model an unchecked provider capture at the import boundary.
-    const result = copyProjectLocationToSeaOperation(draft, plan as unknown as ProjectLocationPlan, 20, () => `fresh-${++id}`);
+    const result = copyProjectLocationToSeaOperation(draft, plan as unknown as ProjectLocationPlan, 20, { newId: () => `fresh-${++id}` });
     expect(result.vessel.etd).toBe(plan.etd); expect(result.charts).toBe(plan.charts);
     expect(result.waypoints.map(point => [point.id, point.eta])).toEqual([['fresh-1', '2026-10-27T10:00'], ['fresh-2', '2026-10-27T15:00']]);
     expect(result.locationOverlay).toMatchObject({ version: 1, points: [{ id: 'fresh-3', longitude: '40' }], zones: [{ id: 'fresh-4', name: 'Zone' }] });
@@ -58,18 +58,18 @@ describe('project location copied when selecting a sea-operation mission', () =>
     const plan = { ...emptyProjectLocationPlan(), waypoints: [
       { ...point('a'), eta: '2026-11-02T08:00', etaMode: 'automatic' as const }, point('b', '0.1')] };
     const original = structuredClone(plan);
-    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, () => crypto.randomUUID(), new Date('2026-10-27T13:27:00Z'));
+    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, { now: new Date('2026-10-27T13:27:00Z') });
     expect(result.waypoints.map(point => point.eta)).toEqual(['2026-11-02T08:00', '2026-11-02T09:00']);
     expect(plan).toEqual(original);
   });
   it('defaults a new multi-day project declaration to now when its template has no departure and keeps the source independent', () => {
     const plan = { ...emptyProjectLocationPlan(), waypoints: [point('a'), point('b', '0.1')] };
     const original = structuredClone(plan), now = new Date('2026-10-27T13:27:00Z');
-    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, () => crypto.randomUUID(), now);
+    const result = copyProjectLocationToSeaOperation(emptySeaOperation(), plan, 10, { now });
     expect(result.waypoints.map(point => point.eta)).toEqual(['2026-10-27T14:25', '2026-10-27T15:25']);
     expect(result.waypoints.map(point => point.etaMode)).toEqual(['manual', 'automatic']);
     expect(plan).toEqual(original);
-    expect(copyProjectLocationToSeaOperation(emptySeaOperation(), { ...plan, waypoints: [{ ...point('a'), etaMode: 'manual' }] }, 10, () => crypto.randomUUID(), now).waypoints[0].eta).toBe('');
+    expect(copyProjectLocationToSeaOperation(emptySeaOperation(), { ...plan, waypoints: [{ ...point('a'), etaMode: 'manual' }] }, 10, { now }).waypoints[0].eta).toBe('');
   });
   it.each(['10:00', '2026-03-29T02:30', '2026-10-25T02:30'])('does not guess a first ETA from incomplete or ambiguous ETD %s', etd => {
     const result = copyProjectLocationToSeaOperation(emptySeaOperation(), { ...emptyProjectLocationPlan(), etd, waypoints: [point('a'), point('b', '1')] }, 20);

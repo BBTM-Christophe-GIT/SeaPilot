@@ -8,13 +8,16 @@ import { initialSeaOperationDepartureEta, seaOperationWaypointEtaIsAutomatic, up
 
 /** Explicit selection imports a fresh editable copy of the project's route and geometry. */
 export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, location: ProjectLocationPlan | null | undefined,
-  maxSpeedKnots?: number | null, newId: () => string = () => crypto.randomUUID(), now = new Date()): SeaOperationPayload {
+  maxSpeedKnots?: number | null, { newId = () => crypto.randomUUID(), now = new Date(), navigationSpeedKnots, preserveAutomaticEtas }: {
+    newId?: () => string; now?: Date; navigationSpeedKnots?: number | null; preserveAutomaticEtas?: boolean;
+  } = {}): SeaOperationPayload {
   const parsed = parseProjectLocationPlan(location);
   if (!parsed) return payload;
   // An existing template departure remains an anchor even without a separate ETD.
-  const plan = !parsed.etd.trim() && parsed.waypoints[0]?.eta.trim() ? parsed : projectLocationRouteEtas(parsed, maxSpeedKnots);
+  const plan = !parsed.etd.trim() && parsed.waypoints[0]?.eta.trim() ? parsed
+    : projectLocationRouteEtas(parsed, maxSpeedKnots, navigationSpeedKnots);
   const copyPoint = (point: SeaOperationWaypoint): SeaOperationWaypoint => ({ ...point, id: newId() });
-  const waypoints = plan.waypoints.map(copyPoint);
+  const waypoints = plan.waypoints.map((point, index) => copyPoint(preserveAutomaticEtas && index > 0 ? parsed.waypoints[index] : point));
   if (waypoints[0] && !waypoints[0].eta.trim() && seaOperationWaypointEtaIsAutomatic(waypoints[0]) && !plan.etd.trim()) {
     const eta = initialSeaOperationDepartureEta(now);
     if (eta) waypoints[0] = { ...waypoints[0], eta, etaMode: 'manual' };
@@ -24,7 +27,7 @@ export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, 
     vessel: plan.etd.trim() ? { ...payload.vessel, etd: plan.etd } : payload.vessel,
     locationOverlay: { version: 1, points: plan.points.map(copyPoint), zones: plan.zones.map(zone => ({ ...zone, id: newId() })) } };
   delete result.mapViewport;
-  return updateSeaOperationRouteEtas(result, maxSpeedKnots);
+  return preserveAutomaticEtas ? result : updateSeaOperationRouteEtas(result, maxSpeedKnots, navigationSpeedKnots);
 }
 
 function samePointPosition(point: SeaOperationWaypoint, savedPoint: SeaOperationWaypoint): boolean {

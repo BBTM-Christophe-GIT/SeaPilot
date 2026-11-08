@@ -19,6 +19,9 @@ interface Props {
   operationId?: string;
   record: SeaOperationRecord | null;
   maxSpeedKnots?: number | null;
+  navigationSpeedKnots?: number | null;
+  navigationSpeedPending?: boolean;
+  navigationSpeedUnavailable?: boolean;
   consumptionRefresh?: number;
   savedConsumption?: SeaOperationConsumption;
   disabled?: boolean;
@@ -34,7 +37,7 @@ const tabs = ['map', 'sheet', 'documents'] as const;
 type RegisterTab = typeof tabs[number];
 
 /** The map stays mounted to preserve unsaved edits while reading the fiche or documents. */
-export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, consumptionRefresh, savedConsumption, disabled = false, canManageDocuments = false, onSave, onDirtyChange, onOpen, onModify, onDownload }: Props) {
+export function SeaOperationRegisterPane({ client, accessKey, operationId, record, maxSpeedKnots, navigationSpeedKnots, navigationSpeedPending, navigationSpeedUnavailable, consumptionRefresh, savedConsumption, disabled = false, canManageDocuments = false, onSave, onDirtyChange, onOpen, onModify, onDownload }: Props) {
   const id = useId();
   const selectedId = operationId ?? record?.id ?? '';
   const projectId = record?.draft.planning?.projectId || '';
@@ -66,7 +69,9 @@ export function SeaOperationRegisterPane({ client, accessKey, operationId, recor
     </div>
     <div role="tabpanel" id={`${id}-map`} aria-labelledby={`${id}-map-tab`} hidden={tab !== 'map'}>
       {record && hasSeaOperationConsumption(record) && <SeaOperationConsumptionSummary {...consumption} />}
-      <SeaOperationRegisterMap record={record} disabled={disabled} maxSpeedKnots={maxSpeedKnots} consumption={consumption.response?.data} onSave={onSave} onDirtyChange={onDirtyChange} />
+      <SeaOperationRegisterMap record={record} disabled={disabled} maxSpeedKnots={maxSpeedKnots} navigationSpeedKnots={navigationSpeedKnots}
+        navigationSpeedPending={navigationSpeedPending} navigationSpeedUnavailable={navigationSpeedUnavailable}
+        consumption={consumption.response?.data} onSave={onSave} onDirtyChange={onDirtyChange} />
     </div>
     <div role="tabpanel" id={`${id}-sheet`} aria-labelledby={`${id}-sheet-tab`} hidden={tab !== 'sheet'}>
       {tab === 'sheet' && (record ? <SeaOperationRegisterSheet key={record.id} record={record} documents={documents ?? undefined}

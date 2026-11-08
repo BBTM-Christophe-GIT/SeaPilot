@@ -66,16 +66,28 @@ carburant embarqué et consommé en route. L’arrivée réelle, la fin GPX ou l
 date de mission déterminent l’ordre des mesures. En l’absence de référence
 datée ou d’avitaillement, la dernière arrivée Conso connue fournit le niveau.
 
-L’autonomie estimée utilise la moitié de la vitesse maximale renseignée dans
-Navires. Elle divise le stock par la consommation horaire observée en transit
-sans remorquage, sur les trajets comparables entre 40 et 60 % de la vitesse
-maximale. Les passages valides des classeurs Rozel et Suroît peuvent aussi
-alimenter ce calcul. Le total des litres rapporté au total des heures pondère
-ces relevés par leur durée. Les heures estimées multipliées par la vitesse cible donnent
-les milles nautiques. Le cadran affiche la vitesse maximale et la vitesse retenue.
-La consommation à cette vitesse s’affiche en L/NM en divisant le débit horaire
-par la vitesse retenue en nœuds. Le bandeau indique les données manquantes quand
-un calcul est impossible.
+L’autonomie estimée affiche deux cadrans, **Vitesse moyenne** et **Vitesse
+moyenne en remorque**. Chaque vitesse divise la distance totale en milles
+nautiques par la durée totale en heures du régime correspondant. Les références
+proviennent des passages exploitables des archives Excel du Rozel et du Suroît
+et des traces GPX enregistrées dans **Conso**. Le journal de stock du LANDEMER
+ne fournit pas de distance de voyage.
+
+Le régime des archives suit leur colonne **Remorquage**. Pour un projet SeaPilot,
+un remorqué renseigné, un type **Contrat de Remorquage** ou le mot
+« remorquage » dans le titre suffit à identifier ce régime. Pour une fiche sans
+projet identifié et sans ce mot dans le titre, la déclaration de remorquage de
+la fiche s’applique. Les passages qui se recouvrent sont dédoublonnés. Les
+intervalles archivés de plus de sept jours à moins d’un nœud sont écartés des
+profils de vitesse.
+
+Pour chaque régime, le stock divisé par la consommation en L/NM donne la
+distance estimée. Cette distance divisée par la vitesse moyenne donne les
+heures. Les cadrans indiquent les références manquantes. Le plan de passage
+utilise la vitesse du régime du projet pour calculer les ETA automatiques.
+Faute de référence en remorque, la fiche demande une ETA manuelle. Hors
+remorquage, elle reprend alors la règle de 60 % de la Vmax, arrondis au nœud
+supérieur. Les ETA manuelles et les horaires des fiches signées restent prioritaires.
 
 ### Cumul annuel par navire
 

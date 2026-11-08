@@ -1,11 +1,11 @@
 import { Map, Pencil, Save, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PROJECT_LOCATION_LIMITS } from '../projects/projectLocation';
 import { emptySeaOperationWaypoint, type SeaOperationPayload } from './seaOperationModel';
 import type { SeaOperationRecord } from './seaOperationQueries';
 import type { SeaPosition } from './seaOperationNavigation';
 import { seaOperationPointPresentation } from './seaOperationProjectLocation';
-import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { initialSeaOperationDepartureEta, seaOperationRouteNeedsNavigationSpeed, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
@@ -16,6 +16,9 @@ import './seaOperationRegisterMap.css';
 interface RegisterMapProps {
   record: SeaOperationRecord | null;
   maxSpeedKnots?: number | null;
+  navigationSpeedKnots?: number | null;
+  navigationSpeedPending?: boolean;
+  navigationSpeedUnavailable?: boolean;
   consumption?: SeaOperationConsumption;
   disabled?: boolean;
   onSave: (draft: SeaOperationPayload, record: SeaOperationRecord) => Promise<void>;
@@ -43,13 +46,18 @@ export function SeaOperationRegisterMap(props: RegisterMapProps) {
   </section>;
 }
 
-function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = false, onSave, onDirtyChange }: RegisterMapProps & { record: SeaOperationRecord }) {
+function RegisterMapContent({ record, maxSpeedKnots, navigationSpeedKnots, navigationSpeedPending, navigationSpeedUnavailable, consumption, disabled = false, onSave, onDirtyChange }: RegisterMapProps & { record: SeaOperationRecord }) {
   const [draft, setDraft] = useState(() => structuredClone(record.draft));
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const editable = record.status === 'draft' && record.canEdit;
+  const saveWaitingForNavigation = navigationSpeedPending && seaOperationRouteNeedsNavigationSpeed(draft);
+  const canCalculateEtas = !navigationSpeedPending && !navigationSpeedUnavailable;
+  const displayedDraft = useMemo(() => record.status === 'draft' && canCalculateEtas && navigationSpeedKnots !== undefined
+    ? updateSeaOperationRouteEtas(draft, maxSpeedKnots, navigationSpeedKnots) : draft,
+  [draft, record.status, maxSpeedKnots, navigationSpeedKnots, canCalculateEtas]);
   const alive = useRef(true);
   const latest = useRef({ draft, editable, editing, saving, disabled });
   latest.current = { draft, editable, editing, saving, disabled };
@@ -62,7 +70,7 @@ function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = fal
     if (!alive.current || !current.editable || !current.editing || current.saving || current.disabled) return;
     const changed = transform(current.draft);
     if (changed === current.draft) return;
-    const next = updateSeaOperationRouteEtas(changed, maxSpeedKnots);
+    const next = canCalculateEtas ? updateSeaOperationRouteEtas(changed, maxSpeedKnots, navigationSpeedKnots) : changed;
     latest.current.draft = next; setDraft(next); setDirty(true); setError('');
   };
   const movePoint = (field: 'waypoints' | 'points', id: string, position: SeaPosition) => {
@@ -115,7 +123,7 @@ function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = fal
     setDraft(restored); setEditing(false); setDirty(false); setError('');
   };
   const save = async () => {
-    if (!alive.current || !dirty || !latest.current.editable || !latest.current.editing || latest.current.saving || latest.current.disabled) return;
+    if (!alive.current || !dirty || !latest.current.editable || !latest.current.editing || latest.current.saving || latest.current.disabled || saveWaitingForNavigation) return;
     latest.current.saving = true; setSaving(true); setError('');
     try {
       await onSave(structuredClone(latest.current.draft), record);
@@ -127,18 +135,18 @@ function RegisterMapContent({ record, maxSpeedKnots, consumption, disabled = fal
   return <>
     <div className="so-register-map-actions">
       {!editing && editable ? <button className="sp-button sp-button--secondary" type="button" disabled={disabled} onClick={() => { latest.current.editing = true; setEditing(true); }}><Pencil size={16} aria-hidden="true" />Modifier les points</button> : null}
-      {editing ? <><button className="sp-button sp-button--primary" type="button" onClick={() => { void save(); }} disabled={!dirty || !editable || saving || disabled}><Save size={16} aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer les points'}</button>
+      {editing ? <><button className="sp-button sp-button--primary" type="button" onClick={() => { void save(); }} disabled={!dirty || !editable || saving || disabled || saveWaitingForNavigation}><Save size={16} aria-hidden="true" />{saving ? 'Enregistrement…' : 'Enregistrer les points'}</button>
         <button className="sp-button sp-button--secondary" type="button" onClick={cancel} disabled={saving}><X size={16} aria-hidden="true" />Annuler</button></> : null}
     </div>
     {editing ? <p className="so-register-map-help">Glissez les points ou les sommets pour les repositionner. Le menu d’un point permet de le supprimer. Enregistrez pour conserver les modifications.</p>
       : <p className="so-register-map-help">Molette pour zoomer, appui long pour déplacer la carte. Le plein écran est disponible sur la carte.</p>}
     {!editable ? <p className="so-register-map-help">{record.status === 'signed' ? 'Fiche signée : carte en consultation.' : 'Carte en consultation selon vos droits sur cette opération.'}</p> : null}
     {error ? <p className="so-alert so-danger" role="alert">{error}</p> : null}
-    <SeaOperationWaypointMapEditor waypoints={draft.waypoints} isolatedPoints={seaOperationPointPresentation(draft, record).points} zones={draft.locationOverlay?.zones}
-      readOnly={!editing || !editable || saving || disabled} drawingMode={editing && editable ? 'route' : undefined} maxSpeedKnots={maxSpeedKnots}
+    <SeaOperationWaypointMapEditor waypoints={displayedDraft.waypoints} isolatedPoints={seaOperationPointPresentation(draft, record).points} zones={draft.locationOverlay?.zones}
+      readOnly={!editing || !editable || saving || disabled} drawingMode={editing && editable ? 'route' : undefined} maxSpeedKnots={maxSpeedKnots} navigationSpeedKnots={navigationSpeedKnots}
       voyageSummaryPosition="compact" renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(consumption, draft, distanceNm)}
       departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} fitOperationRoute
-      etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)}
+      etd={displayedDraft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(displayedDraft)}
       onAddWaypoint={addWaypoint} onMoveWaypoint={(id, position) => movePoint('waypoints', id, position)}
       onDeleteWaypoint={id => deletePoint('waypoints', id)} onMoveIsolatedPoint={(id, position) => movePoint('points', id, position)}
       onDeleteIsolatedPoint={id => deletePoint('points', id)} onMoveZoneVertex={(id, index, position) => vertex(id, index, position)}

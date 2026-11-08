@@ -22,6 +22,14 @@ describe('estimated route-leg distances and durations', () => {
     expect(east.legs[0].durationLabel).toBe('10:00');
   });
 
+  it('uses a measured fractional speed or retains only distances when the selected mode has no sample', () => {
+    const route = [point('a', '0', '0'), point('b', '0', '1')];
+    expect(buildSeaOperationRouteLegs(route, 20, 5.5)).toMatchObject({ cruiseSpeedKnots: 5.5, totalDurationMinutes: 655,
+      legs: [{ distanceLabel: '60,0 NM', durationLabel: '10:55' }] });
+    expect(buildSeaOperationRouteLegs(route, 20, null)).toMatchObject({ cruiseSpeedKnots: null, totalDurationMinutes: null,
+      legs: [{ distanceLabel: '60,0 NM', durationLabel: null }] });
+  });
+
   it('uses the same coordinate parser for decimal degrees, OMI minutes and hemispheres', () => {
     const decimal = buildSeaOperationRouteLegs([point('a', '50.0710666667', '1.0306666667'), point('b', '49.65', '-1.62')], 12);
     const omi = buildSeaOperationRouteLegs([point('a', '50° 04.264′ N', '001° 01.840′ E'), point('b', '49° 39.000′ N', '001° 37.200′ W')], 12);

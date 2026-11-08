@@ -1238,5 +1238,133 @@ select pg_temp.conso_actor(6);
 select throws_ok($$select pg_temp.timed_soutes_read('goury_other', 0, null)$$,
   '42501', null, 'timed read preserves company isolation');
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+with new_project as (
+  insert into public.projects(company_id, title, source_label)
+  select id, 'Navigation fixture with a barge', 'seapilot' from public.companies where code = 'bbtm'
+  returning id, company_id
+), new_asset as (
+  insert into public.project_towed_assets(company_id, name)
+  select company_id, 'Navigation fixture barge' from new_project returning id, company_id
+)
+insert into public.project_contracts(company_id, project_id, source_label, towed_asset_id)
+select project.company_id, project.id, 'seapilot', asset.id from new_project project join new_asset asset using (company_id);
+
+select ok(sea_operation_private.towage_title('Essai _ REMORQUAGE-chantier')
+  and not sea_operation_private.towage_title('Antiremorquages'), 'only a whole word in the normalized project name is a towage signal');
+select ok((select sea_operation_private.project_is_towage(company_id, id) from public.projects
+  where title = 'Navigation fixture with a barge'), 'a linked tow is a signal even without any towing name or type');
+select is((select sea_operation_private.operation_towing_mode(company_id, jsonb_build_object(
+  'planning', jsonb_build_object('projectId', id::text), 'applicability', '{"towing":"yes"}'::jsonb))
+  from public.projects where title = 'Goury billing fixture'), false,
+  'a linked ordinary project is classified by its own signals even when the former mission flag is yes');
+select is(sea_operation_private.operation_towing_mode(0, '{"applicability":{"towing":"yes"}}'), true,
+  'the prior mission flag still classifies a standalone voyage');
+
+insert into conso_fixture(key, id, vessel_id, draft)
+select sample.key, gen_random_uuid(), pg_temp.fuel_vessel('fuel_office_only'),
+  base.draft || jsonb_build_object('project', sample.title,
+    'applicability', jsonb_set(base.draft->'applicability', '{towing}', to_jsonb(sample.towing)),
+    'vessel', jsonb_set(base.draft->'vessel', '{id}', to_jsonb(pg_temp.fuel_vessel('fuel_office_only')::text)))
+  || case when project.id is not null then jsonb_build_object('planning', jsonb_build_object('projectId', project.id::text)) else '{}'::jsonb end
+from conso_fixture base cross join (values
+  ('nav_normal_long', 'Navigation 1', 'no', null::text),
+  ('nav_normal_short', 'Navigation 2', 'yes', 'Goury billing fixture'),
+  ('nav_tow_asset', 'Navigation 3', 'no', 'Navigation fixture with a barge'),
+  ('nav_tow_title', 'Navigation - Remorquage', '', null),
+  ('nav_manual', 'Navigation manuelle', 'no', null)
+) sample(key, title, towing, project_title)
+left join public.projects project on project.title = sample.project_title
+where base.key = 'goury_other';
+
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('goury_other') and fixture.key like 'nav_%';
+
+create function pg_temp.navigation_trace(p_day date, p_minutes integer, p_speed numeric) returns jsonb
+language sql immutable as $$
+  select pg_temp.conso_trace() || jsonb_build_object(
+    'startedAt', to_char(p_day::timestamp, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'endedAt', to_char(p_day::timestamp + make_interval(mins => p_minutes), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'durationMinutes', p_minutes, 'distanceNm', p_speed * p_minutes / 60, 'averageSpeedKnots', p_speed,
+    'profile', jsonb_build_array(jsonb_build_object('elapsedMinutes', 0, 'speedKnots', p_speed))
+  );
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id(sample.key), null,
+  pg_temp.conso_input() || jsonb_build_object('durationMinutes', sample.duration, 'averageSpeedKnots', sample.speed,
+    'departureGauge', 80, 'arrivalGauge', sample.arrival_gauge, 'pricePerLiter', null,
+    'actualArrival', case when sample.key <> 'nav_normal_long' then to_char(pg_temp.fuel_day(sample.day_offset), 'YYYY-MM-DD"T10:00"') end,
+    'trace', case when sample.key <> 'nav_manual' then pg_temp.navigation_trace(pg_temp.fuel_day(sample.day_offset), sample.duration, sample.speed) end))
+from (values
+  ('nav_normal_long', -11, 120, 8, 79), ('nav_normal_short', -10, 60, 12, 78),
+  ('nav_tow_asset', -9, 120, 6, 79), ('nav_tow_title', -8, 60, 4, 79), ('nav_manual', -7, 60, 40, 77)
+) sample(key, day_offset, duration, speed, arrival_gauge)$$, 'qualified traces and manual Conso records can be saved through the real role');
+select is((pg_temp.fuel_row('fuel_office_only')#>>'{navigationProfiles,normal,sampleCount}')::integer, 2,
+  'only GPX contributes live speed, including a trace without separately confirmed arrival');
+select is(round((pg_temp.fuel_row('fuel_office_only')#>>'{navigationProfiles,normal,speedKnots}')::numeric, 3), 9.333::numeric,
+  'normal speed uses total GPX distance divided by total duration');
+select is(round((pg_temp.fuel_row('fuel_office_only')#>>'{navigationProfiles,normal,litersPerNm}')::numeric, 3), 10.714::numeric,
+  'normal profile fuel is weighted over the same GPX cohort');
+select is(round((pg_temp.fuel_row('fuel_office_only')#>>'{navigationProfiles,towing,speedKnots}')::numeric, 3), 5.333::numeric,
+  'a linked towed asset and a standalone whole-word name both classify GPX as towing');
+select is((pg_temp.fuel_row('fuel_office_only')#>>'{navigationProfiles,towing,sampleCount}')::integer, 2,
+  'each regime has its own trace count');
+select is(round((rate->>'otherLitersPerNm')::numeric, 3), 9.615::numeric,
+  'fuel-only fleet averages still use manual Conso but retain the linked project regime')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = pg_temp.fuel_vessel('fuel_office_only');
+select is(pg_temp.fuel_row('missing_calibration')->'navigationProfiles',
+  '{"normal":null,"towing":null}'::jsonb, 'no eligible observed speed leaves both profiles empty');
+select pg_temp.conso_actor(6);
+select is(pg_temp.fuel_row('fuel_office_only'), null::jsonb, 'fleet navigation profiles stay within the authorized tenant');
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+update sea_operation_private.consumption_history history set data = jsonb_set(history.data, '{suroit}', history.data->'suroit'
+  || jsonb_build_array(
+    jsonb_build_object('sourceRow', 55, 'cells', jsonb_build_array('Cherbourg','Le Havre',10,
+      date '2025-02-02' - date '1899-12-30' + 1.0/24, date '2025-02-02' - date '1899-12-30' + 2.0/24,
+      'Oui',null,null,90,80,null,null,100,null,null,125)),
+    jsonb_build_object('sourceRow', 56, 'cells', jsonb_build_array('Cherbourg','Le Havre',60,
+      date '2025-02-01' - date '1899-12-30', date '2025-03-01' - date '1899-12-30',
+      'Oui',null,null,90,80,null,null,500,null,null,625))))
+where history.company_id = (select id from public.companies where code = 'bbtm');
+
+select is((select count(*) from sea_operation_private.navigation_passages(
+  (select id from public.companies where code = 'bbtm'), array[pg_temp.fuel_vessel('native_cm')], false) passage
+  where passage.towing and passage.lineage_id is null and passage.distance_nm = 60), 1::bigint,
+  'an anomalously long interval can remain in historical fuel data without entering speed profiles');
+
+insert into conso_fixture(key, id, vessel_id, draft)
+select sample.key, gen_random_uuid(), base.vessel_id, base.draft
+from conso_fixture base cross join (values ('nav_archive_overlap'), ('nav_archive_distinct')) sample(key)
+where base.key = 'native_cm';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where base.id = pg_temp.conso_id('native_cm') and fixture.key in ('nav_archive_overlap', 'nav_archive_distinct');
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select lives_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id(sample.key), null,
+  pg_temp.conso_input() || jsonb_build_object('durationMinutes',60,'averageSpeedKnots',6,
+    'gaugeUnit','cm','departureGauge',90,'arrivalGauge',80,'actualArrival',null,
+    'trace',pg_temp.navigation_trace(sample.day,60,6)))
+from (values ('nav_archive_overlap', date '2025-02-02'),('nav_archive_distinct', date '2025-02-03')) sample(key, day)$$,
+  'valid dated GPX can be imported for voyages inside the workbook date range');
+select is((pg_temp.fuel_row('native_cm')#>>'{navigationProfiles,towing,sampleCount}')::integer, 2,
+  'only the distinct GPX plus the qualified archive count, not the overlap or anomalous long row');
+select is(round((pg_temp.fuel_row('native_cm')#>>'{navigationProfiles,towing,speedKnots}')::numeric, 3), 8::numeric,
+  'archive and distinct GPX distances and durations combine in the same weighted regime');
+reset role;
 select * from finish();
 rollback;

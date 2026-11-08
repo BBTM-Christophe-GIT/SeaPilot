@@ -76,10 +76,14 @@
 .so-fuel-stock-breakdown li { display: flex; align-items: center; gap: var(--sp-space-2); }
 .so-fuel-stock-breakdown svg, .so-fuel-stock-minus { width: 13px; flex: 0 0 auto; color: var(--sp-primary); }
 .so-fuel-stock-minus { text-align: center; font-weight: 700; }
-.so-fuel-metric-empty { align-content: center; min-height: 1.6rem; }
+.so-fuel-navigation-profile {
+  display: grid; gap: var(--sp-space-1); min-width: 0; padding: var(--sp-space-2);
+  border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius); background: var(--sp-surface-subtle);
+}
+.so-fuel-navigation-profile .so-fuel-metric-primary strong { font-size: 1rem; }
+.so-fuel-navigation-profile small { color: var(--sp-muted); font-size: .75rem; line-height: 1.35; }
 .so-fuel-autonomy-evidence {
-  display: flex; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2); padding: var(--sp-space-2);
-  border-radius: var(--sp-control-radius); background: var(--sp-canvas);
+  display: flex; flex-wrap: wrap; gap: var(--sp-space-1) var(--sp-space-2);
 }
 .so-fuel-autonomy-evidence b { color: var(--sp-heading); }
 .so-fleet-fuel-status { display: flex; gap: var(--sp-space-2); align-items: center; flex-wrap: wrap; margin-top: var(--sp-space-2); }

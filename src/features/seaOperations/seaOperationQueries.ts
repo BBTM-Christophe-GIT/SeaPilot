@@ -36,6 +36,8 @@ export interface SeaOperationRecord {
   weatherHistoryError?: string;
   /** Current project ports for optimistic synchronization; outside the signed form. */
   projectPorts?: SeaOperationProjectPorts | null;
+  /** Towage evidence from the linked project, outside the signed form. */
+  projectIsTowage?: boolean;
   /** Current project symbols keyed by matching operation point, for interactive maps. */
   projectPointIcons?: ReadonlyMap<string, SeaOperationIsolatedPointIconName | null>;
 }
@@ -69,6 +71,7 @@ export interface SeaOperationPlanningChoice {
   operationId: string;
   projectId: string;
   project: string;
+  projectIsTowage?: boolean;
   client: string;
   clientId?: string;
   clientContact: string;
@@ -167,6 +170,7 @@ export function mapSeaOperationRecord(value: unknown): SeaOperationRecord {
     canRevise: row.can_revise === true, canDelete: row.can_delete === true,
     previousRevisionId: nullableText(row.previous_revision_id), supersededById: nullableText(row.superseded_by_id),
     signatureSnapshot: mapSignature(row.signature_snapshot),
+    ...(typeof row.projectIsTowage === 'boolean' ? { projectIsTowage: row.projectIsTowage } : {}),
     ...(row.project_ports === undefined ? {} : { projectPorts: mapProjectPorts(row.project_ports, draft) }),
     ...(projectPointIcons ? { projectPointIcons } : {}),
   };
@@ -295,6 +299,7 @@ export async function fetchSeaOperationPlanning(client: SupabaseClient, date: st
       || row.clientId !== '' && (!/^[1-9]\d{0,18}$/.test(row.clientId) || BigInt(row.clientId) > 9223372036854775807n))) throw new Error('Le client du contexte Planning est invalide.');
     return { ...(row.locationPlan === undefined ? {} : { locationPlan: parseProjectLocationPlan(row.locationPlan) }),
       operationId: String(row.operationId), projectId: String(row.projectId), project: String(row.project), client: String(row.client),
+      ...(typeof row.projectIsTowage === 'boolean' ? { projectIsTowage: row.projectIsTowage } : {}),
       ...(row.clientId === undefined ? {} : { clientId: String(row.clientId ?? '') }),
       clientContact: String(row.clientContact), description: String(row.description), vessel: { ...vessel, lengthOverall: nullableText(vessel.lengthOverall),
         ...(vessel.weatherMatrix === undefined ? {} : { weatherMatrix: vesselMatrix(vessel.weatherMatrix) }) } as SeaOperationPlanningChoice['vessel'],

@@ -1,13 +1,26 @@
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
+import type { SeaOperationFleetFuelLevel } from './seaOperationFleetFuelQuery';
 import { buildSeaOperationRouteLegs, seaOperationVoyageTiming } from './seaOperationRouteLegs';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { updateSeaOperationWaypoint } from './seaOperationWaypointSnapshots';
 
 const paris = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23',
   year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+const towageWord = /(?<![\p{L}\p{N}])remorquage(?![\p{L}\p{N}])/iu;
+
+export function seaOperationNavigationSpeedOverride(payload: Pick<SeaOperationPayload, 'project' | 'applicability' | 'planning'>,
+  profiles: SeaOperationFleetFuelLevel['navigationProfiles'], projectIsTowage?: boolean): number | null | undefined {
+  const towing = projectIsTowage === true || towageWord.test(payload.project)
+    || !payload.planning?.projectId && payload.applicability.towing === 'yes';
+  return towing ? profiles?.towing?.speedKnots ?? null : profiles?.normal?.speedKnots;
+}
 
 export function seaOperationWaypointEtaIsAutomatic(point: Pick<SeaOperationWaypoint, 'eta' | 'etaMode'>): boolean {
   return point.etaMode === 'automatic' || point.etaMode === undefined && !point.eta.trim();
+}
+
+export function seaOperationRouteNeedsNavigationSpeed(payload: Pick<SeaOperationPayload, 'waypoints'>): boolean {
+  return payload.waypoints.some((point, index) => index > 0 && seaOperationWaypointEtaIsAutomatic(point));
 }
 
 /** A local datetime must remain representable by the existing unambiguous Paris ETA contract. */
@@ -34,8 +47,9 @@ export function initialSeaOperationDepartureEta(now = new Date()): string {
  * coordinate breaks the chain. Historical/manual values, including an explicitly cleared
  * manual slot, remain untouched. Callers must not run this against signed records.
  */
-export function updateSeaOperationRouteEtas(payload: SeaOperationPayload, maxSpeedKnots?: number | null): SeaOperationPayload {
-  const route = buildSeaOperationRouteLegs(payload.waypoints, maxSpeedKnots);
+export function updateSeaOperationRouteEtas(payload: SeaOperationPayload, maxSpeedKnots?: number | null,
+  navigationSpeedKnots?: number | null): SeaOperationPayload {
+  const route = buildSeaOperationRouteLegs(payload.waypoints, maxSpeedKnots, navigationSpeedKnots);
   const legs = new Map(route.legs.map(leg => [leg.toIndex, leg]));
   let anchor: number | null = null, distance = 0, changed = false;
   const waypoints = payload.waypoints.map((point, index) => {
