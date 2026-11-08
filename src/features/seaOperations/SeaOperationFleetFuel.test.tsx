@@ -27,13 +27,13 @@ async function showAutonomy(row: SeaOperationFleetFuelLevel) {
 describe('fleet autonomy by navigation profile', () => {
   it('calculates independent distance and duration from each observed speed and fuel rate', async () => {
     const { normal, towing } = await showAutonomy({ ...vessel, navigationProfiles: {
-      normal: { speedKnots: 8.5, litersPerNm: 20, sampleCount: 3 }, towing: { speedKnots: 5, litersPerNm: 42.5, sampleCount: 2 },
+      normal: { speedKnots: 8.54, litersPerNm: 20, sampleCount: 3 }, towing: { speedKnots: 5, litersPerNm: 42.5, sampleCount: 2 },
     } });
     expect(within(normal).getByText('8,5 nd')).toBeVisible();
     expect(within(normal).getByText('10 h · 85 NM')).toBeVisible();
     expect(within(normal).getByText('20 L/NM')).toBeVisible();
-    expect(normal.querySelector('.so-speed-dial-progress')).toHaveAttribute('stroke-dasharray', '0.53125 1');
-    expect(within(towing).getByText('5 nd')).toBeVisible();
+    expect(normal.querySelector('.so-speed-dial-progress')).toHaveAttribute('stroke-dasharray', '0.53375 1');
+    expect(within(towing).getByText('5,0 nd')).toBeVisible();
     expect(within(towing).getByText('8 h · 40 NM')).toBeVisible();
     expect(within(towing).getByText('42,5 L/NM')).toBeVisible();
     expect(within(towing).getByText('16 nd')).toBeVisible();

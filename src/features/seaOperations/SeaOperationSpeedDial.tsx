@@ -1,6 +1,7 @@
 import './seaOperationSpeedDial.css';
 
 const knots = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
+const averageKnots = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const center = 52;
 const tickPositions = [0, .25, .5, .75, 1];
 
@@ -31,7 +32,7 @@ export function SeaOperationSpeedDial({ label, speedKnots, maxSpeedKnots, scaleL
       </>}
     </svg>
     <dl className="so-speed-dial-values">
-      <div><dt>{label}</dt><dd>{speedKnots === null ? 'Aucun relevé de vitesse' : <strong>{knots.format(speedKnots)} nd</strong>}</dd></div>
+      <div><dt>{label}</dt><dd>{speedKnots === null ? 'Aucun relevé de vitesse' : <strong>{averageKnots.format(speedKnots)} nd</strong>}</dd></div>
       <div><dt>Vmax</dt><dd>{maxSpeedKnots === null ? 'non renseignée' : `${knots.format(maxSpeedKnots)} nd`}</dd></div>
       {scaleLimitKnots !== null && scaleLimitKnots !== maxSpeedKnots && <div><dt>Échelle</dt><dd>0–{knots.format(scaleLimitKnots)} nd</dd></div>}
     </dl>
