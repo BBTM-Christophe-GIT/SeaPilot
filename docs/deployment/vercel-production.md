@@ -1,5 +1,8 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.95.1` affiche les vitesses moyennes des cadrans d’autonomie à une
+décimale. Les calculs utilisent la valeur avant arrondi.
+
 La version `3.95.0` calcule les vitesses par régime à partir des archives et
 des traces GPX Conso. Elle les utilise pour les ETA et les deux cadrans
 d’autonomie. Appliquer `20261108194113_sea_operation_navigation_profiles.sql`

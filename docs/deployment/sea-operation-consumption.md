@@ -83,8 +83,9 @@ profils de vitesse.
 
 Pour chaque régime, le stock divisé par la consommation en L/NM donne la
 distance estimée. Cette distance divisée par la vitesse moyenne donne les
-heures. Les cadrans indiquent les références manquantes. Le plan de passage
-utilise la vitesse du régime du projet pour calculer les ETA automatiques.
+heures. Les cadrans affichent les vitesses moyennes à une décimale et indiquent
+les références manquantes. Le plan de passage utilise la vitesse du régime du
+projet pour calculer les ETA automatiques.
 Faute de référence en remorque, la fiche demande une ETA manuelle. Hors
 remorquage, elle reprend alors la règle de 60 % de la Vmax, arrondis au nœud
 supérieur. Les ETA manuelles et les horaires des fiches signées restent prioritaires.
@@ -225,6 +226,8 @@ du mois en cours à ceux du mois précédent, selon la date d’arrivée à Pari
 La consommation est pondérée par la distance parcourue. La tendance de coût
 utilise les coûts enregistrés et la distance des passages correspondants.
 La tendance reste indisponible lorsqu’un des deux mois est sans donnée.
+Le KPI Moyennes et les tendances M−1 utilisent les mêmes critères de classement
+du remorquage que les profils de vitesse.
 
 Entre Carte et Documents, l’onglet Fiche affiche la fiche conservée et les
 actions de consultation et de modification autorisées. Le volet **Sections PDF** de la barre compacte permet de choisir Armement, Documents, Contrôle avant appareillage, Passage Plan
