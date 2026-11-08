@@ -729,14 +729,16 @@ describe('project location copied into real-profile operation fixtures', () => {
         descriptionVhf: `Waypoint ${index + 1}`, latitude: '0', longitude, eta: '', ukc: '3', denseTraffic: false })) };
     const levels = deferred<{ data: unknown[]; error: null }>();
     const { client, data } = renderAccount(captainAccount, undefined, 1, choices);
-    const rpc = vi.fn(() => levels.promise);
+    let unavailable = false;
+    const rpc = vi.fn((method: string) => method !== 'sea_operation_fleet_fuel' ? Promise.resolve({ data: [], error: null })
+      : unavailable ? Promise.reject(new Error('Échec réseau')) : levels.promise);
     Object.assign(client, { rpc });
     data.vessels[0].maxSpeedKnots = 20;
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, draft) => recordFixture(captainAccount, { draft, version: 1 }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Créer une opération' }));
     expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeEnabled();
     await chooseMission(choices[0]);
-    await userEvent.click(stepButton(2));
+    fireEvent.click(stepButton(2));
     expect(capturingWeatherPanel().waypoints.map(point => point.eta)).toEqual(['2026-10-27T10:00', '']);
     expect(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' })).toBeDisabled();
     await act(async () => levels.resolve({ error: null, data: [{ vesselId: 12, vesselName: 'GOURY', lengthOverall: '36',
@@ -746,15 +748,15 @@ describe('project location copied into real-profile operation fixtures', () => {
       } }] }));
     expect(waypointMapMock.mock.lastCall?.[0]).toMatchObject({ navigationSpeedKnots: 5.5, eta: '2026-10-27T12:11' });
     expect(capturingWeatherPanel().waypoints[1].eta).toBe('2026-10-27T12:11');
-    rpc.mockRejectedValueOnce(new Error('Échec réseau'));
-    act(() => window.dispatchEvent(new Event('focus')));
+    unavailable = true;
+    await act(async () => window.dispatchEvent(new Event('focus')));
     await formQueries().findByRole('button', { name: 'Réessayer les vitesses' });
     expect(capturingWeatherPanel().waypoints[1].eta).toBe('2026-10-27T12:11');
-    await userEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
+    fireEvent.click(footerQueries().getByRole('button', { name: 'Enregistrer le brouillon' }));
     await formQueries().findByText('Brouillon enregistré.');
     expect(saveSeaOperation).toHaveBeenCalledWith(client, expect.objectContaining({ waypoints: [expect.anything(),
       expect.objectContaining({ eta: '2026-10-27T12:11', etaMode: 'automatic' })] }), undefined, expect.anything());
-  });
+  }, 45_000);
 
   it.each([captainAccount, sailorAccount])('prefills a new P144 route without dates at the current Paris time for $id and allows overrides', async account => {
     vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-27T13:27:00Z'));

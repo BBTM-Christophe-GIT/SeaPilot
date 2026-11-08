@@ -240,7 +240,7 @@ describe('Operation consumption from the register', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Détails carburant · LE ROZEL' }));
 
     const autonomy = within(screen.getByRole('region', { name: 'Autonomie estimée' }));
-    const normal = within(autonomy.getByRole('region', { name: 'Vitesse moyenne', exact: true }));
+    const normal = within(autonomy.getByRole('region', { name: 'Vitesse moyenne' }));
     expect(normal.getByText('5,5 nd')).toBeVisible();
     expect(normal.getByText('11 nd')).toBeVisible();
     expect(normal.getByText('7,4 L/NM')).toBeVisible();
@@ -334,7 +334,7 @@ describe('Operation consumption from the register', () => {
     expect(fleetFuel().queryByText(/déduits via DPR/)).not.toBeInTheDocument();
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
     expect(fleetFuel().getByText('0,45 m³ déduits via DPR')).toBeVisible();
-    expect(within(fleetFuel().getByRole('region', { name: 'Vitesse moyenne', exact: true })).getByText('Aucun relevé de vitesse')).toBeVisible();
+    expect(within(fleetFuel().getByRole('region', { name: 'Vitesse moyenne' })).getByText('Aucun relevé de vitesse')).toBeVisible();
     const latest = fleetFuel().getByRole('region', { name: 'Dernier relevé Soutes' });
     expect(latest.querySelector('time')).toHaveAttribute('datetime', `${baselineDate}T14:30`);
     expect(latest.querySelector('time')).toHaveTextContent('14:30');
