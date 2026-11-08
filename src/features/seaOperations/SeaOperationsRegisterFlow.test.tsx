@@ -287,31 +287,36 @@ describe('Operation consumption from the register', () => {
     expect(screen.queryByRole('region', { name: 'Indicateurs carburant · GOURY' })).not.toBeInTheDocument();
   });
 
-  it('saves a dated stock reference in percent from the fleet settings', async () => {
-    let fuel = stock;
+  it('preselects the assigned vessel and shows its saved tank reading alongside the current stock', async () => {
+    let fuel = { ...stock, assignedToday: true };
     const baselineDate = seaOperationToday(new Date(Date.now() - 7 * 86_400_000));
-    const rpc = vi.fn(async (name: string) => {
-      if (name === 'sea_operation_save_fuel_baseline') {
-        fuel = { ...stock, fuelLiters: 5600, measuredAt: `${baselineDate}T00:00:00Z`, source: 'baseline',
-          baselineDate, baselineFuelLiters: 6050, deductedFuelLiters: 450 };
+    const tanks = [{ key: 'main-1', name: 'Cuve', capacityLiters: 10000 }];
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'sea_operation_fuel_tanks') return { data: {
+        vesselId: 12, date: args.p_date, canSetBaseline: true, tanks, reading: null,
+      }, error: null };
+      if (name === 'sea_operation_save_fuel_tanks') {
+        fuel = { ...fuel, fuelLiters: 5600, measuredAt: `${baselineDate}T00:00:00Z`, source: 'baseline',
+          baselineDate, baselineFuelLiters: 6050, deductedFuelLiters: 450,
+          latestTankReading: { date: baselineDate, superseded: false, tanks: [{ ...tanks[0], liters: 6050 }] } };
         return { data: fuel, error: null };
       }
       return { data: emptyRegisterConsumption, error: null };
     });
-    mount(['capitaine'], [], rpc, ['GOURY'], () => [fuel]);
+    mount(['capitaine'], [], rpc, ['GOURY', 'LANDEMER'], () => [fuel, { ...stock, vesselId: 13, vesselName: 'LANDEMER', lengthOverall: '42' }]);
     const fuelRibbon = within(screen.getByRole('group', { name: 'Fuel' }));
     expect(fuelRibbon.getByRole('button', { name: 'Export Excel' }).querySelector('img')).toHaveAttribute('src', '/icons/microsoft-excel.svg');
-    const parameters = await fuelRibbon.findByRole('button', { name: 'Paramètres carburant' });
-    expect(fuelRibbon.getByRole('button', { name: 'Soutes' })).toBeEnabled();
-    expect(fleetFuel().queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
-    fireEvent.click(parameters);
-    const form = within(screen.getByRole('dialog', { name: 'Paramètres carburant' }));
+    expect(fuelRibbon.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
+    fireEvent.click(await fuelRibbon.findByRole('button', { name: 'Soutes' }));
+    const form = within(screen.getByRole('dialog', { name: 'Soutes' }));
+    expect(form.getByLabelText('Navire')).toHaveValue('12');
     expect(form.getByLabelText('Date de référence')).toHaveValue(today);
     fireEvent.change(form.getByLabelText('Date de référence'), { target: { value: baselineDate } });
-    const save = form.getByRole('button', { name: 'Enregistrer le niveau' });
+    const save = form.getByRole('button', { name: 'Enregistrer les niveaux' });
     expect(save).toBeDisabled();
-    fireEvent.change(form.getByLabelText('Unité'), { target: { value: 'percent' } });
-    const value = form.getByLabelText('Niveau en pourcentage');
+    const tank = within(await form.findByRole('group', { name: 'Cuve' }));
+    fireEvent.change(tank.getByLabelText('Unité'), { target: { value: 'percent' } });
+    const value = tank.getByLabelText('Niveau');
     fireEvent.change(value, { target: { value: '101' } });
     expect(save).toBeDisabled();
     fireEvent.change(value, { target: { value: '60.5' } });
@@ -322,7 +327,12 @@ describe('Operation consumption from the register', () => {
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
     expect(fleetFuel().getByText('0,45 m³ déduits via DPR')).toBeVisible();
     expect(fleetFuel().getByText('Aucun relevé à une vitesse comparable')).toBeVisible();
-    expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_baseline', { p_vessel_id: 12, p_unit: 'percent', p_value: 60.5, p_date: baselineDate });
+    const latest = fleetFuel().getByRole('region', { name: 'Dernier relevé Soutes' });
+    expect(latest.querySelector('time')).toHaveAttribute('datetime', baselineDate);
+    expect(within(latest).getByText('Cuve')).toBeVisible();
+    expect(within(latest).getByText('6,05 m³')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate,
+      p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }] });
   });
 
   it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {

@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { Fuel } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
-import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
+import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { landemerTankVolumeLiters } from './seaOperationConsumption';
+import { SeaOperationFuelTankGauge, SeaOperationFuelTankLayout } from './SeaOperationFuelTankVisual';
 import {
   fetchSeaOperationFuelTanks, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelTanks,
   type FleetFuelTank as Tank, type FleetFuelTankUnit as Unit, type SeaOperationFleetFuelLevel,
@@ -16,7 +17,7 @@ import './seaOperationFuelTanksDialog.css';
 
 type SavedTank = NonNullable<Configuration['reading']>['tanks'][number];
 type Draft = { unit: Unit; value: string };
-type TankField = { tank: Tank; draft: Draft; value: number | null; liters: number | null };
+type TankField = Tank & { draft: Draft; value: number | null; liters: number | null };
 type RequestScope = { client: SupabaseClient; vesselId: number; date: string; revision: number };
 type LoadedState = RequestScope & ({ configuration: Configuration; drafts: Record<string, Draft> } | { error: string });
 
@@ -60,35 +61,25 @@ function initialDrafts(configuration: Configuration) {
   }));
 }
 
-function tankSide(name: string) {
-  const words = normalizeFleetName(name).match(/[A-Z]+/g) ?? [];
-  const port = words.some(word => ['BABORD', 'P', 'PORT', 'PORTSIDE'].includes(word));
-  const starboard = words.some(word => ['TRIBORD', 'S', 'STARBOARD', 'STARBORD', 'STARBOARDSIDE', 'STARBORDSIDE'].includes(word));
-  return port === starboard ? 'center' : port ? 'port' : 'starboard';
-}
-
 function TankEntry({ field, onChange }: { field: TankField; onChange: (draft: Draft) => void }) {
   const hint = useId();
-  const { tank, draft, value, liters } = field;
-  const displayUnit = fuelVolumeUnit(tank.capacityLiters);
-  const fill = liters !== null && tank.capacityLiters !== null ? liters / tank.capacityLiters : null;
+  const { key, name, capacityLiters, draft, value, liters } = field;
+  const displayUnit = fuelVolumeUnit(capacityLiters);
   const invalid = Boolean(draft.value) && value === null;
-  const maximum = maximumValue(tank, draft.unit);
-  return <fieldset className="so-soutes-tank" data-tank={tank.key}>
-    <legend>{tank.name}</legend>
+  const maximum = maximumValue(field, draft.unit);
+  return <fieldset className="so-soutes-tank" data-tank={key}>
+    <legend>{name}</legend>
     <div className="so-soutes-tank-reading">
-      <div className="so-soutes-tank-visual" data-known={fill !== null} aria-hidden="true">
-        {fill !== null && <span style={{ height: `${Math.min(1, fill) * 100}%` }} />}
-      </div>
+      <SeaOperationFuelTankGauge liters={liters} capacityLiters={capacityLiters} />
       <div><strong>{liters === null ? '—' : formatFuelVolume(liters, displayUnit)}</strong>
-        <small>{tank.capacityLiters === null ? 'Capacité non renseignée' : `sur ${formatFuelVolume(tank.capacityLiters, displayUnit)}`}</small>
+        <small>{capacityLiters === null ? 'Capacité non renseignée' : `sur ${formatFuelVolume(capacityLiters, displayUnit)}`}</small>
       </div>
     </div>
     <div className="so-soutes-tank-fields">
       <label className="so-field"><span className="so-field-label">Unité</span>
         <select value={draft.unit} onChange={event => onChange({ unit: event.target.value as Unit, value: '' })}>
           <option value="liters">L</option><option value="m3">m³</option>
-          <option value="percent" disabled={tank.capacityLiters === null}>%</option>
+          <option value="percent" disabled={capacityLiters === null}>%</option>
         </select>
       </label>
       <label className="so-field"><span className="so-field-label">Niveau</span>
@@ -102,14 +93,14 @@ function TankEntry({ field, onChange }: { field: TankField; onChange: (draft: Dr
 }
 
 function TotalStock({ fields }: { fields: readonly TankField[] }) {
-  const capacitiesKnown = fields.every(field => field.tank.capacityLiters !== null);
-  const capacity = capacitiesKnown ? fields.reduce((sum, field) => sum + (field.tank.capacityLiters ?? 0), 0) : null;
+  const capacitiesKnown = fields.every(field => field.capacityLiters !== null);
+  const capacity = capacitiesKnown ? fields.reduce((sum, field) => sum + (field.capacityLiters ?? 0), 0) : null;
   const entered = fields.filter(field => field.liters !== null);
   const measured = entered.reduce((sum, field) => sum + (field.liters ?? 0), 0);
   const unit = fuelVolumeUnit(capacity);
   const fill = capacity && entered.length ? Math.min(1, measured / capacity) : null;
   const complete = entered.length === fields.length;
-  const main = fields.filter(field => field.tank.key !== 'day');
+  const main = fields.filter(field => field.key !== 'day');
   const mainLiters = main.every(field => field.liters !== null) ? main.reduce((sum, field) => sum + (field.liters ?? 0), 0) : null;
   return <section className="so-soutes-total" aria-label="Stock total mesuré">
     <div className="so-soutes-total-heading">
@@ -126,26 +117,6 @@ function TotalStock({ fields }: { fields: readonly TankField[] }) {
   </section>;
 }
 
-function TankLayout({ fields, onChange, disabled }: {
-  fields: readonly TankField[]; onChange: (key: string, draft: Draft) => void; disabled: boolean;
-}) {
-  const main = fields.filter(field => field.tank.key !== 'day');
-  const day = fields.find(field => field.tank.key === 'day');
-  const port = main.filter(field => tankSide(field.tank.name) === 'port');
-  const starboard = main.filter(field => tankSide(field.tank.name) === 'starboard');
-  const center = main.filter(field => tankSide(field.tank.name) === 'center');
-  const render = (field: TankField) => <TankEntry key={field.tank.key} field={field} onChange={draft => onChange(field.tank.key, draft)} />;
-
-  return <fieldset className="so-soutes-layout" aria-label="Niveaux des soutes" disabled={disabled}>
-    {Array.from({ length: Math.max(port.length, starboard.length) }, (_, index) => <div key={index} className="so-soutes-sides">
-      <div className="so-soutes-port">{port[index] && render(port[index])}</div>
-      <div className="so-soutes-starboard">{starboard[index] && render(starboard[index])}</div>
-    </div>)}
-    {center.length > 0 && <div className="so-soutes-center">{center.map(render)}</div>}
-    {day && <div className="so-soutes-day">{render(day)}</div>}
-  </fieldset>;
-}
-
 function PreviousReading({ reading, tanks }: { reading: Configuration['reading']; tanks: readonly Tank[] }) {
   if (!reading) return null;
   const changed = reading.tanks.length !== tanks.length || tanks.some(tank => !reading.tanks.some(saved => matchesTank(saved, tank)));
@@ -159,13 +130,13 @@ function PreviousReading({ reading, tanks }: { reading: Configuration['reading']
   </div>;
 }
 
-export function SeaOperationFuelTanksDialog({ client, vessels, onClose, onSaved }: {
-  client: SupabaseClient; vessels: readonly SeaOperationFleetFuelLevel[]; onClose: () => void; onSaved: () => void;
+export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId, onClose, onSaved }: {
+  client: SupabaseClient; vessels: readonly SeaOperationFleetFuelLevel[]; preferredVesselId?: number; onClose: () => void; onSaved: () => void;
 }) {
   const candidates = vessels.filter(vessel => vessel.canSetBaseline)
     .map(vessel => ({ ...vessel, name: vessel.vesselName, assetKind: 'vessel' as const })).sort(compareFleetAssets);
   const [selection, setSelection] = useState<number>();
-  const vesselId = (candidates.find(vessel => vessel.vesselId === selection) ?? candidates[0])?.vesselId;
+  const vesselId = (candidates.find(vessel => vessel.vesselId === (selection ?? preferredVesselId)) ?? candidates[0])?.vesselId;
   const [date, setDate] = useState(seaOperationToday);
   const [revision, setRevision] = useState(0);
   const [response, setResponse] = useState<LoadedState>();
@@ -183,7 +154,7 @@ export function SeaOperationFuelTanksDialog({ client, vessels, onClose, onSaved 
     const draft = loaded.drafts[tank.key];
     const value = draftValue(tank, draft);
     const saved = loaded.configuration.reading?.tanks.find(row => matchesTank(row, tank) && row.unit === draft.unit && row.value === value);
-    return { tank, draft, value, liters: value === null ? null : saved?.liters ?? measuredLiters(tank, draft.unit, value) };
+    return { ...tank, draft, value, liters: value === null ? null : saved?.liters ?? measuredLiters(tank, draft.unit, value) };
   }) ?? [];
   const valid = Boolean(configuration?.canSetBaseline && fields.length && fields.every(field => field.value !== null && field.liters !== null));
 
@@ -206,7 +177,8 @@ export function SeaOperationFuelTanksDialog({ client, vessels, onClose, onSaved 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current || conflict || !configuration?.canSetBaseline || vesselId === undefined || !valid) return;
-    const readings = fields.flatMap(({ tank, draft, value }) => value === null ? [] : [{ key: tank.key, unit: draft.unit, value }]);
+    const readings = fields.flatMap(({ key, draft, value }) => value === null ? [] : [{ key, unit: draft.unit, value }]);
+    setSelection(vesselId);
     pending.current = true;
     setSaving(true);
     setSaveError('');
@@ -237,7 +209,7 @@ export function SeaOperationFuelTanksDialog({ client, vessels, onClose, onSaved 
           {candidates.map(vessel => <option key={vessel.vesselId} value={vessel.vesselId}>{vessel.vesselName}</option>)}
         </select></label>
         <label className="so-field"><span className="so-field-label">Date de référence</span><input type="date" min={earliestDate} max={today}
-          value={date} onChange={event => { setDate(event.target.value); reload(); }} /></label>
+          value={date} onChange={event => { setSelection(vesselId); setDate(event.target.value); reload(); }} /></label>
       </fieldset>
       {!candidates.length ? <p>Aucun navire accessible pour la saisie des soutes.</p>
         : !validDate ? <p className="so-help">Choisissez une date de référence valide.</p>
@@ -249,10 +221,13 @@ export function SeaOperationFuelTanksDialog({ client, vessels, onClose, onSaved 
           <TotalStock fields={fields} />
           <PreviousReading reading={current.configuration.reading} tanks={current.configuration.tanks} />
           {!current.configuration.canSetBaseline && <p className="so-help">Ce relevé est en consultation selon vos droits sur le navire.</p>}
-          <TankLayout fields={fields} disabled={saving || !current.configuration.canSetBaseline} onChange={(key, draft) => {
-            setResponse(previous => previous && 'drafts' in previous ? { ...previous, drafts: { ...previous.drafts, [key]: draft } } : previous);
-            if (!conflict) setSaveError('');
-          }} />
+          <fieldset className="so-soutes-layout" aria-label="Niveaux des soutes" disabled={saving || !current.configuration.canSetBaseline}>
+            <SeaOperationFuelTankLayout tanks={fields} renderTank={field => <TankEntry field={field} onChange={draft => {
+              setSelection(vesselId);
+              setResponse(previous => previous && 'drafts' in previous ? { ...previous, drafts: { ...previous.drafts, [field.key]: draft } } : previous);
+              if (!conflict) setSaveError('');
+            }} />} />
+          </fieldset>
         </>}
       {saveError && <div className="so-soutes-status"><p className="so-alert so-danger" role="alert">{saveError}</p>
         {conflict && <button type="button" className="sp-button sp-button--secondary" onClick={reload}>Recharger le relevé</button>}

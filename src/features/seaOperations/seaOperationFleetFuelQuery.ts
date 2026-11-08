@@ -14,14 +14,15 @@ export interface SeaOperationFleetFuelLevel {
   deductedFuelLiters: number | null;
   refuelLiters: number | null;
   canSetBaseline: boolean;
+  assignedToday?: boolean;
+  latestTankReading?: FleetFuelLatestTankReading | null;
   rateLitersPerHour: number | null;
   rateSampleCount: number;
 }
 
-export type FleetFuelUnit = 'liters' | 'percent';
 export const MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY = 10_000_000;
 
-export type FleetFuelTankUnit = FleetFuelUnit | 'm3';
+export type FleetFuelTankUnit = 'liters' | 'percent' | 'm3';
 
 export interface FleetFuelTankInput {
   key: string;
@@ -34,6 +35,14 @@ export interface FleetFuelTank {
   name: string;
   capacityLiters: number | null;
   calibration?: 'landemer-v1';
+}
+
+type MeasuredFleetFuelTank = FleetFuelTank & { liters: number };
+
+export interface FleetFuelLatestTankReading {
+  date: string;
+  superseded: boolean;
+  tanks: MeasuredFleetFuelTank[];
 }
 
 export interface SeaOperationFuelTanks {
@@ -73,11 +82,11 @@ function fuelLevel(value: unknown): SeaOperationFleetFuelLevel {
   if (!value || typeof value !== 'object') throw new Error(invalidResponse);
   const { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters,
     measuredAt, source, baselineDate = null, baselineFuelLiters = null, deductedFuelLiters = null, refuelLiters = null,
-    canSetBaseline, rateLitersPerHour, rateSampleCount } = value as Record<string, unknown>;
+    canSetBaseline, assignedToday = false, latestTankReading = null, rateLitersPerHour, rateSampleCount } = value as Record<string, unknown>;
   if (typeof vesselId !== 'number' || !Number.isSafeInteger(vesselId) || vesselId <= 0 || typeof vesselName !== 'string'
     || lengthOverall !== null && typeof lengthOverall !== 'string' || !quantity(maxSpeedKnots) || !quantity(capacityLiters)
     || !quantity(fuelLiters) || measuredAt !== null && (typeof measuredAt !== 'string' || !Number.isFinite(Date.parse(measuredAt)))
-    || source !== null && source !== 'baseline' && source !== 'operation' || typeof canSetBaseline !== 'boolean'
+    || source !== null && source !== 'baseline' && source !== 'operation' || typeof canSetBaseline !== 'boolean' || typeof assignedToday !== 'boolean'
     || baselineDate !== null && (typeof baselineDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(baselineDate))
     || !quantity(baselineFuelLiters) || !quantity(deductedFuelLiters) || !quantity(refuelLiters)
     || !quantity(rateLitersPerHour) || typeof rateSampleCount !== 'number' || !Number.isSafeInteger(rateSampleCount) || rateSampleCount < 0) {
@@ -86,7 +95,7 @@ function fuelLevel(value: unknown): SeaOperationFleetFuelLevel {
   const stockSource = source === 'operation' && refuelLiters !== null && refuelLiters > 0 ? 'refuel' : source;
   return { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters, measuredAt, source: stockSource,
     baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters,
-    canSetBaseline, rateLitersPerHour, rateSampleCount };
+    canSetBaseline, assignedToday, latestTankReading: parseLatestTankReading(latestTankReading), rateLitersPerHour, rateSampleCount };
 }
 
 export async function fetchSeaOperationFleetFuel(client: SupabaseClient) {
@@ -113,11 +122,6 @@ export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, 
   }) };
 }
 
-export async function saveSeaOperationFuelBaseline(client: SupabaseClient, vesselId: number, unit: FleetFuelUnit, value: number, date: string) {
-  const { error } = await client.rpc('sea_operation_save_fuel_baseline', { p_vessel_id: vesselId, p_unit: unit, p_value: value, p_date: date });
-  if (error) throw error;
-}
-
 const invalidTanks = 'Le relevé des soutes reçu est invalide.';
 
 function fuelTank(value: unknown): FleetFuelTank {
@@ -128,6 +132,22 @@ function fuelTank(value: unknown): FleetFuelTank {
     throw new Error(invalidTanks);
   }
   return { key, name, capacityLiters, calibration: calibration ?? undefined };
+}
+
+function measuredFuelTank(value: unknown): MeasuredFleetFuelTank {
+  const tank = fuelTank(value);
+  const { liters } = value as Record<string, unknown>;
+  if (!quantity(liters) || liters === null) throw new Error(invalidTanks);
+  return { ...tank, liters };
+}
+
+function parseLatestTankReading(value: unknown): FleetFuelLatestTankReading | null {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object') throw new Error(invalidTanks);
+  const { date, superseded, tanks } = value as Record<string, unknown>;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof superseded !== 'boolean'
+    || !Array.isArray(tanks) || !tanks.length) throw new Error(invalidTanks);
+  return { date, superseded, tanks: tanks.map(measuredFuelTank) };
 }
 
 function fuelTankReading(data: unknown, vesselId: number, date: string): SeaOperationFuelTanks {
@@ -145,11 +165,11 @@ function fuelTankReading(data: unknown, vesselId: number, date: string): SeaOper
     || typeof savedAt !== 'string' || !Number.isFinite(Date.parse(savedAt)) || !quantity(mainLiters) || mainLiters === null
     || typeof superseded !== 'boolean' || !Array.isArray(recorded)) throw new Error(invalidTanks);
   return { ...response, reading: { version, savedAt, mainLiters, superseded, tanks: recorded.map((item: unknown) => {
-    const tank = fuelTank(item);
-    const { unit, value, liters } = item as Record<string, unknown>;
+    const tank = measuredFuelTank(item);
+    const { unit, value } = item as Record<string, unknown>;
     if (unit !== 'percent' && unit !== 'liters' && unit !== 'm3'
-      || !quantity(value) || value === null || !quantity(liters) || liters === null) throw new Error(invalidTanks);
-    return { ...tank, unit, value, liters };
+      || !quantity(value) || value === null) throw new Error(invalidTanks);
+    return { ...tank, unit, value };
   }) } };
 }
 

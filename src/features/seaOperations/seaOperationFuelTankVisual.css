@@ -1,0 +1,12 @@
+.so-soutes-tank-layout { display: grid; min-width: 0; gap: var(--sp-space-3); }
+.so-soutes-sides, .so-soutes-center { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-3); }
+.so-soutes-center > :only-child { grid-column: 1 / -1; }
+.so-soutes-center > :only-child, .so-soutes-day > :only-child { justify-self: center; width: min(100%, 18rem); }
+.so-soutes-day { display: grid; padding-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); }
+
+.so-soutes-tank-visual {
+  display: flex; align-items: end; width: 24px; height: 34px; flex: none; overflow: hidden;
+  border: 1px solid var(--sp-border-strong); border-radius: var(--sp-control-radius); background: var(--sp-surface);
+}
+.so-soutes-tank-visual[data-known="false"] { border-style: dashed; }
+.so-soutes-tank-visual span { width: 100%; background: var(--sp-category-marine); }

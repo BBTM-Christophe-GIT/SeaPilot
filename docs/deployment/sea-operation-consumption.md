@@ -12,10 +12,11 @@ consulter la fiche accèdent à son récapitulatif.
 
 Le bandeau **Carburant de la flotte** affiche le niveau de chaque navire visible
 sur une rangée, hors BR71. Le chevron de la carte ouvre la provenance du stock,
-l’autonomie, les moyennes et leurs tendances. Dans le ruban **Fuel**, **Paramètres
-carburant** permet au Capitaine affecté ou à un responsable habilité de saisir le
-stock au début de la date choisie, en litres ou en pourcentage de la capacité des
-cuves principales. La date du jour en heure de Paris est proposée par défaut.
+l’autonomie, les moyennes et leurs tendances. Dans le ruban **Fuel**, **Soutes**
+permet au Capitaine affecté ou à un responsable habilité de saisir le stock au
+début de la date choisie. Le navire de l’affectation confirmée du jour est
+présélectionné quand il est accessible en saisie. Le collaborateur peut choisir
+un autre navire autorisé. La date du jour en heure de Paris est proposée par défaut.
 **Export Excel** télécharge les consommations avec le périmètre habituel.
 L’icône utilisée dans le ruban provient du [catalogue Microsoft](https://res.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/excel_48x1.svg).
 La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge
@@ -23,6 +24,9 @@ et s’accompagne d’une pastille d’alerte en haut à droite de la carte du n
 Dans la carte **Stock**, la jauge indique le pourcentage et le volume au
 repère du niveau courant, ainsi que la capacité totale à droite. Ces volumes
 s’affichent en m³ au-delà de 1 000 L et en litres jusqu’à 1 000 L inclus.
+La carte affiche aussi la date et les jauges par cuve du dernier relevé Soutes
+par date de référence. Les valeurs enregistrées sur ce relevé restent distinctes
+du stock courant recalculé avec les DPR et les avitaillements.
 
 Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
 principales et la capacité de chacune en litres. Une seule s’affiche comme
@@ -40,8 +44,9 @@ des volumes mesurés. La référence du bandeau et le décompte des DPR utilisen
 la somme des cuves principales, avec la caisse journalière suivie séparément.
 Pour les deux cuves calibrées du LANDEMER, une mesure en pourcentage applique
 la table correspondante. Le relevé peut être rouvert à sa date avec ses valeurs
-et unités d’origine. Une saisie globale ultérieure pour la même date conserve
-ce détail et signale que la référence a été remplacée.
+et unités d’origine. Pour un navire qui a seulement une capacité historique, la
+mesure se saisit dans une cuve unique. Quand la capacité est inconnue, la saisie
+en volume reste disponible.
 
 Le stock courant soustrait le champ **Consommation de carburant en L** des DPR
 validés depuis la date de référence, incluse. Un seul DPR renseigné est pris

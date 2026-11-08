@@ -1,27 +1,25 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BarChart3, ChevronDown, ClipboardList, Fuel, Gauge, Settings2, Ship, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { AppDialog } from '../../components/AppDialog';
+import { BarChart3, ChevronDown, ClipboardList, Fuel, Gauge, Ship, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { compareFleetAssets, fleetIllustration, normalizeFleetName } from '../fleet/fleetDisplay';
 import { fleetConsumptionScale, SeaOperationVesselConsumption } from './SeaOperationFleetConsumption';
 import { SeaOperationFleetFuelHistory } from './SeaOperationFleetFuelHistory';
+import { SeaOperationLatestTankReading } from './SeaOperationLatestTankReading';
 import { SeaOperationSpeedDial } from './SeaOperationSpeedDial';
 import { SeaOperationStockGauge } from './SeaOperationStockGauge';
 import {
-  fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory, MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY, saveSeaOperationFuelBaseline,
-  type FleetFuelUnit, type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
+  fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory,
+  type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
 } from './seaOperationFleetFuelQuery';
 import { formatFuelVolume, fuelVolumeUnit } from './seaOperationFuelVolume';
 import { seaOperationToday } from './seaOperationModel';
 import type { SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
-import { consumptionErrorMessage } from './useSeaOperationConsumption';
 import './seaOperationFleetFuel.css';
 
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
 const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 });
 const measuredDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
 const referenceDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeZone: 'UTC' });
-const liters = (value: number) => `${number.format(value)} L`;
 
 function tankLevel(fuelLiters: number | null, capacityLiters: number | null) {
   const fill = fuelLiters !== null && capacityLiters !== null && capacityLiters > 0 ? fuelLiters / capacityLiters : null;
@@ -89,6 +87,9 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
         {deductedFuelLiters !== null && <li><span className="so-fuel-stock-minus" aria-hidden="true">−</span><span>{formatFuelVolume(deductedFuelLiters, volumeUnit)} déduits via DPR</span></li>}
         {refuelLiters !== null && <li><Fuel size={13} aria-hidden="true" /><span>{formatFuelVolume(refuelLiters, volumeUnit)} avitaillés</span></li>}
       </ul>}
+      {vessel.latestTankReading
+        ? <SeaOperationLatestTankReading reading={vessel.latestTankReading} />
+        : <small>Aucun relevé Soutes enregistré.</small>}
     </section>
     <section className="so-fuel-card-metric" aria-label="Autonomie estimée">
       <h3><span><Gauge size={16} aria-hidden="true" /></span>Autonomie estimée</h3>
@@ -194,66 +195,4 @@ export function SeaOperationFleetFuel({ client, historyRefresh, rows, error, rel
       </>}
     </section>
   </section>;
-}
-
-export function SeaOperationFuelBaselineDialog({ client, vessels, onClose, onSaved }: {
-  client: SupabaseClient; vessels: readonly SeaOperationFleetFuelLevel[]; onClose: () => void; onSaved: () => void;
-}) {
-  const [vesselId, setVesselId] = useState(vessels[0]?.vesselId);
-  const [date, setDate] = useState(seaOperationToday);
-  const [unit, setUnit] = useState<FleetFuelUnit>('liters');
-  const [value, setValue] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const pending = useRef(false);
-  const active = useRef(true);
-  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const vessel = vessels.find(row => row.vesselId === vesselId);
-  const capacity = vessel?.capacityLiters && vessel.capacityLiters > 0 ? vessel.capacityLiters : null;
-  const today = seaOperationToday();
-  const maximum = unit === 'percent' ? 100 : capacity ?? MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY;
-  const quantity = Number(value);
-  const valid = Boolean(vessel?.canSetBaseline) && /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= '1900-01-01' && date <= today
-    && (unit === 'liters' || capacity !== null) && /^(?:\d+(?:\.\d{1,3})?|\.\d{1,3})$/.test(value) && quantity <= maximum;
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!valid || pending.current || !vessel?.canSetBaseline) return;
-    pending.current = true;
-    setSaving(true);
-    setError('');
-    try {
-      await saveSeaOperationFuelBaseline(client, vessel.vesselId, unit, quantity, date);
-      if (active.current) onSaved();
-    } catch (reason) {
-      if (active.current) setError(consumptionErrorMessage(reason));
-    } finally {
-      pending.current = false;
-      if (active.current) setSaving(false);
-    }
-  }
-
-  return <AppDialog size="sm" eyebrow="Suivi carburant" title="Paramètres carburant"
-    description="Renseignez le stock au début de la journée choisie. Le décompte utilise les DPR validés à partir de cette date incluse."
-    icon={<Settings2 size={21} aria-hidden="true" />} isBusy={saving} onClose={onClose} onSubmit={event => void submit(event)}
-    footer={<div className="app-dialog__actions"><button type="button" className="sp-button sp-button--secondary so-secondary" onClick={onClose} disabled={saving}>Annuler</button>
-      <button type="submit" className="sp-button sp-button--primary" disabled={saving || !valid}>{saving ? 'Enregistrement…' : 'Enregistrer le niveau'}</button></div>}>
-    <fieldset className="so-fuel-baseline-fields" disabled={saving}>
-      <label className="so-field"><span className="so-field-label">Navire</span><select value={vesselId ?? ''} onChange={event => {
-        setVesselId(Number(event.target.value)); setUnit('liters'); setValue(''); setError('');
-      }}>{vessels.map(row => <option key={row.vesselId} value={row.vesselId}>{row.vesselName}</option>)}</select></label>
-      <label className="so-field"><span className="so-field-label">Date de référence</span>
-        <input type="date" min="1900-01-01" max={today} value={date} onChange={event => { setDate(event.target.value); setError(''); }} /></label>
-      <label className="so-field"><span className="so-field-label">Unité</span><select value={unit} onChange={event => {
-        setUnit(event.target.value === 'percent' ? 'percent' : 'liters');
-        setValue(''); setError('');
-      }}><option value="liters">Litres (L)</option><option value="percent" disabled={capacity === null}>Pourcentage (%)</option></select></label>
-      <label className="so-field"><span className="so-field-label">{unit === 'liters' ? 'Niveau en litres' : 'Niveau en pourcentage'}</span>
-        <input type="number" inputMode="decimal" min="0" max={maximum} step="0.001" value={value}
-          onChange={event => { setValue(event.target.value); setError(''); }} /></label>
-    </fieldset>
-    <p className="so-help">{capacity === null ? 'Renseignez la capacité dans Navires pour saisir un pourcentage.'
-      : `Capacité des cuves principales · ${liters(capacity)}.`}</p>
-    {error && <p className="so-alert so-danger" role="alert">{error}</p>}
-  </AppDialog>;
 }
