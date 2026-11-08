@@ -129,7 +129,7 @@ describe('sea operation queries', () => {
   });
 
   it('reads vessel maximum speed through the existing operational overview without adding it to the saved form', async () => {
-    const saved = record();
+    const saved = record({ projectIsTowage: true });
     const rpc = vi.fn().mockResolvedValue({ data: { company_id: 1, actor_id: 'captain-server-account', actor_name: 'Capitaine réel', records: [saved],
       vessels: [{ id: 1, name: 'Rapide', max_speed_knots: 12.5 }, { id: 2, name: 'Numérique', max_speed_knots: ' 8.25 ' }] }, error: null });
     const data = await fetchSeaOperationData({ rpc } as unknown as SupabaseClient);
@@ -138,6 +138,7 @@ describe('sea operation queries', () => {
     expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operations_overview', undefined);
     expect(data.records[0].draft).toBe(saved.draft);
     expect(data.records[0].draft.vessel).not.toHaveProperty('maxSpeedKnots');
+    expect(data.records[0].projectIsTowage).toBe(true);
   });
 
   it('keeps missing, unknown and invalid maximum speeds unusable instead of fabricating a sailing speed', async () => {
@@ -174,12 +175,13 @@ describe('sea operation queries', () => {
     const vessel = { name: 'Navire', registrationImo: '', departurePort: '', arrivalPort: '', etd: '', eta: '' };
     const base = { projectId: '1', project: 'Mission', client: '', clientContact: '', description: '', captains: [], canSign: false };
     const rpc = vi.fn().mockResolvedValue({ data: { date: '2026-10-23', choices: [
-      { ...base, operationId: '1:1', vessel: { ...vessel, id: '1', weatherMatrix: matrix } },
-      { ...base, operationId: '2:2', vessel: { ...vessel, id: '2', weatherMatrix: null } },
+      { ...base, operationId: '1:1', projectIsTowage: true, vessel: { ...vessel, id: '1', weatherMatrix: matrix } },
+      { ...base, operationId: '2:2', projectIsTowage: false, vessel: { ...vessel, id: '2', weatherMatrix: null } },
       { ...base, operationId: '3:3', vessel: { ...vessel, id: '3' } },
     ] }, error: null });
     const { choices } = await fetchSeaOperationPlanning({ rpc } as unknown as SupabaseClient, '2026-10-23');
     expect(choices[0].vessel.weatherMatrix).toEqual(matrix);
+    expect(choices.map(choice => choice.projectIsTowage)).toEqual([true, false, undefined]);
     expect(choices[0].vessel.weatherMatrix).not.toBe(matrix);
     expect(choices[1].vessel.weatherMatrix).toBeNull();
     expect(choices[2].vessel).not.toHaveProperty('weatherMatrix');

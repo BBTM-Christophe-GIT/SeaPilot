@@ -18,8 +18,9 @@ select id,'SEA-PLAN-'||n,'REG'||n,'IMO'||n,true,'vessel' from public.companies c
 insert into public.clients(company_id,name,email,phone,contact_name,address,postal_code,city,country)
 select id,'SEA-CLIENT-'||n,'contact'||n||'@example.invalid','0'||n,'Agent '||n,'Quai '||n,'76000','Le Havre','France'
 from public.companies cross join generate_series(1,2)n where code='bbtm';
-insert into public.projects(company_id,title,project_code,client_id,delivery_port,redelivery_port,description)
-select client.company_id,'SEA-PROJECT-'||n,'SP'||n,client.id,'Départ '||n,'Arrivée '||n,'Description catalogue '||n
+insert into public.projects(company_id,title,project_code,client_id,delivery_port,redelivery_port,description,contract_type)
+select client.company_id,'SEA-PROJECT-'||n,'SP'||n,client.id,'Départ '||n,'Arrivée '||n,'Description catalogue '||n,
+  case when n = 1 then 'Contrat de Remorquage' end
 from public.clients client cross join generate_series(1,2)n where client.name='SEA-CLIENT-'||n;
 insert into public.planning_projects(company_id,title,catalog_project_id,primary_vessel_id,starts_on,ends_on,description)
 select project.company_id,'SEA-OCCURRENCE-'||n,project.id,vessel.id,(now() at time zone 'Europe/Paris')::date,(now() at time zone 'Europe/Paris')::date+1,'Mission planning '||n
@@ -59,11 +60,19 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','a6310000-0000-0000-0000-000000000001',true);
 insert into sea_plan_fixture(kind,payload) values('context',public.sea_operation_planning_context((now() at time zone 'Europe/Paris')::date));
 select is((select count(*)::integer from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'project' like '%SEA-PROJECT-%'),2,'same-day projects remain two explicit choices');
+select is((select choice->>'projectIsTowage' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice
+  where f.kind='context' and choice->>'project' like '%SEA-PROJECT-1'),'true','a linked towage contract is projected in planning');
+select is((select choice->>'projectIsTowage' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice
+  where f.kind='context' and choice->>'project' like '%SEA-PROJECT-2'),'false','an ordinary linked contract has no towage signal');
 select is((select choice->>'client' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'projectId'=(select payload#>>'{planning,projectId}' from sea_plan_fixture where kind='draft')),'SEA-CLIENT-1','project context has its own client');
 select ok((select choice->>'clientContact' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'project' like '%SEA-PROJECT-1') like '%contact1@example.invalid%','only the selected client operational contact is projected');
 select is((select choice#>>'{captains,0,name}' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'project' like '%SEA-PROJECT-1'),'Alice TEMPORAIRE','the temporary Planning captain is returned with first name and uppercase surname');
 select is((select jsonb_array_length(choice->'captains') from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'project' like '%SEA-PROJECT-2'),0,'an explicit daily Matelot function overrides permanent Captain HR and assignment roles');
 select lives_ok($$insert into sea_plan_fixture(kind,id)select 'record',(public.sea_operation_save(null,null,(select payload from sea_plan_fixture where kind='draft'))->>'id')::uuid$$,'management prepares a linked operation');
+select is(public.sea_operation_detail((select id from sea_plan_fixture where kind='record'))->>'projectIsTowage',
+  'true','operation detail has the same project signal as its planning choice');
+select is((select record->>'projectIsTowage' from jsonb_array_elements(public.sea_operations_overview()->'records') record
+  where record->>'id'=(select id::text from sea_plan_fixture where kind='record')),'true','overview projects the same boolean');
 select is((select draft->>'project' from public.sea_operations where id=(select id from sea_plan_fixture where kind='record')),(select choice->>'project' from sea_plan_fixture f cross join lateral jsonb_array_elements(f.payload->'choices') choice where f.kind='context' and choice->>'project' like '%SEA-PROJECT-1'),'server normalizes the selected project instead of retaining a spoofed title');
 select is((select draft#>>'{vessel,captainName}' from public.sea_operations where id=(select id from sea_plan_fixture where kind='record')),'Alice TEMPORAIRE','server identifies the effective captain');
 select is((select draft#>>'{vessel,departureQuay}' from public.sea_operations where id=(select id from sea_plan_fixture where kind='record')),'Quai saisi','missing source values can be completed by the preparer');

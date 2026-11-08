@@ -9,7 +9,7 @@ import { SeaOperationSpeedDial } from './SeaOperationSpeedDial';
 import { SeaOperationStockGauge } from './SeaOperationStockGauge';
 import {
   fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory,
-  type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
+  type FleetFuelNavigationProfile, type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
 } from './seaOperationFleetFuelQuery';
 import { formatFuelVolume, fuelVolumeUnit } from './seaOperationFuelVolume';
 import { seaOperationToday } from './seaOperationModel';
@@ -18,6 +18,7 @@ import './seaOperationFleetFuel.css';
 
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
 const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 });
+const rateNumber = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 4 });
 const measuredDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
 const referenceDate = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeZone: 'UTC' });
 
@@ -62,18 +63,36 @@ export function useSeaOperationFleetFuel(client: SupabaseClient, accessKey: stri
   return { rows: current?.rows, error: current?.error, reload: () => setRetry(value => value + 1) };
 }
 
+function FuelAutonomy({ label, profile, fuelLiters, maxSpeedKnots, scaleLimitKnots }: {
+  label: string; profile: FleetFuelNavigationProfile | null; fuelLiters: number | null;
+  maxSpeedKnots: number | null; scaleLimitKnots: number | null;
+}) {
+  const rate = profile?.litersPerNm ?? null;
+  const distance = fuelLiters !== null && rate !== null && rate > 0 ? fuelLiters / rate : null;
+  const hours = distance !== null && profile && profile.speedKnots > 0 ? distance / profile.speedKnots : null;
+  const available = distance !== null && hours !== null && Number.isFinite(distance) && Number.isFinite(hours);
+  return <section className="so-fuel-navigation-profile" aria-label={label}>
+    <SeaOperationSpeedDial label={label} speedKnots={profile?.speedKnots ?? null} maxSpeedKnots={maxSpeedKnots} scaleLimitKnots={scaleLimitKnots} />
+    {available ? <div className="so-fuel-metric-primary"><strong>{number.format(hours)} h · {number.format(distance)} NM</strong></div>
+      : profile && <small>{fuelLiters === null ? 'Stock à renseigner' : 'Autonomie indisponible'}</small>}
+    {profile && <small className="so-fuel-autonomy-evidence">
+      {rate !== null && rate > 0 && <b>{rateNumber.format(rate)} L/NM</b>}
+      <span>{profile.sampleCount} {profile.sampleCount === 1 ? 'relevé' : 'relevés'}</span>
+    </small>}
+  </section>;
+}
+
 function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }: ConsumptionDetails & {
   vessel: SeaOperationFleetFuelLevel; scale: ReturnType<typeof fleetConsumptionScale>;
 }) {
-  const { fuelLiters, capacityLiters, maxSpeedKnots, rateLitersPerHour, rateSampleCount, source, measuredAt,
+  const { fuelLiters, capacityLiters, maxSpeedKnots, navigationProfiles, source, measuredAt,
     baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters } = vessel;
-  const cruise = maxSpeedKnots && maxSpeedKnots > 0 ? maxSpeedKnots / 2 : null;
-  const hours = cruise !== null && fuelLiters !== null && rateLitersPerHour && rateLitersPerHour > 0 ? fuelLiters / rateLitersPerHour : null;
+  const vmax = maxSpeedKnots !== null && maxSpeedKnots > 0 ? maxSpeedKnots : null;
+  const highestSpeed = Math.max(navigationProfiles?.normal?.speedKnots ?? 0, navigationProfiles?.towing?.speedKnots ?? 0);
+  const scaleLimitKnots = vmax !== null && vmax >= highestSpeed ? vmax : highestSpeed > 0 ? Math.ceil(highestSpeed / 5) * 5 : null;
   const { fill, level } = tankLevel(fuelLiters, capacityLiters);
   const volumeUnit = fuelVolumeUnit(capacityLiters);
   const sourceLabel = source === 'refuel' ? 'Avitaillement Conso' : source === 'baseline' ? 'Stock de référence' : 'Arrivée Conso';
-  const missingAutonomy = !cruise ? 'Vitesse maximale à renseigner' : fuelLiters === null
-    ? 'Niveau à renseigner' : 'Aucun relevé à une vitesse comparable';
 
   return <>
     <section className="so-fuel-card-metric" aria-label="Stock">
@@ -93,14 +112,8 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
     </section>
     <section className="so-fuel-card-metric" aria-label="Autonomie estimée">
       <h3><span><Gauge size={16} aria-hidden="true" /></span>Autonomie estimée</h3>
-      {hours !== null && cruise !== null
-        ? <div className="so-fuel-metric-primary"><strong>{number.format(hours)} h · {number.format(hours * cruise)} NM</strong></div>
-        : <small className="so-fuel-metric-empty">{missingAutonomy}</small>}
-      {cruise !== null && maxSpeedKnots !== null && <SeaOperationSpeedDial speedKnots={cruise} maxSpeedKnots={maxSpeedKnots} />}
-      {hours !== null && cruise !== null && rateLitersPerHour !== null && <small className="so-fuel-autonomy-evidence">
-        <b title="Consommation estimée à la vitesse retenue">{number.format(rateLitersPerHour / cruise)} L/NM</b>
-        <span>{rateSampleCount} {rateSampleCount === 1 ? 'relevé comparable' : 'relevés comparables'}</span>
-      </small>}
+      <FuelAutonomy label="Vitesse moyenne" profile={navigationProfiles?.normal ?? null} fuelLiters={fuelLiters} maxSpeedKnots={vmax} scaleLimitKnots={scaleLimitKnots} />
+      <FuelAutonomy label="Vitesse moyenne en remorque" profile={navigationProfiles?.towing ?? null} fuelLiters={fuelLiters} maxSpeedKnots={vmax} scaleLimitKnots={scaleLimitKnots} />
     </section>
     <section className="so-fuel-card-metric so-fuel-averages-card" aria-label="Moyennes">
       <h3 title="L/NM et coût HT au dernier prix applicable. Tendance par rapport au mois précédent."><span><BarChart3 size={16} aria-hidden="true" /></span>Moyennes</h3>

@@ -30,7 +30,7 @@ const decimal = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maxim
 const parisDateTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23',
   day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-/** User-selected planning assumption: maximum speed less 40%, rounded up to whole knots. */
+/** Fallback planning assumption: maximum speed less 40%, rounded up to whole knots. */
 export function seaOperationCruiseSpeedKnots(maxSpeedKnots?: number | null): number | null {
   if (typeof maxSpeedKnots !== 'number' || !Number.isFinite(maxSpeedKnots) || maxSpeedKnots <= 0) return null;
   const speed = Math.ceil(maxSpeedKnots * .6);
@@ -62,7 +62,11 @@ const durationLabel = (minutes: number | null) => {
   return formatted === null ? null : minutes! < 60 ? `${formatted} min` : formatted;
 };
 const distanceLabel = (distanceNm: number) => `${decimal.format(distanceNm)} NM`;
-const durationAt = (distanceNm: number, speed: number | null) => speed === null ? null : Math.round(distanceNm / speed * 60);
+function durationAt(distanceNm: number, speed: number | null): number | null {
+  if (speed === null) return null;
+  const minutes = Math.round(distanceNm / speed * 60);
+  return Number.isSafeInteger(minutes) ? minutes : null;
+}
 
 export interface SeaOperationVoyageTiming {
   etdUtc: string | null;
@@ -122,8 +126,11 @@ export function seaOperationVoyageTiming(etd: string | null | undefined, totalDu
  * Legs join only adjacent valid rows; these estimates do not find a navigable route,
  * account for currents/manoeuvres, alter ETA, or mutate any saved waypoint capture.
  */
-export function buildSeaOperationRouteLegs(waypoints: readonly RouteWaypoint[], maxSpeedKnots?: number | null): SeaOperationRouteLegs {
-  const cruiseSpeedKnots = seaOperationCruiseSpeedKnots(maxSpeedKnots);
+export function buildSeaOperationRouteLegs(waypoints: readonly RouteWaypoint[], maxSpeedKnots?: number | null,
+  navigationSpeedKnots?: number | null): SeaOperationRouteLegs {
+  // A null override means there is no applicable profile. An omitted override retains the fallback.
+  const cruiseSpeedKnots = navigationSpeedKnots === undefined ? seaOperationCruiseSpeedKnots(maxSpeedKnots)
+    : typeof navigationSpeedKnots === 'number' && Number.isFinite(navigationSpeedKnots) && navigationSpeedKnots > 0 ? navigationSpeedKnots : null;
   const positions = waypoints.map(seaWaypointPosition);
   const legs: SeaOperationRouteLeg[] = [];
   let invalidLegCount = 0;

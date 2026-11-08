@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.95.0` calcule les vitesses par régime à partir des archives et
+des traces GPX Conso. Elle les utilise pour les ETA et les deux cadrans
+d’autonomie. Appliquer `20261108194113_sea_operation_navigation_profiles.sql`
+avant le frontend. Voir [les vitesses de référence](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.94.0` permet plusieurs relevés Soutes par jour et affiche la date
 et l’heure du dernier relevé. Appliquer `20261108062909_sea_operation_timed_fuel_tank_readings.sql`
 avant le frontend. Voir [le calcul du stock](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).

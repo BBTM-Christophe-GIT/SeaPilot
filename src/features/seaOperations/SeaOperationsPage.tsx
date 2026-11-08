@@ -30,6 +30,7 @@ import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { SeaOperationRegisterTree } from './SeaOperationRegisterTree';
 import { orderedFleetFuelLevels, SeaOperationFleetFuel, useSeaOperationFleetFuel } from './SeaOperationFleetFuel';
+import type { SeaOperationFleetFuelLevel } from './seaOperationFleetFuelQuery';
 import { SeaOperationFuelTanksDialog } from './SeaOperationFuelTanksDialog';
 import { fetchSeaOperationRegisterConsumption, type SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
@@ -49,7 +50,7 @@ import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusMod
 import { SeaOperationUkcField } from './SeaOperationUkcField';
 import { SeaOperationUkcPanel } from './SeaOperationUkcPanel';
 import { captureSeaOperationValidationUkc, ukcRequestKey, type SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
-import { initialSeaOperationDepartureEta, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { initialSeaOperationDepartureEta, seaOperationNavigationSpeedOverride, seaOperationRouteNeedsNavigationSpeed, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { seaOperationRouteArrivalEta } from './seaOperationVoyageSummary';
 import { captureSeaOperationWaypointDescriptions, seaOperationWaypointDescription } from './seaOperationWaypointDescription';
 import { copyProjectLocationToSeaOperation, seaOperationPointPresentation } from './seaOperationProjectLocation';
@@ -68,10 +69,10 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleStr
 const planningDateLabel = (value: string) => value.split('-').reverse().join('/');
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String(error.message) : 'Une erreur est survenue. Réessayez.';
 const recoveryKey = (data: SeaOperationData) => `seapilot:sea-operation-draft:v1:${data.companyId}:${data.actorId}`;
-interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number; projectPorts?: SeaOperationProjectPorts | null }
+interface DraftRecovery { draft: SeaOperationPayload; recordId: string | null; version: number | null; step: number; projectPorts?: SeaOperationProjectPorts | null; projectIsTowage?: boolean }
 interface RecordAction { kind: 'revise' | 'delete'; record: SeaOperationRecord; client: SupabaseClient; account: string }
 interface ConsumptionAction { record: SeaOperationRecord; client: SupabaseClient; accessKey: string }
-interface ProjectPortsContext { client: SupabaseClient; account: string; ports: SeaOperationProjectPorts }
+interface ProjectPortsContext { client: SupabaseClient; account: string; ports: SeaOperationProjectPorts; projectIsTowage?: boolean }
 function planningProjectPorts(choice: SeaOperationPlanningChoice): SeaOperationProjectPorts {
   return { projectId: choice.projectId, departurePort: choice.vessel.departurePort, arrivalPort: choice.vessel.arrivalPort };
 }
@@ -86,6 +87,7 @@ function readRecovery(data: SeaOperationData): DraftRecovery | null {
       || typeof saved.projectPorts.projectId !== 'string' || !/^[1-9]\d{0,18}$/.test(saved.projectPorts.projectId)
       || BigInt(saved.projectPorts.projectId) > 9223372036854775807n || saved.projectPorts.projectId !== saved.draft.planning?.projectId
       || saved.draft.transit || typeof saved.projectPorts.departurePort !== 'string' || typeof saved.projectPorts.arrivalPort !== 'string')) return null;
+    if (saved.projectIsTowage !== undefined && (typeof saved.projectIsTowage !== 'boolean' || !saved.projectPorts)) return null;
     return saved as DraftRecovery;
   } catch { return null; }
 }
@@ -122,14 +124,19 @@ function AnswerControl({ label, value, onChange, id }: { label: string; value: A
 }
 
 /** A change of mission must never inherit the previous mission's safety approvals. */
-function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string, maxSpeedKnots?: number | null): SeaOperationPayload {
+function draftForPlanningChoice(choice: SeaOperationPlanningChoice, date: string, maxSpeedKnots: number | null | undefined,
+  navigation: { levels?: readonly SeaOperationFleetFuelLevel[]; pending: boolean; unavailable: boolean }): SeaOperationPayload {
   const draft = newSeaOperation();
   const captain = choice.captains.length === 1 ? choice.captains[0] : null;
-  return copyProjectLocationToSeaOperation({ ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
+  const preparation = { ...draft, planning: { date, operationId: choice.operationId, projectId: choice.projectId, captainPersonId: captain?.personId || '' },
     project: choice.project, client: choice.client, ...(choice.clientId ? { clientId: choice.clientId } : {}), clientContact: choice.clientContact, description: choice.description,
     vessel: { ...draft.vessel, ...choice.vessel, id: String(choice.vessel.id), captainName: captain?.name || '',
       ...(choice.vessel.weatherMatrix === undefined ? {} : { weatherMatrix: structuredClone(choice.vessel.weatherMatrix) }) },
-    signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } }, choice.locationPlan, maxSpeedKnots);
+    signature: { ...draft.signature, captainName: captain?.name || '', place: choice.vessel.departurePort } };
+  return copyProjectLocationToSeaOperation(preparation, choice.locationPlan, maxSpeedKnots, {
+    navigationSpeedKnots: navigationSpeedFor(preparation, navigation.levels, choice.projectIsTowage),
+    preserveAutomaticEtas: navigation.pending || navigation.unavailable,
+  });
 }
 
 function sameClientContext(left: SeaOperationPayload, right: SeaOperationPayload): boolean {
@@ -162,11 +169,17 @@ function captureVesselDraft(payload: SeaOperationPayload, source?: { id: string 
   return invalidateSeaOperationUkc(payload.vessel.draftMeters === draftMeters ? payload : { ...payload, vessel: { ...payload.vessel, draftMeters } });
 }
 
-function captureRouteEtas(payload: SeaOperationPayload, vessels: SeaOperationData['vessels'] | undefined): SeaOperationPayload {
+function navigationSpeedFor(payload: SeaOperationPayload, fuelLevels: readonly SeaOperationFleetFuelLevel[] | undefined,
+  projectIsTowage?: boolean) {
+  const vessel = fuelLevels?.find(source => String(source.vesselId) === payload.vessel.id);
+  return seaOperationNavigationSpeedOverride(payload, vessel?.navigationProfiles, projectIsTowage);
+}
+
+function captureRouteEtas(payload: SeaOperationPayload, vessels: SeaOperationData['vessels'] | undefined,
+  fuelLevels: readonly SeaOperationFleetFuelLevel[] | undefined, projectIsTowage?: boolean): SeaOperationPayload {
   if (vessels === undefined) return payload;
-  const vessel = vessels?.find(source => String(source.id) === payload.vessel.id);
-  // Unknown vessel/speed invalidates automatic slots; historical/manual times are retained.
-  return updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots ?? null);
+  const vessel = vessels.find(source => String(source.id) === payload.vessel.id);
+  return updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots, navigationSpeedFor(payload, fuelLevels, projectIsTowage));
 }
 
 export function SeaOperationsPage() {
@@ -195,9 +208,10 @@ export function SeaOperationsPage() {
   const [step, setStep] = useState(0);
   const [documentsContext, setDocumentsContext] = useState<{ client: SupabaseClient; account: string } | null>(null);
   const documentsOpen = documentsContext?.client === client && documentsContext.account === (data ? recoveryKey(data) : '');
-  const projectPorts = !draft.transit && projectPortsContext?.client === client
+  const retainedProjectContext = !draft.transit && projectPortsContext?.client === client
     && projectPortsContext.account === (data ? recoveryKey(data) : '')
-    && projectPortsContext.ports.projectId === draft.planning?.projectId ? projectPortsContext.ports : undefined;
+    && projectPortsContext.ports.projectId === draft.planning?.projectId ? projectPortsContext : undefined;
+  const projectPorts = retainedProjectContext?.ports;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [busy, setBusy] = useState(false);
@@ -266,6 +280,20 @@ export function SeaOperationsPage() {
   const sortedVessels = useMemo(() => [...(data?.vessels ?? [])].sort(compareFleetAssets), [data?.vessels]);
   const registerConsumptionIds = data?.records.filter(hasSeaOperationConsumption).map(item => item.id).sort().join(',') ?? '';
   const fleetFuel = useSeaOperationFleetFuel(client, account && currentAccess ? accessKey : null, consumptionRefresh, registerConsumptionIds);
+  const waitingForNavigationSpeeds = Boolean(account && currentAccess && !fleetFuel.rows && !fleetFuel.error);
+  const navigationUnavailable = fleetFuel.error === true;
+  const latestNavigation = useRef({ levels: fleetFuel.rows, pending: waitingForNavigationSpeeds, unavailable: navigationUnavailable });
+  latestNavigation.current = { levels: fleetFuel.rows, pending: waitingForNavigationSpeeds, unavailable: navigationUnavailable };
+  const formNavigationPending = record?.status !== 'signed' && Boolean(draft.vessel.id) && waitingForNavigationSpeeds;
+  const formSaveWaitingForNavigation = formNavigationPending && seaOperationRouteNeedsNavigationSpeed(draft);
+  const formProjectIsTowage = selectedMission?.projectIsTowage
+    ?? retainedProjectContext?.projectIsTowage
+    ?? (record && sameClientContext(record.draft, draft) ? record.projectIsTowage : undefined);
+  const formNavigationSpeedKnots = record?.status === 'signed' ? undefined : formNavigationPending || navigationUnavailable ? null
+    : navigationSpeedFor(draft, fleetFuel.rows, formProjectIsTowage);
+  const mapNavigationPending = mapRecord?.status === 'draft' && Boolean(mapRecord.draft.vessel.id) && waitingForNavigationSpeeds;
+  const mapNavigationSpeedKnots = mapRecord?.status !== 'draft' ? undefined : mapNavigationPending || navigationUnavailable ? null
+    : navigationSpeedFor(mapRecord.draft, fleetFuel.rows, mapRecord.projectIsTowage);
   const writableFuelVessels = useMemo(() => orderedFleetFuelLevels(fleetFuel.rows ?? []).filter(vessel => vessel.canSetBaseline), [fleetFuel.rows]);
   useEffect(() => {
     if (!account || !currentAccess) return;
@@ -315,10 +343,10 @@ export function SeaOperationsPage() {
     setRecord(existing ? { ...existing, version: recovery.version! } : null);
     const retainedPorts = recovery.projectPorts ?? existing?.projectPorts;
     if (retainedPorts && !recovery.draft.transit && retainedPorts.projectId === recovery.draft.planning?.projectId) {
-      setProjectPortsContext({ client: currentClient.current, account, ports: retainedPorts });
+      setProjectPortsContext({ client: currentClient.current, account, ports: retainedPorts, projectIsTowage: existing?.projectIsTowage ?? recovery.projectIsTowage });
     }
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel), result.vessels))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(captureSeaOperationWaypointDescriptions(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -359,9 +387,10 @@ export function SeaOperationsPage() {
   useEffect(() => { if (formPane.current) formPane.current.scrollTop = 0; }, [step, documentsOpen]);
   useEffect(() => {
     if (!data || !dirty || loadedAccount.current !== recoveryKey(data)) return;
-    try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step, projectPorts: projectPorts ?? null })); }
+    try { sessionStorage.setItem(recoveryKey(data), JSON.stringify({ draft, recordId: record?.id ?? null, version: record?.version ?? null, step,
+      projectPorts: projectPorts ?? null, projectIsTowage: projectPorts ? formProjectIsTowage : undefined })); }
     catch { /* Editing and server saves remain available when local storage is unavailable. */ }
-  }, [data, dirty, draft, record, step, projectPorts]);
+  }, [data, dirty, draft, record, step, projectPorts, formProjectIsTowage]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty || mapDirty) { event.preventDefault(); event.returnValue = ''; } };
     const beforeNavigation = (event: MouseEvent) => {
@@ -395,8 +424,13 @@ export function SeaOperationsPage() {
       if (mission && record?.canEdit !== false && current.planning?.date === missionDate && !weatherEditor.current.busy && !weatherEditor.current.signed) {
         const vessel = data?.vessels.find((source) => String(source.id) === current.vessel.id);
         const source = mission.vessel.id !== current.vessel.id || mission.vessel.weatherMatrix === undefined ? vessel : mission.vessel;
-        if (captureRouteEtas(captureVesselDraft(captureVesselMatrix(current, source), vessel), data?.vessels) !== current) {
-          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === missionDate ? captureRouteEtas(captureVesselDraft(captureVesselMatrix(value, source), vessel), data?.vessels) : value);
+        const captureMission = (value: SeaOperationPayload) => {
+          const prepared = captureVesselDraft(captureVesselMatrix(value, source), vessel);
+          const { levels, pending, unavailable } = latestNavigation.current;
+          return pending || unavailable ? prepared : captureRouteEtas(prepared, data?.vessels, levels, mission.projectIsTowage);
+        };
+        if (captureMission(current) !== current) {
+          setDraft((value) => value.planning?.operationId === mission.operationId && value.planning.date === missionDate ? captureMission(value) : value);
           setDirty(true);
         }
       }
@@ -415,10 +449,10 @@ export function SeaOperationsPage() {
       if (allowAutomaticMission.current && editRevision.current === revision && !latestDraft.current.project && !latestDraft.current.planning?.operationId && result.choices.length === 1) {
         allowAutomaticMission.current = false;
         const selected = draftForPlanningChoice(result.choices[0], result.choices[0].date,
-          data?.vessels.find(source => String(source.id) === result.choices[0].vessel.id)?.maxSpeedKnots);
+          data?.vessels.find(source => String(source.id) === result.choices[0].vessel.id)?.maxSpeedKnots, latestNavigation.current);
         const vessel = data?.vessels.find((source) => String(source.id) === selected.vessel.id);
         setPlanningDate(result.choices[0].date);
-        setProjectPortsContext(data ? { client, account: recoveryKey(data), ports: planningProjectPorts(result.choices[0]) } : null);
+        setProjectPortsContext(data ? { client, account: recoveryKey(data), ports: planningProjectPorts(result.choices[0]), projectIsTowage: result.choices[0].projectIsTowage } : null);
         setDraft(captureVesselDraft(result.choices[0].vessel.weatherMatrix === undefined ? captureVesselMatrix(selected, vessel) : selected, vessel));
         setDirty(true);
       }
@@ -454,9 +488,14 @@ export function SeaOperationsPage() {
     return () => { active = false; };
   }, [client, editing, record?.status, contextDate, draft.planning?.operationId, captainPersonId, draft.vessel.id, usesVesselContext, selectedMission, selectedCaptain]);
 
+  const captureFormRouteEtas = (payload: SeaOperationPayload) => {
+    const { levels, pending, unavailable } = latestNavigation.current;
+    return pending || unavailable ? payload
+      : captureRouteEtas(payload, data?.vessels, levels, sameClientContext(draft, payload) ? formProjectIsTowage : undefined);
+  };
   const update = (patch: Partial<SeaOperationPayload> | ((current: SeaOperationPayload) => Partial<SeaOperationPayload>)) => {
     allowAutomaticMission.current = false; editRevision.current += 1;
-    setDraft(current => invalidateSeaOperationUkc(captureRouteEtas({ ...current, ...(typeof patch === 'function' ? patch(current) : patch) }, data?.vessels)));
+    setDraft(current => invalidateSeaOperationUkc(captureFormRouteEtas({ ...current, ...(typeof patch === 'function' ? patch(current) : patch) })));
     setDirty(true); setNotice(''); setIssues([]);
   };
   const vesselUpdate = (patch: Partial<SeaOperationPayload['vessel']>) => {
@@ -501,14 +540,14 @@ export function SeaOperationsPage() {
   useEffect(() => {
     const current = weatherEditor.current;
     if (!data || loadedAccount.current !== recoveryKey(data) || current.client !== client
-      || !current.editing || !current.editable || current.signed || current.busy || current.exporting) return;
-    if (captureRouteEtas(current.draft, data.vessels) === current.draft) return;
+      || !current.editing || !current.editable || current.signed || current.busy || current.exporting || formNavigationPending || navigationUnavailable) return;
+    if (updateSeaOperationRouteEtas(current.draft, formMaxSpeedKnots, formNavigationSpeedKnots) === current.draft) return;
     const sequence = loadSequence.current;
     setDraft(value => sequence === loadSequence.current && weatherEditor.current.client === client
-      ? captureRouteEtas(value, data.vessels) : value);
+      ? updateSeaOperationRouteEtas(value, formMaxSpeedKnots, formNavigationSpeedKnots) : value);
     editRevision.current += 1;
     setDirty(true); setIssues([]);
-  }, [client, data, editing, editable, signed, busy, exporting, draft.vessel.id]);
+  }, [client, data, editing, editable, signed, busy, exporting, draft.vessel.id, formMaxSpeedKnots, formNavigationSpeedKnots, formNavigationPending, navigationUnavailable]);
   // A gesture belongs to the open account/record/mission, even after a context switch.
   const mapEditSequence = loadSequence.current;
   const mapOperationId = draft.planning?.operationId;
@@ -559,7 +598,7 @@ export function SeaOperationsPage() {
       while (used.has(String(number))) number += 1;
       const eta = value.waypoints.length ? '' : initialSeaOperationDepartureEta();
       const point = { id, number: String(number), descriptionVhf: port?.name.trim() || `Waypoint ${number}`, latitude: position ? String(Number(position.latitude.toFixed(6))) : '', longitude: position ? String(Number(position.longitude.toFixed(6))) : '', ukc: '', ukcMode: 'automatic' as const, eta, ...(eta ? { etaMode: 'manual' as const } : {}), denseTraffic: false };
-      return captureRouteEtas({ ...value, waypoints: [...value.waypoints, point] }, data?.vessels);
+      return captureFormRouteEtas({ ...value, waypoints: [...value.waypoints, point] });
     });
     setDirty(true); setNotice(''); setIssues([]);
   };
@@ -582,7 +621,7 @@ export function SeaOperationsPage() {
       if (!current.waypoints.length) {
         waypoints[0] = { ...waypoints[0], eta: initialSeaOperationDepartureEta(), etaMode: 'manual' };
       }
-      imported = captureRouteEtas({ ...current, waypoints, mapViewport: undefined }, data?.vessels);
+      imported = captureFormRouteEtas({ ...current, waypoints, mapViewport: undefined });
     }
     allowAutomaticMission.current = false; editRevision.current += 1;
     setDraft(imported);
@@ -665,12 +704,12 @@ export function SeaOperationsPage() {
     allowAutomaticMission.current = false;
     editRevision.current += 1;
     const choice = planning?.choices.find(item => seaOperationPlanningChoiceKey(item) === choiceKey);
-    let next = choice ? draftForPlanningChoice(choice, choice.date, data?.vessels.find(source => String(source.id) === choice.vessel.id)?.maxSpeedKnots)
+    let next = choice ? draftForPlanningChoice(choice, choice.date, data?.vessels.find(source => String(source.id) === choice.vessel.id)?.maxSpeedKnots, latestNavigation.current)
       : choiceKey === '__transit' ? createTransitSeaOperation(planningDate || seaOperationToday()) : newSeaOperation();
     if (record?.draft.client.trim() && sameClientContext(record.draft, next)) next = { ...next, client: record.draft.client,
       clientId: record.draft.clientId, clientContact: record.draft.clientContact };
     const vessel = data?.vessels.find((source) => String(source.id) === next.vessel.id);
-    setProjectPortsContext(choice && data ? { client, account: recoveryKey(data), ports: planningProjectPorts(choice) } : null);
+    setProjectPortsContext(choice && data ? { client, account: recoveryKey(data), ports: planningProjectPorts(choice), projectIsTowage: choice.projectIsTowage } : null);
     if (choice) setPlanningDate(choice.date);
     setCaptainSignature(null); setVesselContext(null); setSignatureError(''); setVesselContextError('');
     setDraft(captureVesselDraft(choice?.vessel.weatherMatrix === undefined ? captureVesselMatrix(next, vessel) : next, vessel));
@@ -727,7 +766,7 @@ export function SeaOperationsPage() {
     finally { if (isCurrent()) setMapLoading(false); }
   }
   async function saveMapOperation(payload: SeaOperationPayload, source: SeaOperationRecord) {
-    if (busy || exporting || mutationRunning.current || !source.canEdit || source.status !== 'draft'
+    if (busy || exporting || mutationRunning.current || mapNavigationPending && seaOperationRouteNeedsNavigationSpeed(payload) || !source.canEdit || source.status !== 'draft'
       || !latestMapRecord.current?.canEdit || latestMapRecord.current.status !== 'draft'
       || source.id !== latestMapRecord.current.id || source.version !== latestMapRecord.current.version
       || source.companyId !== latestMapRecord.current.companyId) {
@@ -738,8 +777,9 @@ export function SeaOperationsPage() {
     const account = actionContext.current.account;
     const isCurrent = () => request === mapLoadSequence.current && actionContext.current.client === client && actionContext.current.account === account;
     try {
-      const vessel = data?.vessels.find(value => String(value.id) === payload.vessel.id);
-      const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(updateSeaOperationRouteEtas(payload, vessel?.maxSpeedKnots)));
+      const { levels, pending, unavailable } = latestNavigation.current;
+      const timed = pending || unavailable ? payload : captureRouteEtas(payload, data?.vessels, levels, source.projectIsTowage);
+      const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(timed));
       const weather = await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode, missingOnly: true });
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
       const captured = await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true });
@@ -774,7 +814,7 @@ export function SeaOperationsPage() {
     clearRecovery(data);
     setRecord(saved); setDraft(saved.draft); setDirty(false);
     setMapRecord(current => current?.id === saved.id ? saved : current);
-    setProjectPortsContext(saved.projectPorts && data ? { client, account: recoveryKey(data), ports: saved.projectPorts } : null);
+    setProjectPortsContext(saved.projectPorts && data ? { client, account: recoveryKey(data), ports: saved.projectPorts, projectIsTowage: saved.projectIsTowage } : null);
     const ports = saved.projectPorts;
     if (ports && data && currentClient.current === client && loadedAccount.current === recoveryKey(data)) {
       const refreshPorts = <T extends SeaOperationPlanningChoice,>(choice: T): T => choice.projectId === ports.projectId
@@ -797,7 +837,10 @@ export function SeaOperationsPage() {
       remember(loaded);
       if (loaded.status !== 'signed' && loaded.canEdit) {
         const vessel = data?.vessels.find((source) => String(source.id) === loaded.draft.vessel.id);
-        const prepared = captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel), data?.vessels));
+        const updatedVessel = captureVesselDraft(captureVesselMatrix(loaded.draft, vessel), vessel);
+        const { levels, pending, unavailable } = latestNavigation.current;
+        const prepared = captureSeaOperationWaypointDescriptions(pending || unavailable ? updatedVessel
+          : captureRouteEtas(updatedVessel, data?.vessels, levels, loaded.projectIsTowage));
         if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
       setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form');
@@ -866,10 +909,11 @@ export function SeaOperationsPage() {
     }
   }
   async function save(sign = false) {
-    if (busy) return;
+    if (busy || formSaveWaitingForNavigation) return;
     const matrixSource = selectedMission?.vessel.id !== draft.vessel.id || selectedMission?.vessel.weatherMatrix === undefined
       ? data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
-    const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), data?.vessels.find((vessel) => String(vessel.id) === draft.vessel.id)), data?.vessels)));
+    const vessel = data?.vessels.find((source) => String(source.id) === draft.vessel.id);
+    const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureFormRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), vessel))));
     const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
     const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
     if (validation.length) { setIssues(validation); setDocumentsContext(null); setStep(sign ? 3 : step); revealFormFeedback(); return; }
@@ -1044,6 +1088,7 @@ export function SeaOperationsPage() {
         {mapError ? <div className="so-alert so-danger" role="alert"><span>{mapError}</span><button type="button" className="so-secondary" onClick={() => { const item = data.records.find(value => value.id === mapSelectionId); if (item) void selectMapOperation(item); }}>Réessayer</button></div> : null}
         <SeaOperationRegisterPane key={`${accessKey}:${mapSelectionId || ''}`} client={client} accessKey={accessKey} operationId={mapSelectionId || ''} canManageDocuments={canManageProjectDocuments} record={mapRecord} disabled={busy || exporting || mapLoading}
           maxSpeedKnots={data.vessels.find(value => String(value.id) === mapRecord?.draft.vessel.id)?.maxSpeedKnots}
+          navigationSpeedKnots={mapNavigationSpeedKnots} navigationSpeedPending={mapNavigationPending} navigationSpeedUnavailable={navigationUnavailable}
           consumptionRefresh={consumptionRefresh}
           savedConsumption={savedConsumption}
           onSave={saveMapOperation} onDirtyChange={setMapDirty}
@@ -1062,14 +1107,14 @@ export function SeaOperationsPage() {
       isBusy={busy || exporting}
       onClose={closeEditor}
       footer={<div className="so-dialog-footer">
-        <div className="so-footer-state">{(documentsOpen || step > 0) && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(documentsOpen ? 0 : step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{exporting ? 'Export du PDF…' : busy ? 'Enregistrement…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
+        <div className="so-footer-state">{(documentsOpen || step > 0) && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => changeStep(documentsOpen ? 0 : step - 1)}><ArrowLeft size={16} />Précédent</button>}<span>{exporting ? 'Export du PDF…' : busy ? 'Enregistrement…' : formSaveWaitingForNavigation && editable ? 'Chargement des vitesses de navigation…' : dirty ? 'Modifications non enregistrées' : signed ? 'Décision signée et figée' : record ? `Version ${record.version} enregistrée` : 'Brouillon à compléter'}</span></div>
         <div className="so-footer-actions"><button className="sp-button sp-button--secondary so-secondary so-footer-cancel" disabled={busy} onClick={closeEditor}>{signed || !editable ? 'Fermer' : 'Annuler'}</button>
           {record?.canRevise && signed && <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => requestRecordAction('revise', record)}><Pencil size={16} />Modifier cette fiche</button>}
           {record?.canDelete && !dirty && <button type="button" className="sp-button sp-button--secondary so-secondary so-delete-record" disabled={busy || exporting} onClick={() => requestRecordAction('delete', record)}><Trash2 size={16} />Supprimer cette fiche</button>}
           {record && !dirty && <button className="sp-button sp-button--secondary so-secondary" disabled={busy || exporting} onClick={() => void exportPdf()}><FileDown size={16} />Exporter le PDF</button>}
           {record && !dirty && <button className="sp-button sp-button--secondary so-secondary so-footer-print" disabled={busy || exporting} onClick={() => window.print()}><Printer size={16} />Imprimer la fiche</button>}
-          {editable && !signed && <button className="sp-button sp-button--secondary so-secondary" disabled={busy} onClick={() => void save()}><Save size={16} />Enregistrer le brouillon</button>}
-          {step < STEPS.length - 1 ? <button className="sp-button sp-button--primary" disabled={busy} onClick={() => changeStep(step + 1)}>Suivant<ChevronRight size={16} /></button> : !signed && <button className="sp-button sp-button--primary" disabled={busy || !editable || !canSign || !draft.decision} onClick={() => void save(true)}><CheckCircle2 size={17} />Signer la décision {draft.decision === 'NO_GO' ? 'NO GO' : draft.decision}</button>}
+          {editable && !signed && <button className="sp-button sp-button--secondary so-secondary" disabled={busy || formSaveWaitingForNavigation} onClick={() => void save()}><Save size={16} />Enregistrer le brouillon</button>}
+          {step < STEPS.length - 1 ? <button className="sp-button sp-button--primary" disabled={busy} onClick={() => changeStep(step + 1)}>Suivant<ChevronRight size={16} /></button> : !signed && <button className="sp-button sp-button--primary" disabled={busy || formSaveWaitingForNavigation || !editable || !canSign || !draft.decision} onClick={() => void save(true)}><CheckCircle2 size={17} />Signer la décision {draft.decision === 'NO_GO' ? 'NO GO' : draft.decision}</button>}
         </div>
       </div>}
     >
@@ -1195,7 +1240,7 @@ export function SeaOperationsPage() {
                   onDeleteIsolatedPoint={deleteIsolatedPoint}
                   onMoveZoneVertex={moveZoneVertex}
                   onDeleteZoneVertex={deleteZoneVertex}
-                  maxSpeedKnots={formMaxSpeedKnots}
+                  maxSpeedKnots={formMaxSpeedKnots} navigationSpeedKnots={formNavigationSpeedKnots}
                   voyageSummaryPosition="compact" renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(formConsumption, draft, distanceNm)}
                   etd={draft.waypoints[0]?.eta || draft.vessel.etd}
                   eta={seaOperationRouteArrivalEta(draft)}
@@ -1211,6 +1256,7 @@ export function SeaOperationsPage() {
               </SeaOperationWaypointImportPanel>
             : step === 2 && <SeaOperationRouteMap allowNavigationCategories inspectPoints showRouteLegs fitOperationRoute voyageSummaryPosition="compact"
                 renderVoyageDetails={distanceNm => renderSeaOperationVoyageFuelDetails(formConsumption, draft, distanceNm)} maxSpeedKnots={formMaxSpeedKnots}
+                navigationSpeedKnots={formNavigationSpeedKnots}
                 etd={draft.waypoints[0]?.eta || draft.vessel.etd} eta={seaOperationRouteArrivalEta(draft)} basemapControlsDisabled={busy || exporting}
                 waypoints={draft.waypoints} isolatedPoints={mapIsolatedPoints} zones={draft.locationOverlay?.zones} departurePort={draft.vessel.departurePort} arrivalPort={draft.vessel.arrivalPort} />}
           <fieldset className="so-form-fields" disabled={formLocked}>
@@ -1219,6 +1265,9 @@ export function SeaOperationsPage() {
             vessel={{ id: draft.vessel.id, draftMeters: draft.vessel.draftMeters }} etd={draft.vessel.etd} projectId={draft.planning?.projectId} projectIcons={projectIcons}
             onChange={value => { if (canEditMap()) update({ locationOverlay: value }); }} />}
           <h3>Points de passage</h3>
+          {!signed && editable && navigationUnavailable && <p className="so-help">Impossible de charger les vitesses de navigation. Les ETA déjà renseignées sont conservées.{' '}
+            <button type="button" className="sp-button sp-button--secondary so-secondary" onClick={fleetFuel.reload}>Réessayer les vitesses</button></p>}
+          {!signed && editable && !formNavigationPending && !navigationUnavailable && formNavigationSpeedKnots === null && <p className="so-help">Aucune vitesse moyenne en remorque disponible. Renseignez les ETA manuellement.</p>}
           <p className="so-help">Indicateur UKC selon le tirant d’eau de référence (TE) : rouge si UKC ≤ TE ; orange si TE &lt; UKC ≤ TE + 2 m ; vert si UKC &gt; TE + 2 m.</p>
           <div className="so-passage-grid" role="table" aria-label="Points de passage">
             {draft.waypoints.map((point, index) => {

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { emptySeaOperation, emptySeaOperationWaypoint, isSeaOperationPayload, type SeaOperationPayload, type SeaOperationWaypoint } from './seaOperationModel';
-import { initialSeaOperationDepartureEta, seaOperationWaypointEtaIsAutomatic, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
+import { initialSeaOperationDepartureEta, seaOperationNavigationSpeedOverride, seaOperationWaypointEtaIsAutomatic, updateSeaOperationRouteEtas } from './seaOperationRouteEta';
 import { captureSeaOperationRadios } from './seaOperationWaypointSnapshots';
 import { COPERNICUS_UKC_PRODUCTS, calculateSeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 
@@ -10,6 +10,28 @@ const point = (id: string, longitude: string, eta = '', etaMode?: SeaOperationWa
 const payload = (waypoints: SeaOperationWaypoint[]): SeaOperationPayload => ({ ...emptySeaOperation(), waypoints });
 
 describe('editable automatic waypoint ETAs', () => {
+  it('chooses project towage, a whole-word title or standalone towage and keeps absent profiles distinct', () => {
+    const draft = emptySeaOperation();
+    const profiles = { normal: { speedKnots: 9.25, litersPerNm: 10, sampleCount: 3 }, towing: { speedKnots: 5.5, litersPerNm: null, sampleCount: 1 } };
+    const linked = { ...draft, planning: { date: '2026-10-27', projectId: '42', operationId: '9:1', captainPersonId: '' },
+      applicability: { ...draft.applicability, towing: 'yes' as const } };
+    expect(seaOperationNavigationSpeedOverride(linked, profiles, false)).toBe(9.25);
+    expect(seaOperationNavigationSpeedOverride(linked, profiles, true)).toBe(5.5);
+    expect(seaOperationNavigationSpeedOverride({ ...linked, project: 'P42 — REMORQUAGE, Brest' }, profiles, false)).toBe(5.5);
+    expect(seaOperationNavigationSpeedOverride({ ...linked, project: 'CI_REMORQUAGE_01' }, profiles, false)).toBe(5.5);
+    expect(seaOperationNavigationSpeedOverride({ ...linked, project: 'Préremorquage' }, profiles)).toBe(9.25);
+    expect(seaOperationNavigationSpeedOverride({ ...draft, applicability: linked.applicability }, profiles)).toBe(5.5);
+    expect(seaOperationNavigationSpeedOverride(linked, { ...profiles, towing: null }, true)).toBeNull();
+    expect(seaOperationNavigationSpeedOverride(linked, { ...profiles, normal: null }, false)).toBeUndefined();
+  });
+
+  it('uses exact measured speed and clears only automatic ETAs when towing speed is unavailable', () => {
+    const draft = payload([point('a', '0', '2026-10-27T10:00'), point('b', '0.2'), point('c', '0.4', '2026-10-27T14:07')]);
+    const measured = updateSeaOperationRouteEtas(draft, 20, 5.5);
+    expect(measured.waypoints.map(waypoint => waypoint.eta)).toEqual(['2026-10-27T10:00', '2026-10-27T12:11', '2026-10-27T14:07']);
+    expect(updateSeaOperationRouteEtas(measured, 20, null).waypoints.map(waypoint => waypoint.eta))
+      .toEqual(['2026-10-27T10:00', '', '2026-10-27T14:07']);
+  });
   it.each([
     ['2026-10-27T13:27:59Z', '2026-10-27T14:25'],
     ['2026-07-11T22:02:00Z', '2026-07-12T00:00'],

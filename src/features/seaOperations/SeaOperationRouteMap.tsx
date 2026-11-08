@@ -103,7 +103,7 @@ function routeLegLabels(geometry: SeaOperationRouteMapGeometry, legs: ReturnType
 }
 
 /** Local situation map; placement is supplied explicitly by the editing wrapper. */
-export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, fitOperationRoute = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, voyageSummaryPosition = 'overlay', fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
+export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fitAllPositions = false, fitOperationRoute = false, ensureZonesVisible = false, onGeometry, renderSurface, renderOverlay, renderVoyageDetails, voyageSummaryPosition = 'overlay', fillAvailableSpace = false, showPlaces = false, inspectPoints = false, onPortSelect, showRouteLegs = false, maxSpeedKnots, navigationSpeedKnots, etd, eta, previewWaypoint, isolatedPoints = NO_ISOLATED_POINTS, zones = NO_ZONES, previewIsolatedPoint, previewZoneVertex, departurePort, arrivalPort, allowDetailedBasemap = false, allowNavigationCategories = false, basemapControlsDisabled = false }: {
   waypoints: readonly SeaOperationWaypoint[]; compact?: boolean;
   viewport?: RouteMapViewport;
   /** Document view only: fit every recorded position, keeping a saved frame only for an empty map. */
@@ -122,6 +122,7 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
   onPortSelect?: (ports: readonly SeaOperationMapPort[]) => void;
   showRouteLegs?: boolean;
   maxSpeedKnots?: number | null;
+  navigationSpeedKnots?: number | null;
   etd?: string;
   eta?: string;
   departurePort?: string;
@@ -234,7 +235,8 @@ export function SeaOperationRouteMap({ waypoints, compact = false, viewport, fit
     const area = (vertices: Position[]) => Math.abs(vertices.reduce((sum, vertex, index) => { const next = vertices[(index + 1) % vertices.length]; return sum + vertex.x * next.y - next.x * vertex.y; }, 0));
     return area(b.vertices) - area(a.vertices);
   }), [presentedZones]);
-  const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots) : null, [showRouteLegs, compact, waypoints, maxSpeedKnots]);
+  const route = useMemo(() => showRouteLegs && !compact ? buildSeaOperationRouteLegs(waypoints, maxSpeedKnots, navigationSpeedKnots) : null,
+    [showRouteLegs, compact, waypoints, maxSpeedKnots, navigationSpeedKnots]);
   const voyageDetails = !compact && (compactSummary || (route && waypoints.length > 1))
     ? renderVoyageDetails?.(route?.totalDistanceNm ?? null) : null;
   const summaryHeight = compactSummary ? 194 : voyageDetails ? 278 : 164;
