@@ -1,0 +1,53 @@
+.so-soutes-dialog { display: grid; min-width: 0; gap: var(--sp-space-3); }
+.so-soutes-selectors, .so-soutes-layout, .so-soutes-tank { margin: 0; min-width: 0; }
+.so-soutes-selectors, .so-soutes-layout { display: grid; gap: var(--sp-space-3); padding: 0; border: 0; }
+.so-soutes-selectors { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+.so-soutes-dialog .so-field { margin: 0; }
+.so-soutes-dialog .so-field :is(input, select) { box-sizing: border-box; min-width: 0; width: 100%; }
+
+.so-soutes-total {
+  display: grid; gap: var(--sp-space-2); padding: var(--sp-space-3);
+  border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-canvas);
+}
+.so-soutes-total-heading { display: flex; align-items: end; justify-content: space-between; gap: var(--sp-space-2); }
+.so-soutes-total h3 { margin: 0 0 var(--sp-space-1); color: var(--sp-heading); font-size: .86rem; }
+.so-soutes-total strong { color: var(--sp-heading); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.so-soutes-total-heading span, .so-soutes-total p, .so-soutes-tank-reading small { color: var(--sp-muted); font-size: .75rem; }
+.so-soutes-total p, .so-soutes-dialog > p, .so-soutes-status p { margin: 0; }
+.so-soutes-total-heading .so-soutes-total-percent { text-align: right; color: var(--sp-primary); font-weight: 700; }
+.so-soutes-total-track, .so-soutes-tank-visual { overflow: hidden; border: 1px solid var(--sp-border-strong); background: var(--sp-surface); }
+.so-soutes-total-track { height: 10px; border-radius: var(--sp-control-radius); }
+.so-soutes-total-track span { display: block; height: 100%; background: var(--sp-primary); }
+.so-soutes-total-track[data-known="false"], .so-soutes-tank-visual[data-known="false"] { border-style: dashed; }
+
+.so-soutes-sides, .so-soutes-center { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-3); }
+.so-soutes-center > :only-child, .so-soutes-day > .so-soutes-tank { grid-column: 1 / -1; justify-self: center; width: min(100%, 18rem); }
+.so-soutes-day { display: grid; padding-top: var(--sp-space-2); border-top: 1px solid var(--sp-border); }
+.so-soutes-tank {
+  box-sizing: border-box; padding: var(--sp-space-2) var(--sp-space-3) var(--sp-space-3);
+  border: 1px solid var(--sp-border); border-radius: var(--sp-panel-radius); background: var(--sp-surface-subtle);
+}
+.so-soutes-tank legend { max-width: 100%; padding-inline: var(--sp-space-1); color: var(--sp-heading); font-size: .86rem; font-weight: 700; overflow-wrap: anywhere; }
+.so-soutes-tank-reading { display: flex; align-items: center; gap: var(--sp-space-2); margin-bottom: var(--sp-space-2); }
+.so-soutes-tank-reading strong, .so-soutes-tank-reading small { display: block; overflow-wrap: anywhere; }
+.so-soutes-tank-reading strong { color: var(--sp-heading); font-size: .94rem; font-variant-numeric: tabular-nums; }
+.so-soutes-tank-visual {
+  display: flex; align-items: end; width: 24px; height: 34px; flex: none;
+  border-radius: var(--sp-control-radius); background: var(--sp-surface);
+}
+.so-soutes-tank-visual span { width: 100%; background: var(--sp-category-marine); }
+.so-soutes-tank-fields { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr); gap: var(--sp-space-2); }
+.so-soutes-invalid { margin: var(--sp-space-1) 0 0; color: var(--sp-danger); font-size: .74rem; }
+.so-soutes-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-2); }
+.so-soutes-previous { padding: var(--sp-space-2) var(--sp-space-3); border-radius: var(--sp-panel-radius); background: var(--sp-surface-subtle); color: var(--sp-muted); font-size: .78rem; }
+.so-soutes-previous p { margin: 0 0 var(--sp-space-1); }
+.so-soutes-previous summary { width: fit-content; cursor: pointer; color: var(--sp-primary); font-weight: 650; }
+.so-soutes-previous ul { margin: var(--sp-space-1) 0 0; padding-inline-start: var(--sp-space-4); }
+
+@media (max-width: 500px) {
+  .so-soutes-tank-fields { grid-template-columns: minmax(0, 1fr); }
+  .so-soutes-tank { padding-inline: var(--sp-space-2); }
+}
+@media (max-width: 360px) {
+  .so-soutes-selectors { grid-template-columns: minmax(0, 1fr); }
+}

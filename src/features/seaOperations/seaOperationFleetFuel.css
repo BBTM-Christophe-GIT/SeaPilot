@@ -3,7 +3,6 @@
 .so-fleet-fuel h2, .so-fleet-fuel h3 { margin: 0; color: var(--sp-heading); }
 .so-fleet-fuel h2 { font-size: 1rem; }
 .so-fleet-fuel p { margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: .8rem; }
-.so-page button.so-fleet-fuel-settings { flex: 0 0 auto; width: var(--sp-control-height); padding: 0; margin-left: auto; }
 .so-fleet-fuel-vessels {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(7rem, 1fr); align-items: start;
   gap: var(--sp-space-2); overflow-x: auto; scroll-snap-type: x proximity; list-style: none;

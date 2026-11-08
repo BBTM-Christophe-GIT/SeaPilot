@@ -169,8 +169,8 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
   </li>;
 }
 
-export function SeaOperationFleetFuel({ client, historyRefresh, rows, error, reload, disabled, onOpenSettings, ...details }: ReturnType<typeof useSeaOperationFleetFuel> & ConsumptionDetails & {
-  client: SupabaseClient; historyRefresh: number; disabled: boolean; onOpenSettings: () => void;
+export function SeaOperationFleetFuel({ client, historyRefresh, rows, error, reload, ...details }: ReturnType<typeof useSeaOperationFleetFuel> & ConsumptionDetails & {
+  client: SupabaseClient; historyRefresh: number;
 }) {
   const [expandedVesselId, setExpandedVesselId] = useState<number | null>(null);
   const detailId = useId();
@@ -178,10 +178,7 @@ export function SeaOperationFleetFuel({ client, historyRefresh, rows, error, rel
   const expandedVessel = vessels?.find(vessel => vessel.vesselId === expandedVesselId);
   const scale = fleetConsumptionScale(vessels ?? [], details.averages);
   return <section className="sp-panel so-fleet-fuel" aria-labelledby="so-fleet-fuel-title">
-    <header className="so-fleet-fuel-heading"><Fuel size={20} aria-hidden="true" /><h2 id="so-fleet-fuel-title">Carburant de la flotte</h2>
-      {vessels?.some(vessel => vessel.canSetBaseline) && <button type="button" className="sp-button sp-button--secondary so-secondary so-fleet-fuel-settings"
-        aria-label="Paramètres carburant" title="Paramètres carburant" disabled={disabled} onClick={onOpenSettings}><Settings2 size={18} aria-hidden="true" /></button>}
-    </header>
+    <header className="so-fleet-fuel-heading"><Fuel size={20} aria-hidden="true" /><h2 id="so-fleet-fuel-title">Carburant de la flotte</h2></header>
     {error ? <div className="so-fleet-fuel-status"><p role="alert">Les niveaux de carburant sont indisponibles.</p>
       <button type="button" className="sp-button sp-button--secondary so-secondary" onClick={reload}>Réessayer les niveaux</button></div>
       : !vessels ? <p role="status">Chargement des niveaux de carburant…</p>

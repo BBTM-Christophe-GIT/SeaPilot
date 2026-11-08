@@ -1,4 +1,4 @@
-import { FLEET_FUEL_TANK_NAMES_ERROR, fleetFuelTankLabel, fleetMainFuelCapacityLiters, MAX_FLEET_FUEL_TANK_CAPACITY_LITERS, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
+import { DEFAULT_FLEET_DAILY_FUEL_TANK_NAME, FLEET_DAILY_FUEL_TANK_NAME_ERROR, FLEET_FUEL_TANK_NAMES_ERROR, fleetDailyFuelTankLabel, fleetFuelTankLabel, fleetMainFuelCapacityLiters, MAX_FLEET_FUEL_TANK_CAPACITY_LITERS, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
 import './fleetFuelFields.css';
 
 export interface FleetFuelDraft {
@@ -6,6 +6,7 @@ export interface FleetFuelDraft {
   tankNames: string[];
   dailyTankEnabled: boolean;
   dailyTankCapacity: number | null;
+  dailyTankName: string;
   legacyCapacity: number | null;
 }
 
@@ -21,11 +22,12 @@ function capacityInput(value: number | null, onChange: (value: number | null) =>
     value={value ?? ''} onChange={event => onChange(event.target.value ? event.target.valueAsNumber : null)} />;
 }
 
-export function FleetFuelFields({ value, onChange, disabled, namesReady }: {
+export function FleetFuelFields({ value, onChange, disabled, namesReady, dailyNameReady }: {
   value: FleetFuelDraft;
   onChange: (value: FleetFuelDraft) => void;
   disabled: boolean;
   namesReady: boolean;
+  dailyNameReady: boolean;
 }) {
   const count = value.tankCapacities.length;
   return <>
@@ -58,10 +60,17 @@ export function FleetFuelFields({ value, onChange, disabled, namesReady }: {
     <div className="fleet-fuel-daily">
       <label className="fleet-fuel-check"><input type="checkbox" checked={value.dailyTankEnabled} disabled={disabled}
         onChange={event => onChange({ ...value, dailyTankEnabled: event.target.checked })} />Caisse journalière</label>
-      {value.dailyTankEnabled && <label>Capacité de la caisse journalière (L)
-        {capacityInput(value.dailyTankCapacity, liters => onChange({ ...value, dailyTankCapacity: liters }), disabled)}
-      </label>}
+      {value.dailyTankEnabled && <>
+        <label>Nom de la caisse journalière
+          <input disabled={disabled} placeholder={DEFAULT_FLEET_DAILY_FUEL_TANK_NAME} value={value.dailyTankName}
+            onChange={event => onChange({ ...value, dailyTankName: event.target.value })} />
+        </label>
+        <label>Capacité de la caisse journalière (L)
+          {capacityInput(value.dailyTankCapacity, liters => onChange({ ...value, dailyTankCapacity: liters }), disabled)}
+        </label>
+      </>}
     </div>
+    {!dailyNameReady && <p className="fleet-fuel-names-error" role="status">{FLEET_DAILY_FUEL_TANK_NAME_ERROR}</p>}
   </>;
 }
 
@@ -74,7 +83,7 @@ export function FleetFuelDetails({ vessel }: { vessel: FleetFuelCapacity }) {
       <div><dt>Nombre de cuves principales</dt><dd>{capacities.length || '—'}</dd></div>
       <div><dt>{!capacities.length && total !== null ? 'Capacité historique' : 'Capacité totale des cuves principales'}</dt><dd>{formatLiters(total)}</dd></div>
       {capacities.map((capacity, index) => <div key={index}><dt>{fleetFuelTankLabel(capacities.length, index, vessel.fuelTankNames)}</dt><dd>{formatLiters(capacity)}</dd></div>)}
-      <div><dt>Caisse journalière</dt><dd>{formatLiters(vessel.dailyFuelTankCapacityLiters)}</dd></div>
+      <div><dt className="fleet-fuel-daily-name">{fleetDailyFuelTankLabel(vessel.dailyFuelTankName)}</dt><dd>{formatLiters(vessel.dailyFuelTankCapacityLiters)}</dd></div>
     </dl>
   </section>;
 }
