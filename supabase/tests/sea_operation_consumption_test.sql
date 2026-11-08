@@ -1037,7 +1037,7 @@ select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->'tanks', '[
   'readings reopen with entered units and a snapshot of their tank configuration');
 select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 5300::numeric,
   'stock subtracts validated DPR use from the reading date, inclusive');
-select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading', jsonb_build_object('date', pg_temp.fuel_day(-2),
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading', jsonb_build_object('date', pg_temp.fuel_day(-2), 'time', '00:00',
   'superseded', false, 'tanks', '[
     {"key":"main-1","name":"Cuve Bâbord","capacityLiters":7000,"liters":3500},
     {"key":"main-2","name":"Cuve Tribord","capacityLiters":3000,"liters":2100},
@@ -1158,6 +1158,85 @@ select pg_temp.conso_actor(2);
 select is((select count(*) from jsonb_array_elements(public.sea_operation_fleet_fuel()) vessel
   where vessel->'assignedToday' = 'true'::jsonb), 0::bigint,
   'an assignment ending at Paris midnight and a cancelled assignment cannot choose a vessel for today');
+reset role;
+
+select ok(not has_function_privilege('anon', 'public.sea_operation_fuel_tanks(bigint,date,time)', 'EXECUTE'),
+  'anonymous access to timed readings is denied');
+select ok(not has_function_privilege('authenticated', 'sea_operation_private.save_fuel_tanks(bigint,date,time,integer,jsonb,boolean)', 'EXECUTE'),
+  'authenticated callers cannot bypass the timed stock chronology');
+select is(sea_operation_private.fuel_reading_instant(date '2026-10-25', time '02:30'),
+  timestamptz '2026-10-25T01:30:00Z', 'a repeated Paris autumn minute is one civil time and resolves to the later offset');
+
+create function pg_temp.timed_soutes_read(p_key text, p_days integer, p_time time) returns jsonb language sql stable as $$
+  select public.sea_operation_fuel_tanks(pg_temp.fuel_vessel(p_key), pg_temp.fuel_day(p_days), p_time);
+$$;
+create function pg_temp.timed_soutes_save(p_key text, p_days integer, p_time time, p_version integer, p_inputs jsonb)
+returns jsonb language sql as $$
+  select public.sea_operation_save_fuel_tanks(pg_temp.fuel_vessel(p_key), pg_temp.fuel_day(p_days), p_time, p_version, p_inputs);
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is(pg_temp.timed_soutes_read('fuel_office_only', -2, null)->'times', '["00:00"]'::jsonb,
+  'old dated entries appear in the time list at midnight');
+select is(pg_temp.timed_soutes_read('fuel_office_only', -2, null)->'reading', 'null'::jsonb,
+  'the new form lists existing times without silently opening a reading');
+select is(pg_temp.timed_soutes_read('fuel_office_only', -2, '00:00')->'reading',
+  pg_temp.soutes_read('fuel_office_only', -2)->'reading', 'the old reader still opens exactly the midnight reading');
+select ok(not (pg_temp.soutes_read('fuel_office_only', -2) ? 'times'), 'the old read RPC keeps its response shape');
+
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, '12:20:30', null, pg_temp.soutes_inputs())$$,
+  '22023', null, 'second-level timestamps are rejected instead of rounded');
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, '24:00', null, pg_temp.soutes_inputs())$$,
+  '22023', null, '24:00 cannot create an alias for next-day midnight');
+select throws_ok($$select public.sea_operation_save_fuel_tanks(pg_temp.fuel_vessel('fuel_office_only'),
+  date '2026-03-29', time '02:30', null, pg_temp.soutes_inputs())$$,
+  '22023', null, 'a nonexistent Paris spring DST time cannot be stored');
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', 1, '00:00', null, pg_temp.soutes_inputs())$$,
+  '22023', null, 'future timed readings are rejected');
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, null, null, pg_temp.soutes_inputs())$$,
+  '22023', null, 'a save needs an exact reading time');
+
+select is(pg_temp.timed_soutes_save('fuel_office_only', -2, '11:00', null, pg_temp.soutes_inputs())->>'time', '11:00',
+  'a second same-day reading can be saved separately');
+select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 5400::numeric,
+  'an intraday stock anchor deducts only following DPR dates');
+select is((pg_temp.fuel_row('fuel_office_only')->>'measuredAt')::timestamptz,
+  (pg_temp.fuel_day(-2) + time '11:00') at time zone 'Europe/Paris', 'the intraday anchor uses the actual Paris reading time');
+select is(pg_temp.timed_soutes_save('fuel_office_only', -2, '14:00', null,
+  jsonb_set(pg_temp.soutes_inputs(), '{2,value}', '60'))->'times', '["00:00","11:00","14:00"]'::jsonb,
+  'the day lists all existing readings in civil-time order');
+select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 6100::numeric,
+  'the later same-day measurement replaces the stock anchor');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading'->>'time', '14:00',
+  'fleet snapshot includes the latest observation time');
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, '14:00', null, pg_temp.soutes_inputs())$$,
+  '40001', 'Un relevé existe déjà à cette date et à cette heure.', 'creating a duplicate cannot overwrite the observation');
+select lives_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, '11:00', 1,
+  jsonb_set(pg_temp.soutes_inputs(), '{2,value}', '35'))$$, 'an earlier observation can be corrected independently');
+select lives_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -3, '16:00', null, pg_temp.soutes_inputs())$$,
+  'an earlier day can be entered after a later observation');
+select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 6100::numeric,
+  'edits or new backdated observations leave the later stock anchor intact');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading'->>'time', '14:00',
+  'the latest fleet snapshot follows observation time rather than last edit');
+select throws_ok($$select pg_temp.timed_soutes_save('fuel_office_only', -2, '11:00', 1, pg_temp.soutes_inputs())$$,
+  '40001', null, 'an earlier revision of the exact same observation is rejected');
+select lives_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_office_only'), 'liters', 5000, pg_temp.fuel_day(-2))$$,
+  'the legacy total adjustment retains explicit dated-rebase behavior');
+select is(pg_temp.timed_soutes_read('fuel_office_only', -2, '00:00')->'reading'->>'superseded', 'true',
+  'legacy scalar rebasing only marks the midnight detail superseded');
+select is(pg_temp.timed_soutes_read('fuel_office_only', -2, '14:00')->'reading'->>'superseded', 'false',
+  'later actual observations remain available independently');
+
+select pg_temp.conso_actor(5);
+select is(pg_temp.timed_soutes_read('goury_other', 0, null)->'times', '["00:00"]'::jsonb,
+  'a real Marin can list times for a visible vessel');
+select throws_ok($$select pg_temp.timed_soutes_save('goury_other', -1, '11:00', null, pg_temp.soutes_inputs())$$,
+  '42501', null, 'a real Marin cannot save via the timed overload');
+select pg_temp.conso_actor(6);
+select throws_ok($$select pg_temp.timed_soutes_read('goury_other', 0, null)$$,
+  '42501', null, 'timed read preserves company isolation');
 reset role;
 select * from finish();
 rollback;

@@ -13,10 +13,10 @@ consulter la fiche accèdent à son récapitulatif.
 Le bandeau **Carburant de la flotte** affiche le niveau de chaque navire visible
 sur une rangée, hors BR71. Le chevron de la carte ouvre la provenance du stock,
 l’autonomie, les moyennes et leurs tendances. Dans le ruban **Fuel**, **Soutes**
-permet au Capitaine affecté ou à un responsable habilité de saisir le stock au
-début de la date choisie. Le navire de l’affectation confirmée du jour est
+permet au Capitaine affecté ou à un responsable habilité de saisir le stock à
+la date et à l’heure de la mesure. Le navire de l’affectation confirmée du jour est
 présélectionné quand il est accessible en saisie. Le collaborateur peut choisir
-un autre navire autorisé. La date du jour en heure de Paris est proposée par défaut.
+un autre navire autorisé. La date et l’heure de Paris sont proposées par défaut.
 **Export Excel** télécharge les consommations avec le périmètre habituel.
 L’icône utilisée dans le ruban provient du [catalogue Microsoft](https://res.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/excel_48x1.svg).
 La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge
@@ -24,8 +24,8 @@ et s’accompagne d’une pastille d’alerte en haut à droite de la carte du n
 Dans la carte **Stock**, la jauge indique le pourcentage et le volume au
 repère du niveau courant, ainsi que la capacité totale à droite. Ces volumes
 s’affichent en m³ au-delà de 1 000 L et en litres jusqu’à 1 000 L inclus.
-La carte affiche aussi la date et les jauges par cuve du dernier relevé Soutes
-par date de référence. Les valeurs enregistrées sur ce relevé restent distinctes
+La carte affiche aussi la date, l’heure et les jauges par cuve du relevé Soutes
+le plus récent par heure de mesure. Les valeurs de ce relevé restent distinctes
 du stock courant recalculé avec les DPR et les avitaillements.
 
 Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
@@ -36,23 +36,28 @@ champs séparés pour son nom et sa capacité. Le calcul du stock nominal additi
 les cuves principales. Il reprend l’ancienne capacité totale si leurs volumes
 individuels ne sont pas renseignés.
 
-**Soutes**, dans le même ruban, enregistre un relevé par navire et par date.
+**Soutes**, dans le même ruban, enregistre plusieurs relevés par navire et par
+jour, à des heures distinctes. Choisir une heure dans **Relevés de la journée**
+pour consulter ou corriger ce relevé. Choisir **Nouveau relevé** pour ajouter
+une mesure. Les anciens relevés datés correspondent à 00 h 00.
 Chaque cuve configurée reçoit une mesure en %, L ou m³ et un visuel de son
 remplissage. Les cuves Bâbord ou repérées `P` occupent la gauche, celles
 Tribord ou repérées `S` occupent la droite. La jauge en haut montre la somme
 des volumes mesurés. La référence du bandeau et le décompte des DPR utilisent
 la somme des cuves principales, avec la caisse journalière suivie séparément.
 Pour les deux cuves calibrées du LANDEMER, une mesure en pourcentage applique
-la table correspondante. Le relevé peut être rouvert à sa date avec ses valeurs
+la table correspondante. Le relevé peut être rouvert à son heure avec ses valeurs
 et unités d’origine. Pour un navire qui a seulement une capacité historique, la
 mesure se saisit dans une cuve unique. Quand la capacité est inconnue, la saisie
 en volume reste disponible.
 
 Le stock courant soustrait le champ **Consommation de carburant en L** des DPR
-validés depuis la date de référence, incluse. Un seul DPR renseigné est pris
-par navire et par jour. En cas de doublon, un DPR SeaPilot prime sur un import
-historique, puis la validation la plus récente prévaut. Les anciens états de
-départ horodatés décomptent les DPR à partir du lendemain de la saisie.
+validés depuis le jour de la référence à 00 h 00 ou depuis le lendemain pour
+une mesure en cours de journée. Les DPR fournissent un total journalier et ne
+permettent pas d’isoler la consommation après l’heure du relevé. La saisie ou la
+correction d’un relevé antérieur conserve la référence la plus récente. Un seul
+DPR renseigné est pris par navire et par jour. En cas de doublon, un DPR
+SeaPilot prime sur un import historique, puis la validation la plus récente prévaut.
 
 Si un relevé Conso sur une fiche GO signée enregistre un avitaillement positif,
 le stock calculé à l’arrivée devient la référence lorsqu’il est plus récent.

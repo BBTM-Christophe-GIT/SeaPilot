@@ -293,12 +293,12 @@ describe('Operation consumption from the register', () => {
     const tanks = [{ key: 'main-1', name: 'Cuve', capacityLiters: 10000 }];
     const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'sea_operation_fuel_tanks') return { data: {
-        vesselId: 12, date: args.p_date, canSetBaseline: true, tanks, reading: null,
+        vesselId: 12, date: args.p_date, time: args.p_time, times: [], canSetBaseline: true, tanks, reading: null,
       }, error: null };
       if (name === 'sea_operation_save_fuel_tanks') {
         fuel = { ...fuel, fuelLiters: 5600, measuredAt: `${baselineDate}T00:00:00Z`, source: 'baseline',
           baselineDate, baselineFuelLiters: 6050, deductedFuelLiters: 450,
-          latestTankReading: { date: baselineDate, superseded: false, tanks: [{ ...tanks[0], liters: 6050 }] } };
+          latestTankReading: { date: baselineDate, time: '14:30', superseded: false, tanks: [{ ...tanks[0], liters: 6050 }] } };
         return { data: fuel, error: null };
       }
       return { data: emptyRegisterConsumption, error: null };
@@ -312,6 +312,9 @@ describe('Operation consumption from the register', () => {
     expect(form.getByLabelText('Navire')).toHaveValue('12');
     expect(form.getByLabelText('Date de référence')).toHaveValue(today);
     fireEvent.change(form.getByLabelText('Date de référence'), { target: { value: baselineDate } });
+    const time = form.getByLabelText('Heure du relevé');
+    expect(time).toHaveValue('00:00');
+    fireEvent.change(time, { target: { value: '14:30' } });
     const save = form.getByRole('button', { name: 'Enregistrer les niveaux' });
     expect(save).toBeDisabled();
     const tank = within(await form.findByRole('group', { name: 'Cuve' }));
@@ -328,10 +331,11 @@ describe('Operation consumption from the register', () => {
     expect(fleetFuel().getByText('0,45 m³ déduits via DPR')).toBeVisible();
     expect(fleetFuel().getByText('Aucun relevé à une vitesse comparable')).toBeVisible();
     const latest = fleetFuel().getByRole('region', { name: 'Dernier relevé Soutes' });
-    expect(latest.querySelector('time')).toHaveAttribute('datetime', baselineDate);
+    expect(latest.querySelector('time')).toHaveAttribute('datetime', `${baselineDate}T14:30`);
+    expect(latest.querySelector('time')).toHaveTextContent('14:30');
     expect(within(latest).getByText('Cuve')).toBeVisible();
     expect(within(latest).getByText('6,05 m³')).toBeVisible();
-    expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate,
+    expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate, p_time: '14:30',
       p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }] });
   });
 

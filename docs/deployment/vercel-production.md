@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.94.0` permet plusieurs relevés Soutes par jour et affiche la date
+et l’heure du dernier relevé. Appliquer `20261108062909_sea_operation_timed_fuel_tank_readings.sql`
+avant le frontend. Voir [le calcul du stock](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.93.0` affiche le dernier relevé Soutes dans la carte Stock et
 présélectionne le navire d’affectation du jour à l’ouverture de Soutes. Appliquer
 `20261108060600_sea_operation_fleet_latest_tank_reading.sql` avant le frontend.
