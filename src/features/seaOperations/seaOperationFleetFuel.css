@@ -83,11 +83,9 @@
 }
 .so-fuel-autonomy-evidence b { color: var(--sp-heading); }
 .so-fleet-fuel-status { display: flex; gap: var(--sp-space-2); align-items: center; flex-wrap: wrap; margin-top: var(--sp-space-2); }
-.so-fuel-baseline-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-space-3); border: 0; padding: 0; margin: 0; min-width: 0; }
 @media (max-width: 720px) {
   .so-fleet-fuel-vessels { grid-auto-columns: min(42%, 10rem); }
   .so-page button.so-fleet-fuel-settings { width: 44px; }
 }
 @media (max-width: 420px) {
-  .so-fuel-baseline-fields { grid-template-columns: minmax(0, 1fr); gap: var(--sp-space-2); }
 }

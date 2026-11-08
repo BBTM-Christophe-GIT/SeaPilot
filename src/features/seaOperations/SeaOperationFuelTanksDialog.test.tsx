@@ -81,4 +81,30 @@ describe('Soutes fuel readings', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_fuel_tanks', expect.objectContaining({ p_expected_version: 3 }));
   });
+
+  it('preselects the assigned writable vessel and keeps the user’s choice on a historical date', async () => {
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const rpc = vi.fn(async (_name: string, params: { p_vessel_id: number; p_date: string }) => ({
+      data: { ...configuration, vesselId: params.p_vessel_id, date: params.p_date }, error: null,
+    }));
+    const client = { rpc } as unknown as SupabaseClient;
+    const vessels = [landemer, { ...landemer, vesselId: 3, vesselName: 'SUROÎT', lengthOverall: '18,60 m' },
+      { ...landemer, vesselId: 1, vesselName: 'GOURY', lengthOverall: '30,62 m', canSetBaseline: false }];
+    const dialog = (preferredVesselId: number) => <SeaOperationFuelTanksDialog client={client} vessels={vessels}
+      preferredVesselId={preferredVesselId} onClose={vi.fn()} onSaved={vi.fn()} />;
+    const { rerender } = render(dialog(1));
+    expect(screen.getByLabelText('Navire')).toHaveValue('2');
+    await screen.findByRole('group', { name: 'Cuve Bâbord' });
+    rerender(dialog(3));
+    expect(screen.getByLabelText('Navire')).toHaveValue('3');
+    await screen.findByRole('group', { name: 'Cuve Bâbord' });
+    fireEvent.change(screen.getByLabelText('Navire'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Date de référence'), { target: { value: '2026-11-07' } });
+    await screen.findByRole('group', { name: 'Cuve Bâbord' });
+    expect(screen.getByLabelText('Navire')).toHaveValue('2');
+    expect(rpc).toHaveBeenLastCalledWith('sea_operation_fuel_tanks', { p_vessel_id: 2, p_date: '2026-11-07' });
+    fireEvent.change(tank('Cuve Bâbord').getByLabelText('Niveau'), { target: { value: '100' } });
+    rerender(dialog(3));
+    expect(tank('Cuve Bâbord').getByLabelText('Niveau')).toHaveValue(100);
+  });
 });

@@ -1016,6 +1016,8 @@ select is(pg_temp.soutes_read('fuel_office_only', -2)->'tanks', '[
   {"key":"day","name":"Caisse moteur","capacityLiters":200}]'::jsonb, 'the scoped read uses real fleet configuration and the personalized day tank name');
 select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading', 'null'::jsonb,
   'legacy stock has no fabricated per-tank readings');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading', 'null'::jsonb,
+  'the fleet read keeps legacy-only stock without an invented snapshot');
 select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null, pg_temp.soutes_inputs() - 0)$$,
   '22023', null, 'a configured day tank reading is required');
 select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null,
@@ -1035,13 +1037,25 @@ select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->'tanks', '[
   'readings reopen with entered units and a snapshot of their tank configuration');
 select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 5300::numeric,
   'stock subtracts validated DPR use from the reading date, inclusive');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading', jsonb_build_object('date', pg_temp.fuel_day(-2),
+  'superseded', false, 'tanks', '[
+    {"key":"main-1","name":"Cuve Bâbord","capacityLiters":7000,"liters":3500},
+    {"key":"main-2","name":"Cuve Tribord","capacityLiters":3000,"liters":2100},
+    {"key":"day","name":"Caisse moteur","capacityLiters":200,"liters":150}]'::jsonb),
+  'the fleet read exposes measured tank levels and their saved configuration independently from calculated stock');
 select is(pg_temp.soutes_read('fuel_office_only', -1)->'reading', 'null'::jsonb, 'another date starts without readings');
+select lives_ok($$select pg_temp.soutes_save('fuel_office_only', -3, null,
+  jsonb_set(pg_temp.soutes_inputs(), '{2,value}', '40'))$$, 'a historical tank reading can be entered later');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading'->>'date', pg_temp.fuel_day(-2)::text,
+  'the latest snapshot is ordered by its reading date even after a more recent save on an older date');
 select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, null, pg_temp.soutes_inputs())$$,
   '40001', null, 'a stale new form cannot overwrite an existing reading');
 select lives_ok($$select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('fuel_office_only'), 'liters', 5000, pg_temp.fuel_day(-2))$$,
   'existing clients can still adjust the total directly');
 select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->>'superseded', 'true',
   'an old-client baseline change supersedes rather than deletes the same-day detail');
+select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading'->>'superseded', 'true',
+  'the last measured tank levels remain available after the active anchor changes');
 select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, 1, pg_temp.soutes_inputs())$$,
   '40001', null, 'an old-client baseline change invalidates a previously opened detailed form');
 select is(pg_temp.soutes_save('fuel_office_only', -2, 2, pg_temp.soutes_inputs())->'reading'->>'superseded', 'false',
@@ -1066,6 +1080,8 @@ select is((pg_temp.soutes_save('missing_calibration', 0, null, '[{"key":"main-1"
 select pg_temp.conso_actor(3);
 select is(pg_temp.soutes_read('goury_other', 0)->'tanks'->2->>'name', 'Arrière',
   'the dialog preserves names of the configured main tanks');
+select is(pg_temp.fuel_row('goury_other')->>'assignedToday', 'true',
+  'the confirmed daily assignment is preselected for a real writable Capitaine');
 select is((pg_temp.soutes_save('goury_other', 0, null, '[
   {"key":"main-1","unit":"liters","value":600},{"key":"main-2","unit":"liters","value":500},
   {"key":"main-3","unit":"liters","value":0},
@@ -1076,6 +1092,10 @@ select throws_ok($$select pg_temp.soutes_save('fuel_office_only', -2, 3, pg_temp
 select pg_temp.conso_actor(5);
 select is(pg_temp.soutes_read('goury_other', 0)->>'canSetBaseline', 'false',
   'a real Marin can read scoped tank levels without editing rights');
+select is(pg_temp.fuel_row('goury_other')->'latestTankReading'->>'date', pg_temp.fuel_day(0)::text,
+  'a real Marin sees the snapshot for a visible vessel');
+select is(pg_temp.fuel_row('fuel_office_only'), null::jsonb,
+  'a real Marin cannot obtain the snapshot of a vessel outside their fleet scope');
 select throws_ok($$select pg_temp.soutes_save('goury_other', 0, 1, pg_temp.soutes_inputs())$$,
   '42501', null, 'a Marin cannot save tank readings');
 select throws_ok($$select pg_temp.soutes_read('fuel_office_only', 0)$$,
@@ -1083,6 +1103,61 @@ select throws_ok($$select pg_temp.soutes_read('fuel_office_only', 0)$$,
 select pg_temp.conso_actor(6);
 select throws_ok($$select pg_temp.soutes_read('goury_other', 0)$$,
   '42501', null, 'foreign admins cannot read tank levels');
+select is(pg_temp.fuel_row('goury_other'), null::jsonb, 'foreign admins cannot obtain other-company snapshots');
+reset role;
+
+select pg_temp.conso_actor(1);
+insert into public.people(company_id, user_id, first_name, last_name, function_label, active)
+select active_company_id, id, 'Soutes', 'Assigned fixture ' || right(id::text, 1),
+  case when right(id::text, 1) = '2' then 'Direction' else 'Marin' end, true
+from public.profiles where id in ('b9470000-0000-0000-0000-000000000002', 'b9470000-0000-0000-0000-000000000005');
+
+with actors as (
+  select direction.company_id, direction.id as direction_id, marin.id as marin_id
+  from public.people direction join public.people marin using (company_id)
+  where direction.user_id = 'b9470000-0000-0000-0000-000000000002'
+    and marin.user_id = 'b9470000-0000-0000-0000-000000000005'
+)
+insert into public.planning_assignments(company_id, vessel_id, crew_person_id, captain_person_id,
+  starts_at, ends_at, assignment_role, confirmation_status, comments)
+select actors.company_id, pg_temp.fuel_vessel('fuel_office_only'), actors.direction_id, null,
+  pg_temp.fuel_day(-1)::timestamp at time zone 'Europe/Paris', now() - interval '1 second',
+  'crew', 'confirmed', 'Soutes past direct candidate'
+from actors
+union all
+select actors.company_id, pg_temp.fuel_vessel('landemer'), actors.marin_id, actors.direction_id,
+  now() - interval '1 minute', pg_temp.fuel_day(1)::timestamp at time zone 'Europe/Paris',
+  'crew', 'confirmed', 'Soutes active indirect candidate'
+from actors;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is(pg_temp.fuel_row('landemer')->>'assignedToday', 'true',
+  'a current confirmed indirect assignment outranks a direct assignment that has already ended');
+select is(pg_temp.fuel_row('fuel_office_only')->>'assignedToday', 'false', 'only one writable vessel is preferred');
+select pg_temp.conso_actor(5);
+select is(pg_temp.fuel_row('landemer')->>'assignedToday', 'false',
+  'a confirmed working assignment never preselects a vessel the real Marin cannot edit');
+reset role;
+
+select pg_temp.conso_actor(1);
+update public.planning_assignments set ends_at = pg_temp.fuel_day(1)::timestamp at time zone 'Europe/Paris'
+where comments = 'Soutes past direct candidate';
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is(pg_temp.fuel_row('fuel_office_only')->>'assignedToday', 'true',
+  'among active assignments a direct assignment takes priority over a newer indirect assignment');
+reset role;
+
+select pg_temp.conso_actor(1);
+update public.planning_assignments set ends_at = pg_temp.fuel_day(0)::timestamp at time zone 'Europe/Paris'
+where comments = 'Soutes past direct candidate';
+update public.planning_assignments set confirmation_status = 'cancelled' where comments = 'Soutes active indirect candidate';
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select is((select count(*) from jsonb_array_elements(public.sea_operation_fleet_fuel()) vessel
+  where vessel->'assignedToday' = 'true'::jsonb), 0::bigint,
+  'an assignment ending at Paris midnight and a cancelled assignment cannot choose a vessel for today');
 reset role;
 select * from finish();
 rollback;

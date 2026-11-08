@@ -1,6 +1,6 @@
 import { Fragment, cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Fuel, Map, Pencil, Plus, Printer, Save, Search, Settings2, Trash2 } from 'lucide-react';
+import { AlertTriangle, Anchor, ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Compass, Eye, FileDown, FileText, Fuel, Map, Pencil, Plus, Printer, Save, Search, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -29,7 +29,7 @@ import { SeaOperationRouteMap } from './SeaOperationRouteMap';
 import { SeaOperationWaypointMapEditor } from './SeaOperationWaypointMapEditor';
 import { SeaOperationRegisterPane } from './SeaOperationRegisterPane';
 import { SeaOperationRegisterTree } from './SeaOperationRegisterTree';
-import { orderedFleetFuelLevels, SeaOperationFleetFuel, SeaOperationFuelBaselineDialog, useSeaOperationFleetFuel } from './SeaOperationFleetFuel';
+import { orderedFleetFuelLevels, SeaOperationFleetFuel, useSeaOperationFleetFuel } from './SeaOperationFleetFuel';
 import { SeaOperationFuelTanksDialog } from './SeaOperationFuelTanksDialog';
 import { fetchSeaOperationRegisterConsumption, type SeaOperationRegisterConsumption } from './seaOperationRegisterConsumptionQuery';
 import { fetchSeaOperationProjectDocuments } from './seaOperationDocumentQueries';
@@ -213,7 +213,7 @@ export function SeaOperationsPage() {
   const [recordAction, setRecordAction] = useState<RecordAction | null>(null);
   const [recordActionError, setRecordActionError] = useState('');
   const [consumptionAction, setConsumptionAction] = useState<ConsumptionAction | null>(null);
-  const [fuelAction, setFuelAction] = useState<{ client: SupabaseClient; accessKey: string; kind: 'baseline' | 'tanks' } | null>(null);
+  const [fuelAction, setFuelAction] = useState<{ client: SupabaseClient; accessKey: string } | null>(null);
   const [consumptionRefresh, setConsumptionRefresh] = useState(0);
   const [registerConsumption, setRegisterConsumption] = useState<{
     client: SupabaseClient; accessKey: string; ids: string; result?: SeaOperationRegisterConsumption; error?: string;
@@ -1013,7 +1013,6 @@ export function SeaOperationsPage() {
   }
 
   const hasRecordDialog = Boolean(recordAction || consumptionDialog || fuelDialog);
-  const FuelDialog = fuelDialog?.kind === 'tanks' ? SeaOperationFuelTanksDialog : SeaOperationFuelBaselineDialog;
   return <div className="so-page"><div className="so-screen" inert={hasRecordDialog || undefined} aria-hidden={hasRecordDialog || undefined}>
     <header className="so-heading sp-module-header"><div className="so-title"><span className="so-icon"><Map size={26} /></span><div><span className="so-eyebrow">OPÉRATIONS · OPE-FOR-10-C</span><h1>Opération en Mer</h1><p>Préparer la mission, vérifier les conditions et consigner la décision du Capitaine.</p></div></div></header>
     <ModuleRibbon ariaLabel="Commandes Opération en Mer" singleRow>
@@ -1021,12 +1020,8 @@ export function SeaOperationsPage() {
         <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Fuel">
-        {writableFuelVessels.length > 0 && <>
-          <ModuleRibbonCommand disabled={editing || busy || exporting} icon={<Settings2 size={22} aria-hidden="true" />}
-            label="Paramètres carburant" onClick={() => setFuelAction({ client, accessKey, kind: 'baseline' })} />
-          <ModuleRibbonCommand disabled={editing || busy || exporting} icon={<Fuel size={22} aria-hidden="true" />}
-            label="Soutes" onClick={() => setFuelAction({ client, accessKey, kind: 'tanks' })} />
-        </>}
+        {writableFuelVessels.length > 0 && <ModuleRibbonCommand disabled={editing || busy || exporting} icon={<Fuel size={22} aria-hidden="true" />}
+          label="Soutes" onClick={() => setFuelAction({ client, accessKey })} />}
         <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess}
           icon={<img src="/icons/microsoft-excel.svg" width={22} height={22} alt="" />}
           label={exportingConsumption ? 'Export en cours…' : 'Export Excel'} aria-busy={exportingConsumption}
@@ -1280,12 +1275,13 @@ export function SeaOperationsPage() {
         setConsumptionRefresh(value => value + 1);
         setNotice('La consommation de l’opération a été enregistrée.');
       }} />}
-    {fuelDialog && <FuelDialog client={client} vessels={writableFuelVessels}
+    {fuelDialog && <SeaOperationFuelTanksDialog client={client} vessels={writableFuelVessels}
+      preferredVesselId={writableFuelVessels.find(vessel => vessel.assignedToday)?.vesselId}
       onClose={() => setFuelAction(null)} onSaved={() => {
       if (actionContext.current.client !== fuelDialog.client || actionContext.current.accessKey !== fuelDialog.accessKey) return;
       setFuelAction(null);
       fleetFuel.reload();
-      setNotice(fuelDialog.kind === 'tanks' ? 'Le relevé des soutes a été enregistré.' : 'Le niveau de carburant a été enregistré.');
+      setNotice('Le relevé des soutes a été enregistré.');
     }} />}
     {record && currentAccess && <SeaOperationPrint record={record} />}</div>;
 }

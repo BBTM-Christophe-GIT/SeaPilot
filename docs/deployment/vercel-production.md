@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.93.0` affiche le dernier relevé Soutes dans la carte Stock et
+présélectionne le navire d’affectation du jour à l’ouverture de Soutes. Appliquer
+`20261108060600_sea_operation_fleet_latest_tank_reading.sql` avant le frontend.
+
 La version `3.92.0` ajoute le groupe Fuel au ruban Opération en mer, la saisie
 datée par cuve et le nom de la caisse journalière dans Navires. Appliquer
 `20261108050458_sea_operation_fuel_tank_readings.sql` avant le frontend.
