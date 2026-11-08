@@ -1,7 +1,8 @@
 .so-soutes-dialog { display: grid; min-width: 0; gap: var(--sp-space-3); }
 .so-soutes-selectors, .so-soutes-layout, .so-soutes-tank { margin: 0; min-width: 0; }
 .so-soutes-selectors, .so-soutes-layout { padding: 0; border: 0; }
-.so-soutes-selectors { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-space-3); }
+.so-soutes-selectors { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, .85fr); gap: var(--sp-space-3); }
+.so-soutes-day-readings { grid-column: 1 / -1; max-width: 18rem; }
 .so-soutes-dialog .so-field { margin: 0; }
 .so-soutes-dialog .so-field :is(input, select) { box-sizing: border-box; min-width: 0; width: 100%; }
 
@@ -39,6 +40,9 @@
 .so-soutes-previous ul { margin: var(--sp-space-1) 0 0; padding-inline-start: var(--sp-space-4); }
 
 @media (max-width: 500px) {
+  .so-soutes-selectors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .so-soutes-vessel { grid-column: 1 / -1; }
+  .so-soutes-day-readings { max-width: none; }
   .so-soutes-tank-fields { grid-template-columns: minmax(0, 1fr); }
   .so-soutes-tank { padding-inline: var(--sp-space-2); }
 }

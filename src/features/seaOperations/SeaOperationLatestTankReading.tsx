@@ -9,7 +9,9 @@ export function SeaOperationLatestTankReading({ reading }: { reading: FleetFuelL
   return <section className="so-latest-tank-reading" aria-label="Dernier relevé Soutes">
     <div className="so-latest-tank-heading">
       <h4>Dernier relevé Soutes</h4>
-      <time dateTime={reading.date}>{readingDate.format(new Date(`${reading.date}T12:00:00Z`))}</time>
+      <time dateTime={`${reading.date}T${reading.time}`} title="Heure de Paris">
+        {readingDate.format(new Date(`${reading.date}T12:00:00Z`))} à {reading.time}
+      </time>
     </div>
     {reading.superseded && <p>Ce relevé a été remplacé par un stock global.</p>}
     <SeaOperationFuelTankLayout tanks={reading.tanks} renderTank={tank => {

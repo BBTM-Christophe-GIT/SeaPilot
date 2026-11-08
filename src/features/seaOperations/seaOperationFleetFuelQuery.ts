@@ -41,6 +41,7 @@ type MeasuredFleetFuelTank = FleetFuelTank & { liters: number };
 
 export interface FleetFuelLatestTankReading {
   date: string;
+  time: string;
   superseded: boolean;
   tanks: MeasuredFleetFuelTank[];
 }
@@ -48,6 +49,8 @@ export interface FleetFuelLatestTankReading {
 export interface SeaOperationFuelTanks {
   vesselId: number;
   date: string;
+  time: string | null;
+  times: string[];
   canSetBaseline: boolean;
   tanks: FleetFuelTank[];
   reading: {
@@ -123,6 +126,9 @@ export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, 
 }
 
 const invalidTanks = 'Le relevé des soutes reçu est invalide.';
+export function isFleetFuelReadingTime(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
 
 function fuelTank(value: unknown): FleetFuelTank {
   if (!value || typeof value !== 'object') throw new Error(invalidTanks);
@@ -144,22 +150,24 @@ function measuredFuelTank(value: unknown): MeasuredFleetFuelTank {
 function parseLatestTankReading(value: unknown): FleetFuelLatestTankReading | null {
   if (value === null) return null;
   if (!value || typeof value !== 'object') throw new Error(invalidTanks);
-  const { date, superseded, tanks } = value as Record<string, unknown>;
-  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof superseded !== 'boolean'
+  const { date, time = '00:00', superseded, tanks } = value as Record<string, unknown>;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !isFleetFuelReadingTime(time) || typeof superseded !== 'boolean'
     || !Array.isArray(tanks) || !tanks.length) throw new Error(invalidTanks);
-  return { date, superseded, tanks: tanks.map(measuredFuelTank) };
+  return { date, time, superseded, tanks: tanks.map(measuredFuelTank) };
 }
 
-function fuelTankReading(data: unknown, vesselId: number, date: string): SeaOperationFuelTanks {
+function fuelTankReading(data: unknown, vesselId: number, date: string, time: string | null): SeaOperationFuelTanks {
   if (!data || typeof data !== 'object') throw new Error(invalidTanks);
   const result = data as Record<string, unknown>;
-  if (result.vesselId !== vesselId || result.date !== date || typeof result.canSetBaseline !== 'boolean' || !Array.isArray(result.tanks)) {
+  const { times } = result;
+  if (result.vesselId !== vesselId || result.date !== date || result.time !== time || typeof result.canSetBaseline !== 'boolean'
+    || !Array.isArray(result.tanks) || !Array.isArray(times) || !times.every(isFleetFuelReadingTime)) {
     throw new Error(invalidTanks);
   }
   const tanks = result.tanks.map(fuelTank);
-  const response = { vesselId, date, canSetBaseline: result.canSetBaseline, tanks };
+  const response = { vesselId, date, time, times, canSetBaseline: result.canSetBaseline, tanks };
   if (result.reading === null) return { ...response, reading: null };
-  if (!result.reading || typeof result.reading !== 'object') throw new Error(invalidTanks);
+  if (time === null || !times.includes(time) || !result.reading || typeof result.reading !== 'object') throw new Error(invalidTanks);
   const { version, savedAt, mainLiters, superseded, tanks: recorded } = result.reading as Record<string, unknown>;
   if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1
     || typeof savedAt !== 'string' || !Number.isFinite(Date.parse(savedAt)) || !quantity(mainLiters) || mainLiters === null
@@ -173,16 +181,16 @@ function fuelTankReading(data: unknown, vesselId: number, date: string): SeaOper
   }) } };
 }
 
-export async function fetchSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string) {
-  const { data, error } = await client.rpc('sea_operation_fuel_tanks', { p_vessel_id: vesselId, p_date: date });
+export async function fetchSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string, time: string | null) {
+  const { data, error } = await client.rpc('sea_operation_fuel_tanks', { p_vessel_id: vesselId, p_date: date, p_time: time });
   if (error) throw error;
-  return fuelTankReading(data, vesselId, date);
+  return fuelTankReading(data, vesselId, date, time);
 }
 
-export async function saveSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string,
+export async function saveSeaOperationFuelTanks(client: SupabaseClient, vesselId: number, date: string, time: string,
   version: number | null, readings: readonly FleetFuelTankInput[]) {
   const { error } = await client.rpc('sea_operation_save_fuel_tanks', {
-    p_vessel_id: vesselId, p_date: date, p_expected_version: version, p_readings: readings,
+    p_vessel_id: vesselId, p_date: date, p_time: time, p_expected_version: version, p_readings: readings,
   });
   if (error) throw error;
 }
