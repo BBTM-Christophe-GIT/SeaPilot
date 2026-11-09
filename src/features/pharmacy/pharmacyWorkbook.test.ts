@@ -9,6 +9,7 @@ it('exports all active articles in the selected vessel and dotation with their s
     ...blankPharmacyItem(), id: 1, company_id: 1, vessel_id: 2, medical_dotation: 'B', medical_section: 'medicines',
     category: 'Cardiologie', designation: 'Traitement', lot_number: '00102',
     stock_quantity: 0, required_stock_quantity: 6, stock_unit: 'comprimé', package_size: 3, strength: '300 mg',
+    required_stock_unit: 'comprimé', required_strength: '300 mg', required_package_size: 2,
     no_expiry: true, outside_dotation: true, notes: '=2+2 & <note>', revision: 1, source_file: '', source_sheet: '', source_row: null, updated_at: '',
   };
   const rows = [
@@ -26,10 +27,11 @@ it('exports all active articles in the selected vessel and dotation with their s
   const sheet = await workbook.file('xl/worksheets/sheet1.xml')!.async('string');
   expect(sheet).toContain('Inventaire Pharmacie · SUROÎT');
   expect(sheet).toContain('Dotation B · 2 article(s)');
-  expect(sheet).toContain('<autoFilter ref="A3:P5"/>');
+  expect(sheet).toContain('<autoFilter ref="A3:S5"/>');
   expect(sheet).toContain('<c r="G4" s="0"><v>0</v></c>');
   expect(sheet).toContain('<c r="H4" s="0"><v>6</v></c>');
   expect(sheet).toContain('<c r="J4" s="0"><v>3</v></c>');
+  expect(sheet).toContain('<c r="S4" s="0"><v>2</v></c>');
   expect(sheet).toContain('00102');
   expect(sheet).toContain('comprimé');
   expect(sheet).toContain('300 mg');

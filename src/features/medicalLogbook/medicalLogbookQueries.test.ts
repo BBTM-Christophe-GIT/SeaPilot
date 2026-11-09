@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { blankMedicalDraft, type MedicalEntry, type MedicalSignatureSnapshot } from './medicalLogbookModel';
-import { fetchMedicalEntries, fetchMedicalHistory, fetchMedicalVessels, parseMedicalEntry, parseMedicalSignature, saveMedicalEntry, setMedicalEntryArchived, fetchMedicalSigner, fetchMedicalSignatureImages } from './medicalLogbookQueries';
+import { fetchMedicalEntries, fetchMedicalHistory, fetchMedicalMedicationChoices, fetchMedicalVessels, parseMedicalEntry, parseMedicalSignature, saveMedicalEntry, setMedicalEntryArchived, fetchMedicalSigner, fetchMedicalSignatureImages } from './medicalLogbookQueries';
 import { createMedicalPreviewClient } from './medicalLogbookPreview';
 
 const draft = { ...blankMedicalDraft(), occurred_on: '2026-10-14', occurred_time: '10:00', patient_name: 'Patient fictif', injury_illness: 'Blessure fictive',
@@ -49,6 +49,15 @@ describe('medical register queries', () => {
     const { client } = sdk([{ id: 1, company_id: 1, name: 'SUROIT', can_write: true, length_overall: '18.6' },
       { id: 2, company_id: 1, name: 'GOURY', can_write: false, length_overall: '30.62' }]);
     expect((await fetchMedicalVessels(client)).map((row) => [row.id, row.can_write])).toEqual([[2, false], [1, true]]);
+  });
+  it('reads pharmacy categories for the requested vessel and accepts older uncategorized data', async () => {
+    const stock = { item_id: 4, designation: 'Article de démonstration', stock_unit: 'comprimé', stock_quantity: 12 };
+    const { client, rpc } = sdk([{ ...stock, category: ' Antalgiques ', medical_section: 'medicines' }, { ...stock, item_id: 5 }]);
+    await expect(fetchMedicalMedicationChoices(client, 4)).resolves.toMatchObject([
+      { ...stock, category: 'Antalgiques', medical_section: 'medicines' },
+      { ...stock, item_id: 5, category: '', medical_section: 'unclassified' },
+    ]);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('list_medical_logbook_medications', { p_vessel_id: 4 });
   });
   it('validates history belongs to the requested entry and snapshot revision', async () => {
     const { client } = sdk([{ id: 2, revision: 2, action: 'updated', changed_at: entry.updated_at, actor_name: 'Démo', entry }]);

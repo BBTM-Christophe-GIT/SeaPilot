@@ -52,8 +52,28 @@ export interface PharmacyItem {
   stock_unit?: string | null;
   package_size?: number | null;
   strength?: string | null;
+  required_stock_unit?: string | null;
+  required_package_size?: number | null;
+  required_strength?: string | null;
 }
-export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'required_quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id' | 'no_expiry' | 'outside_dotation' | 'stock_quantity' | 'required_stock_quantity' | 'stock_unit' | 'package_size' | 'strength'>;
+type PharmacyRequirementFields = Pick<PharmacyItem, 'required_quantity' | 'required_stock_quantity' | 'required_stock_unit' | 'required_strength' | 'required_package_size'>;
+export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id' | 'no_expiry' | 'outside_dotation' | 'stock_quantity' | 'stock_unit' | 'package_size' | 'strength'> & PharmacyRequirementFields & {
+  update_dotation_requirement?: boolean;
+  dotation_requirement_revision?: number | null;
+};
+export interface PharmacyDotationRequirement extends PharmacyRequirementFields {
+  dotation_key: string;
+  medical_section: PharmacyMedicalSection;
+  designation: string;
+  designation_key: string;
+  dotation_requirement_revision: number;
+}
+export function pharmacyDesignationKey(value: string): string {
+  const accents = 'àâäçéèêëîïôöùûüÿ';
+  const plain = 'aaaceeeeiioouuuy';
+  return value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
+    .replace(/[àâäçéèêëîïôöùûüÿ]/g, (character) => plain[accents.indexOf(character)]);
+}
 export interface PharmacyControl {
   id: number; company_id: number; vessel_id: number; issued_on: string | null; expires_on: string;
   storage_path: string; file_name: string; file_size: number; mime_type: string;
@@ -68,14 +88,14 @@ export function pharmacyNotificationHref(notification: PharmacyNotification): st
   const route = `/modules/pharmacy?vessel=${notification.vessel_id}&filter=${filter}`;
   return notification.item_id != null ? `${route}&item=${notification.item_id}` : route;
 }
-export type PharmacyVesselExpiryCounts = { due: number; expired: number; low?: number; outsideDotation?: number; red?: number };
+export type PharmacyVesselExpiryCounts = { due: number; expired: number; low?: number; red?: number };
 
 export function pharmacyVesselExpiryCounts(notifications: PharmacyNotification[]): Record<number, PharmacyVesselExpiryCounts> {
   const counts: Record<number, PharmacyVesselExpiryCounts> = {};
   const urgentItems = new Map<number, Set<number | string>>();
   for (const notification of notifications) {
     const days = notification.days_until_expiry;
-    if (notification.kind === 'control') continue;
+    if (notification.kind === 'control' || notification.kind === 'outside_dotation') continue;
     if (notification.kind === 'item' && (days === null || !Number.isFinite(days) || days > PHARMACY_ALERT_DAYS)) continue;
     const vesselCounts = counts[notification.vessel_id] ||= { due: 0, expired: 0 };
     if (notification.kind === 'item' && days !== null && days >= 0) {
@@ -84,13 +104,12 @@ export function pharmacyVesselExpiryCounts(notifications: PharmacyNotification[]
     }
     if (notification.kind === 'item') vesselCounts.expired += 1;
     if (notification.kind === 'stock') vesselCounts.low = (vesselCounts.low ?? 0) + 1;
-    if (notification.kind === 'outside_dotation') vesselCounts.outsideDotation = (vesselCounts.outsideDotation ?? 0) + 1;
     const vesselItems = urgentItems.get(notification.vessel_id) ?? new Set<number | string>();
     vesselItems.add(notification.item_id ?? notification.id);
     urgentItems.set(notification.vessel_id, vesselItems);
   }
   for (const [vesselId, items] of urgentItems) {
-    if (counts[vesselId].low || counts[vesselId].outsideDotation) counts[vesselId].red = items.size;
+    if (counts[vesselId].low) counts[vesselId].red = items.size;
   }
   return counts;
 }
@@ -157,12 +176,12 @@ export function formatPharmacyDate(date: string | null, precision: PharmacyExpir
   const [year, month, day] = date.split('-');
   return precision === 'month' ? `${month}/${year}` : `${day}/${month}/${year}`;
 }
-export function pharmacyItemExpiryStatus(item: Pick<PharmacyItem, 'no_expiry' | 'expires_on'>, today = pharmacyToday()) {
-  return item.no_expiry ? 'none' : pharmacyExpiryStatus(item.expires_on, today);
+export function pharmacyItemExpiryStatus(item: Pick<PharmacyItem, 'no_expiry' | 'expires_on' | 'outside_dotation'>, today = pharmacyToday()) {
+  return item.no_expiry || (item.outside_dotation && !item.expires_on) ? 'none' : pharmacyExpiryStatus(item.expires_on, today);
 }
-export function formatPharmacyItemExpiry(item: Pick<PharmacyItem, 'no_expiry' | 'expires_on' | 'expiry_precision' | 'expiry_text'>): string {
+export function formatPharmacyItemExpiry(item: Pick<PharmacyItem, 'no_expiry' | 'expires_on' | 'expiry_precision' | 'expiry_text' | 'outside_dotation'>): string {
   if (item.no_expiry) return 'Sans date de péremption';
-  return item.expires_on ? formatPharmacyDate(item.expires_on, item.expiry_precision) : item.expiry_text || 'À renseigner';
+  return item.expires_on ? formatPharmacyDate(item.expires_on, item.expiry_precision) : item.expiry_text || (item.outside_dotation ? '—' : 'À renseigner');
 }
 export function parsePharmacyQuantity(value: string): number | null {
   const trimmed = value.trim();
@@ -171,7 +190,7 @@ export function parsePharmacyQuantity(value: string): number | null {
   const quantity = Number(trimmed.replace(',', '.'));
   return quantity <= 1e12 ? quantity : null;
 }
-type PharmacyStock = Pick<PharmacyItem, 'quantity' | 'required_quantity' | 'stock_quantity' | 'required_stock_quantity' | 'stock_unit' | 'strength'>;
+type PharmacyStock = Pick<PharmacyItem, 'quantity' | 'stock_quantity' | 'stock_unit' | 'strength' | 'outside_dotation'> & PharmacyRequirementFields;
 
 const pharmacyUnitAliases: Record<string, string> = {
   boites: 'boite', comprimes: 'comprime', gelules: 'gelule', ampoules: 'ampoule', flacons: 'flacon',
@@ -185,16 +204,24 @@ function canonicalPharmacyUnit(value: string | null | undefined): string {
 function canonicalPharmacyStrength(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(',', '.');
 }
+const millilitresPerUnit = new Map([['ml', 1], ['cl', 10], ['dl', 100], ['l', 1000], ['litre', 1000]]);
+
+function pharmacyVolumePerUnit(strength: string): number | null {
+  const volume = strength.match(/^(\d+(?:\.\d+)?)(ml|cl|dl|l|litre|litres)$/);
+  if (!volume || Number(volume[1]) <= 0 || !Number.isFinite(Number(volume[1]))) return null;
+  return Number(volume[1]) * millilitresPerUnit.get(canonicalPharmacyUnit(volume[2]))!;
+}
+
 function legacyPharmacyStock(value: string): { count: number; kind: 'bare' | 'strength' | 'unit'; unit: string } | null {
   const trimmed = canonicalPharmacyUnit(value);
   const numeric = parsePharmacyQuantity(trimmed);
   if (numeric !== null) return { count: numeric, kind: 'bare', unit: '' };
-  const strength = trimmed.match(/^(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?\s*(?:µg|μg|ug|mcg|mg|g|kg|ml|cl|dl|l|ui|iu|%))$/);
-  const labelled = trimmed.match(/^(\d+(?:[.,]\d+)?)\s+([a-z]+(?:[ -][a-z]+)*)$/);
+  const strength = trimmed.match(/^(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?\s*(?:µg|μg|ug|mcg|mg|g|kg|ml|cl|dl|l|litres?|ui|iu|%))$/);
+  const labelled = trimmed.match(/^(\d+(?:[.,]\d+)?)(?:\s+([a-z]+(?:[ -][a-z]+)*)|\s*(ml|cl|dl|l))$/);
   const count = parsePharmacyQuantity(strength?.[1] ?? labelled?.[1] ?? '');
   if (count === null) return null;
   if (strength) return { count, kind: 'strength', unit: canonicalPharmacyStrength(strength[2]) };
-  const unit = canonicalPharmacyUnit(labelled?.[2]);
+  const unit = canonicalPharmacyUnit(labelled?.[2] ?? labelled?.[3]);
   return /^(?:ug|mcg|mg|g|kg|ui|iu)$/.test(unit) ? null : { count, kind: 'unit', unit };
 }
 
@@ -202,25 +229,55 @@ export function pharmacyItemStrength(item: PharmacyStock): string | null {
   if (item.strength) return item.strength;
   const actual = legacyPharmacyStock(item.quantity);
   if (actual?.kind !== 'strength') return null;
-  const required = legacyPharmacyStock(item.required_quantity);
-  if (required?.kind === 'strength' && required.unit !== actual.unit) return null;
   return actual.unit.replace(/(\d)([a-zµμ%])/, '$1 $2');
 }
 
 const pharmacyQuantityFormat = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
-export function pharmacyQuantityLabel(item: PharmacyStock, kind: 'stock' | 'required'): string {
-  const quantity = kind === 'stock' ? item.stock_quantity : item.required_stock_quantity;
-  if (quantity == null) return (kind === 'stock' ? item.quantity : item.required_quantity) || '—';
-  const legacy = legacyPharmacyStock(kind === 'stock' ? item.quantity : item.required_quantity);
-  const unit = item.stock_unit || (legacy?.kind === 'unit' ? legacy.unit : null);
+export function formatPharmacyStockQuantity(quantity: number, unit?: string | null): string {
   const normalizedUnit = unit?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const pluralUnit = unit && normalizedUnit && Object.hasOwn(pharmacyUnitAliases, `${normalizedUnit}s`) && quantity >= 2 ? `${unit}s` : unit;
   return [pharmacyQuantityFormat.format(quantity), pluralUnit].filter(Boolean).join(' ');
 }
 
-export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknown' {
+function hasIndependentRequirement(item: PharmacyStock): boolean {
+  return Boolean(item.required_stock_unit || item.required_strength);
+}
+
+export function pharmacyQuantityLabel(item: PharmacyStock, kind: 'stock' | 'required'): string {
+  const quantity = kind === 'stock' ? item.stock_quantity : item.required_stock_quantity;
+  if (quantity == null) return (kind === 'stock' ? item.quantity : item.required_quantity) || '—';
+  const legacy = legacyPharmacyStock(kind === 'stock' ? item.quantity : item.required_quantity);
+  const unit = kind === 'stock' ? item.stock_unit : item.required_stock_unit || (!hasIndependentRequirement(item) && (!legacy || legacy.kind === 'bare') ? item.stock_unit : null);
+  return formatPharmacyStockQuantity(quantity, unit || (legacy?.kind === 'unit' ? legacy.unit : null));
+}
+
+function comparablePharmacyStock(quantity: number | null | undefined, legacy: ReturnType<typeof legacyPharmacyStock>, unitValue: string | null | undefined, strengthValue: string | null | undefined) {
+  const unit = canonicalPharmacyUnit(unitValue) || (legacy?.kind === 'unit' ? legacy.unit : '');
+  const strength = canonicalPharmacyStrength(strengthValue) || (legacy?.kind === 'strength' ? legacy.unit : '');
+  const count = quantity ?? legacy?.count ?? null;
+  const factor = millilitresPerUnit.get(unit) ?? pharmacyVolumePerUnit(strength);
+  return { count, unit, strength, volume: count !== null && factor !== null ? count * factor : null };
+}
+
+export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknown' | 'none' {
+  if (item.outside_dotation) return 'none';
   const legacyActual = legacyPharmacyStock(item.quantity);
   const legacyRequired = legacyPharmacyStock(item.required_quantity);
+  const independent = hasIndependentRequirement(item);
+  const inheritActual = !independent && (!legacyRequired || legacyRequired.kind === 'bare');
+  const actualStock = comparablePharmacyStock(item.stock_quantity, legacyActual, item.stock_unit, item.strength);
+  const requiredStock = comparablePharmacyStock(item.required_stock_quantity, legacyRequired,
+    item.required_stock_unit || (inheritActual ? item.stock_unit : null),
+    item.required_strength || (inheritActual ? item.strength : null));
+  if (actualStock.volume !== null && requiredStock.volume !== null) {
+    const tolerance = Number.EPSILON * Math.max(actualStock.volume, requiredStock.volume);
+    return actualStock.volume + tolerance < requiredStock.volume ? 'low' : 'ok';
+  }
+  if (independent) {
+    const { count: actual, unit, strength } = actualStock;
+    const { count: required, unit: requiredUnit, strength: requiredStrength } = requiredStock;
+    return actual === null || required === null || unit !== requiredUnit || strength !== requiredStrength ? 'unknown' : actual < required ? 'low' : 'ok';
+  }
   const sameLegacyUnit = !!legacyActual && !!legacyRequired && legacyActual.kind === legacyRequired.kind && legacyActual.unit === legacyRequired.unit;
   const matchesStockUnit = (legacy: ReturnType<typeof legacyPharmacyStock>) => !!legacy && (legacy.kind === 'bare'
     || (legacy.kind === 'strength' && legacy.unit === canonicalPharmacyStrength(item.strength))

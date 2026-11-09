@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.97.0` sépare le stock embarqué et la dotation commune dans
+l’inventaire pharmacie. Le registre médical regroupe par catégorie les articles
+à déduire du navire. Appliquer
+`20261109112356_pharmacy_shared_dotation_requirements.sql` avant le frontend.
+Voir [Inventaire Pharmacie](./pharmacy-inventory.md) et
+[Registre médical](./medical-logbook.md).
+
 La version `3.96.0` arrête les courbes annuelles de carburant à la date de la
 dernière donnée du navire et réorganise les cartes Moyennes. Elle enregistre une
 [profondeur de repli](./sea-operation-copernicus-ukc.md#droits-et-conservation)

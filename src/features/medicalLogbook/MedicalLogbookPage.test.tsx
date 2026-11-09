@@ -112,33 +112,46 @@ describe('MedicalLogbookPage', () => {
   });
 
   it('submits several stock items with their individual units, without requiring narrative text', async () => {
-    const first = { item_id: 4, designation: 'Article A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 12 };
-    const second = { item_id: 5, designation: 'Article B', brand: '', lot_number: '', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10 };
-    mocks.medications.mockResolvedValue([first, second]);
+    const first = { item_id: 4, designation: 'Article A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 12,
+      medical_section: 'medicines', category: 'Antalgiques' };
+    const second = { item_id: 5, designation: 'Article B', brand: '', lot_number: '', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10,
+      medical_section: 'equipment', category: 'Pansements stériles' };
+    mocks.medications.mockResolvedValue([second, first]);
     mocks.save.mockImplementation(async (_client, vesselId, draft: MedicalDraft) => ({
       ...entry, ...draft, id: 12, vessel_id: vesselId,
-      medications: draft.medications?.map((item) => ({ ...(item.item_id === 4 ? first : second), ...item, stock_quantity: item.item_id === 4 ? 3 : 2 })),
+      medications: draft.medications?.map((item) => ({ ...(item.item_id === 4 ? first : second), ...item, stock_quantity: item.quantity })),
     }));
     renderPage({ roles: ['capitaine'] });
     const row = await openNew();
     await userEvent.type(within(row).getByLabelText('Nom du patient'), 'Patient exemple');
     await userEvent.type(within(row).getByLabelText('Blessure / Maladie'), 'Observation');
-    await userEvent.click(within(row).getByRole('button', { name: 'Choisir les articles de pharmacie' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Articles de pharmacie du navire' });
-    await userEvent.click(within(dialog).getByRole('checkbox', { name: /Article A/ }));
-    await userEvent.selectOptions(within(dialog).getByRole('combobox', { name: /Unité — Article A/ }), 'package');
-    await userEvent.click(within(dialog).getByRole('checkbox', { name: /Article B/ }));
-    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /Quantité — Article B/ }), { target: { value: '2' } });
+    await userEvent.click(within(row).getByRole('button', { name: 'Médicament administré' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Médicaments et matériel du navire' });
+    expect(within(dialog).getByText('ILE DE FRANCE')).toBeVisible();
+    expect(within(dialog).getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(['Médicaments', 'Matériel médical et objets de pansement']);
+    const medicines = within(dialog).getByRole('group', { name: 'Antalgiques' });
+    await userEvent.click(within(medicines).getByRole('checkbox', { name: /Article A/ }));
+    const units = within(dialog).getByRole('combobox', { name: /Unité — Article A/ });
+    expect(units).toHaveValue('unit');
+    expect(within(units).getByRole('option', { name: 'comprimé' })).toBeVisible();
+    expect(within(units).getByRole('option', { name: 'Boîte de 3 comprimés' })).toBeVisible();
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: /Quantité — Article A/ }), { target: { value: '2' } });
+    await userEvent.type(within(dialog).getByRole('searchbox'), 'sterile');
+    expect(within(dialog).queryByRole('group', { name: 'Antalgiques' })).not.toBeInTheDocument();
+    const supplies = within(dialog).getByRole('group', { name: 'Pansements stériles' });
+    await userEvent.click(within(supplies).getByRole('checkbox', { name: /Article B/ }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Appliquer la sélection' }));
+    expect(within(row).getByRole('button', { name: 'Médicament administré' })).toBeVisible();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.medications).toHaveBeenCalledExactlyOnceWith(client, 1);
     await userEvent.click(saveButton(row));
     await screen.findByText('Patient exemple');
     expect(mocks.save).toHaveBeenCalledWith(client, 1, expect.objectContaining({
       treatment_medicines: '',
-      medications: [{ item_id: 4, quantity: 1, unit: 'package' }, { item_id: 5, quantity: 2, unit: 'unit' }],
+      medications: [{ item_id: 4, quantity: 2, unit: 'unit' }, { item_id: 5, quantity: 1, unit: 'unit' }],
     }), undefined);
-    expect(screen.getByText(/1 boîte de 3 comprimé/)).toBeVisible();
+    expect(screen.getByText(/2 comprimés/)).toBeVisible();
     expect(mocks.medications).toHaveBeenCalledTimes(2);
   });
 

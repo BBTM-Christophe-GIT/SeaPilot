@@ -6,12 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
 import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
-import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { buildPharmacyWorkbook } from './pharmacyWorkbook';
 import { PHARMACY_ALERT_FOCUS_MS } from './usePharmacyAlertPolling';
 
 vi.mock('./pharmacyWorkbook', () => ({ buildPharmacyWorkbook: vi.fn() }));
-vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
+vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyDotationRequirements: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
 const vessels: PharmacyVessel[] = [{ id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', can_manage: true }, { id: 2, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true }, { id: 3, company_id: 1, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', can_manage: true }];
 const vesselExpiryCounts = { 1: { due: 2, expired: 1 }, 2: { due: 7, expired: 0 }, 3: { due: 0, expired: 5 } };
@@ -34,6 +34,7 @@ describe('PharmacyPage', () => {
     vi.mocked(fetchPharmacyVessels).mockResolvedValue(vessels);
     vi.mocked(fetchPharmacyVesselExpiryCounts).mockResolvedValue(vesselExpiryCounts);
     vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, expired, missing], controls: [], categories: categoryFixtures });
+    vi.mocked(fetchPharmacyDotationRequirements).mockResolvedValue([]);
     vi.mocked(savePharmacyItem).mockResolvedValue(1);
     vi.mocked(savePharmacyCategory).mockResolvedValue(120);
     vi.mocked(deletePharmacyCategory).mockResolvedValue(undefined);
@@ -159,8 +160,8 @@ describe('PharmacyPage', () => {
     page(); await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     await user.click(screen.getByRole('button', { name: 'Modifier ARTICLE SOURCE' }));
     const dialog = screen.getByRole('dialog', { name: 'Modifier l’article' });
-    await user.clear(within(dialog).getByLabelText('Stock à bord'));
-    await user.type(within(dialog).getByLabelText('Stock à bord'), '30 × 300 mg');
+    await user.clear(within(dialog).getByLabelText('Quantité à bord'));
+    await user.type(within(dialog).getByLabelText('Quantité à bord'), '30 × 300 mg');
     await user.click(within(dialog).getByRole('button', { name: 'Enregistrer' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié');
     expect(savePharmacyItem).toHaveBeenCalledWith(client, 1, expect.objectContaining({ quantity: '30 × 300 mg', expires_on: '2099-10-01' }), item);
@@ -279,19 +280,45 @@ describe('PharmacyPage', () => {
     expect(row.queryByText('Date à vérifier')).not.toBeInTheDocument();
     expect(row.getByText('Stock insuffisant')).toBeInTheDocument();
     expect(row.getByText('6 comprimés')).toBeInTheDocument();
-    expect(row.getByText(/300 mg · 3 unités par boîte/)).toBeInTheDocument();
+    expect(row.getByText('300 mg par unité')).toBeInTheDocument();
+    expect(row.getByText('3 par boîte')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: item.designation })).not.toBeInTheDocument();
   });
-  it('renders the italic outside-dotation mention and an alert even when stock and expiry are in order', async () => {
-    const extraItem = { ...item, id: 9, designation: 'ARTICLE HORS DOTATION', outside_dotation: true };
-    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, extraItem], controls: [], categories: categoryFixtures });
+  it('labels outside-dotation items and only puts dated expiry in attention', async () => {
+    const extraItem = { ...item, id: 9, designation: 'ARTICLE HORS DOTATION', outside_dotation: true, quantity: '0', expires_on: null };
+    const expiringExtra = { ...extraItem, id: 10, designation: 'ARTICLE HORS DOTATION PÉRIMÉ', expires_on: '2000-01-01' };
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [item, extraItem, expiringExtra], controls: [], categories: categoryFixtures });
     page(['marin'], '/modules/pharmacy?vessel=1&filter=outside_dotation&item=9');
     const name = await screen.findByRole('button', { name: extraItem.designation });
     const row = within(name.closest('tr')!);
     expect(row.getByText('(hors dotation obligatoire)').tagName).toBe('EM');
     expect(row.getByText('Hors dotation')).toBeInTheDocument();
     expect(row.queryByText('Stock insuffisant')).not.toBeInTheDocument();
+    expect(row.queryByText('Date à vérifier')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: item.designation })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'État des articles' }), 'attention');
+    expect(screen.queryByRole('button', { name: extraItem.designation })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: expiringExtra.designation })).toBeInTheDocument();
+  });
+  it('shows an unmet shared catalogue entry without inventing stock, and prefills a local article', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[1], medical_dotation: 'C Restreint' }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [], controls: [], categories: [] });
+    vi.mocked(fetchPharmacyDotationRequirements).mockResolvedValue([{
+      dotation_key: 'dotation c restreinte', medical_section: 'equipment', designation: 'Sérum physiologique', designation_key: 'serum physiologique',
+      required_quantity: '20', required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL', dotation_requirement_revision: 3,
+    }]);
+    page(['capitaine'], '/modules/pharmacy?vessel=2');
+    const button = await screen.findByRole('button', { name: 'Renseigner le stock de Sérum physiologique' });
+    const row = within(button.closest('tr')!);
+    expect(row.getByText('20 ampoules')).toBeInTheDocument();
+    expect(row.getByText('Stock à renseigner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Stock insuffisant.*0/ })).toBeInTheDocument();
+    await userEvent.click(button);
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByLabelText('Désignation')).toHaveValue('Sérum physiologique');
+    expect(dialog.getByLabelText('Branche')).toHaveValue('equipment');
+    expect(dialog.getByLabelText('Quantité à bord')).toHaveValue('');
+    expect(dialog.getByLabelText('Quantité requise')).toHaveValue('20');
   });
   it('uses the shell alerts for expiry badges and manual refresh without a separate poll', async () => {
     const refresh = vi.fn();

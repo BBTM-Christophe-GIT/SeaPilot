@@ -88,11 +88,17 @@
 .medical-medication-selection + .medical-medication-selection { margin-top: var(--sp-space-3); }
 .medical-medication-fields { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(100px, 2fr) auto; gap: var(--sp-space-2); align-items: end; }
 .medical-medication-options { max-height: 18rem; overflow: auto; }
+.medical-medication-section { display: grid; gap: var(--sp-space-2); }
+.medical-medication-section + .medical-medication-section { margin-block-start: var(--sp-space-3); }
+.medical-medication-section h3 { margin: 0; font-size: var(--sp-subtitle-size); color: var(--sp-heading); }
+.medical-medication-picker .medical-medication-category { padding-block: 0; }
+.medical-medication-category legend { padding-inline: var(--sp-space-1); color: var(--sp-muted); }
 .medical-medication-option {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--sp-space-2);
   min-height: 44px; padding-block: var(--sp-space-1); border-bottom: 1px solid var(--sp-border);
 }
 .medical-medication-option:last-child { border-bottom: 0; }
+.medical-medication-option input { width: 18px; height: 18px; accent-color: var(--sp-primary); }
 .medical-medication-option small { display: block; color: var(--sp-muted); }
 @media (max-width: 480px) {
   .medical-medication-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
@@ -100,7 +106,7 @@
 }
 .medical-logbook-page .medical-archive-filter { display: flex; gap: var(--sp-space-2); min-height: var(--sp-control-height); align-items: center; }
 .medical-archive-filter input { width: 18px; height: 18px; accent-color: var(--sp-primary); }
-.medical-logbook-page :focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
+.medical-logbook-page :focus-visible, .medical-medication-picker :focus-visible { outline: 2px solid var(--sp-focus); outline-offset: 3px; }
 .medical-empty { text-align: center; padding: var(--sp-space-6); margin: 0; }
 .medical-empty svg { color: var(--sp-primary); }
 .medical-empty h2, .medical-empty h3 { margin: var(--sp-space-3) 0; color: var(--sp-heading); }

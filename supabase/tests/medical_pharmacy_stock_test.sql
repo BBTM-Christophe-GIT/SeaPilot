@@ -68,7 +68,7 @@ begin
   select actor into captain from medical_actors where label = 'captain';
   select actor into sailor from medical_actors where label = 'marin';
   insert into public.pharmacy_inventory(company_id, vessel_id, designation, quantity, required_quantity)
-    values (company, other, 'Other ship fixture', '8', '8') returning id into other_item;
+    values (company, other, 'Tablet lot', '8', '8') returning id into other_item;
   insert into public.pharmacy_inventory(company_id, vessel_id, designation, quantity, required_quantity)
     values (foreign_company, foreign_vessel, 'Other company fixture', '8', '8') returning id into foreign_item;
   assert not has_function_privilege('authenticated', 'medical_logbook_private.apply_medications(bigint,bigint,jsonb,jsonb)', 'EXECUTE'),
@@ -79,16 +79,22 @@ begin
   perform set_config('request.jwt.claim.sub', admin::text, true);
   item := public.save_pharmacy_item(vessel, jsonb_build_object(
     'designation','Tablet lot','lot_number','lot-1','stock_quantity',6,'required_stock_quantity',6,
+    'medical_section','medicines','category','Antalgiques',
     'stock_unit','comprimé','package_size',3,'strength','300 mg',
     'no_expiry',true,'expires_on',today-1,'expiry_precision','day','expiry_text','fixture'));
-  second := public.save_pharmacy_item(vessel, '{"designation":"Imported fixture","quantity":"20 X 300mg","required_quantity":"30×300 mg"}');
+  second := public.save_pharmacy_item(vessel, '{"designation":"Imported fixture","quantity":"20 X 300mg","required_quantity":"30×300 mg","medical_section":"equipment","category":"Matériel"}');
   unknown_stock := public.save_pharmacy_item(vessel, '{"designation":"Unstructured fixture","quantity":"300 mg","required_quantity":"400 mg"}');
-  extra_item := public.save_pharmacy_item(vessel, '{"designation":"Extra fixture","quantity":"2","outside_dotation":true}');
-  assert exists(select 1 from public.pharmacy_inventory_notifications() where item_id = extra_item and kind = 'outside_dotation'
-    and expires_on is null and days_until_expiry is null), 'Active outside-dotation item produced no dedicated alert';
+  extra_item := public.save_pharmacy_item(vessel, '{"designation":"Extra fixture","quantity":"2","required_quantity":"10","outside_dotation":true}');
+  assert not exists(select 1 from public.pharmacy_inventory_notifications() where item_id = extra_item),
+    'An outside-dotation item without expiry cannot alert for stock or classification';
   assert not exists(select 1 from public.pharmacy_notifications() where item_id in (second, extra_item) or expires_on is null),
     'Dated RPC must remain compatible with clients that format every expiry as a date';
-  perform public.save_pharmacy_item(vessel, '{"designation":"Extra fixture","quantity":"2","active":false}', extra_item, 1);
+  perform public.save_pharmacy_item(vessel, jsonb_build_object('designation','Extra fixture','quantity','2','required_quantity','10',
+    'expires_on',today+30,'expiry_precision','day'), extra_item, 1);
+  assert (select count(*)=1 and bool_and(kind='item' and expires_on=today+30)
+    from public.pharmacy_inventory_notifications() where item_id=extra_item),
+    'A dated outside-dotation item must alert only about its expiry';
+  perform public.save_pharmacy_item(vessel, '{"designation":"Extra fixture","quantity":"2","active":false}', extra_item, 2);
   assert (select outside_dotation from public.pharmacy_inventory where id = extra_item)
     and not exists(select 1 from public.pharmacy_inventory_notifications() where item_id = extra_item),
     'Legacy edit lost the outside-dotation flag or retired article still alerts';
@@ -102,6 +108,12 @@ begin
   assert not exists(select 1 from public.pharmacy_inventory_notifications() where item_id = unknown_stock),
     'Unknown legacy quantity produced a stock alert';
   assert jsonb_array_length(public.list_medical_logbook_medications(vessel)) = 3, 'Medical option list escaped vessel';
+  assert public.list_medical_logbook_medications(vessel) @> jsonb_build_array(jsonb_build_object(
+    'item_id',item,'category','Antalgiques','medical_section','medicines','stock_unit','comprimé','stock_quantity',6)),
+    'The vessel medical list must include the pharmacy branch, category, unit and current stock';
+  assert public.list_medical_logbook_medications(vessel) @> jsonb_build_array(jsonb_build_object(
+    'item_id',second,'category','Matériel','medical_section','equipment','stock_quantity',20)),
+    'The vessel medical list must also include equipment with its category';
   begin perform public.list_medical_logbook_medications(foreign_vessel); raise exception 'Other company medication list accepted'; exception when insufficient_privilege then null; end;
 
   perform set_config('request.jwt.claim.sub', sailor::text, true);
@@ -167,6 +179,8 @@ begin
   history := public.get_medical_logbook_history(entry);
   assert history#>>'{5,entry,medications,0,package_size}' = '3', 'Original medication history was overwritten';
   execute 'reset role';
+  assert (select stock_quantity is null and quantity='8' from public.pharmacy_inventory where id=other_item),
+    'Dispensing did not change the same article stocked on a different vessel';
 end $medication_stock$;
 
 rollback;

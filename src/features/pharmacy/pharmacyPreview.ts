@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, pharmacyDotationKey, pharmacyMedicalSection, pharmacyStockStatus, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyMedicalSection, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_ALERT_DAYS, blankPharmacyItem, pharmacyDaysUntil, pharmacyToday, pharmacyDesignationKey, pharmacyDotationKey, pharmacyMedicalSection, pharmacyStockStatus, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
 
 // Synthetic preview data only. The customer workbooks are imported into the protected database.
 export function createPharmacyPreviewClient(): SupabaseClient {
@@ -12,7 +12,7 @@ export function createPharmacyPreviewClient(): SupabaseClient {
     ['COMPRESSES STÉRILES', '3. PANSEMENTS ET SOINS', '20', '30', 430],
     ['BANDES DE GAZE', '3. PANSEMENTS ET SOINS', '12', '6', 600],
     ['PANSEMENTS ADHÉSIFS', '3. PANSEMENTS ET SOINS', '40', '20', -20],
-    ['SÉRUM PHYSIOLOGIQUE', '3. PANSEMENTS ET SOINS', '10', '10', 15],
+    ['SÉRUM PHYSIOLOGIQUE', '3. PANSEMENTS ET SOINS', '10', '20', 15],
     ['GANTS D’EXAMEN', '10. MATÉRIEL MÉDICAL', '100', '50', 720],
     ['COUVERTURE ISOTHERMIQUE', '10. MATÉRIEL MÉDICAL', '2', '2', null],
     ['CISEAUX À PANSEMENT', '10. MATÉRIEL MÉDICAL', '1', '1', null],
@@ -24,6 +24,31 @@ export function createPharmacyPreviewClient(): SupabaseClient {
     ['SACHETS DE FROID', '4. PREMIERS SECOURS', '2', '2', 320],
   ] as const;
   const items: PharmacyItem[] = vessels.flatMap((vessel, vesselIndex) => examples.map(([designation, category, quantity, required, days], index) => ({ ...blankPharmacyItem(), id: vesselIndex * 100 + index + 1, company_id: 99, vessel_id: vessel.id, medical_dotation: vessel.medical_dotation || '', medical_section: index < 3 ? 'medicines' as const : 'equipment' as const, section: 'DOTATION DE DÉMONSTRATION', category, designation, brand: '', lot_number: days === null ? '' : `DEMO-${index + 1}`, quantity, required_quantity: required, expires_on: days === null ? null : dateAt(days), expiry_text: '', expiry_precision: days === null ? 'unknown' : 'day', notes: 'Article fictif pour présentation de l’interface.', source_file: '', source_sheet: '', source_row: null, revision: 1, updated_at: new Date().toISOString() })));
+  const requirements = new Map<string, PharmacyDotationRequirement>();
+  const keyOf = (item: Pick<PharmacyItem, 'designation' | 'medical_dotation' | 'medical_section'>) =>
+    JSON.stringify([pharmacyDotationKey(item.medical_dotation), pharmacyMedicalSection(item.medical_section), pharmacyDesignationKey(item.designation)]);
+  const requiredFields = (source: Pick<PharmacyItem, 'required_quantity' | 'required_stock_quantity' | 'required_stock_unit' | 'required_strength' | 'required_package_size'>) => ({
+    required_quantity: source.required_quantity,
+    required_stock_quantity: source.required_stock_quantity ?? null,
+    required_stock_unit: source.required_stock_unit ?? null,
+    required_strength: source.required_strength ?? null,
+    required_package_size: source.required_package_size ?? null,
+  });
+  const makeRequirement = (source: PharmacyItemDraft, revision: number): PharmacyDotationRequirement => ({
+    dotation_key: pharmacyDotationKey(source.medical_dotation),
+    medical_section: pharmacyMedicalSection(source.medical_section),
+    designation: source.designation,
+    designation_key: pharmacyDesignationKey(source.designation),
+    ...requiredFields(source),
+    dotation_requirement_revision: revision,
+  });
+  for (const item of items.filter((row) => row.designation === 'SÉRUM PHYSIOLOGIQUE')) {
+    Object.assign(item, {
+      stock_quantity: 10, stock_unit: 'ampoule', strength: '10 mL',
+      required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL',
+    });
+    requirements.set(keyOf(item), makeRequirement(item, 1));
+  }
   const controls: PharmacyControl[] = [];
   const categories: PharmacyCategory[] = [];
   const files = new Map<string, Blob>();
@@ -51,6 +76,9 @@ export function createPharmacyPreviewClient(): SupabaseClient {
     from: (name: keyof typeof tables) => query(name === 'pharmacy_categories' ? visibleCategories() : tables[name] || []),
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       if (name === 'pharmacy_available_vessels') return { data: vessels, error: null };
+      if (name === 'list_pharmacy_dotation_requirements') {
+        return { data: structuredClone([...requirements.values()].filter((requirement) => hasParent(Number(args.p_vessel_id), requirement.dotation_key))), error: null };
+      }
       if (name === 'save_pharmacy_category' || name === 'delete_pharmacy_category') {
         const vesselId = Number(args.p_vessel_id);
         if (!vessels.some((vessel) => vessel.id === vesselId)) return { data: null, error: { message: 'Navire introuvable.' } };
@@ -83,9 +111,8 @@ export function createPharmacyPreviewClient(): SupabaseClient {
           if (!item.active) continue;
           const vessel = vessels.find((candidate) => candidate.id === item.vessel_id);
           if (!vessel) continue;
-          if (name === 'pharmacy_inventory_notifications') {
-            if (item.outside_dotation) notifications.push({ id: `outside-dotation-${item.id}`, kind: 'outside_dotation', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: null, days_until_expiry: null, item_id: item.id });
-            if (pharmacyStockStatus(item) === 'low') notifications.push({ id: `stock-${item.id}`, kind: 'stock', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: null, days_until_expiry: null, item_id: item.id });
+          if (name === 'pharmacy_inventory_notifications' && pharmacyStockStatus(item) === 'low') {
+            notifications.push({ id: `stock-${item.id}`, kind: 'stock', vessel_id: vessel.id, vessel_name: vessel.name, title: item.designation, expires_on: null, days_until_expiry: null, item_id: item.id });
           }
           const days = pharmacyDaysUntil(item.expires_on, today);
           if (item.no_expiry || days === null || days > PHARMACY_ALERT_DAYS) continue;
@@ -104,15 +131,32 @@ export function createPharmacyPreviewClient(): SupabaseClient {
         const old = items.find((item) => item.id === args.p_id);
         if (old && old.revision !== args.p_revision) return { data: null, error: { message: 'Cet article a été modifié. Actualisez l’inventaire.' } };
         const vesselId = Number(args.p_vessel_id);
-        const input = args.p_item as Partial<PharmacyItem>;
+        const { update_dotation_requirement: updateRequirement, dotation_requirement_revision: expectedRequirementRevision, ...input } = args.p_item as PharmacyItemDraft;
         if (old && old.vessel_id !== vesselId) return { data: null, error: { message: 'Article introuvable sur ce navire.' } };
         const parent = old ? old.medical_dotation || '' : vessels.find((vessel) => vessel.id === vesselId)?.medical_dotation || '';
         if (input.medical_dotation !== undefined && pharmacyDotationKey(input.medical_dotation) !== pharmacyDotationKey(parent)) return { data: null, error: { message: 'La dotation médicale de cet article a changé. Actualisez l’inventaire.' } };
         const medicalSection = pharmacyMedicalSection(input.medical_section ?? old?.medical_section);
-        const selectedCategory = registerCategory(vesselId, input.category || '', parent, medicalSection);
-        const draft = { ...input, medical_dotation: parent, medical_section: medicalSection, category: selectedCategory?.name || '', category_id: selectedCategory?.id ?? null };
+        const draft = { ...blankPharmacyItem(), ...old, ...input, medical_dotation: parent, medical_section: medicalSection };
+        const requirementKey = keyOf(draft);
+        const sharesRequirement = draft.active && !draft.outside_dotation && Boolean(pharmacyDotationKey(parent)) && medicalSection !== 'unclassified';
+        let requirement = sharesRequirement ? requirements.get(requirementKey) : undefined;
+        if (sharesRequirement && updateRequirement) {
+          if ((expectedRequirementRevision ?? null) !== (requirement?.dotation_requirement_revision ?? null)) {
+            return { data: null, error: { message: 'Cette dotation a été modifiée. Rouvrez la fenêtre.' } };
+          }
+          requirement = makeRequirement(draft, (requirement?.dotation_requirement_revision ?? 0) + 1);
+          requirements.set(requirementKey, requirement);
+          for (const other of items) {
+            if (other !== old && other.active && !other.outside_dotation && keyOf(other) === requirementKey) {
+              Object.assign(other, requiredFields(requirement), { revision: other.revision + 1, updated_at: new Date().toISOString() });
+            }
+          }
+        }
+        if (requirement) Object.assign(draft, requiredFields(requirement));
+        const selectedCategory = registerCategory(vesselId, draft.category, parent, medicalSection);
+        Object.assign(draft, { category: selectedCategory?.name || '', category_id: selectedCategory?.id ?? null });
         if (old) Object.assign(old, draft, { revision: old.revision + 1 });
-        else items.push({ ...items[0], ...draft, id: Math.max(...items.map((item) => item.id)) + 1, vessel_id: Number(args.p_vessel_id), source_file: '', source_sheet: '', source_row: null, revision: 1 });
+        else items.push({ ...draft, id: Math.max(...items.map((item) => item.id)) + 1, company_id: 99, vessel_id: vesselId, source_file: '', source_sheet: '', source_row: null, updated_at: new Date().toISOString(), revision: 1 });
         return { data: old?.id || items.at(-1)?.id, error: null };
       }
       if (name === 'publish_pharmacy_control') {

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 import { blankPharmacyItem, pharmacyToday, type PharmacyCategory, type PharmacyItem, type PharmacyNotification, type PharmacyVessel } from './pharmacyModel';
-import { deletePharmacyCategory, fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
+import { deletePharmacyCategory, fetchPharmacyDotationRequirements, fetchPharmacyNotifications, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl, validatePharmacyControl } from './pharmacyQueries';
 import { createPharmacyPreviewClient } from './pharmacyPreview';
 
 const vessel: PharmacyVessel = { id: 4, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true };
@@ -40,6 +40,20 @@ describe('pharmacy persistence', () => {
   it('propagates alert failures instead of inventing an empty successful result', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: new Error('not installed') });
     await expect(fetchPharmacyNotifications({ rpc } as unknown as SupabaseClient)).rejects.toThrow('not installed');
+  });
+  it('copies the common requirement to a second vessel while retaining each vessel’s stock in preview', async () => {
+    const client = createPharmacyPreviewClient();
+    const [goury, suroit, hirondelle] = await fetchPharmacyVessels(client);
+    const saline = (items: PharmacyItem[]) => items.find((item) => item.designation === 'SÉRUM PHYSIOLOGIQUE')!;
+    const suroitStock = saline((await fetchPharmacyRegister(client, suroit.id)).items);
+    const hirondelleStock = saline((await fetchPharmacyRegister(client, hirondelle.id)).items);
+    const definition = (await fetchPharmacyDotationRequirements(client, suroit.id))[0];
+    await savePharmacyItem(client, suroit.id, { ...suroitStock, stock_quantity: 12, required_quantity: '24', required_stock_quantity: 24,
+      update_dotation_requirement: true, dotation_requirement_revision: definition.dotation_requirement_revision }, suroitStock);
+    expect(saline((await fetchPharmacyRegister(client, suroit.id)).items)).toMatchObject({ stock_quantity: 12, required_stock_quantity: 24 });
+    expect(saline((await fetchPharmacyRegister(client, hirondelle.id)).items)).toMatchObject({ stock_quantity: hirondelleStock.stock_quantity, required_stock_quantity: 24 });
+    expect(saline((await fetchPharmacyRegister(client, goury.id)).items)).toMatchObject({ required_stock_quantity: 20 });
+    expect((await fetchPharmacyDotationRequirements(client, hirondelle.id))[0]).toMatchObject({ required_stock_quantity: 24, dotation_requirement_revision: 2 });
   });
 });
 

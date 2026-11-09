@@ -1,5 +1,6 @@
 import type { LiftingVessel } from '../lifting/liftingModel';
 import type { RoleKey } from '../permissions/roles';
+import { formatPharmacyStockQuantity, type PharmacyMedicalSection } from '../pharmacy/pharmacyModel';
 
 export interface MedicalSignatureSnapshot {
   signature_id: number;
@@ -28,6 +29,8 @@ export interface MedicalMedicationChoice {
   strength: string;
   package_size: number | null;
   stock_quantity: number | null;
+  category?: string;
+  medical_section?: PharmacyMedicalSection;
 }
 export interface MedicalMedicationUse {
   item_id: number;
@@ -130,14 +133,18 @@ export function medicalMedicationLabel(item: MedicalMedicationChoice): string {
   return [label, item.strength, item.lot_number ? `lot ${item.lot_number}` : ''].filter(Boolean).join(' · ');
 }
 
-const formatQuantity = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
+export function medicalMedicationQuantity(quantity: number, unit: MedicalMedicationUse['unit'], item?: MedicalMedicationChoice): string {
+  if (unit === 'package') {
+    const boxes = formatPharmacyStockQuantity(quantity, 'boîte');
+    return item?.package_size ? `${boxes} de ${formatPharmacyStockQuantity(item.package_size, item.stock_unit)}` : boxes;
+  }
+  return formatPharmacyStockQuantity(quantity, item?.stock_unit || 'unité');
+}
+
 export function medicalTreatmentText(entry: Pick<MedicalEntry, 'medications' | 'treatment_medicines'>): string {
-  return [entry.treatment_medicines, ...(entry.medications ?? []).map((item) => {
-    const unit = item.unit === 'package'
-      ? `${item.quantity === 1 ? 'boîte' : 'boîtes'} de ${formatQuantity.format(item.package_size ?? 0)} ${item.stock_unit}`
-      : item.stock_unit;
-    return `${medicalMedicationLabel(item)} — ${formatQuantity.format(item.quantity)} ${unit}`;
-  })].filter(Boolean).join('\n');
+  return [entry.treatment_medicines, ...(entry.medications ?? []).map((item) =>
+    `${medicalMedicationLabel(item)} — ${medicalMedicationQuantity(item.quantity, item.unit, item)}`,
+  )].filter(Boolean).join('\n');
 }
 
 export function formatMedicalDate(value: string): string {

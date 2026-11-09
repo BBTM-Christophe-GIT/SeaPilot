@@ -30,12 +30,10 @@ function VesselCard({ vessel, selected, disabled, count, loading, onChange }: {
   const unavailable = loading ? 'Comptages en cours…' : 'Comptages indisponibles';
   const low = count?.low ?? 0;
   const expired = count?.expired ?? 0;
-  const outside = count?.outsideDotation ?? 0;
-  const redCount = count?.red ?? expired + low + outside;
+  const redCount = count?.red ?? expired + low;
   const lowLabel = low ? `${low} article${low === 1 ? '' : 's'} à réapprovisionner` : '';
   const expiredLabel = expired ? countLabel(expired, 'expired') : '';
-  const outsideLabel = outside ? `${outside} article${outside === 1 ? '' : 's'} hors dotation` : '';
-  const redLabels = [expiredLabel, lowLabel, outsideLabel].filter(Boolean);
+  const redLabels = [expiredLabel, lowLabel].filter(Boolean);
   const redLabel = redLabels.length > 1 ? `${redCount} article${redCount === 1 ? '' : 's'} à traiter (${redLabels.join(' ; ')})` : redLabels[0];
   const description = known
     ? [count.due ? countLabel(count.due, 'due') : '', redLabel].filter(Boolean).join(' ; ') || 'Aucun article à traiter.'

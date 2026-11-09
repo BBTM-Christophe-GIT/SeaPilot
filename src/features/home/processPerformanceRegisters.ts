@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ModuleKey } from '../permissions/moduleAccess';
 import type { ProcessPerformance, ProcessPerformanceCriterion, ProcessPerformanceTask } from './processPerformance';
 import type { ProcessPerformanceScope } from './processPerformanceScope';
-import { pharmacyExpiryStatus, pharmacyStockStatus } from '../pharmacy/pharmacyModel';
+import { PHARMACY_ALERT_DAYS, pharmacyExpiryStatus, pharmacyItemExpiryStatus, pharmacyStockStatus, type PharmacyItem } from '../pharmacy/pharmacyModel';
 import { countVesselExpiries, VESSEL_EXPIRY_ALERT_DAYS } from '../fleet/vesselExpiryAlerts';
 import { fleetAssetKind } from '../fleet/fleetDisplay';
 import { buildExercisePerformance, validateExerciseSnapshot } from './exercisePerformance';
@@ -11,7 +11,9 @@ export { buildExercisePerformance, type ExercisePerformanceSnapshot } from './ex
 interface Vessel { id: number; name: string; asset_kind?: 'vessel' | 'quay' | 'office'; active?: boolean }
 interface DeadlineItem { id: number; vessel_id: number; title: string; expires_on: string | null; planned_on?: string | null; visit_location?: string | null }
 interface ChemicalRow { id: string; vessel_id: number; brand: string; product_type: string; storage_location: string }
-interface PharmacyRow { id: number; vessel_id: number; designation: string; expires_on: string | null; quantity: string; required_quantity: string }
+type PharmacyRow = Pick<PharmacyItem, 'id' | 'vessel_id' | 'designation' | 'expires_on' | 'no_expiry' | 'outside_dotation'
+  | 'quantity' | 'stock_quantity' | 'stock_unit' | 'strength'
+  | 'required_quantity' | 'required_stock_quantity' | 'required_stock_unit' | 'required_strength' | 'required_package_size'>;
 interface ControlRow { id: number; vessel_id: number; expires_on: string; is_current: boolean }
 interface LiftingRow { id: number; vessel_id: number; reference: string; kind: 'lifting' | 'towing'; inspection_due_on: string | null }
 
@@ -201,16 +203,21 @@ async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, 
   if (!vessels.length) return noVessels('pharmacy');
   const ids = vessels.map((vessel) => vessel.id);
   const [items, controls] = await Promise.all([
-    rows<PharmacyRow>(client, 'pharmacy_inventory', 'id,vessel_id,designation,expires_on,quantity,required_quantity', ids, { eq: [['active', true]] }, cache),
+    rows<PharmacyRow>(client, 'pharmacy_inventory',
+      'id,vessel_id,designation,expires_on,no_expiry,outside_dotation,quantity,stock_quantity,stock_unit,strength,required_quantity,required_stock_quantity,required_stock_unit,required_strength,required_package_size',
+      ids, { eq: [['active', true]] }, cache),
     rows<ControlRow>(client, 'pharmacy_controls', 'id,vessel_id,expires_on,is_current', ids, { eq: [['is_current', true]] }, cache),
   ]);
   if (!items.length) return result('pharmacy', controls.length
     ? 'Un justificatif de contrôle est disponible, mais l’inventaire est vide. Aucun score calculé.'
     : 'Aucun inventaire ni justificatif de contrôle disponible. Aucun score calculé.');
-  const expiry = items.map((item) => pharmacyExpiryStatus(item.expires_on, today));
+  const expiry = items.map((item) => pharmacyItemExpiryStatus(item, today));
   const stock = items.map(pharmacyStockStatus);
-  const dated = expiry.filter((status) => status !== 'unknown').length;
-  const quantified = stock.filter((status) => status !== 'unknown').length;
+  const expiryApplicable = expiry.filter((status) => status !== 'none').length;
+  const stockApplicable = stock.filter((status) => status !== 'none').length;
+  const dated = expiryApplicable - expiry.filter((status) => status === 'unknown').length;
+  const stockUnknown = stock.filter((status) => status === 'unknown').length;
+  const quantified = stockApplicable - stockUnknown;
   const low = stock.filter((status) => status === 'low').length;
   const expired = expiry.filter((status) => status === 'expired').length;
   const tasks: ProcessPerformanceTask[] = items.flatMap((item, i) => {
@@ -228,13 +235,13 @@ async function pharmacy(client: SupabaseClient, scope: ProcessPerformanceScope, 
     if (state !== 'valid') tasks.push({ id: `pharmacy-control-${vessel.id}`, title: control ? 'Contrôle de la dotation médicale' : 'Justificatif de contrôle à renseigner',
       context: vessel.name, state: state === 'expired' ? 'overdue' : 'unplanned', dueOn: dateValid(control?.expires_on || null) ? control!.expires_on : '', scheduledOn: '', location: '', to: `/modules/pharmacy?vessel=${vessel.id}` });
   }
-  return result('pharmacy', `${expired} article(s) périmé(s) · ${low} stock(s) insuffisant(s) · ${items.length - quantified} quantité(s) à vérifier`, [
+  return result('pharmacy', `${expired} article(s) périmé(s) · ${low} stock(s) insuffisant(s) · ${stockUnknown} quantité(s) à vérifier`, [
     { id: 'expiry', label: 'Péremption des articles datés', weight: 30, score: dated ? Math.round(expiry.reduce((sum, status) => sum + (status === 'valid' ? 100 : status === 'due' ? 50 : 0), 0) / dated) : null,
-      detail: `${dated}/${items.length} articles datés. Échéance à ${30} jours = 50 points ; périmé = 0. Les articles sans date ne sont pas présumés périmés.` },
+      detail: `${dated}/${expiryApplicable} échéances exploitables. Échéance à ${PHARMACY_ALERT_DAYS} jours = 50 points. Une date dépassée vaut 0 point.` },
     { id: 'stock', label: 'Stocks au-dessus du seuil', weight: 30, score: quantified ? pct(stock.filter((status) => status === 'ok').length, quantified) : null,
-      detail: `${quantified}/${items.length} quantités comparables ; ${low} sous le seuil. Les formats non numériques restent à vérifier, sans conversion d’unité inventée.` },
-    { id: 'data', label: 'Données vérifiables', weight: 20, score: pct(quantified + dated, items.length * 2),
-      detail: `${quantified}/${items.length} quantités numériques comparables et ${dated}/${items.length} échéances exploitables. Les champs inconnus restent à vérifier, sans présumer de la péremption.` },
+      detail: `${quantified}/${stockApplicable} quantités comparables pour la dotation. ${low} sous le seuil.` },
+    { id: 'data', label: 'Données vérifiables', weight: 20, score: pct(quantified + dated, stockApplicable + expiryApplicable),
+      detail: `${quantified}/${stockApplicable} quantités comparables et ${dated}/${expiryApplicable} échéances exploitables parmi les champs applicables.` },
     { id: 'controls', label: 'Justificatifs de contrôle valides', weight: 20, score: pct(controlsGood, vessels.length),
       detail: `${controlsGood}/${vessels.length} navires avec un contrôle courant non échu. Les justificatifs absents restent à renseigner.` },
   ], tasks);

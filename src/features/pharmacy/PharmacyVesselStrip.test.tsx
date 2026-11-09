@@ -32,11 +32,11 @@ describe('PharmacyVesselStrip', () => {
     expect(goury).toHaveAccessibleDescription('2 articles à échéance sous 30 jours ; 3 articles périmés');
   });
 
-  it('includes stock to renew and articles outside the dotation in the red badge and counts overlaps once', () => {
-    render(<PharmacyVesselStrip counts={{ 1: { due: 2, expired: 3, low: 2, outsideDotation: 1, red: 4 } }} disabled={false} onChange={vi.fn()} value={1} vessels={[vessels[0]]} />);
+  it('includes stock to renew in the red badge and counts overlaps once', () => {
+    render(<PharmacyVesselStrip counts={{ 1: { due: 2, expired: 3, low: 2, red: 4 } }} disabled={false} onChange={vi.fn()} value={1} vessels={[vessels[0]]} />);
     const goury = screen.getByRole('button', { name: 'GOURY' });
     expect(within(goury).getByRole('img', { name: '2 articles à échéance sous 30 jours' })).toHaveTextContent('2');
-    expect(within(goury).getByRole('img', { name: '4 articles à traiter (3 articles périmés ; 2 articles à réapprovisionner ; 1 article hors dotation)' })).toHaveTextContent('4');
+    expect(within(goury).getByRole('img', { name: '4 articles à traiter (3 articles périmés ; 2 articles à réapprovisionner)' })).toHaveTextContent('4');
   });
 
   it('does not show badges for zero counts and handles singular articles', () => {
