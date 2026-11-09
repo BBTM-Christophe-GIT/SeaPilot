@@ -7,8 +7,8 @@ import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../comp
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, groupPharmacyItems, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
-import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
+import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
+import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { PHARMACY_NOTIFICATIONS_CHANGED, usePharmacyAlertPolling } from './usePharmacyAlertPolling';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
 import { PharmacyControlForm, PharmacyItemForm } from './PharmacyForms';
@@ -18,6 +18,8 @@ import './pharmacy.css';
 import './pharmacyGroups.css';
 
 type ItemFilter = 'all' | 'attention' | 'expiry' | 'expired' | 'due' | 'low' | 'outside_dotation' | 'unknown';
+type ItemEditor = { item?: PharmacyItem; requirement?: PharmacyDotationRequirement };
+type RequirementsRead = { client: SupabaseClient; vesselId: number; version: number; rows?: PharmacyDotationRequirement[]; failed?: boolean };
 const FILTER_LABELS: Record<ItemFilter, string> = { all: 'Tous les articles', attention: 'À traiter', expiry: 'Péremptions à traiter', expired: 'Périmés', due: 'Échéance ≤ 30 j', low: 'Stock insuffisant', outside_dotation: 'Hors dotation', unknown: 'À vérifier' };
 function requestedFilter(value: string | null): ItemFilter { return value && value in FILTER_LABELS ? value as ItemFilter : 'all'; }
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
@@ -29,7 +31,7 @@ function matchesItemFilter(item: PharmacyItem, filter: ItemFilter): boolean {
   if (filter === 'outside_dotation') return Boolean(item.outside_dotation);
   const expiry = pharmacyItemExpiryStatus(item);
   const expiryAlert = expiry === 'expired' || expiry === 'due';
-  if (filter === 'attention') return expiryAlert || Boolean(item.outside_dotation) || pharmacyStockStatus(item) === 'low';
+  if (filter === 'attention') return expiryAlert || pharmacyStockStatus(item) === 'low';
   if (filter === 'expiry') return expiryAlert;
   if (filter === 'unknown') return expiry === 'unknown' || pharmacyStockStatus(item) === 'unknown';
   return expiry === filter;
@@ -38,7 +40,7 @@ function ItemStatus({ item }: { item: PharmacyItem }) {
   const expiry = pharmacyItemExpiryStatus(item);
   const stock = pharmacyStockStatus(item);
   return <div className="pharmacy-row-status">
-    {item.outside_dotation ? <span className="pharmacy-badge is-expired"><AlertTriangle size={12} /> Hors dotation</span> : null}
+    {item.outside_dotation ? <span className="pharmacy-badge is-unknown">Hors dotation</span> : null}
     {expiry !== 'none' ? <span className={`pharmacy-badge is-${expiry}`}>{expiry === 'expired' || expiry === 'due' ? <AlertTriangle size={12} /> : expiry === 'valid' ? <Check size={12} /> : null}{expiryLabels[expiry]}</span> : null}
     {stock === 'low' ? <span className="pharmacy-stock-low">Stock insuffisant</span> : stock === 'unknown' ? <span className="pharmacy-stock-unknown">Stock à vérifier</span> : expiry === 'none' && !item.outside_dotation ? '—' : null}
   </div>;
@@ -84,7 +86,9 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [medicalSection, setMedicalSection] = useState<'all' | PharmacyMedicalSection>('all');
   const [filter, setFilter] = useState<ItemFilter>(() => requestedFilter(searchFilter));
   const [showInactive, setShowInactive] = useState(false);
-  const [editor, setEditor] = useState<{ item?: PharmacyItem } | null>(null);
+  const [editor, setEditor] = useState<ItemEditor | null>(null);
+  const [requirementsRead, setRequirementsRead] = useState<RequirementsRead | null>(null);
+  const [requirementsVersion, setRequirementsVersion] = useState(0);
   const [controlOpen, setControlOpen] = useState(false);
   const [selected, setSelected] = useState<PharmacyItem | null>(null);
   const [removal, setRemoval] = useState<{ item: PharmacyItem; vesselName: string; client: SupabaseClient } | null>(null);
@@ -95,6 +99,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const vessel = vessels.find((entry) => entry.id === vesselId);
   const manager = !!vessel?.can_manage && canManagePharmacy(roles || context?.roles || []);
   const currentDotation = vessel?.medical_dotation?.trim() || '';
+  const requirementVesselId = vessel?.id;
+  const requirements = requirementsRead?.client === db && requirementsRead.vesselId === requirementVesselId && requirementsRead.version === requirementsVersion ? requirementsRead : null;
   const dotationOptions = new Map<string, string>([[pharmacyDotationKey(currentDotation), currentDotation]]);
   for (const record of [...categoryRecords, ...items]) {
     const key = pharmacyDotationKey(record.medical_dotation);
@@ -122,6 +128,14 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     && matchesItemFilter(item, filter));
   const visibleCatalogue = !normalizedQuery && filter === 'all' ? sectionCategories.filter((entry) => !category || entry.name === category) : [];
   const groups = groupPharmacyItems(filtered, visibleCatalogue);
+  const existingRequirements = new Set(dotationItems.filter((item) => item.active)
+    .map((item) => JSON.stringify([pharmacyMedicalSection(item.medical_section), pharmacyDesignationKey(item.designation)])));
+  const missingStocks = filter === 'all' && !category ? (requirements?.rows ?? []).filter((entry) =>
+    entry.dotation_key === pharmacyDotationKey(medicalDotation)
+    && (medicalSection === 'all' || medicalSection === entry.medical_section)
+    && (entry.required_stock_quantity != null || entry.required_quantity.trim())
+    && !existingRequirements.has(JSON.stringify([entry.medical_section, entry.designation_key]))
+    && pharmacyDesignationKey(entry.designation).includes(pharmacyDesignationKey(normalizedQuery))) : [];
 
   useEffect(() => {
     if (!preview) return;
@@ -129,6 +143,17 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     void import('./pharmacyPreview').then(({ createPharmacyPreviewClient }) => { if (!cancelled) setPreviewClient(createPharmacyPreviewClient()); }).catch((reason) => { if (!cancelled) { setError(messageOf(reason)); setLoading(false); } });
     return () => { cancelled = true; };
   }, [preview]);
+  useEffect(() => {
+    if (!requirementVesselId || (preview && !previewClient)) return;
+    let cancelled = false;
+    const scope = { client: db, vesselId: requirementVesselId, version: requirementsVersion };
+    void fetchPharmacyDotationRequirements(db, requirementVesselId).then((rows) => {
+      if (!cancelled) setRequirementsRead({ ...scope, rows });
+    }).catch(() => {
+      if (!cancelled) setRequirementsRead({ ...scope, failed: true });
+    });
+    return () => { cancelled = true; };
+  }, [db, preview, previewClient, requirementVesselId, requirementsVersion]);
   useEffect(() => {
     if (preview && !previewClient) return;
     let cancelled = false;
@@ -172,6 +197,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   async function reload(refreshCounts = true) {
     if (!vesselId) return;
     if (refreshCounts) refreshVesselCounts();
+    setRequirementsVersion((version) => version + 1);
     const id = ++requestId.current; setLoading(true); setError('');
     let handedToVesselLoad = false;
     try {
@@ -339,6 +365,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     {preview ? <div className="pharmacy-demo">Démonstration · données fictives. Les inventaires importés sont disponibles dans l’espace connecté.</div> : null}
     <div className="pharmacy-vessel-bar"><PharmacyVesselStrip vessels={vessels} value={vesselId} disabled={busy} counts={vesselExpiryCounts} loading={countsLoading} onChange={(id) => { setVesselId(id); setSearchParams({ vessel: String(id) }, { replace: true }); }} /><div className="pharmacy-vessel-actions"><span className="pharmacy-vessel-meta">{loading ? 'Chargement de l’inventaire…' : `${active.length} articles actifs`}{!manager && vessel ? ' · Consultation' : ''}</span><div><button className="pharmacy-icon-button" aria-label="Actualiser l’inventaire" disabled={busy || loading || !vessel} onClick={() => void reload()} type="button"><RotateCcw size={17} /></button>{manager ? <><button className="sp-button sp-button--secondary" disabled={loading || busy} onClick={() => { if (!vessel) return; setNotice(''); setCategoryScope({ client: db, vessel: { ...vessel }, medicalDotation, medicalSection }); }} type="button"><Folders aria-hidden="true" size={16} /> Gérer les catégories</button><button className="primary-button" disabled={loading || busy || !isCurrentDotation} title={!isCurrentDotation ? `Les nouveaux articles sont ajoutés à la dotation actuelle du navire : ${pharmacyDotationLabel(currentDotation)}.` : undefined} onClick={() => { if (!isCurrentDotation) return; setFormError(''); setEditor({}); }} type="button"><Plus size={16} /> Ajouter un article</button></> : null}</div></div></div>
     {countsError ? <div className="pharmacy-message is-warning" role="alert">Compteurs d’alertes indisponibles : {countsError} Utilisez Actualiser l’inventaire pour réessayer.</div> : null}
+    {requirements?.failed ? <div className="pharmacy-message is-warning" role="status">Dotation commune indisponible. Utilisez Actualiser l’inventaire pour réessayer.</div> : null}
     {error ? <div role="alert" className="pharmacy-message is-error">{error}</div> : null}{notice ? <div role="status" className="pharmacy-message is-success"><CheckCircle2 size={15} />{notice}</div> : null}
     <div className="pharmacy-metrics" aria-label="Synthèse de l’inventaire">
       <button className={`pharmacy-metric is-danger ${filter === 'expired' ? 'is-selected' : ''}`} disabled={loading} onClick={() => setFilter(filter === 'expired' ? 'all' : 'expired')} type="button"><span><AlertTriangle size={16} /> Périmés</span><strong>{loading ? '—' : counts.expired}</strong></button>
@@ -367,9 +394,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                 {branchGroups.length ? branchGroups.map((group) => <tbody key={group.key}>
               <tr className="pharmacy-category-row"><th scope="rowgroup" colSpan={6}><div><span><strong>{group.category}</strong></span><em>{group.items.length} article{group.items.length > 1 ? 's' : ''}</em></div></th></tr>
               {!group.items.length ? <tr><td className="pharmacy-empty pharmacy-empty-category" colSpan={6}>{dotationItems.some((item) => pharmacyMedicalSection(item.medical_section) === group.medical_section && categoryKey(item.category) === categoryKey(group.category)) ? 'Aucun article affiché sur ce navire avec les filtres actuels.' : 'Aucun article enregistré sur ce navire.'}</td></tr> : group.items.map((item) => {
-                const dosage = item.stock_quantity != null || item.required_stock_quantity != null ? pharmacyItemStrength(item) : item.strength;
-                const packageLabel = item.package_size ? `${item.package_size} unité${item.package_size === 1 ? '' : 's'} par boîte` : '';
-                const details = [item.brand, item.lot_number ? `Lot ${item.lot_number}` : '', dosage, packageLabel].filter(Boolean).join(' · ');
+                const dosage = item.stock_quantity != null ? pharmacyItemStrength(item) : item.strength;
+                const details = [item.brand, item.lot_number ? `Lot ${item.lot_number}` : ''].filter(Boolean).join(' · ');
                 return <tr data-pharmacy-item={item.id} key={item.id} className={`${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}>
                   <td>
                     <div className="pharmacy-item-name">
@@ -378,8 +404,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                     </div>
                     <small>{details || item.category || 'Sans catégorie'}</small>
                   </td>
-                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{pharmacyQuantityLabel(item, 'stock')}</td>
-                  <td>{pharmacyQuantityLabel(item, 'required')}</td>
+                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{pharmacyQuantityLabel(item, 'stock')}{dosage ? <small>{dosage} par unité</small> : null}{item.package_size ? <small>{item.package_size} par boîte</small> : null}</td>
+                  <td>{item.outside_dotation ? '—' : <>{pharmacyQuantityLabel(item, 'required')}{item.required_strength ? <small>{item.required_strength} par unité</small> : null}{item.required_package_size ? <small>{item.required_package_size} par boîte</small> : null}</>}</td>
                   <td>{formatPharmacyItemExpiry(item)}{!item.no_expiry && item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td>
                   <td><ItemStatus item={item} /></td>
                   <td>{manager ? <div className="pharmacy-row-actions">
@@ -395,6 +421,19 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
             </tbody>) : <tbody><tr><td className="pharmacy-empty" colSpan={6}>{vessel ? 'Aucun article ne correspond aux filtres dans cette branche.' : 'Aucun navire accessible pour votre profil.'}</td></tr></tbody>}
                 </Fragment>;
               })}
+              {missingStocks.length ? <tbody>
+                <tr className="pharmacy-branch-row"><th scope="rowgroup" colSpan={6}>Dotation commune · stock à renseigner</th></tr>
+                {missingStocks.map((entry) => <tr key={JSON.stringify([entry.medical_section, entry.designation_key])}>
+                  <td><strong>{entry.designation}</strong><small>{pharmacyMedicalSectionLabel(entry.medical_section)}</small></td>
+                  <td>—</td>
+                  <td>{entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}{entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}{entry.required_package_size ? <small>{entry.required_package_size} par boîte</small> : null}</td>
+                  <td>—</td>
+                  <td><span className="pharmacy-badge is-unknown">Stock à renseigner</span></td>
+                  <td>{manager && isCurrentDotation ? <div className="pharmacy-row-actions">
+                    <button className="sp-button sp-button--secondary" aria-label={`Renseigner le stock de ${entry.designation}`} title="Renseigner le stock" disabled={busy} onClick={() => { setFormError(''); setEditor({ requirement: entry }); }} type="button"><Plus aria-hidden="true" size={16} /></button>
+                  </div> : null}</td>
+                </tr>)}
+              </tbody> : null}
             </>}
           </table>
         </div>
@@ -412,11 +451,11 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
           </dl>
           <p className="pharmacy-item-notes">{selected.notes || 'Aucune observation.'}</p>
           {selected.source_file ? <p className="pharmacy-source">{selected.source_file}<br />{selected.source_sheet} · ligne {selected.source_row}</p> : null}
-        </section> : <section className="pharmacy-reading-note"><h3>Lecture de l’inventaire</h3><p>Un stock inférieur à la dotation est à renouveler. Les quantités non comparables sont indiquées « à vérifier ».</p><p>Une date manquante reste à renseigner, sauf si l’article est marqué sans date de péremption. Pour un mois seul, le repère de date du fichier sert au calcul des alertes. Vérifiez la date complète à bord.</p></section>}
+        </section> : <section className="pharmacy-reading-note"><h3>Lecture de l’inventaire</h3><p>Un stock inférieur à la dotation est à renouveler. Les quantités non comparables sont indiquées « à vérifier ».</p><p>Pour les articles hors dotation, les alertes portent uniquement sur les dates de péremption renseignées. Pour un mois seul, le repère de date du fichier sert au calcul des alertes. Vérifiez la date complète à bord.</p></section>}
         {controls.length > 1 ? <details className="pharmacy-history"><summary>Historique des contrôles ({controls.length - 1})</summary>{controls.filter((control) => !control.is_current).map((control) => <button key={control.id} onClick={() => void download(control)} disabled={busy} type="button"><Download size={14} /><span>{control.file_name}<small>Échéance {formatPharmacyDate(control.expires_on)}</small></span></button>)}</details> : null}
       </aside>
     </div>
-    {editor ? <PharmacyItemForm item={editor.item} medicalDotation={currentDotation} medicalSection={medicalSection === 'all' ? undefined : medicalSection} categoryRecords={dotationCategories} categories={categories} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
+    {editor ? <PharmacyItemForm item={editor.item} medicalDotation={currentDotation} medicalSection={editor.requirement?.medical_section ?? (medicalSection === 'all' ? undefined : medicalSection)} initialDesignation={editor.requirement?.designation} categoryRecords={dotationCategories} categories={categories} requirements={requirements?.rows} requirementsPending={Boolean(requirementVesselId && !requirements)} requirementsError={requirements?.failed} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
     {categoryScope && categoryScope.client === db && categoryScope.vessel.id === vesselId && pharmacyDotationKey(categoryScope.medicalDotation) === pharmacyDotationKey(medicalDotation) && categoryScope.medicalSection === medicalSection && manager ? <PharmacyCategoriesDialog
       vesselName={categoryScope.vessel.name} medicalDotation={categoryScope.medicalDotation} initialMedicalSection={categoryScope.medicalSection} categories={dotationCategories} items={dotationItems} busy={busy || loading} notice={notice}
       onClose={() => { if (!categoryInFlight.current) setCategoryScope(null); }}

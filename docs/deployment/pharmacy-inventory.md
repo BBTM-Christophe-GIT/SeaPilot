@@ -2,13 +2,15 @@
 
 Le module **Registres → Inventaire Pharmacie** suit les articles et les documents de contrôle par navire. L’interface est conçue pour un portable de 15 pouces, avec synthèse, recherche et filtres immédiatement visibles, en-tête fixe et défilement limité à la liste.
 
-Depuis la version **3.85.0**, **Sans date de péremption** distingue les articles qui n’expirent pas des dates à renseigner. Le conditionnement et le dosage sont distincts du stock : on peut par exemple indiquer **3 comprimés par boîte** et **300 mg**. Les quantités à bord et de dotation se saisissent dans la même unité. L’alerte de renouvellement apparaît uniquement quand le stock à bord est inférieur à la dotation. La pastille rouge compte chaque article périmé ou à renouveler une seule fois.
+La fenêtre de saisie présente **Stock à bord** et **Dotation** côte à côte sur ordinateur et l’un sous l’autre sur mobile. Chaque côté indique sa propre quantité, son unité, son conditionnement et le dosage ou le volume unitaire. Pour les présentations liquides comparables, le renouvellement dépend du volume total. Par exemple, 10 unidoses de 10 mL couvrent une dotation de 20 unidoses de 5 mL. Les conditionnements ou dosages incompatibles ne sont pas considérés comme équivalents.
 
-**Hors Dotation** signale un article actif en dehors de la dotation obligatoire. L’article affiche la mention *« (hors dotation obligatoire) »* et figure dans les alertes. La pastille le compte une seule fois même s’il a aussi une alerte de stock ou de péremption.
+La dotation de référence d’un article est commune aux navires de la société pour le même type de dotation, la même branche et la même désignation. La saisir ou la modifier une fois applique ses valeurs aux articles correspondants. Sur un navire qui n’a pas encore cet article, la référence apparaît dans **Dotation commune · stock à renseigner** et préremplit la saisie du stock. Les quantités à bord, lots et péremptions restent propres au navire. Les valeurs historiques divergentes restent disponibles sur leurs lignes jusqu’à la saisie d’une référence commune.
 
-La section d’origine reste conservée dans les données historiques. Elle n’est plus affichée dans le détail ni dans la fenêtre de modification.
+**Hors dotation** classe l’article en dehors de la dotation obligatoire. La case retire l’article du calcul des alertes de stock. Une péremption renseignée continue de déclencher ses alertes aux échéances habituelles. **Sans date de péremption** distingue les articles qui n’expirent pas des dates à renseigner.
 
-Les formulaires d’ajout et de modification distinguent le stock à bord du stock de dotation. La liste **Unité de stock** propose les unités courantes. **Autre unité…** permet de préciser une unité ou de conserver une valeur historique.
+La section d’origine reste conservée dans les données historiques. La liste **Unité de stock** propose les unités courantes. **Autre unité…** permet de saisir une unité ou de conserver une valeur historique.
+
+Appliquer `20261109112356_pharmacy_shared_dotation_requirements.sql` avant le client 3.97.0.
 
 **Exporter Excel** dans le ruban télécharge les articles actifs de la dotation du navire sélectionné, avec le stock, la dotation, le conditionnement, le dosage et les statuts. L’export couvre aussi les lignes masquées par les filtres du tableau. Il ne contient aucune donnée du registre médical. Appliquer la migration `20261106133422_pharmacy_medical_stock.sql` avant le déploiement du client ; les valeurs historiques sont conservées.
 

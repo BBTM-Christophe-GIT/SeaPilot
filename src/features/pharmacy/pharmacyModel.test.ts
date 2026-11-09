@@ -51,11 +51,23 @@ describe('pharmacy dates and stock', () => {
     expect(formatPharmacyItemExpiry(item)).toBe('Sans date de péremption');
     expect(pharmacyItemExpiryStatus({ expires_on: null })).toBe('unknown');
   });
-  it('retains each stock and dotation count while counting each urgent article once', () => {
+  it('compares total volume across independent stock and dotation unit sizes', () => {
+    const saline = { quantity: '10', stock_quantity: 10, stock_unit: 'flacon', strength: '10 mL',
+      required_quantity: '20', required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL' };
+    expect(pharmacyStockStatus(saline)).toBe('ok');
+    expect(pharmacyStockStatus({ ...saline, stock_quantity: 9 })).toBe('low');
+    expect(pharmacyStockStatus({ quantity: '0,1 L', required_quantity: '20×5 mL' })).toBe('ok');
+    expect(pharmacyStockStatus({ quantity: '25', stock_quantity: 25, stock_unit: 'mL', required_quantity: '20 × 5ml' })).toBe('low');
+    expect(pharmacyStockStatus({ ...saline, strength: '10 mg' })).toBe('unknown');
+    expect(pharmacyStockStatus({ ...saline, stock_quantity: 0, outside_dotation: true })).toBe('none');
+    expect(pharmacyItemExpiryStatus({ expires_on: null, outside_dotation: true })).toBe('none');
+    expect(pharmacyItemExpiryStatus({ expires_on: '2026-10-19', outside_dotation: true }, '2026-10-20')).toBe('expired');
+  });
+  it('ignores obsolete outside-dotation alerts while counting each urgent article once', () => {
     const stock: PharmacyNotification = { id: 'stock-7', kind: 'stock', vessel_id: 2, vessel_name: 'SUROIT', title: 'Article', expires_on: null, days_until_expiry: null, item_id: 7 };
     const expired: PharmacyNotification = { ...stock, id: 'item-7', kind: 'item', expires_on: '2026-10-19', days_until_expiry: -1 };
     const outside: PharmacyNotification = { ...stock, id: 'outside-dotation-7', kind: 'outside_dotation' };
-    expect(pharmacyVesselExpiryCounts([stock, { ...stock, id: 'stock-8', item_id: 8 }, expired, outside])).toEqual({ 2: { due: 0, expired: 1, low: 2, outsideDotation: 1, red: 2 } });
+    expect(pharmacyVesselExpiryCounts([stock, { ...stock, id: 'stock-8', item_id: 8 }, expired, outside])).toEqual({ 2: { due: 0, expired: 1, low: 2, red: 2 } });
   });
   it('allows managers and captains to request edits, while sailors remain readers', () => {
     expect(canManagePharmacy(['admin'])).toBe(true);

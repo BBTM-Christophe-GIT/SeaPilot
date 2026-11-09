@@ -753,7 +753,6 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                     {activePharmacyNotifications.map((notification) => {
                       const days = notification.days_until_expiry;
                       const details = notification.kind === 'stock' ? 'Stock à renouveler'
-                        : notification.kind === 'outside_dotation' ? 'Hors dotation obligatoire'
                         : days === null ? ''
                         : days < 0 ? `Échéance dépassée de ${Math.abs(days)} jour(s)`
                         : days === 0 ? 'Échéance aujourd’hui' : `Échéance dans ${days} jours`;

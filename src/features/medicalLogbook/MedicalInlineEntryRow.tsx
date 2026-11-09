@@ -5,9 +5,9 @@ import { validateMedicalDraft, type MedicalDraft, type MedicalMedicationSnapshot
 import { MedicalMedicationPicker } from './MedicalMedicationPicker';
 import { MedicalSignaturePreview } from './MedicalSignaturePreview';
 
-export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, error, signer, signerLoading, signerError, signerUrl, signatureLoading, signatureUnavailable, medicationList, onReloadMedications, autoFocus = false, onDirtyChange, onReloadSigner, onSave, onCancel }: {
+export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, error, signer, signerLoading, signerError, signerUrl, signatureLoading, signatureUnavailable, vesselName, medicationList, onReloadMedications, autoFocus = false, onDirtyChange, onReloadSigner, onSave, onCancel }: {
   initial: MedicalDraft & { medications?: MedicalMedicationSnapshot[] }; editing: boolean; busy: boolean; error: string;
-  medicationList: { choices: MedicalMedicationChoice[]; error: string } | null; onReloadMedications: () => void;
+  vesselName: string; medicationList: { choices: MedicalMedicationChoice[]; error: string } | null; onReloadMedications: () => void;
   signer: MedicalSigner | null; signerLoading: boolean; signerError: string; signerUrl?: string;
   signatureLoading: boolean; signatureUnavailable: boolean;
   autoFocus?: boolean; onDirtyChange?: (dirty: boolean) => void;
@@ -74,7 +74,7 @@ export function MedicalInlineEntryRow({ initial, editing, busy, locked = false, 
         <label className="medical-sr-only" htmlFor={`${formId}-treatment`}>Traitement / Médicaments administrés</label>
         <textarea id={`${formId}-treatment`} form={formId} name="treatment_medicines" required={!draft.medications?.length} disabled={disabled} rows={3} maxLength={4000}
           placeholder="Notes de traitement" value={draft.treatment_medicines} aria-describedby={describedBy} onChange={(event) => field('treatment_medicines', event.target.value)} />
-        <MedicalMedicationPicker list={medicationList} original={original.medications ?? []} value={draft.medications ?? []}
+        <MedicalMedicationPicker vesselName={vesselName} list={medicationList} original={original.medications ?? []} value={draft.medications ?? []}
           disabled={disabled} onChange={(items) => field('medications', items)} onReload={onReloadMedications} />
       </div></td>
       <td><label className="medical-sr-only" htmlFor={`${formId}-aider`}>Secouriste</label><input id={`${formId}-aider`} readOnly disabled={disabled} value={signer?.signer_name || ''} /></td>

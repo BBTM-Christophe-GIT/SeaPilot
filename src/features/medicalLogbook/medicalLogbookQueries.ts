@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
+import { pharmacyMedicalSection } from '../pharmacy/pharmacyModel';
 import { normalizedMedicalDraft, validateMedicalDraft, type MedicalDraft, type MedicalEntry, type MedicalHistory, type MedicalMedicationChoice, type MedicalMedicationSnapshot, type MedicalVessel, type MedicalSigner, type MedicalSignatureSnapshot } from './medicalLogbookModel';
 
 function object(value: unknown): Record<string, unknown> {
@@ -145,7 +146,14 @@ export async function fetchMedicalEntries(client: SupabaseClient, vesselId: numb
 }
 
 export async function fetchMedicalMedicationChoices(client: SupabaseClient, vesselId: number): Promise<MedicalMedicationChoice[]> {
-  return array(await rpc(client, 'list_medical_logbook_medications', { p_vessel_id: vesselId })).map(parseMedicalMedicationChoice);
+  return array(await rpc(client, 'list_medical_logbook_medications', { p_vessel_id: vesselId })).map((value) => {
+    const row = object(value);
+    return {
+      ...parseMedicalMedicationChoice(row),
+      category: text(row.category).trim(),
+      medical_section: pharmacyMedicalSection(text(row.medical_section)),
+    };
+  });
 }
 
 export async function saveMedicalEntry(client: SupabaseClient, vesselId: number, draft: MedicalDraft, entry?: MedicalEntry): Promise<MedicalEntry> {

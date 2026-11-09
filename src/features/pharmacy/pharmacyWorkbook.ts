@@ -38,6 +38,9 @@ const columns = [
   { title: 'État du stock', width: 22 },
   { title: 'Hors dotation', width: 17 },
   { title: 'Notes', width: 48 },
+  { title: 'Unité de dotation', width: 20 },
+  { title: 'Dosage ou volume de dotation', width: 30 },
+  { title: 'Unités par boîte de dotation', width: 28 },
 ];
 
 function escapeXml(value: string): string {
@@ -55,6 +58,7 @@ function cell(value: CellValue, column: number, row: number, style: number): str
 
 function expiryLabel(item: PharmacyItem, today: string): string {
   const status = pharmacyItemExpiryStatus(item, today);
+  if (status === 'none' && !item.no_expiry) return 'Date non renseignée';
   return { none: 'Sans date de péremption', expired: 'Périmé', due: 'Échéance ≤ 30 j', valid: 'Date valide', unknown: 'Date à vérifier' }[status];
 }
 
@@ -67,8 +71,9 @@ function inventoryRow(item: PharmacyItem, today: string): CellValue[] {
     item.required_stock_quantity ?? parsePharmacyQuantity(item.required_quantity) ?? item.required_quantity,
     item.stock_unit ?? null, item.package_size ?? null, pharmacyItemStrength(item),
     item.no_expiry ? null : formatPharmacyItemExpiry(item), expiryLabel(item, today),
-    status === 'low' ? 'Stock insuffisant' : status === 'ok' ? 'Stock suffisant' : 'Stock à vérifier',
+    { low: 'Stock insuffisant', ok: 'Stock suffisant', unknown: 'Stock à vérifier', none: '—' }[status],
     item.outside_dotation ? 'Oui' : 'Non', item.notes,
+    item.required_stock_unit ?? null, item.required_strength ?? null, item.required_package_size ?? null,
   ];
 }
 

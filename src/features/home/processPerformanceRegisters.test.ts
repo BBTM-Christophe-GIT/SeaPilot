@@ -199,6 +199,30 @@ describe('Permission-scoped register performance', () => {
     expect(process.summary).toContain('1 stock(s) insuffisant(s)');
   });
 
+  it('compares equivalent volumes and scores only applicable stock and expiry fields', async () => {
+    const fixture = fixtureClient({ pharmacy_inventory: [
+      { id: 1, vessel_id: 2, designation: 'Volume équivalent', active: true, expires_on: '2027-05-01', quantity: '10', required_quantity: '20',
+        stock_quantity: 10, stock_unit: 'ampoule', strength: '10 mL', required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL' },
+      { id: 2, vessel_id: 2, designation: 'Hors dotation sans date', active: true, expires_on: null, quantity: '', required_quantity: '', outside_dotation: true },
+      { id: 3, vessel_id: 2, designation: 'Hors dotation périmé', active: true, expires_on: '2026-10-31', quantity: '1', required_quantity: '10', outside_dotation: true },
+      { id: 4, vessel_id: 2, designation: 'Sans péremption', active: true, expires_on: null, quantity: '3', required_quantity: '2', no_expiry: true },
+      { id: 5, vessel_id: 2, designation: 'À renseigner', active: true, expires_on: null, quantity: '', required_quantity: '5' },
+    ], pharmacy_controls: [{ id: 1, vessel_id: 2, is_current: true, expires_on: '2027-06-01' }] });
+    const [process] = await loadRegisterPerformance(fixture.client, ['pharmacy'], watch, '2026-11-01');
+    expect(process.tasks).toMatchObject([
+      { title: 'Hors dotation périmé', context: 'GOURY · Périmé', state: 'overdue' },
+      { title: 'À renseigner', context: 'GOURY · Stock à vérifier', state: 'unplanned' },
+    ]);
+    expect(process.criteria).toMatchObject([
+      { id: 'expiry', score: 50, detail: expect.stringContaining('2/3 échéances') },
+      { id: 'stock', score: 100, detail: expect.stringContaining('2/3 quantités') },
+      { id: 'data', score: 67 },
+      { id: 'controls', score: 100 },
+    ]);
+    const fields = fixture.selections.find((selection) => selection.table === 'pharmacy_inventory')?.select.split(',');
+    expect(fields).toEqual(expect.arrayContaining(['stock_unit', 'strength', 'required_stock_unit', 'required_strength', 'outside_dotation', 'no_expiry']));
+  });
+
   it('paginates full equipment inventories and invalidates partial failures', async () => {
     const inventory = Array.from({ length: 501 }, (_, index) => ({ id: index + 1, vessel_id: 2, kind: 'lifting', reference: `Matériel ${index}`, active: true, inspection_due_on: '2026-01-01' }));
     const fixture = fixtureClient({ lifting_inventory: inventory });

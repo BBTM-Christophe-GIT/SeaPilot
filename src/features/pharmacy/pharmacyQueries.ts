@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PharmacyCategory, PharmacyControl, PharmacyItem, PharmacyItemDraft, PharmacyMedicalSection, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
+import type { PharmacyCategory, PharmacyControl, PharmacyDotationRequirement, PharmacyItem, PharmacyItemDraft, PharmacyMedicalSection, PharmacyNotification, PharmacyVessel, PharmacyVesselExpiryCounts } from './pharmacyModel';
 import { pharmacyDaysUntil, pharmacyDotationKey, pharmacyMedicalSection, pharmacyVesselExpiryCounts } from './pharmacyModel';
 
 export async function fetchPharmacyVessels(client: SupabaseClient): Promise<PharmacyVessel[]> {
@@ -17,6 +17,11 @@ export async function fetchPharmacyRegister(client: SupabaseClient, vesselId: nu
   if (controls.error) throw controls.error;
   if (categories.error) throw categories.error;
   return { items: (items.data || []) as PharmacyItem[], controls: (controls.data || []) as PharmacyControl[], categories: (categories.data || []) as PharmacyCategory[] };
+}
+export async function fetchPharmacyDotationRequirements(client: SupabaseClient, vesselId: number): Promise<PharmacyDotationRequirement[]> {
+  const { data, error } = await client.rpc('list_pharmacy_dotation_requirements', { p_vessel_id: vesselId });
+  if (error) throw error;
+  return data || [];
 }
 export async function savePharmacyCategory(client: SupabaseClient, vesselId: number, name: string, category?: PharmacyCategory, medicalDotation?: string, medicalSection?: PharmacyMedicalSection): Promise<number> {
   const trimmed = name.trim();
@@ -67,7 +72,9 @@ export async function downloadPharmacyControl(client: SupabaseClient, path: stri
 export async function fetchPharmacyNotifications(client: SupabaseClient, includeUndated = true): Promise<PharmacyNotification[]> {
   const { data, error } = await client.rpc(includeUndated ? 'pharmacy_inventory_notifications' : 'pharmacy_notifications');
   if (error) throw error;
-  return data || [];
+  const rows: PharmacyNotification[] = data || [];
+  const outsideItems = new Set(rows.filter((row) => row.kind === 'outside_dotation').map((row) => row.item_id));
+  return rows.filter((row) => row.kind !== 'outside_dotation' && (row.kind !== 'stock' || !outsideItems.has(row.item_id)));
 }
 
 export async function fetchPharmacyVesselExpiryCounts(client: SupabaseClient): Promise<Record<number, PharmacyVesselExpiryCounts>> {

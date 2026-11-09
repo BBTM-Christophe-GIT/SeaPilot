@@ -9,8 +9,10 @@ export function createMedicalPreviewClient(): SupabaseClient {
   const histories = new Map<number, MedicalHistory[]>();
   const requests = new Map<string, MedicalEntry>();
   const pharmacy = new Map<number, MedicalMedicationChoice[]>(vessels.map((vessel) => [vessel.id, [
-    { item_id: 1, designation: 'Article Démo A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 20 },
-    { item_id: 2, designation: 'Article Démo B', brand: '', lot_number: 'DEMO-B', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10 },
+    { item_id: 1, designation: 'Article Démo A', brand: '', lot_number: 'DEMO-A', stock_unit: 'comprimé', strength: '300 mg', package_size: 3, stock_quantity: 20,
+      medical_section: 'medicines', category: 'Antalgiques' },
+    { item_id: 2, designation: 'Article Démo B', brand: '', lot_number: 'DEMO-B', stock_unit: 'unité', strength: '', package_size: null, stock_quantity: 10,
+      medical_section: 'equipment', category: 'Pansements' },
   ]]));
   let nextId = 10000;
   let nextHistoryId = 1;

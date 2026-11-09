@@ -345,7 +345,7 @@ export function MedicalLogbookPage({ client, roles, previewMode }: { client?: Su
     signatureUnavailable: signer?.signature ? signatureFailures.has(signer.signature.signature_id) : false,
     onReloadSigner: () => { signatureCache.current.clear(); setSignerReload((value) => value + 1); },
   };
-  const medicationProps = { medicationList, onReloadMedications: () => setMedicationReload((value) => value + 1) };
+  const medicationProps = { vesselName: vessel?.name || '', medicationList, onReloadMedications: () => setMedicationReload((value) => value + 1) };
   const readyRow = loaded && canWrite ? <MedicalInlineEntryRow key={`${accessScope}:${vesselId}:new-${creationEpoch}`} initial={blankMedicalDraft()} editing={false} busy={busy} locked={!!editor} error={editor ? '' : entryError}
     {...signatureProps} {...medicationProps} autoFocus={creationFocus && !editor}
     onDirtyChange={(dirty) => setCreationState({ accessScope, vesselId, dirty })}
