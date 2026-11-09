@@ -1024,12 +1024,16 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     await openRecord(record); fireEvent.click(stepButton(2)); await saveDraft();
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(formQueries().getByText('La connexion Copernicus Marine n’est pas encore configurée. Contactez l’Armement.')).toBeVisible();
-    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0].ukcMode).toBe('automatic');
+    expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0]).toMatchObject({
+      ukcMode: 'automatic', ukc: draft.waypoints[0].ukc, ukcFallbackMeters: draft.vessel.draftMeters! + 5,
+    });
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
 
   it('refreshes automatic forecasts before GO and signs only the saved compatible capture', async () => {
-    const draft = automaticUkcDraft(true), record = recordFixture(captainAccount, { draft });
+    const draft = automaticUkcDraft(true);
+    draft.waypoints[0].ukcFallbackMeters = draft.vessel.draftMeters! + 5;
+    const record = recordFixture(captainAccount, { draft });
     let stored = record;
     vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, payload) => ({ ...payload,
       waypoints: payload.waypoints.map((point, index) => index === 0 ? { ...point, ukcForecast: waypointUkc(payload) } : point) }));
@@ -1041,7 +1045,31 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     await waitFor(() => expect(signSeaOperation).toHaveBeenCalled());
     expect(captureSeaOperationValidationUkc).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ missingOnly: false }));
     expect(stored.draft.waypoints[0].ukcForecast?.status).toBe('available');
+    expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcFallbackMeters');
     expect(stored.draft.waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
+  });
+
+  it('signs GO with a recorded fallback when Copernicus cannot return a value', async () => {
+    const draft = automaticUkcDraft(true), record = recordFixture(captainAccount, { draft });
+    let stored = record;
+    vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, payload, options) => {
+      options?.onError?.(payload.waypoints[0], 'Calcul UKC indisponible.');
+      return payload;
+    });
+    vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => {
+      stored = recordFixture(captainAccount, { draft: payload, version: 4 });
+      return stored;
+    });
+    vi.mocked(signSeaOperation).mockImplementation(async () => ({ ...stored, status: 'signed', canEdit: false, signedBy: captainAccount.id, signedAt: new Date().toISOString() }));
+    renderAccount(captainAccount, record, 1, plannedMissions());
+    await openRecord(record);
+    await decisionStep();
+    const button = footerQueries().getByRole('button', { name: 'Signer la décision GO' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(signSeaOperation).toHaveBeenCalled());
+    expect(stored.draft.waypoints[0]).toMatchObject({ ukcMode: 'automatic', ukcFallbackMeters: draft.vessel.draftMeters! + 5 });
+    expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcForecast');
   });
 
   it('stops GO signing when canonical save changes the draught and removes the obsolete capture', async () => {

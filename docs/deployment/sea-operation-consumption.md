@@ -95,10 +95,11 @@ supérieur. Les ETA manuelles et les horaires des fiches signées restent priori
 Le chevron ouvre les indicateurs du navire sur toute la largeur du bandeau.
 Les courbes cumulent les litres consommés et le coût HT estimé mois après mois
 depuis janvier. Le filtre ouvre l’année en cours par défaut et propose les
-années où le navire dispose de DPR valides. Les étiquettes sur les courbes
-indiquent le cumul à la date du jour pour l’année en cours et à la fin de
-l’année pour les années passées. Sélectionner un autre mois sur le graphique
-déplace les étiquettes. Le tableau **Données mensuelles** reste consultable.
+années où le navire dispose de DPR valides. Pour l’année sélectionnée, les
+courbes s’arrêtent au dernier mois renseigné et leurs étiquettes indiquent le
+cumul à la date du dernier DPR validé avec une consommation renseignée.
+Sélectionner un autre mois sur le graphique déplace les étiquettes.
+Le tableau **Données mensuelles** reste consultable.
 Sous les courbes, la jauge de stock, la vitesse et la portée estimée, puis
 les barres des moyennes présentent les indicateurs du navire.
 Les volumes sont affichés en m³ à partir d’une capacité totale de 3 000 L.
@@ -108,15 +109,16 @@ Le cumul retient un seul DPR validé par jour, avec la même règle de sélectio
 que le stock. Le coût utilise le dernier prix HT applicable à la date du DPR
 pour le navire, ou le prix de référence de la flotte à cette date. Les litres
 sans tarif restent dans le cumul de consommation et sont signalés à côté du
-coût estimé. Les mois à venir restent sans valeur. Le bouton **Exporter en PNG**
-télécharge les courbes du navire et de l’année affichés avec les étiquettes
-du mois sélectionné.
+coût estimé. Le bouton **Exporter en PNG** télécharge les courbes du navire et
+de l’année affichés avec les étiquettes du mois sélectionné.
 
 Pour le GOURY, si l’année contient des dépenses éligibles de spécialité **Fuel**
 dans **Projet → Facturation**, le coût cumule leurs montants HT en euros à la
-date de facture. La courbe de volume continue de s’appuyer sur les DPR. Si
-aucune facture exploitable n’est disponible pour cette année, le coût reprend
-l’estimation à partir des DPR et des prix du carburant.
+date de facture. La courbe de volume continue de s’appuyer sur les DPR. Les deux
+étiquettes se placent par défaut à la plus récente des dates de DPR et de
+facture Fuel retenues. Si aucune facture exploitable n’est disponible pour
+cette année, le coût reprend l’estimation à partir des DPR et des prix du
+carburant.
 
 ## Saisie et bilan d’un relevé
 
@@ -212,9 +214,10 @@ l’opération et le calendrier de Paris. L’année et le mois en cours s’ouv
 défaut. Une recherche ou un filtre ouvre les branches correspondantes.
 La pastille Conso indique la présence d’un relevé sur les fiches GO signées.
 
-Le graphique au-dessus du registre affiche les autres manœuvres pour chaque
-navire, ainsi que le remorquage pour Le Rozel, Landemer et le Suroît. Il affiche
-les litres par mille nautique et le coût estimé en euros HT par mille nautique.
+Le KPI Moyennes affiche d’abord la carte **Consommation moyenne**, consacrée
+aux manœuvres hors remorquage. Pour Le Rozel, Landemer et le Suroît, la carte
+**Consommation moyenne en opération de remorquage** apparaît en dessous.
+Chaque carte indique les litres et le coût estimé en euros HT par mille nautique.
 Le coût multiplie la consommation moyenne par le dernier prix HT du navire,
 ou par le dernier prix de la flotte si le navire n’a pas de tarif propre. Dans chaque régime, la moyenne divise le volume total par
 la distance totale. Pour le Rozel et le Suroît, elle utilise les trajets de

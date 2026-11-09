@@ -13,8 +13,8 @@ const fuelLabel = (value: number) => number.format(value) + ' L/NM';
 const costLabel = (value: number) => euros.format(value) + '/NM';
 const towageVessels = new Set(['LE ROZEL', 'LANDEMER', 'SUROIT']);
 const showsTowage = (name: string) => towageVessels.has(normalizeFleetName(name));
-const towage = { key: 'towageLitersPerNm', label: 'Remorquage', monthlyKey: 'towage', icon: Anchor, style: 'is-towage' } as const;
-const other = { key: 'otherLitersPerNm', label: 'Autres manœuvres', monthlyKey: 'other', icon: Waves, style: 'is-other' } as const;
+const towage = { key: 'towageLitersPerNm', label: 'Consommation moyenne en opération de remorquage', monthlyKey: 'towage', icon: Anchor, style: 'is-towage' } as const;
+const other = { key: 'otherLitersPerNm', label: 'Consommation moyenne', monthlyKey: 'other', icon: Waves, style: 'is-other' } as const;
 
 function Trend({ label, value, previous, months, precision, format }: {
   label: string;
@@ -58,7 +58,7 @@ export function SeaOperationVesselConsumption({ vessel, averages, scale, error, 
   const rate = averages.get(vessel.vesselId);
   const price = rate?.pricePerLiter ?? null;
   return <dl className="so-vessel-consumption" aria-label="Consommation moyenne et coût HT par mille nautique">
-    {(showsTowage(vessel.vesselName) ? [towage, other] : [other]).map(({ key, label, monthlyKey, icon: Icon, style }) => {
+    {(showsTowage(vessel.vesselName) ? [other, towage] : [other]).map(({ key, label, monthlyKey, icon: Icon, style }) => {
       const value = rate?.[key] ?? null;
       const cost = value === null || price === null ? null : value * price;
       const months = rate?.monthly;

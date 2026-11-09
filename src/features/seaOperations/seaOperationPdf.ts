@@ -378,7 +378,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const number = assessment ? label.slice(0, -2) : label;
       const lines = inline ? [label] : document.getTextWidth(number) <= maxTextWidth ? [number, 'm'] : document.splitTextToSize(label, maxTextWidth) as string[];
       const valueHeight = 8 + lines.length * 9 + (warning && !inline ? 9 : 0);
-      const notes = row.ukcPresentation.automatic ? [row.ukcPresentation.approximate ? 'Indicative' : 'Automatique', 'Annexe UKC'] : [];
+      const notes = row.ukcPresentation.automatic ? [row.ukcPresentation.label, 'Annexe UKC'] : [];
       return { assessment, warning, inline, lines, notes, valueHeight, height: valueHeight + (notes.length ? 7 + notes.length * 8 : 0) };
     });
     const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });

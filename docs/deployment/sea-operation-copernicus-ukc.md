@@ -118,10 +118,20 @@ obsolète. Aucun backfill des fiches signées. Une révision administrative
 commence par le clone exact de la version historique ; les contrôles courants
 s’appliquent aux sauvegardes ordinaires suivantes.
 
-Un brouillon incomplet reste enregistrable. GO en mode automatique exige une
-capture disponible et compatible, y compris après la sauvegarde canonique.
-NO GO reste signable sans cette donnée afin de conserver le parcours
-d’interruption de l’opération. La signature fige la capture avec la fiche.
+Un brouillon incomplet reste enregistrable. À l’enregistrement, en l’absence
+d’une UKC automatique disponible, SeaPilot conserve une profondeur théorique
+de repli égale au tirant d’eau canonique du navire + 5 m. Le champ
+`ukcFallbackMeters` est distinct de `ukcForecast` et de la saisie manuelle.
+Il est affiché sans indicateur coloré dans la fiche et le PDF. Il permet
+de transmettre et de signer la fiche lorsque le calcul automatique est
+indisponible. Pour la navigation, le Capitaine utilise des données nautiques
+officielles. Le [calcul UKC décrit par Rijkswaterstaat](https://protide.rws.nl/Documentation/Transits/Calculation)
+soustrait le tirant d’eau à la profondeur d’eau totale.
+
+Une capture disponible et compatible prévaut sur le repli. Sans tirant d’eau
+de référence, le mode automatique ne peut fournir ni UKC ni profondeur de
+repli. Le Capitaine peut renseigner une UKC manuellement. NO GO reste signable
+sans cette donnée. La signature fige la valeur et sa provenance avec la fiche.
 
 ## Sources et vérification
 

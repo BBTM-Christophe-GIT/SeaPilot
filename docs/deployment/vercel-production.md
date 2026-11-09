@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.96.0` arrête les courbes annuelles de carburant à la date de la
+dernière donnée du navire et réorganise les cartes Moyennes. Elle enregistre une
+[profondeur de repli](./sea-operation-copernicus-ukc.md#droits-et-conservation)
+si l’UKC automatique est indisponible. Appliquer
+`20261109083555_sea_operation_fleet_fuel_latest_entry.sql` et
+`20261109083735_sea_operation_ukc_fallback.sql` avant le frontend.
+
 La version `3.95.1` affiche les vitesses moyennes des cadrans d’autonomie à une
 décimale. Les calculs utilisent la valeur avant arrondi.
 

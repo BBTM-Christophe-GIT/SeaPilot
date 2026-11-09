@@ -129,7 +129,7 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
   const [retry, setRetry] = useState(0);
   const [response, setResponse] = useState<{
     client: SupabaseClient; key: string; years: number[]; months?: SeaOperationFleetFuelMonth[];
-    costSource?: SeaOperationFleetFuelCostSource; error?: string;
+    costSource?: SeaOperationFleetFuelCostSource; lastEntryDate?: string | null; error?: string;
   }>();
   const key = `${vessel.vesselId}:${year}:${refresh}:${retry}`;
   const reload = useCallback(() => setRetry(value => value + 1), []);
@@ -149,7 +149,7 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
   const current = response?.client === client && response.key === key ? response : undefined;
   const years = [...new Set([currentYear, year, ...(response?.client === client ? response.years : [])])].sort((a, b) => b - a);
   return <SeaOperationFleetFuelHistory vesselName={vessel.vesselName} year={year} years={years} months={current?.months} volumeUnit={fuelVolumeUnit(vessel.capacityLiters)}
-    costSource={current?.costSource} loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
+    costSource={current?.costSource} lastEntryDate={current?.lastEntryDate} loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
 }
 
 function FuelCard({ vessel, detailId, expanded, onToggle }: {

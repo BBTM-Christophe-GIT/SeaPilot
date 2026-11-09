@@ -16,7 +16,7 @@ import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
-import { captureSeaOperationRadios, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference, seaOperationWeatherReference,
+import { captureSeaOperationRadios, captureSeaOperationUkcFallbacks, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference, seaOperationWeatherReference,
   updateSeaOperationWaypoint, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationUkcCaptureContext, SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
@@ -782,7 +782,7 @@ export function SeaOperationsPage() {
       const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(timed));
       const weather = await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode, missingOnly: true });
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
-      const captured = await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true });
+      const captured = captureSeaOperationUkcFallbacks(await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true }));
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
       const saved = source.projectPorts
         ? await saveSeaOperation(client, captured, { id: source.id, version: source.version }, source.projectPorts)
@@ -934,6 +934,7 @@ export function SeaOperationsPage() {
       // A silent request may finish while save-time requests are busy. Preserve its compatible result.
       const queued = [...pendingUkc.current.values()]; pendingUkc.current.clear();
       for (const entry of queued) if (entry.sourceClient === client) captured = retainSeaOperationUkc(captured, entry.capture, entry.context);
+      captured = captureSeaOperationUkcFallbacks(captured);
       const beforeSave = sign ? validateSeaOperation(captured, captured.decision || 'GO') : [];
       if (beforeSave.length) {
         setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsContext(null); setStep(3); revealFormFeedback(); return;

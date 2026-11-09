@@ -1,5 +1,5 @@
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
-import { effectiveSeaOperationUkc, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { parseProjectLocationOverlay, type ProjectLocationOverlay } from '../projects/projectLocation';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
@@ -53,6 +53,7 @@ export interface SeaOperationWaypoint {
   /** Missing means historical/manual. The automatic estimate never overwrites ukc. */
   ukcMode?: 'manual' | 'automatic';
   ukcForecast?: SeaOperationCopernicusEstimate;
+  ukcFallbackMeters?: number;
   /** The source permits a time alone when the point is reached on the same day. */
   eta: string;
   /** Missing with a nonempty ETA is historical/manual; a blank unmarked ETA can be calculated. */
@@ -327,6 +328,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
     && (point.etaMode === undefined || point.etaMode === 'manual' || point.etaMode === 'automatic')
     && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
     && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))
+    && (point.ukcFallbackMeters === undefined || seaOperationUkcFallback(point as unknown as SeaOperationWaypoint, ukcReference) !== undefined)
     && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))
     && (point.radio === undefined || Boolean(waypointRadioSnapshot(point as unknown as SeaOperationWaypoint))));
   if (!validWaypoints) return false;
@@ -428,12 +430,16 @@ export function validateSeaOperation(
   }
   requireText(payload.charts, 'Le numéro de la ou des cartes marines');
   if (payload.waypoints.length === 0) errors.push('Le Passage Plan doit comporter au moins un point.');
+  const ukcReference = seaOperationUkcReference(payload);
   payload.waypoints.forEach((point, index) => {
     const fields = [
       [point.number, 'Le numéro'], [point.descriptionVhf, 'La description'],
-      [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [effectiveSeaOperationUkc(payload, point), 'L’UKC'], [point.eta, 'L’ETA'],
+      [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [point.eta, 'L’ETA'],
     ] as const;
     for (const [value, label] of fields) requireText(value, `${label} du point n° ${index + 1}`);
+    if (seaOperationUkcFallback(point, ukcReference) === undefined) {
+      requireText(effectiveSeaOperationUkc(payload, point), `L’UKC du point n° ${index + 1}`);
+    }
     if (point.eta && !/^([01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && !validDate(point.eta)) errors.push(`L’ETA du point n° ${index + 1} doit être une date et une heure valides, ou une heure au format HH:mm.`);
   });
   return errors;
