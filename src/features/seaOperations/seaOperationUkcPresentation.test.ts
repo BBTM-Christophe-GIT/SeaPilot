@@ -61,4 +61,14 @@ describe('retained UKC presentation', () => {
     expect(Number(result.rawValue)).toBeGreaterThan(8);
     expect(assessSeaOperationUkc(result.rawValue, 6)?.level).toBe('success');
   });
+  it('presents the theoretical fallback without a UKC indicator or Copernicus attribution', () => {
+    const { payload, point } = fixture();
+    const fallback = { ...point, ukcForecast: undefined, ukcFallbackMeters: 7 };
+    const result = seaOperationUkcPresentation(payload, fallback);
+    expect(result).toMatchObject({ rawValue: '', fallback: true, approximate: false, label: 'Profondeur de repli',
+      displayValue: '7,00 m', pdfValue: '7,00 m', sourceUrls: [] });
+    expect(result.sourceFootnote).toContain('tirant d’eau du navire + 5 m');
+    expect(assessSeaOperationUkc(result.rawValue, payload.vessel.draftMeters)).toBeUndefined();
+    expect(seaOperationUkcPresentation(payload, { ...fallback, ukcFallbackMeters: 8 }).displayValue).toBe('');
+  });
 });

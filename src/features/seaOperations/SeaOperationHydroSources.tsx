@@ -4,6 +4,7 @@ import './seaOperationNavigation.css';
 export function SeaOperationHydroSources() {
   return <details className="so-hydro-sources">
     <summary>Profondeur, marée et calcul de l’UKC</summary>
+    <p>Si le calcul automatique ne donne pas d’UKC, SeaPilot enregistre une profondeur théorique de repli égale au tirant d’eau du navire + 5 m. Cette valeur non vérifiée sert à enregistrer la fiche. Pour la navigation, utilisez les données nautiques officielles.</p>
     <p>Le mode automatique estime l’UKC statique à l’ETA : profondeur du modèle + niveau d’eau du modèle − tirant d’eau du navire. La profondeur et le niveau d’eau proviennent du même produit, de la même version et de la même maille Copernicus Marine, avec une référence commune au géoïde du modèle.</p>
     <ul>
       <li><a href="https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description" target="_blank" rel="noopener noreferrer">Copernicus Marine Service — NWS</a> : modèle prioritaire en Manche et au sud de l’Angleterre, maille nominale de 1,5 km, prévisions jusqu’à 7 jours, niveaux d’eau instantanés toutes les 15 minutes.</li>

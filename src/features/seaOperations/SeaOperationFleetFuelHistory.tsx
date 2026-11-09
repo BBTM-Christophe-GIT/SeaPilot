@@ -16,6 +16,7 @@ interface Props {
   months?: readonly SeaOperationFleetFuelMonth[];
   volumeUnit?: FuelVolumeUnit;
   costSource?: SeaOperationFleetFuelCostSource;
+  lastEntryDate?: string | null;
   loading: boolean;
   error?: boolean | string;
   onRetry: () => void;
@@ -220,7 +221,7 @@ function HistoryPlot({ rows, lastMonth, selected, selectedDate, volumeUnit, bill
   </div>;
 }
 
-export function SeaOperationFleetFuelHistory({ vesselName, year, years, months, volumeUnit = 'L', costSource = 'dpr', loading, error, onRetry, onYearChange }: Props) {
+export function SeaOperationFleetFuelHistory({ vesselName, year, years, months, volumeUnit = 'L', costSource = 'dpr', lastEntryDate, loading, error, onRetry, onYearChange }: Props) {
   const headingId = useId();
   const scope = `${vesselName}:${year}`;
   const currentScope = useRef(scope);
@@ -233,16 +234,19 @@ export function SeaOperationFleetFuelHistory({ vesselName, year, years, months, 
   const today = seaOperationToday();
   const calendarYear = Number(today.slice(0, 4));
   const isCurrentYear = year === calendarYear;
-  const lastMonth = isCurrentYear ? Number(today.slice(5, 7)) : year < calendarYear ? 12 : 0;
-  const asOf = isCurrentYear ? `Mois en cours au ${today.split('-').reverse().join('/')}` : '';
+  const tableLastMonth = isCurrentYear ? Number(today.slice(5, 7)) : year < calendarYear ? 12 : 0;
   const billed = costSource === 'billing';
   const costSourceLabel = billed ? 'Coût HT · Projet → Facturation · Fuel' : '';
-  const rows = historyMonths(months, lastMonth, costSource);
-  const latest = rows.filter(row => row.cumulativeLiters !== null || row.cumulativeCostEuros !== null).at(-1);
+  const rows = historyMonths(months, tableLastMonth, costSource);
+  const latest = rows.filter(row => row.liters !== null || row.costEuros !== null).at(-1);
+  const lastMonth = latest?.month ?? 0;
+  const lastDate = lastEntryDate && Number(lastEntryDate.slice(5, 7)) === lastMonth
+    ? shortDate.format(new Date(`${lastEntryDate}T12:00:00Z`)) : '';
+  const asOf = lastDate ? `Dernière saisie le ${lastDate}` : '';
   const selectedMonth = selection?.scope === scope && selection.month <= lastMonth ? selection.month : Math.max(1, lastMonth);
   const selected = rows[selectedMonth - 1];
   const selectedMonthName = monthName(selectedMonth);
-  const selectedDate = isCurrentYear && selectedMonth === lastMonth ? shortDate.format(new Date(`${today}T12:00:00Z`))
+  const selectedDate = lastDate && selectedMonth === lastMonth ? lastDate
     : `${selectedMonthName.charAt(0).toUpperCase()}${selectedMonthName.slice(1)} ${year}`;
   const missing = latest?.cumulativeUnpricedLiters ?? 0;
   const costNote = missing > 0 ? `${volumeText(missing, volumeUnit)} sans prix applicable. ${latest?.cumulativeCostEuros === null ? 'Coût cumulé indisponible.' : 'Coût cumulé partiel.'}` : '';
@@ -294,7 +298,7 @@ export function SeaOperationFleetFuelHistory({ vesselName, year, years, months, 
       <p role="alert">{typeof error === 'string' ? error : 'L’historique du carburant est indisponible.'}</p>
       <button className="sp-button sp-button--secondary so-secondary" type="button" onClick={onRetry}>Réessayer</button>
     </div> : !latest ? <p>Aucune consommation renseignée pour cette année.</p> : <>
-      <HistoryPlot rows={rows} lastMonth={lastMonth} selected={selected} selectedDate={selectedDate} volumeUnit={volumeUnit} billed={billed}
+      <HistoryPlot rows={rows.slice(0, lastMonth)} lastMonth={lastMonth} selected={selected} selectedDate={selectedDate} volumeUnit={volumeUnit} billed={billed}
         hasPartialCost={hasPartialCost} svgRef={svgRef}
         onMonthChange={month => setSelection({ scope, month })} />
       {costNote && <p className="so-fuel-history-coverage">{costNote}</p>}
@@ -304,8 +308,8 @@ export function SeaOperationFleetFuelHistory({ vesselName, year, years, months, 
             <thead><tr><th scope="col">Mois</th><th scope="col">Consommation du mois</th><th scope="col">Consommation cumulée</th>
               <th scope="col">{billed ? 'Coût facturé du mois' : 'Coût estimé du mois'}</th>
               <th scope="col">{billed ? 'Coût cumulé facturé' : 'Coût cumulé estimé'}</th>{!billed && <th scope="col">Volume sans prix</th>}</tr></thead>
-            <tbody>{rows.slice(0, lastMonth).map(row => <tr key={row.month}>
-              <th scope="row">{monthName(row.month)}{isCurrentYear && row.month === lastMonth && <small> · En cours</small>}</th>
+            <tbody>{rows.slice(0, tableLastMonth).map(row => <tr key={row.month}>
+              <th scope="row">{monthName(row.month)}{isCurrentYear && row.month === tableLastMonth && <small> · En cours</small>}</th>
               <td>{volumeText(row.liters, volumeUnit)}</td><td>{volumeText(row.cumulativeLiters, volumeUnit)}</td><td>{moneyText(row.costEuros)}</td><td>{cumulativeText(row)}</td>
               {!billed && <td>{volumeText(row.liters === null ? null : row.unpricedLiters, volumeUnit)}</td>}
             </tr>)}</tbody>

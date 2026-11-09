@@ -1,6 +1,6 @@
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
-import { effectiveSeaOperationUkc, seaOperationUkcReference, waypointUkcSnapshot } from './seaOperationWaypointSnapshots';
+import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, waypointUkcSnapshot } from './seaOperationWaypointSnapshots';
 
 const metres = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const distance = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -14,11 +14,15 @@ const uncertaintyLabels = {
 /** Read only the recorded capture matching every input; never fetch data during presentation. */
 export function seaOperationUkcPresentation(payload: SeaOperationPayload | undefined, point: SeaOperationWaypoint) {
   const automatic = point.ukcMode === 'automatic';
+  const reference = payload ? seaOperationUkcReference(payload) : undefined;
   const rawValue = payload ? effectiveSeaOperationUkc(payload, point) : automatic ? '' : point.ukc;
-  const capture = automatic && payload ? waypointUkcSnapshot(point, seaOperationUkcReference(payload)) : undefined;
+  const capture = reference ? waypointUkcSnapshot(point, reference) : undefined;
+  const fallbackMeters = reference ? seaOperationUkcFallback(point, reference) : undefined;
+  const fallback = fallbackMeters !== undefined;
   const available = capture?.status === 'available' && capture.estimate && capture.source && capture.cell && capture.waterLevel;
-  const formatted = available ? `${metres.format(capture.estimate!.ukcMeters)} m` : rawValue;
-  const caption = !automatic ? '' : available ? 'Estimation statique indicative · incertitude totale non quantifiée.' : 'UKC automatique indisponible pour cette position et cette ETA.';
+  const formatted = available ? `${metres.format(capture.estimate!.ukcMeters)} m` : fallback ? `${metres.format(fallbackMeters)} m` : rawValue;
+  const caption = !automatic ? '' : available ? 'Estimation statique indicative · incertitude totale non quantifiée.'
+    : fallback ? 'UKC automatique indisponible · profondeur théorique de repli.' : 'UKC automatique indisponible pour cette position et cette ETA.';
   const details: string[] = [];
   if (available) {
     const { source, cell, waterLevel, estimate } = capture;
@@ -35,9 +39,14 @@ export function seaOperationUkcPresentation(payload: SeaOperationPayload | undef
       'Generated using E.U. Copernicus Marine Service Information.',
     );
     if (estimate!.cellVariability) details.push(`Dispersion locale des profondeurs : UKC entre ${metres.format(estimate!.cellVariability.lowerMeters)} et ${metres.format(estimate!.cellVariability.upperMeters)} m. Cette dispersion n’est pas une incertitude de mesure.`);
-  } else if (automatic) details.push(capture?.message || caption);
+  } else if (automatic) {
+    if (fallback) {
+      details.push(`Profondeur théorique de repli : ${formatted} (tirant d’eau du navire + 5 m). UKC indisponible. Valeur non vérifiée, sans usage pour la navigation.`);
+      if (capture?.message) details.push(capture.message);
+    } else details.push(capture?.message || caption);
+  }
   const sourceUrls = available ? [capture.source!.sourceUrl, `https://doi.org/${capture.source!.model === 'NWS' ? '10.48670/moi-00054' : '10.48670/moi-00027'}`] : [];
-  return { rawValue, automatic, approximate: Boolean(available), displayValue: available ? `≈ ${formatted}` : rawValue,
-    pdfValue: available ? `~ ${formatted}` : rawValue, caption, details,
+  return { rawValue, automatic, approximate: Boolean(available), fallback, label: available ? 'Indicative' : fallback ? 'Profondeur de repli' : 'Automatique',
+    displayValue: available ? `≈ ${formatted}` : formatted, pdfValue: available ? `~ ${formatted}` : formatted, caption, details,
     sourceFootnote: [...details, ...sourceUrls].join('\n'), sourceUrls, capture };
 }

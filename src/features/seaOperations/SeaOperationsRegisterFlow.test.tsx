@@ -267,7 +267,7 @@ describe('Operation consumption from the register', () => {
   it('opens annual history for GOURY and shows the cost source of the selected year', async () => {
     const currentYear = Number(today.slice(0, 4));
     const readHistory = vi.fn((_id: number, year: number) => ({ years: [currentYear, currentYear - 1],
-      costSource: year === currentYear ? 'billing' : 'dpr', months: [
+      costSource: year === currentYear ? 'billing' : 'dpr', lastEntryDate: `${year}-01-01`, months: [
         { month: 1, liters: year === currentYear ? 2100 : 800, costEuros: year === currentYear ? 2500 : 960, unpricedLiters: 0 },
         ...emptyFuelMonths.slice(1),
       ] }));
@@ -281,9 +281,11 @@ describe('Operation consumption from the register', () => {
     await panel.findByRole('option', { name: String(currentYear - 1) });
     expect(readHistory).toHaveBeenCalledWith(12, currentYear, true);
     expect(await panel.findByText(/Projet.*Facturation.*Fuel/)).toBeVisible();
+    expect(panel.getByRole('slider')).toHaveAttribute('aria-valuetext', expect.stringMatching(/^1 janv\. \d{4}.*2,1\sm³.*2\s500,00\s€ HT/));
     fireEvent.change(yearSelect, { target: { value: String(currentYear - 1) } });
     await waitFor(() => expect(readHistory).toHaveBeenCalledWith(12, currentYear - 1, true));
     expect(await panel.findByRole('img', { name: /coût cumulé estimé/i })).toBeVisible();
+    expect(panel.getByRole('slider')).toHaveAttribute('aria-valuetext', expect.stringContaining(`1 janv. ${currentYear - 1}`));
     expect(panel.queryByText(/Projet.*Facturation.*Fuel/)).not.toBeInTheDocument();
     expect(panel.getByRole('combobox', { name: /année/i })).toHaveValue(String(currentYear - 1));
     expect(panel.getByText('Autonomie estimée')).toBeVisible();
@@ -491,26 +493,29 @@ describe('Operation consumption from the register', () => {
     expect(fuelRibbon.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
     expect(fuelRibbon.queryByRole('button', { name: 'Soutes' })).not.toBeInTheDocument();
     expect(fuelRibbon.getByRole('button', { name: 'Export Excel' })).toBeEnabled();
-    expect(chart.queryByText('Remorquage')).not.toBeInTheDocument();
+    const towageLabel = 'Consommation moyenne en opération de remorquage';
+    expect(chart.queryByText(towageLabel)).not.toBeInTheDocument();
     const vessel = async (name: string) => {
       fireEvent.click(chart.getByRole('button', { name: `Détails carburant · ${name}` }));
       return within(await chart.findByRole('region', { name: `Indicateurs carburant · ${name}` }));
     };
     const goury = await vessel('GOURY');
+    expect(goury.getByText('Consommation moyenne')).toBeVisible();
     expect(goury.getByText('0 L/NM')).toBeVisible();
     expect(goury.getByText(/0,00\s€\/NM/)).toBeVisible();
-    expect(goury.queryByText('Remorquage')).not.toBeInTheDocument();
+    expect(goury.queryByText(towageLabel)).not.toBeInTheDocument();
     expect(goury.queryByText('99 L/NM')).not.toBeInTheDocument();
     const rozel = await vessel('LE ROZEL');
-    expect(rozel.getByText('Remorquage')).toBeVisible();
+    const rozelAverages = within(rozel.getByRole('region', { name: 'Moyennes' }));
+    expect(rozelAverages.getAllByRole('term').map(term => term.textContent)).toEqual(['Consommation moyenne', towageLabel]);
     expect(rozel.getByText('11,5 L/NM')).toBeVisible();
     expect(rozel.getByText(/13,80\s€\/NM/)).toBeVisible();
     expect(rozel.getByRole('img', { name: /Consommation en hausse.*novembre 2026.*octobre 2026/ })).toBeVisible();
     expect(rozel.getByRole('img', { name: /Coût HT en baisse/ })).toBeVisible();
     expect(rozel.getByRole('img', { name: /Consommation stable/ })).toBeVisible();
     expect(rozel.getByRole('img', { name: /Coût HT.*Comparaison.*indisponible/ })).toBeVisible();
-    expect((await vessel('LANDEMER')).getByText('Remorquage')).toBeVisible();
-    expect((await vessel('SUROÎT')).getByText('Remorquage')).toBeVisible();
+    expect((await vessel('LANDEMER')).getByText(towageLabel)).toBeVisible();
+    expect((await vessel('SUROÎT')).getByText(towageLabel)).toBeVisible();
     expect(screen.getByRole('button', { name: /^Projet A/ })).toHaveTextContent('Conso renseignée');
     expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveTextContent('Conso non renseignée');
   });

@@ -87,6 +87,7 @@ interface SeaOperationFleetFuelHistory {
   years: number[];
   months: SeaOperationFleetFuelMonth[];
   costSource: SeaOperationFleetFuelCostSource;
+  lastEntryDate: string | null;
 }
 
 const invalidResponse = 'Le niveau de carburant reçu est invalide.';
@@ -144,10 +145,13 @@ export async function fetchSeaOperationFleetFuelHistory(client: SupabaseClient, 
   if (error) throw error;
   const invalidHistory = 'L’historique annuel de carburant reçu est invalide.';
   if (!data || typeof data !== 'object') throw new Error(invalidHistory);
-  const { years, months, costSource = 'dpr' } = data as Record<string, unknown>;
+  const { years, months, costSource = 'dpr', lastEntryDate = null } = data as Record<string, unknown>;
   if (!Array.isArray(years) || !years.every((value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 1900 && value <= 9999)
     || !Array.isArray(months) || months.length !== 12 || costSource !== 'dpr' && costSource !== 'billing') throw new Error(invalidHistory);
-  return { years: years as number[], costSource, months: months.map((value: unknown, index) => {
+  if (lastEntryDate !== null && (typeof lastEntryDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(lastEntryDate)
+    || Number(lastEntryDate.slice(0, 4)) !== year || !Number.isFinite(Date.parse(lastEntryDate))
+    || new Date(lastEntryDate).toISOString().slice(0, 10) !== lastEntryDate)) throw new Error(invalidHistory);
+  return { years: years as number[], costSource, lastEntryDate, months: months.map((value: unknown, index) => {
     if (!value || typeof value !== 'object') throw new Error(invalidHistory);
     const { month, liters, costEuros, unpricedLiters } = value as Record<string, unknown>;
     if (month !== index + 1 || !quantity(liters) || !quantity(costEuros) || !quantity(unpricedLiters)

@@ -24,8 +24,8 @@ describe('annual vessel fuel chart', () => {
     expect(chart.querySelector('line[stroke-dasharray]')).not.toBeNull();
     expect(screen.getByText(/40 L sans prix applicable/)).toBeVisible();
     const slider = screen.getByRole('slider', { name: 'Mois du graphique' });
-    expect(slider).toHaveAttribute('aria-valuenow', '12');
-    expect(chart.querySelector('[data-fuel-history-label="volume"]')).toHaveTextContent('Décembre 2025');
+    expect(slider).toHaveAttribute('aria-valuenow', '5');
+    expect(chart.querySelector('[data-fuel-history-label="volume"]')).toHaveTextContent('Mai 2025');
     expect(screen.queryByRole('combobox', { name: 'Mois' })).toBeNull();
     fireEvent.keyDown(slider, { key: 'Home' });
     fireEvent.keyDown(slider, { key: 'ArrowRight' });
@@ -69,13 +69,13 @@ describe('annual vessel fuel chart', () => {
     vi.mocked(buildSeaOperationFleetFuelHistoryPng).mockResolvedValue(blob);
     vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: () => 'blob:fuel-history', revokeObjectURL: vi.fn() }));
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    render(<SeaOperationFleetFuelHistory {...props} vesselName="GOURY" costSource="billing" months={[
+    render(<SeaOperationFleetFuelHistory {...props} vesselName="GOURY" costSource="billing" lastEntryDate="2025-04-12" months={[
       { month: 2, liters: null, costEuros: 0, unpricedLiters: 0 },
       { month: 4, liters: null, costEuros: 1000, unpricedLiters: 0 },
     ]} />);
     const chart = screen.getByRole('img', { name: 'Consommation cumulée et coût cumulé facturé' });
     expect(chart).toHaveTextContent('Consommation indisponible');
-    expect(chart.querySelector('[data-fuel-history-label="cost"]')).toHaveTextContent(/Décembre 2025\s*1\s000,00 € HT/);
+    expect(chart.querySelector('[data-fuel-history-label="cost"]')).toHaveTextContent(/12 avr\. 2025\s*1\s000,00 € HT/);
     expect(screen.getByText('Coût HT · Projet → Facturation · Fuel')).toBeVisible();
     expect(screen.queryByText(/sans prix applicable/)).toBeNull();
     fireEvent.click(screen.getByText('Données mensuelles'));
@@ -86,20 +86,23 @@ describe('annual vessel fuel chart', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exporter le graphique en PNG' }));
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
     expect(buildSeaOperationFleetFuelHistoryPng).toHaveBeenCalledWith(chart, expect.objectContaining({
-      vesselName: 'GOURY', costSourceLabel: 'Coût HT · Projet → Facturation · Fuel',
+      vesselName: 'GOURY', costSourceLabel: 'Coût HT · Projet → Facturation · Fuel', asOf: 'Dernière saisie le 12 avr. 2025',
     }));
   });
 
-  it('marks the current month to date and leaves future months out of the detail table', () => {
+  it('labels both curves with the exact last entry date and stops the plot at that month', () => {
     vi.setSystemTime(new Date('2026-11-06T23:30:00Z'));
-    render(<SeaOperationFleetFuelHistory {...props} year={2026} />);
-    expect(screen.getByText(/Mois en cours au 07\/11\/2026/)).toBeVisible();
+    render(<SeaOperationFleetFuelHistory {...props} year={2026} lastEntryDate="2026-05-19" />);
+    expect(screen.getByText(/Dernière saisie le 19 mai 2026/)).toBeVisible();
     const slider = screen.getByRole('slider', { name: 'Mois du graphique' });
-    expect(slider).toHaveAttribute('aria-valuenow', '11');
-    expect(slider).toHaveAttribute('aria-valuemax', '11');
-    expect(screen.getByRole('img').querySelector('[data-fuel-history-label="volume"]')).toHaveTextContent('7 nov. 2026');
+    expect(slider).toHaveAttribute('aria-valuenow', '5');
+    expect(slider).toHaveAttribute('aria-valuemax', '5');
+    const chart = screen.getByRole('img');
+    expect(chart.querySelector('[data-fuel-history-label="volume"]')).toHaveTextContent(/19 mai 2026\s*220 L/);
+    expect(chart.querySelector('[data-fuel-history-label="cost"]')).toHaveTextContent(/19 mai 2026\s*225,00 € HT · partiel/);
+    expect(chart.querySelectorAll('circle')).toHaveLength(10);
     fireEvent.keyDown(slider, { key: 'ArrowRight' });
-    expect(slider).toHaveAttribute('aria-valuenow', '11');
+    expect(slider).toHaveAttribute('aria-valuenow', '5');
     vi.spyOn(slider, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 0, 760, 350));
     fireEvent.click(slider, { clientX: 100 + 54 + (760 - 21 - 54) * 2 / 11 });
     expect(slider).toHaveAttribute('aria-valuenow', '3');

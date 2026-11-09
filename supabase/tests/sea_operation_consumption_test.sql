@@ -752,6 +752,10 @@ select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'
   ) fixture(year)) years), 'real Marin receives available canonical DPR years');
 select is(jsonb_array_length(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)->'months'),
   12, 'the annual result always has twelve ordered calendar months');
+select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2024)->>'lastEntryDate',
+  '2024-05-20', 'the latest annual date is the last validated DPR with fuel data for a real Marin');
+select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'), 2022)->'lastEntryDate',
+  'null'::jsonb, 'a year without fuel entries has no source date');
 select is(pg_temp.annual_fuel_month(2024, 1), '{"month":1,"liters":0,"costEuros":0,"unpricedLiters":0}'::jsonb,
   'an observed zero is distinct from an empty month');
 select is(pg_temp.annual_fuel_month(2024, 2), '{"month":2,"liters":100,"costEuros":null,"unpricedLiters":100}'::jsonb,
@@ -855,6 +859,8 @@ select is(pg_temp.goury_billing_history(2024)->'months'->1,
   '{"month":2,"liters":200,"costEuros":null,"unpricedLiters":0}'::jsonb,
   'the whole billing year keeps DPR liters and does not add DPR estimated costs');
 select is(pg_temp.goury_billing_history(2024)->'months'->5->>'costEuros', '0.00', 'a real zero invoice is an observation');
+select is(pg_temp.goury_billing_history(2024)->>'lastEntryDate', '2024-06-01', 'the latest eligible fuel invoice can set the cumulative date');
+select is(pg_temp.goury_billing_history(2022)->>'lastEntryDate', '2022-01-01', 'an invoice-only year still has a source date');
 select is(pg_temp.goury_billing_history(2024)->'years', '[2024,2023,2022]'::jsonb,
   'invoice-only years are available and future invoices are excluded');
 select is(pg_temp.goury_billing_history(2023), public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('goury_other'), 2023)
@@ -868,6 +874,8 @@ select is(public.sea_operation_fleet_fuel_history(pg_temp.fuel_vessel('fuel_dpr'
 select pg_temp.conso_actor(3);
 select is(pg_temp.goury_billing_history(2024)->>'costSource', 'billing',
   'a scoped real Capitaine receives GOURY billing aggregates');
+select is(pg_temp.goury_billing_history(2024)->>'lastEntryDate', '2024-06-01',
+  'a scoped real Capitaine receives the latest eligible fuel invoice date');
 select pg_temp.conso_actor(6);
 select throws_ok($$select pg_temp.goury_billing_history(2024)$$, '42501', null, 'foreign accounts cannot receive GOURY billing totals');
 reset role;
