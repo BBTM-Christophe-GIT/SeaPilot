@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.99.0` refond le bilan Conso des opérations en mer avec six
+indicateurs, une cuve dynamique et un profil GPS interactif en heure de Paris.
+Le niveau est indicatif si la capacité des soutes est inconnue. Voir
+[Relevés de consommation](./sea-operation-consumption.md).
+
 La version `3.98.1` simplifie le bon de commande Pharmacie. Le tableau affiche le
 dosage requis sous la désignation et l’unité de commande avec la quantité. Voir
 [Inventaire Pharmacie](./pharmacy-inventory.md).
