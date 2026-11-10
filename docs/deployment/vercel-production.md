@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.98.0` ajoute le bon de commande PDF dans le ruban de l’inventaire
+pharmacie. Appliquer `20261110080026_pharmacy_purchase_order_context.sql` avant le
+frontend. Voir [Inventaire Pharmacie](./pharmacy-inventory.md).
+
 La version `3.97.0` sépare le stock embarqué et la dotation commune dans
 l’inventaire pharmacie. Le registre médical regroupe par catégorie les articles
 à déduire du navire. Appliquer

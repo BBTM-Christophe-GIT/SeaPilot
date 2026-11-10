@@ -8,9 +8,13 @@ import type { RoleKey } from '../permissions/roles';
 import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { buildPharmacyWorkbook } from './pharmacyWorkbook';
+import { buildPharmacyPurchaseOrderPdf } from './pharmacyPurchaseOrderPdf';
+import { downloadPharmacyPurchaseOrderSignature, fetchPharmacyPurchaseOrderContext, type PharmacyPurchaseOrderContext } from './pharmacyPurchaseOrderQueries';
 import { PHARMACY_ALERT_FOCUS_MS } from './usePharmacyAlertPolling';
 
 vi.mock('./pharmacyWorkbook', () => ({ buildPharmacyWorkbook: vi.fn() }));
+vi.mock('./pharmacyPurchaseOrderPdf', () => ({ buildPharmacyPurchaseOrderPdf: vi.fn() }));
+vi.mock('./pharmacyPurchaseOrderQueries', () => ({ downloadPharmacyPurchaseOrderSignature: vi.fn(), fetchPharmacyPurchaseOrderContext: vi.fn() }));
 vi.mock('./pharmacyQueries', async (importOriginal) => ({ ...await importOriginal<typeof import('./pharmacyQueries')>(), fetchPharmacyVessels: vi.fn(), fetchPharmacyVesselExpiryCounts: vi.fn(), fetchPharmacyDotationRequirements: vi.fn(), fetchPharmacyRegister: vi.fn(), savePharmacyItem: vi.fn(), savePharmacyCategory: vi.fn(), deletePharmacyCategory: vi.fn(), uploadPharmacyControl: vi.fn(), downloadPharmacyControl: vi.fn() }));
 const client = {} as SupabaseClient;
 const vessels: PharmacyVessel[] = [{ id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', can_manage: true }, { id: 2, company_id: 1, name: 'SUROIT', acronym: 'SUR', can_manage: true }, { id: 3, company_id: 1, name: 'HIRONDELLE DE LA MANCHE', acronym: 'HIR', can_manage: true }];
@@ -24,6 +28,12 @@ const parentB = { ...categoryFixtures[0], medical_dotation: 'Dotation B' };
 const parentC = { ...categoryFixtures[0], id: 201, medical_dotation: 'Dotation C' };
 const articleB = { ...item, medical_dotation: 'Dotation B', section: 'Médicaments source B' };
 const articleC = { ...item, id: 21, medical_dotation: 'Dotation C', section: 'Médicaments source B', designation: 'ARTICLE HISTORIQUE C' };
+const orderContext: PharmacyPurchaseOrderContext = {
+  issued_on: '2026-11-10', vessel_name: 'GOURY', registration_number: 'CH 001', imo_number: '1234567',
+  medical_dotation: 'Dotation B', signer_name: 'Camille Exemple', signer_function: 'Capitaine de relève',
+  signature_path: '1/12/signature.png', signature_mime_type: 'image/png', requirements: [],
+  items: [{ ...articleB, medical_section: 'medicines', stock_unit: 'comprimé', stock_quantity: 9, required_stock_quantity: 10, package_size: 10 }],
+};
 function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
 
 describe('PharmacyPage', () => {
@@ -52,6 +62,68 @@ describe('PharmacyPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
     expect(screen.getByText(/DOTATION MEDICALE · ligne 4/)).toBeInTheDocument();
     expect(screen.getByText('Observation du fichier')).toBeInTheDocument();
+  });
+  it('does not expose the order command to a Marin or a Captain outside the management scope', async () => {
+    const marin = page(['marin']);
+    await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.queryByRole('button', { name: 'Bon de commande PDF' })).not.toBeInTheDocument();
+    marin.unmount();
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], can_manage: false }]);
+    page(['capitaine']);
+    await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    expect(screen.queryByRole('button', { name: 'Bon de commande PDF' })).not.toBeInTheDocument();
+    expect(fetchPharmacyPurchaseOrderContext).not.toHaveBeenCalled();
+  });
+
+  it('downloads the signed order from the ribbon with fresh vessel data despite inventory filters', async () => {
+    const user = userEvent.setup();
+    const signature = new Uint8Array([1, 2]);
+    const blob = new Blob(['pdf'], { type: 'application/pdf' });
+    const filename = 'bon-pharmacie-goury.pdf';
+    vi.mocked(fetchPharmacyPurchaseOrderContext).mockResolvedValue(orderContext);
+    vi.mocked(downloadPharmacyPurchaseOrderSignature).mockResolvedValue(signature);
+    vi.mocked(buildPharmacyPurchaseOrderPdf).mockResolvedValue({ blob, filename });
+    const createObjectURL = vi.fn(() => 'blob:pharmacy-pdf');
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL: vi.fn() }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      page(['armement']);
+      await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+      await user.click(screen.getByRole('button', { name: /Périmés.*1/ }));
+      expect(screen.queryByRole('button', { name: 'ARTICLE SOURCE' })).not.toBeInTheDocument();
+      const ribbon = screen.getByRole('navigation', { name: 'Commandes de l’inventaire pharmacie' });
+      await user.click(within(ribbon).getByRole('button', { name: 'Bon de commande PDF' }));
+      await waitFor(() => expect(download).toHaveBeenCalledOnce());
+      expect(fetchPharmacyPurchaseOrderContext).toHaveBeenCalledExactlyOnceWith(client, 1);
+      expect(buildPharmacyPurchaseOrderPdf).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        issuedOn: '2026-11-10', vesselName: 'GOURY', registrationNumber: 'CH 001', imoNumber: '1234567', medicalDotation: 'Dotation B',
+        signerName: 'Camille Exemple', signerFunction: 'Capitaine de relève', signature,
+        lines: [expect.objectContaining({ designation: 'ARTICLE SOURCE', quantity: 1, unit: 'boîte' })],
+      }));
+      expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
+      expect(download.mock.contexts[0]).toHaveAttribute('download', filename);
+    } finally {
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('requires a quantity when the pack is unknown and rechecks stock before signing', async () => {
+    const user = userEvent.setup();
+    const unknownPack = { ...orderContext.items[0], stock_quantity: 4, package_size: null };
+    vi.mocked(fetchPharmacyPurchaseOrderContext)
+      .mockResolvedValueOnce({ ...orderContext, items: [unknownPack] })
+      .mockResolvedValueOnce({ ...orderContext, items: [orderContext.items[0]] });
+    page(['direction']);
+    await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
+    await user.click(screen.getByRole('button', { name: 'Bon de commande PDF' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Vérifier les quantités du bon' });
+    expect(downloadPharmacyPurchaseOrderSignature).not.toHaveBeenCalled();
+    await user.type(within(dialog).getByRole('spinbutton', { name: 'Quantité (boîte) pour ARTICLE SOURCE' }), '2');
+    await user.click(within(dialog).getByRole('button', { name: 'Émettre le PDF signé' }));
+    expect(await screen.findByText(/La date ou l’inventaire a changé/)).toBeInTheDocument();
+    expect(buildPharmacyPurchaseOrderPdf).not.toHaveBeenCalled();
+    expect(downloadPharmacyPurchaseOrderSignature).not.toHaveBeenCalled();
   });
   it('filters the inventory from a metric, category and search', async () => {
     const user = userEvent.setup(); page();

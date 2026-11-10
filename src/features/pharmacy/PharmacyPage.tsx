@@ -1,17 +1,20 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileUp, Folders, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCircle2, ChevronDown, Download, FileCheck2, FileText, FileUp, Folders, Package, Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { PHARMACY_NOTIFICATIONS_CHANGED, usePharmacyAlertPolling } from './usePharmacyAlertPolling';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
 import { PharmacyControlForm, PharmacyItemForm } from './PharmacyForms';
+import { PharmacyPurchaseOrderReview } from './PharmacyPurchaseOrderReview';
+import { buildPharmacyPurchaseOrderLines, type PharmacyPurchaseOrderLine } from './pharmacyPurchaseOrderLines';
+import { downloadPharmacyPurchaseOrderSignature, fetchPharmacyPurchaseOrderContext } from './pharmacyPurchaseOrderQueries';
 import { PharmacyVesselStrip } from './PharmacyVesselStrip';
 import { PharmacyIcon } from './PharmacyIcon';
 import './pharmacy.css';
@@ -20,6 +23,7 @@ import './pharmacyGroups.css';
 type ItemFilter = 'all' | 'attention' | 'expiry' | 'expired' | 'due' | 'low' | 'outside_dotation' | 'unknown';
 type ItemEditor = { item?: PharmacyItem; requirement?: PharmacyDotationRequirement };
 type RequirementsRead = { client: SupabaseClient; vesselId: number; version: number; rows?: PharmacyDotationRequirement[]; failed?: boolean };
+type PurchaseOrderReview = { vesselId: number; vesselName: string; issuedOn: string; medicalDotation: string; lines: PharmacyPurchaseOrderLine[] };
 const FILTER_LABELS: Record<ItemFilter, string> = { all: 'Tous les articles', attention: 'À traiter', expiry: 'Péremptions à traiter', expired: 'Périmés', due: 'Échéance ≤ 30 j', low: 'Stock insuffisant', outside_dotation: 'Hors dotation', unknown: 'À vérifier' };
 function requestedFilter(value: string | null): ItemFilter { return value && value in FILTER_LABELS ? value as ItemFilter : 'all'; }
 function messageOf(error: unknown) { return error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Impossible de réaliser cette opération. Réessayez.'; }
@@ -80,6 +84,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [formError, setFormError] = useState('');
+  const [purchaseOrderReview, setPurchaseOrderReview] = useState<PurchaseOrderReview | null>(null);
+  const [purchaseOrderError, setPurchaseOrderError] = useState('');
+  const purchaseOrderInFlight = useRef(false);
+  const purchaseOrderScope = useRef(0);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [medicalDotation, setMedicalDotation] = useState('');
@@ -98,6 +106,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const lastItemLink = useRef<{ client: SupabaseClient; vesselId: number; itemId: number } | null>(null);
   const vessel = vessels.find((entry) => entry.id === vesselId);
   const manager = !!vessel?.can_manage && canManagePharmacy(roles || context?.roles || []);
+  const canIssuePurchaseOrder = manager && !preview;
   const currentDotation = vessel?.medical_dotation?.trim() || '';
   const requirementVesselId = vessel?.id;
   const requirements = requirementsRead?.client === db && requirementsRead.vesselId === requirementVesselId && requirementsRead.version === requirementsVersion ? requirementsRead : null;
@@ -175,6 +184,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     setCategoryScope(null);
     return () => { categoryContextId.current += 1; };
   }, [db, vesselId, manager, searchFilter, medicalDotation, medicalSection, requestedItemId]);
+  useEffect(() => {
+    setPurchaseOrderReview(null);
+    return () => { purchaseOrderScope.current += 1; };
+  }, [db, vesselId, context?.userId, canIssuePurchaseOrder]);
   useEffect(() => {
     setRemoval(null); setRemovalError('');
     setCategoryScope(null);
@@ -352,6 +365,66 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       if (id === requestId.current) setError(messageOf(reason));
     } finally { setBusy(false); }
   }
+  async function issuePurchaseOrder(quantities?: Map<number, number>) {
+    if (!vessel || !canIssuePurchaseOrder || busy || loading || purchaseOrderInFlight.current) return;
+    if (quantities && purchaseOrderReview?.vesselId !== vessel.id) return;
+    const scope = purchaseOrderScope.current;
+    purchaseOrderInFlight.current = true;
+    setBusy(true); setError(''); setNotice(''); setPurchaseOrderError('');
+    try {
+      const order = await fetchPharmacyPurchaseOrderContext(db, vessel.id);
+      if (scope !== purchaseOrderScope.current) return;
+      const lines = buildPharmacyPurchaseOrderLines(order.items, order.requirements, order.medical_dotation, order.issued_on);
+      if (quantities && (purchaseOrderReview?.issuedOn !== order.issued_on || purchaseOrderReview.medicalDotation !== order.medical_dotation || JSON.stringify(purchaseOrderReview.lines) !== JSON.stringify(lines))) {
+        setPurchaseOrderReview(null);
+        setError('La date ou l’inventaire a changé. Ouvrez à nouveau le bon de commande.');
+        return;
+      }
+      if (!quantities && lines.some((line) => line.quantity === null)) {
+        setPurchaseOrderReview({ vesselId: vessel.id, vesselName: order.vessel_name, issuedOn: order.issued_on, medicalDotation: order.medical_dotation, lines });
+        return;
+      }
+      const orderLines = lines.flatMap((line, index) => {
+        if (line.quantity !== null) return [{ ...line, quantity: line.quantity }];
+        const quantity = parsePharmacyQuantity(String(quantities?.get(index) ?? ''));
+        if (quantity === 0 && line.canExclude) return [];
+        if (!quantity || (line.unit === 'boîte' && !Number.isSafeInteger(quantity))) {
+          throw new Error(`Renseignez une quantité valide pour ${line.designation}.`);
+        }
+        return [{ ...line, quantity, quantityNeedsReview: false, reason: line.canExclude ? 'Manquant' : line.reason }];
+      });
+      if (!orderLines.length) {
+        setPurchaseOrderReview(null);
+        setNotice('Aucun article périmé ou manquant à commander pour la dotation actuelle.');
+        return;
+      }
+      const [signature, { buildPharmacyPurchaseOrderPdf }] = await Promise.all([
+        downloadPharmacyPurchaseOrderSignature(db, order),
+        import('./pharmacyPurchaseOrderPdf'),
+      ]);
+      if (scope !== purchaseOrderScope.current) return;
+      const { blob, filename } = await buildPharmacyPurchaseOrderPdf({
+        issuedOn: order.issued_on,
+        vesselName: order.vessel_name,
+        registrationNumber: order.registration_number,
+        imoNumber: order.imo_number,
+        medicalDotation: pharmacyDotationLabel(order.medical_dotation),
+        signerName: order.signer_name,
+        signerFunction: order.signer_function,
+        signature,
+        lines: orderLines,
+      });
+      if (scope !== purchaseOrderScope.current) return;
+      saveBlob(blob, filename);
+      setPurchaseOrderReview(null);
+      setNotice('Bon de commande PDF téléchargé.');
+    } catch (reason) {
+      if (scope === purchaseOrderScope.current) (quantities ? setPurchaseOrderError : setError)(messageOf(reason));
+    } finally {
+      purchaseOrderInFlight.current = false;
+      setBusy(false);
+    }
+  }
   const controlText = !currentControl ? 'À renseigner' : controlStatus === 'expired' ? 'Contrôle échu' : controlStatus === 'due' ? 'À renouveler sous 30 jours' : 'Contrôle à jour';
   return <section className="pharmacy-page">
     <header className="pharmacy-heading"><div><p>REGISTRES · SÉCURITÉ À BORD</p><h1><PharmacyIcon aria-hidden="true" size={27} /> Inventaire Pharmacie</h1></div></header>
@@ -360,6 +433,9 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         <ModuleRibbonCommand icon={<Download size={22} aria-hidden="true" />} label="Exporter Excel"
           title="Exporter les articles actifs du navire pour la dotation sélectionnée"
           disabled={!vessel || busy || loading || !dotationItems.some(item => item.active)} onClick={() => void exportInventory()} />
+        {canIssuePurchaseOrder ? <ModuleRibbonCommand icon={<FileText size={22} aria-hidden="true" />} label="Bon de commande PDF"
+          title="Commander les articles périmés ou manquants de la dotation actuelle du navire"
+          disabled={busy || loading} onClick={() => void issuePurchaseOrder()} /> : null}
       </ModuleRibbonGroup>
     </ModuleRibbon>
     {preview ? <div className="pharmacy-demo">Démonstration · données fictives. Les inventaires importés sont disponibles dans l’espace connecté.</div> : null}
@@ -470,5 +546,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       {removalError ? <p className="pharmacy-message is-error" role="alert">{removalError}</p> : null}
     </AppDialog> : null}
     {controlOpen && vessel ? <PharmacyControlForm vesselName={vessel.name} busy={busy} error={formError} onClose={() => setControlOpen(false)} onSave={(file, expiresOn, issuedOn) => void saveControl(file, expiresOn, issuedOn)} /> : null}
+    {purchaseOrderReview?.vesselId === vesselId && canIssuePurchaseOrder ? <PharmacyPurchaseOrderReview
+      vesselName={purchaseOrderReview.vesselName} lines={purchaseOrderReview.lines} busy={busy} error={purchaseOrderError}
+      onClose={() => setPurchaseOrderReview(null)} onSubmit={(quantities) => void issuePurchaseOrder(quantities)} /> : null}
   </section>;
 }
