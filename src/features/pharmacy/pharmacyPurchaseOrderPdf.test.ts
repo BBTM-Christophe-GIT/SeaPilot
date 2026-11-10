@@ -6,6 +6,10 @@ import { buildPharmacyPurchaseOrderPdf, type PharmacyPurchaseOrderPdfInput } fro
 
 const signature = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC', 'base64'));
 const stamp = new Uint8Array(readFileSync(new URL('./assets/bbtm-pharmacy-stamp.jpg', import.meta.url)));
+const medicine = {
+  designation: 'Paracetamol', brand: 'BBTM Pharma', requiredStrength: '500 mg', quantity: 1, unit: 'boîte',
+  strength: '250 mg', packaging: '16 comprimés par boîte', reason: 'Stock insuffisant',
+};
 const input: PharmacyPurchaseOrderPdfInput = {
   issuedOn: '2026-11-10',
   vesselName: 'Navire Démonstration',
@@ -15,7 +19,7 @@ const input: PharmacyPurchaseOrderPdfInput = {
   signerName: 'Camille DUPONT',
   signerFunction: 'Capitaine',
   signature,
-  lines: [{ designation: 'Paracetamol', strength: '500 mg', packaging: '16 comprimés par boîte', reason: 'Stock insuffisant', quantity: 1, unit: 'boîte' }],
+  lines: [medicine, { designation: 'Ciseaux de pansement', requiredStrength: '', quantity: 2, unit: 'pièce' }],
 };
 
 async function readPage(blob: Blob) {
@@ -34,25 +38,32 @@ describe('bon de commande Pharmacie PDF', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('places the selected vessel, issue date, package quantity and signer on one A4 page', async () => {
+  it('prints the required dosage below the article, plus the quantities and units, on one A4 page', async () => {
     const generated = await buildPharmacyPurchaseOrderPdf(input);
     const { page, text } = await readPage(generated.blob);
     expect(generated.filename).toBe('bon-de-commande-pharmacie-navire-demonstration-2026-11-10.pdf');
     expect(page.getWidth()).toBeCloseTo(595.28, 1);
     expect(page.getHeight()).toBeCloseTo(841.89, 1);
     for (const label of ['10/11/2026', 'Navire Démonstration', 'CH 000000', 'N° OMI', '0000000', 'Dotation B',
-      'Paracetamol', '500 mg', '1 boîte', 'Camille DUPONT', 'Capitaine', 'SIGNATURE', 'CACHET']) {
+      'Article / dosage', 'Quantité', 'Paracetamol · BBTM Pharma', '500 mg', '1 boîte', '2 pièces',
+      'Camille DUPONT', 'Capitaine', 'SIGNATURE', 'CACHET']) {
       expect(text).toContain(label);
     }
+    for (const label of ['Conditionnement', 'Motif', '16 comprimés par boîte', 'Stock insuffisant', '250 mg']) {
+      expect(text).not.toContain(label);
+    }
+    const articleY = Number(text.match(/[\d.]+ ([\d.]+) Td\n\(Paracetamol · BBTM Pharma\) Tj/)?.[1]);
+    const dosageY = Number(text.match(/[\d.]+ ([\d.]+) Td\n\(500 mg\) Tj/)?.[1]);
+    expect(dosageY).toBeLessThan(articleY);
     expect(text.match(/\/I\d+ Do/g)).toHaveLength(2);
   });
 
   it('keeps all references on one page for a dense order and omits an absent OMI', async () => {
     const products = [
-      { designation: 'Paracétamol', strength: '500 mg', packaging: '16 comprimés par boîte', reason: 'Stock insuffisant' },
-      { designation: 'Solution antiseptique', strength: '100 ml', packaging: '1 flacon par boîte', reason: 'Périmé' },
-      { designation: 'Sparadrap hypoallergénique', strength: '2,5 cm × 5 m', packaging: 'À l’unité', reason: 'Stock manquant' },
-      { designation: 'Sachets pour solution de réhydratation orale', strength: '', packaging: '10 sachets par boîte', reason: 'Périmé et stock insuffisant' },
+      { designation: 'Paracétamol', requiredStrength: '500 mg' },
+      { designation: 'Solution antiseptique', requiredStrength: '100 ml' },
+      { designation: 'Sparadrap hypoallergénique', requiredStrength: '2,5 cm × 5 m' },
+      { designation: 'Sachets pour solution de réhydratation orale', requiredStrength: '' },
     ];
     const reference = (index: number) => `REF-${String(index + 1).padStart(3, '0')}`;
     const lines = Array.from({ length: 161 }, (_, index) => ({
@@ -64,6 +75,7 @@ describe('bon de commande Pharmacie PDF', () => {
     const { page, text } = await readPage(blob);
     expect(page.getWidth()).toBeCloseTo(1190.55, 1);
     expect(text).not.toContain('N° OMI');
+    expect(text).toContain('(500 mg) Tj');
     lines.forEach((_, index) => expect(text).toContain(reference(index)));
   });
 

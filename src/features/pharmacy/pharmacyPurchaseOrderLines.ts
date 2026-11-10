@@ -1,5 +1,5 @@
 import {
-  formatPharmacyStockQuantity, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyItemExpiryStatus,
+  formatPharmacyStockQuantity, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyItemExpiryStatus, pharmacyItemStrength,
   pharmacyMedicalSection, pharmacyStockDetails, type PharmacyDotationRequirement, type PharmacyItem,
 } from './pharmacyModel';
 
@@ -7,6 +7,7 @@ export interface PharmacyPurchaseOrderLine {
   designation: string;
   brand: string;
   strength: string;
+  requiredStrength: string;
   packaging: string;
   reason: string;
   quantity: number | null;
@@ -16,9 +17,10 @@ export interface PharmacyPurchaseOrderLine {
 }
 
 type StockMeasure = ReturnType<typeof pharmacyStockDetails>['stock'];
-type OrderNeed = Pick<PharmacyPurchaseOrderLine, 'designation' | 'brand' | 'strength'> & {
+type OrderNeed = Pick<PharmacyPurchaseOrderLine, 'designation' | 'brand' | 'strength' | 'requiredStrength'> & {
   section: PharmacyItem['medical_section'];
   stockUnit: string;
+  unitLabel?: string | null;
   unitsPerBox: number | null;
   volumeContainer?: boolean;
   amount: number | null;
@@ -31,6 +33,7 @@ type MeasuredLot = {
   need: Omit<OrderNeed, 'amount' | 'expired' | 'missing' | 'uncertainStock'>;
   expired: boolean;
   available: number | null;
+  orderInTargetUnits: boolean;
 };
 
 const packedStockUnits = new Set(['comprime', 'flacon', 'gelule', 'ampoule', 'dose', 'sachet', 'suppositoire', 'tube', 'patch']);
@@ -40,13 +43,19 @@ function requirementKey(section: string | undefined, designation: string) {
   return JSON.stringify([pharmacyMedicalSection(section), designation]);
 }
 
-function itemNeed(item: PharmacyItem, measure: StockMeasure, unitsPerBox: number | null | undefined) {
+function requiredOrderStrength(requirement: Pick<PharmacyItem, 'required_quantity' | 'required_strength'>) {
+  return pharmacyItemStrength({ quantity: requirement.required_quantity, required_quantity: '', strength: requirement.required_strength?.trim() }) ?? '';
+}
+
+function itemNeed(item: PharmacyItem, measure: StockMeasure, unitsPerBox: number | null | undefined, requiredStrength: string, unitLabel: string | null | undefined) {
   return {
     designation: item.designation.trim(),
     brand: item.brand.trim(),
     strength: item.strength?.trim() || readableStrength(measure.strength),
+    requiredStrength,
     section: item.medical_section,
     stockUnit: measure.unit,
+    unitLabel,
     unitsPerBox: unitsPerBox ?? null,
     volumeContainer: !measure.unit && measure.volumePerUnit !== null,
   };
@@ -61,10 +70,10 @@ function ceilQuantity(quantity: number): number {
 }
 
 function orderLine(need: OrderNeed): PharmacyPurchaseOrderLine {
-  const { designation, brand, strength, amount, unitsPerBox, stockUnit, expired, missing, uncertainStock } = need;
+  const { designation, brand, strength, requiredStrength, amount, unitsPerBox, stockUnit, expired, missing, uncertainStock } = need;
   const alreadyBoxes = stockUnit === 'boite';
-  const orderBoxes = alreadyBoxes || unitsPerBox !== null || packedStockUnits.has(stockUnit) || need.section === 'medicines' || need.volumeContainer;
-  const baseUnit = Object.hasOwn(displayUnits, stockUnit) ? displayUnits[stockUnit] : stockUnit || 'unité';
+  const orderBoxes = alreadyBoxes || unitsPerBox !== null || packedStockUnits.has(stockUnit) || (!stockUnit && (need.section === 'medicines' || need.volumeContainer));
+  const baseUnit = Object.hasOwn(displayUnits, stockUnit) ? displayUnits[stockUnit] : need.unitLabel?.trim() || stockUnit || 'unité';
   const unit = orderBoxes ? 'boîte' : baseUnit;
   const packaging = unitsPerBox && !alreadyBoxes ? `${formatPharmacyStockQuantity(unitsPerBox, baseUnit)} par boîte` : '';
   const quantity = amount === null ? null
@@ -73,7 +82,7 @@ function orderLine(need: OrderNeed): PharmacyPurchaseOrderLine {
     : orderBoxes ? amount <= 1 ? 1 : null
     : amount;
   const reason = uncertainStock ? 'Stock à vérifier' : expired && missing ? 'Périmé et manquant' : expired ? 'Périmé' : 'Manquant';
-  return { designation, brand, strength, packaging, reason, quantity, unit, quantityNeedsReview: quantity === null,
+  return { designation, brand, strength, requiredStrength, packaging, reason, quantity, unit, quantityNeedsReview: quantity === null,
     ...(uncertainStock ? { canExclude: true } : {}) };
 }
 
@@ -81,6 +90,13 @@ function compareInTargetUnits(details: ReturnType<typeof pharmacyStockDetails>):
   const { stock, target, comparison } = details;
   if (!comparison) return stock.count === 0 ? 0 : null;
   return comparison.volume ? comparison.actual / target.volumePerUnit! : comparison.actual;
+}
+
+function expiryReplacementAmount(stock: StockMeasure, target: StockMeasure, orderInTargetUnits: boolean): number | null {
+  if (!orderInTargetUnits || !stock.count) return stock.count;
+  // The PDF orders the required dose, so a comparable liquid must be converted before box rounding.
+  if (stock.volumePerUnit === null || target.volumePerUnit === null) return null;
+  return stock.count * stock.volumePerUnit / target.volumePerUnit;
 }
 
 function itemBoxSize(item: PharmacyItem, stock: StockMeasure, target: StockMeasure) {
@@ -125,7 +141,8 @@ export function buildPharmacyPurchaseOrderLines(
   const add = (need: OrderNeed) => {
     if (need.amount !== null && need.amount <= 0) return;
     const key = JSON.stringify([need.section, pharmacyDesignationKey(need.designation), pharmacyDesignationKey(need.brand),
-      need.strength.toLowerCase().replace(/\s+/g, ''), need.stockUnit, need.unitsPerBox, Boolean(need.uncertainStock), Boolean(need.volumeContainer)]);
+      need.strength.toLowerCase().replace(/\s+/g, ''), need.requiredStrength.toLowerCase().replace(/\s+/g, ''),
+      need.stockUnit, need.unitsPerBox, Boolean(need.uncertainStock), Boolean(need.volumeContainer)]);
     const current = needs.get(key);
     if (!current) { needs.set(key, need); return; }
     current.amount = current.amount === null || need.amount === null ? null : current.amount + need.amount;
@@ -141,16 +158,22 @@ export function buildPharmacyPurchaseOrderLines(
     const requirement = !item.outside_dotation ? shared.get(key) : undefined;
     const stockItem = withDocumentedLegacyPackaging(requirement ? { ...item, ...requirement } : item);
     const details = pharmacyStockDetails(stockItem);
-    const unitsPerBox = itemBoxSize(stockItem, details.stock, details.target);
-    const need = itemNeed(item, details.stock, unitsPerBox);
+    const requiredStrength = item.outside_dotation ? '' : requiredOrderStrength(stockItem);
+    const { stock, target } = details;
+    const canUseTargetUnit = !stock.unit && stock.volumePerUnit === null && (!stock.strength || stock.strength === target.strength);
+    const orderStock = canUseTargetUnit ? { ...stock, unit: target.unit } : stock;
+    const orderInTargetUnits = Boolean(requiredStrength && stock.strength !== target.strength && (stock.strength || stock.volumePerUnit !== null));
+    const need = orderInTargetUnits
+      ? itemNeed({ ...item, strength: requiredStrength }, target, stockItem.required_package_size, requiredStrength, stockItem.required_stock_unit)
+      : itemNeed(item, orderStock, itemBoxSize(stockItem, orderStock, target), requiredStrength, canUseTargetUnit ? stockItem.required_stock_unit : stockItem.stock_unit);
     const expired = pharmacyItemExpiryStatus(item, issuedOn) === 'expired';
-    if (expired) add({ ...need, amount: details.stock.count, expired: true, missing: false });
+    if (expired) add({ ...need, amount: expiryReplacementAmount(stock, target, orderInTargetUnits), expired: true, missing: false });
     if (item.outside_dotation) continue;
 
     const actual = compareInTargetUnits(details);
     if (requirement) {
       const group = activeByRequirement.get(key) ?? [];
-      group.push({ details, need, expired, available: actual });
+      group.push({ details, need, expired, available: actual, orderInTargetUnits });
       activeByRequirement.set(key, group);
     }
     // Some imported rows say MANQUANT despite a non-zero quantity. A current counted stock takes precedence.
@@ -163,11 +186,11 @@ export function buildPharmacyPurchaseOrderLines(
     const amount = required - actual;
     if (!details.comparison) {
       // Zero stock can prove a shortage even when no matching presentation is recorded.
-      add({ ...itemNeed({ ...item, strength: item.required_strength }, details.target, item.required_package_size),
+      add({ ...itemNeed({ ...item, strength: item.required_strength }, target, item.required_package_size, requiredStrength, item.required_stock_unit),
         amount, expired: false, missing: true });
       continue;
     }
-    const factor = details.comparison.volume ? details.target.volumePerUnit! / details.stock.volumePerUnit! : 1;
+    const factor = details.comparison.volume && !orderInTargetUnits ? target.volumePerUnit! / stock.volumePerUnit! : 1;
     add({ ...need, amount: amount * factor, expired: false, missing: true });
   }
 
@@ -183,9 +206,10 @@ export function buildPharmacyPurchaseOrderLines(
     const actual = measured.reduce((total, { available }) => total + (available ?? 0), 0);
     if (presentations.size <= 1 && target.count !== null && actual + Number.EPSILON * target.count >= target.count) continue;
     const amount = target.count === null ? null : target.count - actual;
+    const requiredStrength = requiredOrderStrength(requirement);
     const targetNeed = { designation: requirement.designation, brand: measured[0]?.need.brand ?? '',
-      strength: requirement.required_strength?.trim() || readableStrength(target.strength),
-      section: requirement.medical_section, stockUnit: target.unit, unitsPerBox: requirement.required_package_size ?? null,
+      strength: requiredStrength, requiredStrength,
+      section: requirement.medical_section, stockUnit: target.unit, unitLabel: requirement.required_stock_unit, unitsPerBox: requirement.required_package_size ?? null,
       volumeContainer: !target.unit && target.volumePerUnit !== null };
 
     if ((target.count === null && measured.length > 0) || presentations.size > 1 || measured.some(({ available }) => available === null)) {
@@ -199,8 +223,8 @@ export function buildPharmacyPurchaseOrderLines(
     const candidate = measured.find(({ expired, details }) => details.comparison && expired)
       ?? measured.find(({ details }) => details.comparison);
     if (candidate) {
-      const { need, details } = candidate;
-      const factor = details.comparison?.volume ? details.target.volumePerUnit! / details.stock.volumePerUnit! : 1;
+      const { need, details, orderInTargetUnits } = candidate;
+      const factor = details.comparison?.volume && !orderInTargetUnits ? details.target.volumePerUnit! / details.stock.volumePerUnit! : 1;
       add({ ...need, amount: amount === null ? null : amount * factor, expired: false, missing: true });
     } else {
       add({ ...targetNeed, amount, expired: false, missing: true });

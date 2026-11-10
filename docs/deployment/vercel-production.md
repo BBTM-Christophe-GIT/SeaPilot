@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.98.1` simplifie le bon de commande Pharmacie. Le tableau affiche le
+dosage requis sous la désignation et l’unité de commande avec la quantité. Voir
+[Inventaire Pharmacie](./pharmacy-inventory.md).
+
 La version `3.98.0` ajoute le bon de commande PDF dans le ruban de l’inventaire
 pharmacie. Appliquer `20261110080026_pharmacy_purchase_order_context.sql` avant le
 frontend. Voir [Inventaire Pharmacie](./pharmacy-inventory.md).

@@ -5,9 +5,7 @@ import { formatPharmacyDate, formatPharmacyStockQuantity, pharmacyDaysUntil } fr
 type OrderLine = {
   designation: string;
   brand?: string;
-  strength?: string;
-  packaging: string;
-  reason: string;
+  requiredStrength: string;
   quantity: number;
   unit: string;
   quantityNeedsReview?: boolean;
@@ -43,7 +41,6 @@ type PageLayout = {
   size: number;
   leading: number;
   padding: number;
-  inlineDetails?: boolean;
 };
 
 const PAGE_LAYOUTS: readonly PageLayout[] = [
@@ -52,8 +49,8 @@ const PAGE_LAYOUTS: readonly PageLayout[] = [
   { format: 'a3', panels: 1, size: 9.5, leading: 4.1, padding: 1.25 },
   { format: 'a3', panels: 2, size: 8.5, leading: 3.7, padding: 1.25 },
   { format: 'a2', panels: 2, size: 9.5, leading: 4.1, padding: 1.25 },
-  { format: 'a2', panels: 2, size: 8.5, leading: 3.35, padding: 0.65, inlineDetails: true },
-  { format: 'a2', panels: 3, size: 8.5, leading: 3.15, padding: 0.5, inlineDetails: true },
+  { format: 'a2', panels: 2, size: 8.5, leading: 3.35, padding: 0.65 },
+  { format: 'a2', panels: 3, size: 8.5, leading: 3.15, padding: 0.5 },
 ];
 
 function setType(doc: jsPDF, size: number, bold = false, color = NAVY) {
@@ -106,13 +103,8 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array, la
   const right = pageWidth - MARGIN;
   const width = right - MARGIN;
   const panelWidth = (width - PANEL_GAP * (layout.panels - 1)) / layout.panels;
-  const columns = [
-    { label: 'Article / dosage', width: panelWidth * 0.42 },
-    { label: 'Conditionnement', width: panelWidth * 0.25 },
-    { label: 'Motif', width: panelWidth * 0.20 },
-    { label: 'Quantité', width: panelWidth * 0.13 },
-  ];
-  const columnStarts = columns.map((_, index) => columns.slice(0, index).reduce((sum, column) => sum + column.width, 0));
+  const articleWidth = panelWidth * 0.75;
+  const quantityWidth = panelWidth - articleWidth;
   const date = formatPharmacyDate(input.issuedOn);
   const issuerWidth = width * 0.42;
   const fields = [
@@ -136,19 +128,16 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array, la
   const tableBottom = issuerTop - (review ? 13 : 8);
   const cellPadding = 2.4;
   const rows = input.lines.map((line) => {
-    const details = [line.strength, line.brand].filter(Boolean).join(' · ');
+    const designation = [line.designation, line.brand].filter(Boolean).join(' · ');
     const quantity = formatPharmacyStockQuantity(line.quantity, line.unit) + (line.quantityNeedsReview ? ' *' : '');
-    const designation = layout.inlineDetails && details ? `${line.designation} · ${details}` : line.designation;
     setType(doc, layout.size, true);
-    const title = wrap(doc, designation, columns[0].width - 2 * cellPadding);
-    const orderQuantity = wrap(doc, quantity, columns[3].width - 2 * cellPadding);
+    const title = wrap(doc, designation, articleWidth - 2 * cellPadding);
+    const orderQuantity = wrap(doc, quantity, quantityWidth - 2 * cellPadding);
     setType(doc, layout.size);
-    const sub = !layout.inlineDetails && details ? wrap(doc, details, columns[0].width - 2 * cellPadding) : [];
-    const packaging = wrap(doc, line.packaging, columns[1].width - 2 * cellPadding);
-    const reason = wrap(doc, line.reason, columns[2].width - 2 * cellPadding);
+    const dosage = line.requiredStrength ? wrap(doc, line.requiredStrength, articleWidth - 2 * cellPadding) : [];
     return {
-      title, sub, packaging, reason, orderQuantity,
-      height: 2 * layout.padding + layout.leading * Math.max(title.length + sub.length, packaging.length, reason.length, orderQuantity.length),
+      title, dosage, orderQuantity,
+      height: 2 * layout.padding + layout.leading * Math.max(title.length + dosage.length, orderQuantity.length),
     };
   });
   const panels = splitPanels(rows, tableBottom - tableTop - HEADER_HEIGHT, layout.panels);
@@ -191,14 +180,13 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array, la
   let lastRowBottom = tableTop;
   panels.forEach((panel, panelIndex) => {
     const panelX = MARGIN + panelIndex * (panelWidth + PANEL_GAP);
+    const articleX = panelX + cellPadding;
+    const quantityX = panelX + articleWidth + quantityWidth / 2;
     doc.setFillColor(NAVY);
     doc.roundedRect(panelX, tableTop, panelWidth, HEADER_HEIGHT, 1.1, 1.1, 'F');
-    columns.forEach((column, index) => {
-      setType(doc, 8, true, WHITE);
-      const centered = index === 3;
-      const labelX = panelX + columnStarts[index] + (centered ? column.width / 2 : cellPadding);
-      doc.text(column.label, labelX, tableTop + 5.1, { align: centered ? 'center' : 'left' });
-    });
+    setType(doc, 8, true, WHITE);
+    doc.text('Article / dosage', articleX, tableTop + 5.1);
+    doc.text('Quantité', quantityX, tableTop + 5.1, { align: 'center' });
     let rowY = tableTop + HEADER_HEIGHT;
     panel.forEach((row, index) => {
       if (index % 2 === 0) {
@@ -206,14 +194,13 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array, la
         doc.rect(panelX, rowY, panelWidth, row.height, 'F');
       }
       const y = rowY + layout.padding + layout.size * FONT_TO_MM * 0.84;
-      const cellX = (column: number) => panelX + columnStarts[column] + cellPadding;
       setType(doc, layout.size, true);
-      printLines(doc, row.title, cellX(0), y, layout.leading);
-      printLines(doc, row.orderQuantity, panelX + columnStarts[3] + columns[3].width / 2, y, layout.leading, 'center');
-      setType(doc, layout.size, false, MUTED);
-      if (row.sub.length) printLines(doc, row.sub, cellX(0), y + row.title.length * layout.leading, layout.leading);
-      printLines(doc, row.packaging, cellX(1), y, layout.leading);
-      printLines(doc, row.reason, cellX(2), y, layout.leading);
+      printLines(doc, row.title, articleX, y, layout.leading);
+      printLines(doc, row.orderQuantity, quantityX, y, layout.leading, 'center');
+      if (row.dosage.length) {
+        setType(doc, layout.size, false, MUTED);
+        printLines(doc, row.dosage, articleX, y + row.title.length * layout.leading, layout.leading);
+      }
       rowY += row.height;
       doc.setDrawColor(RULE);
       doc.setLineWidth(0.18);
