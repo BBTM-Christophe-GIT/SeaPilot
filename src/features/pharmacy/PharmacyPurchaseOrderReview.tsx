@@ -34,7 +34,7 @@ export function PharmacyPurchaseOrderReview({ vesselName, lines, busy, error, on
     <div className="pharmacy-form-grid">
       {lines.map((line, index) => line.quantity === null ? <label key={index}>
         <strong>{line.designation}</strong>
-        <small className="pharmacy-field-help">{[line.brand, line.strength, line.packaging, line.reason].filter(Boolean).join(' · ')}</small>
+        <small className="pharmacy-field-help">{[line.brand, line.requiredStrength, line.packaging, line.reason].filter(Boolean).join(' · ')}</small>
         <span>Quantité ({line.unit})</span><input disabled={busy} name={`quantity-${index}`}
           aria-label={`Quantité (${line.unit}) pour ${line.designation}`}
           type="number" min={line.canExclude ? 0 : line.unit === 'boîte' ? 1 : 0.001} max={1e12} step={line.unit === 'boîte' ? 1 : 0.001} required />

@@ -32,7 +32,7 @@ const orderContext: PharmacyPurchaseOrderContext = {
   issued_on: '2026-11-10', vessel_name: 'GOURY', registration_number: 'CH 001', imo_number: '1234567',
   medical_dotation: 'Dotation B', signer_name: 'Camille Exemple', signer_function: 'Capitaine de relève',
   signature_path: '1/12/signature.png', signature_mime_type: 'image/png', requirements: [],
-  items: [{ ...articleB, medical_section: 'medicines', stock_unit: 'comprimé', stock_quantity: 9, required_stock_quantity: 10, package_size: 10 }],
+  items: [{ ...articleB, medical_section: 'medicines', stock_unit: 'comprimé', stock_quantity: 9, strength: '500 mg', required_stock_quantity: 10, required_stock_unit: 'comprimé', required_strength: '500 mg', package_size: 10 }],
 };
 function page(roles: RoleKey[] = ['admin'], initial = '/modules/pharmacy') { return render(<MemoryRouter initialEntries={[initial]}><PharmacyPage client={client} roles={roles} /></MemoryRouter>); }
 
@@ -98,7 +98,7 @@ describe('PharmacyPage', () => {
       expect(buildPharmacyPurchaseOrderPdf).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
         issuedOn: '2026-11-10', vesselName: 'GOURY', registrationNumber: 'CH 001', imoNumber: '1234567', medicalDotation: 'Dotation B',
         signerName: 'Camille Exemple', signerFunction: 'Capitaine de relève', signature,
-        lines: [expect.objectContaining({ designation: 'ARTICLE SOURCE', quantity: 1, unit: 'boîte' })],
+        lines: [expect.objectContaining({ designation: 'ARTICLE SOURCE', requiredStrength: '500 mg', quantity: 1, unit: 'boîte' })],
       }));
       expect(createObjectURL).toHaveBeenCalledExactlyOnceWith(blob);
       expect(download.mock.contexts[0]).toHaveAttribute('download', filename);

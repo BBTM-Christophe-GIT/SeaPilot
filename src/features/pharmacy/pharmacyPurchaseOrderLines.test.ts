@@ -20,11 +20,54 @@ describe('pharmacy purchase order', () => {
     const items = [
       lot('Comprimés', { quantity: '9 comprimés', required_quantity: '10 comprimés' }),
       lot('Flacons', { stock_quantity: 9, stock_unit: 'flacon', strength: '10 mL',
-        required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL' }),
+        required_stock_quantity: 10, required_stock_unit: 'flacon', required_strength: '10 mL' }),
     ];
     expect(buildPharmacyPurchaseOrderLines(items, [], dotation, issuedOn)).toMatchObject([
       { designation: 'Comprimés', quantity: 1, unit: 'boîte', reason: 'Manquant', quantityNeedsReview: false },
       { designation: 'Flacons', quantity: 1, unit: 'boîte', reason: 'Manquant', quantityNeedsReview: false },
+    ]);
+  });
+
+  it('converts expired and missing equivalent volumes into the required dosage before counting boxes', () => {
+    const replacement = lot('Sérum', { stock_quantity: 9, stock_unit: 'flacon', strength: '10 mL', package_size: 9, expires_on: '2026-11-09' });
+    const required = { required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL', required_package_size: 4 };
+    const expected = [{ designation: 'Sérum', requiredStrength: '5 mL', quantity: 5, unit: 'boîte', reason: 'Périmé et manquant' }];
+    expect(buildPharmacyPurchaseOrderLines([{ ...replacement, ...required }], [], dotation, issuedOn)).toMatchObject(expected);
+    expect(buildPharmacyPurchaseOrderLines([replacement], [requirement('Sérum', required)], dotation, issuedOn)).toMatchObject(expected);
+    expect(buildPharmacyPurchaseOrderLines([{ ...replacement, ...required, expires_on: null, required_package_size: null }], [], dotation, issuedOn)).toMatchObject([
+      { designation: 'Sérum', requiredStrength: '5 mL', quantity: null, unit: 'boîte', reason: 'Manquant' },
+    ]);
+  });
+
+  it('uses the required dosage even if the expired presentation differs, and omits an unstated dosage', () => {
+    const items = [
+      lot('Ancien dosage', { expires_on: '2026-11-09', stock_quantity: 1, stock_unit: 'flacon', strength: '10 mL',
+        required_stock_quantity: 1, required_stock_unit: 'flacon', required_strength: '5 mL' }),
+      lot('Dosage importé', { quantity: '1 × 500 mg', required_quantity: '2 × 500 mg' }),
+      lot('Dosage non requis', { expires_on: '2026-11-09', stock_quantity: 1, stock_unit: 'ampoule', strength: '20 mg' }),
+    ];
+    const requirements = [requirement('Dosage commun', { required_stock_quantity: 1, required_stock_unit: 'comprimé', required_strength: '250 mg' })];
+    const lines = buildPharmacyPurchaseOrderLines(items, requirements, dotation, issuedOn);
+    expect(lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ designation: 'Ancien dosage', requiredStrength: '5 mL' }),
+      expect.objectContaining({ designation: 'Dosage importé', requiredStrength: '500 mg' }),
+      expect.objectContaining({ designation: 'Dosage commun', requiredStrength: '250 mg' }),
+      expect.objectContaining({ designation: 'Dosage non requis', requiredStrength: '' }),
+    ]));
+  });
+
+  it('uses the recorded unit for unpackaged quantities and fills an expired untyped stock unit from the requirement', () => {
+    const items = [
+      lot('Solution mesurée', { stock_quantity: 4, stock_unit: 'mL', required_stock_quantity: 7, required_stock_unit: 'mL' }),
+      lot('Gants', { medical_section: 'equipment', quantity: '2', required_stock_quantity: 2, required_stock_unit: 'paire', expires_on: '2026-11-09' }),
+      lot('Comprimés périmés', { medical_section: 'equipment', stock_quantity: 4, required_stock_unit: 'comprimé', required_package_size: 10, expires_on: '2026-11-09' }),
+    ];
+    const requirements = [requirement('Tubulure', { medical_section: 'equipment', required_stock_quantity: 2, required_stock_unit: 'mètre' })];
+    expect(buildPharmacyPurchaseOrderLines(items, requirements, dotation, issuedOn)).toMatchObject([
+      { designation: 'Comprimés périmés', quantity: 1, unit: 'boîte' },
+      { designation: 'Gants', quantity: 2, unit: 'paire' },
+      { designation: 'Solution mesurée', quantity: 3, unit: 'mL' },
+      { designation: 'Tubulure', quantity: 2, unit: 'mètre' },
     ]);
   });
 
