@@ -256,11 +256,10 @@ function comparablePharmacyStock(quantity: number | null | undefined, legacy: Re
   const strength = canonicalPharmacyStrength(strengthValue) || (legacy?.kind === 'strength' ? legacy.unit : '');
   const count = quantity ?? legacy?.count ?? null;
   const factor = millilitresPerUnit.get(unit) ?? pharmacyVolumePerUnit(strength);
-  return { count, unit, strength, volume: count !== null && factor !== null ? count * factor : null };
+  return { count, unit, strength, volumePerUnit: factor };
 }
 
-export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknown' | 'none' {
-  if (item.outside_dotation) return 'none';
+export function pharmacyStockDetails(item: PharmacyStock) {
   const legacyActual = legacyPharmacyStock(item.quantity);
   const legacyRequired = legacyPharmacyStock(item.required_quantity);
   const independent = hasIndependentRequirement(item);
@@ -269,14 +268,18 @@ export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknow
   const requiredStock = comparablePharmacyStock(item.required_stock_quantity, legacyRequired,
     item.required_stock_unit || (inheritActual ? item.stock_unit : null),
     item.required_strength || (inheritActual ? item.strength : null));
-  if (actualStock.volume !== null && requiredStock.volume !== null) {
-    const tolerance = Number.EPSILON * Math.max(actualStock.volume, requiredStock.volume);
-    return actualStock.volume + tolerance < requiredStock.volume ? 'low' : 'ok';
+  const comparison = (actual: number | null, required: number | null, volume = false) => ({
+    stock: actualStock,
+    target: requiredStock,
+    comparison: actual === null || required === null ? null : { actual, required, volume },
+  });
+  if (actualStock.count !== null && requiredStock.count !== null && actualStock.volumePerUnit !== null && requiredStock.volumePerUnit !== null) {
+    return comparison(actualStock.count * actualStock.volumePerUnit, requiredStock.count * requiredStock.volumePerUnit, true);
   }
   if (independent) {
     const { count: actual, unit, strength } = actualStock;
     const { count: required, unit: requiredUnit, strength: requiredStrength } = requiredStock;
-    return actual === null || required === null || unit !== requiredUnit || strength !== requiredStrength ? 'unknown' : actual < required ? 'low' : 'ok';
+    return comparison(unit === requiredUnit && strength === requiredStrength ? actual : null, required);
   }
   const sameLegacyUnit = !!legacyActual && !!legacyRequired && legacyActual.kind === legacyRequired.kind && legacyActual.unit === legacyRequired.unit;
   const matchesStockUnit = (legacy: ReturnType<typeof legacyPharmacyStock>) => !!legacy && (legacy.kind === 'bare'
@@ -284,5 +287,14 @@ export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknow
     || (legacy.kind === 'unit' && legacy.unit === canonicalPharmacyUnit(item.stock_unit)));
   const actual = item.stock_quantity ?? (sameLegacyUnit || (item.required_stock_quantity != null && matchesStockUnit(legacyActual)) ? legacyActual?.count ?? null : null);
   const required = item.required_stock_quantity ?? (sameLegacyUnit || (item.stock_quantity != null && matchesStockUnit(legacyRequired)) ? legacyRequired?.count ?? null : null);
-  return actual === null || required === null ? 'unknown' : actual < required ? 'low' : 'ok';
+  return comparison(actual, required);
+}
+
+export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknown' | 'none' {
+  if (item.outside_dotation) return 'none';
+  const { comparison } = pharmacyStockDetails(item);
+  if (!comparison) return 'unknown';
+  const { actual, required, volume } = comparison;
+  const tolerance = volume ? Number.EPSILON * Math.max(actual, required) : 0;
+  return actual + tolerance < required ? 'low' : 'ok';
 }
