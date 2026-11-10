@@ -1,0 +1,97 @@
+.so-consumption-speed {
+  position: relative;
+}
+
+.so-consumption-speed-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.so-consumption-speed-canvas {
+  position: relative;
+}
+
+.so-consumption-speed .so-consumption-speed-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.so-consumption-speed-plot text {
+  fill: var(--sp-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.so-consumption-speed-plot .so-consumption-speed-time,
+.so-consumption-speed-plot .so-consumption-speed-axis {
+  fill: var(--sp-heading);
+  font-weight: 600;
+}
+
+.so-consumption-speed-minutes {
+  fill: var(--sp-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.so-consumption-speed-caption {
+  margin: var(--sp-space-1) 0 var(--sp-space-2);
+  color: var(--sp-heading);
+  font-size: .75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.so-consumption-chart-grid {
+  fill: none;
+  stroke: var(--sp-border-strong);
+}
+
+.so-consumption-chart-line {
+  fill: none;
+  stroke: var(--sp-primary-hover);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.so-consumption-chart-point {
+  fill: var(--sp-primary-hover);
+}
+
+.so-consumption-chart-cursor {
+  stroke: var(--sp-focus);
+  stroke-dasharray: 3 3;
+}
+
+.so-consumption-speed-hitbox {
+  position: absolute;
+  inset: 0;
+}
+
+.so-consumption-speed-hitbox:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: -2px;
+  border-radius: var(--sp-control-radius);
+}
+
+.so-consumption-speed-tooltip {
+  position: absolute;
+  inset-block-start: 42px;
+  inset-inline-end: var(--sp-space-4);
+  display: grid;
+  gap: var(--sp-space-1);
+  padding: var(--sp-space-2) var(--sp-space-3);
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  box-shadow: var(--sp-shadow);
+  color: var(--sp-text);
+  font-size: .75rem;
+  pointer-events: none;
+}
+
+.so-consumption-speed-tooltip strong {
+  color: var(--sp-heading);
+}

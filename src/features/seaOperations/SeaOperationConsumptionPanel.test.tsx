@@ -74,8 +74,12 @@ describe('Conso after signed navigation', () => {
     const rpc = vi.fn().mockResolvedValue({ data: { ...initial, canEdit: false, record: saved }, error: null });
     show(rpc);
     expect(await screen.findByText('Relevé inclus dans la référence de consommation Projet.')).toBeVisible();
-    expect(screen.getByText(/2\s000 L/)).toBeVisible();
+    const indicators = within(screen.getByLabelText('Indicateurs de consommation'));
+    expect(indicators.getAllByRole('term')).toHaveLength(6);
+    expect(indicators.getByText(/2\s000 L/)).toBeVisible();
+    expect(screen.getByText('111,11 L/NM')).toBeVisible();
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier le relevé' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enregistrer la consommation' })).not.toBeInTheDocument();
     expect(rpc).toHaveBeenCalledExactlyOnceWith('sea_operation_consumption', { p_id: operation.id });
   });

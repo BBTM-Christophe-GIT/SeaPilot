@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BarChart3, Fuel, Upload } from 'lucide-react';
+import {
+  BarChart3, CalendarClock, Coins, Droplet, Fuel, Gauge, LocateFixed, Pencil, Route, Ship, Timer, TrendingUp, Upload,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import {
@@ -10,7 +12,8 @@ import {
   type SeaOperationConsumptionInputs,
   type SeaOperationTankGauges,
 } from './seaOperationConsumption';
-import { SeaOperationConsumptionCharts } from './SeaOperationConsumptionCharts';
+import { SeaOperationConsumptionSpeedProfile } from './SeaOperationConsumptionCharts';
+import { SeaOperationConsumptionTank } from './SeaOperationConsumptionTank';
 import {
   parseSeaOperationConsumptionTrace, SEA_OPERATION_CONSUMPTION_TRACE_MAX_BYTES, type SeaOperationConsumptionTrace,
 } from './seaOperationConsumptionTrace';
@@ -24,6 +27,7 @@ type ConsumptionRecord = NonNullable<ConsumptionContext['record']>;
 
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const fuelPrice = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 });
 const parisDateTime = new Intl.DateTimeFormat('fr-FR', {
   timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
 });
@@ -41,16 +45,63 @@ function parisArrivalInput(utc: string) {
   }
 }
 
-function ConsumptionReadout({ result, showArrival }: { result: ConsumptionResults; showArrival?: boolean }) {
-  return <dl className="so-consumption-values">
-    <div><dt>Distance parcourue</dt><dd>{amount(result.distanceNm, 'NM')}</dd></div>
-    <div><dt>Soute au départ</dt><dd>{amount(result.departureLiters, 'L')}</dd></div>
-    {showArrival && <div><dt>Soute à l’arrivée</dt><dd>{amount(result.arrivalLiters, 'L')}</dd></div>}
-    <div><dt>Consommation totale</dt><dd>{amount(result.consumedLiters, 'L')}</dd></div>
-    <div><dt>À l’heure</dt><dd>{amount(result.litersPerHour, 'L/h')}</dd></div>
-    <div><dt>Au mille nautique</dt><dd>{amount(result.litersPerNm, 'L/NM')}</dd></div>
-    <div><dt>Coût du carburant HT</dt><dd>{result.costEuros === null ? 'Indisponible' : currency.format(result.costEuros)}</dd></div>
+function ConsumptionReadout({ result, showArrival, dashboard }: {
+  result: ConsumptionResults; showArrival?: boolean; dashboard?: boolean;
+}) {
+  const metrics = [
+    { label: 'Distance parcourue', value: amount(result.distanceNm, 'NM'), icon: Route },
+    { label: 'Soute au départ', value: amount(result.departureLiters, 'L'), icon: Fuel },
+    ...(showArrival ? [{ label: 'Soute à l’arrivée', value: amount(result.arrivalLiters, 'L'), icon: Fuel }] : []),
+    { label: 'Consommation totale', value: amount(result.consumedLiters, 'L'), icon: Droplet },
+    { label: 'À l’heure', value: amount(result.litersPerHour, 'L/h'), icon: Gauge },
+    { label: 'Au mille nautique', value: amount(result.litersPerNm, 'L/NM'), icon: TrendingUp },
+    { label: 'Coût du carburant HT', value: result.costEuros === null ? 'Indisponible' : currency.format(result.costEuros), icon: Coins },
+  ];
+
+  return <dl className={dashboard ? 'so-consumption-values so-consumption-kpis' : 'so-consumption-values'}
+    aria-label={dashboard ? 'Indicateurs de consommation' : undefined}>
+    {metrics.map(({ label, value, icon: Icon }) => <div key={label}>
+      <dt>{dashboard && <Icon size={26} aria-hidden="true" />}{label}</dt>
+      <dd>{value}</dd>
+    </div>)}
   </dl>;
+}
+
+function ConsumptionDashboard({ reading, capacityLiters }: { reading: ConsumptionRecord; capacityLiters: number | null }) {
+  const { trace, durationMinutes, actualArrival, refuelLiters, pricePerLiter } = reading;
+  const duration = Math.floor(durationMinutes / 60) + ' h ' + String(durationMinutes % 60).padStart(2, '0');
+  const trip = [
+    { label: 'Durée', value: duration, icon: Timer },
+    { label: 'Vitesse moyenne', value: amount(reading.averageSpeedKnots, 'nd'), icon: Gauge },
+    { label: 'Source de la distance', value: trace ? 'Trace GPS' : 'Durée × vitesse moyenne', icon: LocateFixed },
+    {
+      label: 'Début de trace (Paris)',
+      value: trace ? parisDateTime.format(new Date(trace.startedAt)) : 'Indisponible',
+      icon: CalendarClock,
+    },
+    {
+      label: 'Arrivée réelle (Paris)',
+      value: actualArrival?.replace(/^(\d{4})-(\d{2})-(\d{2})T/, '$3/$2/$1 ') ?? 'Indisponible',
+      icon: CalendarClock,
+    },
+  ];
+
+  return <div className="so-consumption-dashboard">
+    <ConsumptionReadout result={reading} dashboard />
+    <dl className="so-consumption-trip" aria-label="Détails du trajet">
+      {trip.map(({ label, value, icon: Icon }) => <div key={label}>
+        <dt><Icon size={21} aria-hidden="true" />{label}</dt>
+        <dd>{value}</dd>
+      </div>)}
+    </dl>
+    <SeaOperationConsumptionTank record={reading} capacityLiters={capacityLiters} />
+    {trace && <SeaOperationConsumptionSpeedProfile trace={trace} />}
+    {(refuelLiters !== null || pricePerLiter !== null) && <dl className="so-consumption-fuel-details">
+      {refuelLiters !== null && <div><dt>Avitaillement avant départ</dt><dd>{amount(refuelLiters, 'L')}</dd></div>}
+      {pricePerLiter !== null && <div><dt>Prix du fuel HT</dt><dd>{fuelPrice.format(pricePerLiter)} €/L</dd></div>}
+    </dl>}
+    {reading.includedInReference && <small>Relevé inclus dans la référence de consommation Projet.</small>}
+  </div>;
 }
 
 function ConsumptionRecordReadout({ record }: { record: ConsumptionRecord | null }) {
@@ -369,22 +420,25 @@ export function SeaOperationConsumptionDialog({ client, record, onClose, onSaved
   const reading = context?.record;
   const description = [record.draft.project || 'Opération sans titre', record.draft.vessel.name].filter(Boolean).join(' · ');
   const reloadReading = () => { setEditing(false); setSaved(undefined); reload(); };
-
-  return <div className="so-consumption-dialog">
+  const showDashboard = Boolean(reading && (!context?.canEdit || !editing));
+  return <div className={showDashboard ? 'so-consumption-dialog so-consumption-dialog--dashboard' : 'so-consumption-dialog'}>
     {context?.canEdit && (!reading || editing)
       ? <EditableConsumptionDialog client={client} context={context} description={description}
         onClose={reading ? () => setEditing(false) : onClose} onReload={reloadReading}
         onSaved={next => { setSaved(next); setEditing(false); onSaved(next); }} />
-      : <AppDialog size={reading ? 'lg' : 'md'} eyebrow={reading ? 'Relevé de mission' : undefined}
-        title={reading ? 'Bilan de consommation' : 'Consommation de carburant'} description={description}
+      : <AppDialog size={reading ? 'xl' : 'md'} eyebrow={reading ? 'Relevé de mission' : undefined}
+        title={reading ? 'Bilan de consommation' : 'Consommation de carburant'}
+        description={reading ? <span className="so-consumption-mission"><Ship size={24} aria-hidden="true" />{description}</span> : description}
         icon={reading ? <BarChart3 size={22} aria-hidden="true" /> : <Fuel size={22} aria-hidden="true" />} onClose={onClose}
         footer={reading && <div className="app-dialog__actions">
           <button type="button" className="sp-button sp-button--secondary" onClick={onClose}>Fermer le bilan</button>
-          {context?.canEdit && <button type="button" className="sp-button sp-button--primary" onClick={() => setEditing(true)}>Modifier le relevé</button>}
+          {context?.canEdit && <button type="button" className="sp-button sp-button--primary" onClick={() => setEditing(true)}>
+            <Pencil size={17} aria-hidden="true" />Modifier le relevé
+          </button>}
         </div>}>
         {context ? <>
-          <ConsumptionRecordReadout record={context.record} />
-          {reading && <SeaOperationConsumptionCharts record={reading} />}
+          {reading ? <ConsumptionDashboard reading={reading} capacityLiters={context.calibration.nominalCapacityLiters} />
+            : <ConsumptionRecordReadout record={context.record} />}
           {!context.canEdit && <p className="so-help">Consommation en consultation selon vos droits sur cette opération.</p>}
         </> : <ConsumptionLoadStatus error={response?.error} reload={reload} />}
       </AppDialog>}

@@ -6,7 +6,7 @@
 .so-consumption-summary p, .so-consumption-dialog .so-help, .so-consumption-summary small, .so-consumption-dialog small {
   margin: 0; color: var(--sp-muted); font-size: .75rem;
 }
-.so-consumption-values, .so-consumption-trip {
+.so-consumption-values {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: var(--sp-space-2) var(--sp-space-3); margin: 0;
 }
 .so-consumption-dialog .so-consumption-values > div {
@@ -40,24 +40,167 @@
   padding: var(--sp-space-2) var(--sp-space-3); background: var(--sp-primary-soft); border-radius: var(--sp-control-radius);
 }
 .so-consumption-error { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-space-2); }
-.so-consumption-charts { display: grid; gap: var(--sp-space-3); margin-block: var(--sp-space-3); }
-.so-consumption-chart, .so-consumption-trip {
-  min-width: 0; padding: var(--sp-space-3); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius);
+.so-consumption-dialog--dashboard .app-dialog {
+  --dialog-width: 90rem;
+  background: var(--sp-canvas);
 }
-.so-consumption-chart svg { display: block; width: 100%; height: auto; max-height: 14rem; }
-.so-consumption-chart h3 svg { width: 17px; height: 17px; flex: none; }
-.so-consumption-chart svg text { fill: var(--sp-muted); font-size: 12px; }
-.so-consumption-chart-grid { stroke: var(--sp-border); }
-.so-consumption-chart-line { fill: none; stroke: var(--sp-primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.so-consumption-chart-point { fill: var(--sp-primary); }
-.so-consumption-bars { display: grid; gap: var(--sp-space-2); }
-.so-consumption-bar-row { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr) 6.5rem; gap: var(--sp-space-2); align-items: center; font-size: .82rem; }
-.so-consumption-bar-row strong { text-align: right; font-variant-numeric: tabular-nums; }
-.so-consumption-bar-track { height: .75rem; overflow: hidden; background: var(--sp-primary-soft); border-radius: var(--sp-control-radius); }
-.so-consumption-bar-track > span { display: block; height: 100%; background: var(--sp-primary); border-radius: inherit; }
+.so-consumption-dialog--dashboard .app-dialog__header {
+  min-height: 0;
+  padding: var(--sp-space-3) var(--sp-space-5);
+  background: linear-gradient(105deg, var(--sp-primary-hover), var(--sp-primary));
+  border-bottom-color: transparent;
+}
+.so-consumption-dialog--dashboard .app-dialog__identity small,
+.so-consumption-dialog--dashboard .app-dialog__identity h2 {
+  color: var(--sp-surface);
+}
+.so-consumption-dialog--dashboard .app-dialog__identity h2 {
+  font-size: clamp(1.125rem, 2.2vw, 1.85rem);
+  line-height: 1.15;
+  white-space: normal;
+}
+.so-consumption-dialog--dashboard :is(.app-dialog__icon, .app-dialog__close) {
+  border-radius: var(--sp-control-radius);
+  background: rgb(255 255 255 / 12%);
+  color: var(--sp-surface);
+}
+.so-consumption-dialog--dashboard .app-dialog__close { border-color: rgb(255 255 255 / 50%); }
+.so-consumption-dialog--dashboard .app-dialog__close:hover { background: rgb(255 255 255 / 24%); }
+.so-consumption-dialog--dashboard .app-dialog__close:focus-visible { outline: 2px solid var(--sp-surface); outline-offset: 2px; }
+.so-consumption-dialog--dashboard .app-dialog__description {
+  flex: none;
+  margin: var(--sp-space-3) var(--sp-space-4) 0;
+  padding: var(--sp-space-2) var(--sp-space-4);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-primary-soft);
+}
+.so-consumption-mission {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-3);
+  color: var(--sp-primary-hover);
+  font-size: clamp(.95rem, 1.6vw, 1.3rem);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+.so-consumption-mission svg { flex: none; }
+.so-consumption-dialog--dashboard .app-dialog__content { padding: var(--sp-space-3) var(--sp-space-4); }
+.so-consumption-dialog--dashboard .app-dialog__content > .so-help { margin-top: var(--sp-space-2); }
+.so-consumption-dialog--dashboard .app-dialog__footer { min-height: 0; box-shadow: none; }
+.so-consumption-dialog--dashboard .app-dialog__footer .sp-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-space-2);
+}
+.so-consumption-dialog--dashboard .app-dialog__footer .sp-button--secondary {
+  border-color: var(--sp-primary);
+  color: var(--sp-primary-hover);
+  background: var(--sp-surface);
+}
+.so-consumption-dialog--dashboard .app-dialog__footer .sp-button--secondary:hover { background: var(--sp-primary-soft); }
+.so-consumption-dialog--dashboard .app-dialog__footer .sp-button--primary {
+  border-color: var(--sp-primary);
+  color: var(--sp-surface);
+  background: var(--sp-primary);
+}
+.so-consumption-dialog--dashboard .app-dialog__footer .sp-button--primary:hover {
+  border-color: var(--sp-primary-hover);
+  background: var(--sp-primary-hover);
+}
+.so-consumption-dashboard { display: grid; gap: var(--sp-space-3); }
+.so-consumption-dashboard .so-consumption-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.so-consumption-kpis > div, .so-consumption-trip > div { position: relative; min-width: 0; }
+.so-consumption-dialog--dashboard .so-consumption-kpis > div {
+  display: grid;
+  align-content: center;
+  gap: var(--sp-space-1);
+  min-height: 80px;
+  padding: var(--sp-space-2) var(--sp-space-2) var(--sp-space-2) 3.125rem;
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-panel-radius);
+  background: linear-gradient(150deg, var(--sp-surface) 35%, var(--sp-primary-soft));
+}
+.so-consumption-kpis dt, .so-consumption-trip dt { line-height: 1.25; }
+.so-consumption-kpis dt svg, .so-consumption-trip dt svg {
+  position: absolute;
+  top: 50%;
+  left: var(--sp-space-3);
+  color: var(--sp-primary-hover);
+  transform: translateY(-50%);
+}
+.so-consumption-kpis dd {
+  font-size: clamp(.94rem, 1.6vw, 1.5rem);
+  font-weight: 750;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.so-consumption-chart, .so-consumption-trip {
+  min-width: 0;
+  margin: 0;
+  padding: var(--sp-space-3);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+.so-consumption-chart h3 { font-size: 1rem; }
+.so-consumption-chart h3 svg { flex: none; color: var(--sp-primary-hover); }
+.so-consumption-trip {
+  display: grid;
+  grid-template-columns: .8fr .95fr 1fr 1.15fr 1.15fr;
+  row-gap: var(--sp-space-3);
+}
+.so-consumption-trip > div {
+  display: grid;
+  align-content: center;
+  gap: var(--sp-space-1);
+  padding: 0 var(--sp-space-2) 0 2.75rem;
+}
+.so-consumption-trip > div + div { border-left: 1px solid var(--sp-border); }
+.so-consumption-trip dd { font-size: .875rem; overflow-wrap: anywhere; }
+.so-consumption-fuel-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-2) var(--sp-space-5);
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: .75rem;
+}
+.so-consumption-fuel-details > div { display: flex; flex-wrap: wrap; gap: var(--sp-space-2); }
+.so-consumption-fuel-details dd { margin: 0; color: var(--sp-heading); font-weight: 650; }
+@media (max-width: 1100px) {
+  .so-consumption-dashboard .so-consumption-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .so-consumption-trip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .so-consumption-trip > div:nth-child(4) { border-left: 0; }
+}
 @media (max-width: 520px) {
   .so-consumption-section { grid-template-columns: minmax(0, 1fr); }
-  .so-consumption-bar-row { grid-template-columns: 4.6rem minmax(0, 1fr) 5.5rem; }
-  .so-consumption-chart svg text { font-size: 17px; }
+  .so-consumption-dashboard .so-consumption-kpis,
+  .so-consumption-trip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .so-consumption-trip > div:nth-child(4) { border-left: 1px solid var(--sp-border); }
+  .so-consumption-trip > div:nth-child(odd) { border-left: 0; }
+  .so-consumption-dialog--dashboard .app-dialog__header { gap: var(--sp-space-2); padding-inline: var(--sp-space-3); }
+  .so-consumption-dialog--dashboard .app-dialog__description { margin-inline: var(--sp-space-2); padding-inline: var(--sp-space-2); }
+  .so-consumption-dialog--dashboard .app-dialog__content { padding-inline: var(--sp-space-2); }
+  .so-consumption-dialog--dashboard .so-consumption-kpis > div {
+    min-height: 68px;
+    padding-left: 2.25rem;
+  }
+  .so-consumption-kpis dt svg, .so-consumption-trip dt svg { left: var(--sp-space-2); width: 19px; }
+  .so-consumption-trip > div { padding-left: 2.25rem; }
+  .so-consumption-dialog--dashboard .app-dialog__footer button {
+    padding-inline: var(--sp-space-2);
+    font-size: .8rem;
+  }
+  .so-consumption-dialog--dashboard .app-dialog__actions:has(> :only-child) { grid-template-columns: 1fr; }
+}
+@media (pointer: coarse) {
+  .so-consumption-dialog--dashboard .app-dialog__close { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 360px) {
+  .so-consumption-dashboard .so-consumption-kpis { grid-template-columns: minmax(0, 1fr); }
 }
 @media print { .so-consumption-dialog { display: none !important; } }
