@@ -16,6 +16,7 @@ vi.mock('./fleetQueries', async (importOriginal) => {
 });
 vi.mock('../planning/planningP11Queries', () => ({ fetchPlanningP11Data: vi.fn() }));
 vi.mock('./fleetBrochure', () => ({ downloadFleetBrochure: vi.fn() }));
+vi.mock('./FleetCapacityPlans', () => ({ FleetCapacityPlans: () => <section aria-label="Plans" /> }));
 
 const baseVessel: FleetVessel = {
   id: 1, companyId: 1, name: 'GOURY', acronym: 'GRY', assetKind: 'vessel', typeLabel: 'Navire de charge',
@@ -55,11 +56,17 @@ describe('FleetPage', () => {
     expect(screen.getByRole('button', { name: /Quais\s*1/ })).toBeInTheDocument();
     expect(await screen.findByRole('img', { name: 'Photo du navire GOURY' })).toHaveAttribute('src', '/vessels/goury.jpg');
     expect(screen.getByRole('tab', { name: 'Décision d’effectif' })).toBeInTheDocument();
+    const capacities = within(screen.getByRole('region', { name: 'Capacités' }));
+    expect(capacities.getByRole('region', { name: 'Carburant' })).toBeVisible();
+    expect(capacities.getByRole('region', { name: 'Plans' })).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: /Bureaux\s*1/ }));
     expect(await screen.findByRole('heading', { name: 'Armement - Cherbourg' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Éditer brochure' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Décision d’effectif' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Capacités' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    expect(within(screen.getByRole('dialog')).queryByRole('region', { name: 'Capacités' })).not.toBeInTheDocument();
   });
 
   it('edits the BBTM brochure from the vessel detail', async () => {
@@ -84,7 +91,7 @@ describe('FleetPage', () => {
     expect(dialog.queryByRole('spinbutton', { name: /^Cuve / })).not.toBeInTheDocument();
     await user.selectOptions(tankCount, '1');
     expect(dialog.getByRole('spinbutton', { name: 'Cuve (L)' })).toBeVisible();
-    expect(dialog.queryByRole('textbox', { name: /Nom de la cuve/ })).not.toBeInTheDocument();
+    expect(dialog.getByRole('textbox', { name: 'Nom de la cuve 1' })).toHaveValue('Cuve');
     await user.selectOptions(tankCount, '2');
     fireEvent.change(dialog.getByRole('spinbutton', { name: 'Cuve Bâbord (L)' }), { target: { value: '7000' } });
     fireEvent.change(dialog.getByRole('spinbutton', { name: 'Cuve Tribord (L)' }), { target: { value: '5000' } });
@@ -162,6 +169,90 @@ describe('FleetPage', () => {
     expect(detail.getByText('Arrière')).toBeVisible();
   });
 
+  it('renames either of two tanks and keeps their Soutes selection keyed by position', async () => {
+    const user = userEvent.setup();
+    const vessel: FleetVessel = { ...baseVessel, fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800, hiddenFuelTankKeys: ['day'] };
+    vi.mocked(fetchFleetVessels).mockResolvedValue([vessel]);
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const firstName = dialog.getByRole('textbox', { name: 'Nom de la cuve 1' });
+    const secondName = dialog.getByRole('textbox', { name: 'Nom de la cuve 2' });
+    expect(firstName).toHaveValue('Cuve Bâbord');
+    expect(secondName).toHaveValue('Cuve Tribord');
+    expect(dialog.getByRole('checkbox', { name: 'Afficher dans Soutes — Caisse journalière' })).not.toBeChecked();
+    await user.click(dialog.getByRole('checkbox', { name: 'Afficher dans Soutes — Cuve Tribord' }));
+    fireEvent.change(firstName, { target: { value: 'Soute avant' } });
+    fireEvent.change(secondName, { target: { value: 'Soute arrière' } });
+    expect(dialog.getByRole('checkbox', { name: 'Afficher dans Soutes — Soute arrière' })).not.toBeChecked();
+    expect(dialog.getByRole('spinbutton', { name: 'Soute arrière (L)' })).toHaveValue(5000);
+
+    const saved: FleetVessel = { ...vessel, fuelTankNames: ['Soute avant', 'Soute arrière'], hiddenFuelTankKeys: ['day', 'main-2'] };
+    vi.mocked(saveFleetVessel).mockResolvedValue(saved);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([saved]);
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      fuelTankCapacitiesLiters: [7000, 5000], fuelTankNames: ['Soute avant', 'Soute arrière'], hiddenFuelTankKeys: ['day', 'main-2'],
+    }));
+    expect(within(screen.getByRole('region', { name: 'Carburant' })).getByText('Soute arrière')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const nextDialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const count = nextDialog.getByRole('combobox', { name: 'Nombre de cuves principales' });
+    await user.selectOptions(count, '1');
+    await user.selectOptions(count, '2');
+    expect(nextDialog.getByRole('textbox', { name: 'Nom de la cuve 1' })).toHaveValue('Soute avant');
+    expect(nextDialog.getByRole('checkbox', { name: 'Afficher dans Soutes — Cuve Tribord' })).toBeChecked();
+  });
+
+  it('adds vessel-specific sections and selects individual custom tanks for Soutes', async () => {
+    const user = userEvent.setup();
+    const vessel = { ...baseVessel, fuelCapacityM3: null };
+    const other = { ...baseVessel, id: 4, name: 'ROZEL', capacitySections: [{ name: 'Eaux grises', tanks: [] }] };
+    vi.mocked(fetchFleetVessels).mockResolvedValue([vessel, other]);
+    vi.mocked(saveFleetVessel).mockImplementation(async (_, input) => {
+      const saved = { ...vessel, capacitySections: input.capacitySections, hiddenFuelTankKeys: input.hiddenFuelTankKeys };
+      vi.mocked(fetchFleetVessels).mockResolvedValue([saved, other]);
+      return saved;
+    });
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    await user.click(dialog.getByRole('checkbox', { name: 'Afficher dans Soutes — Cuve sans capacité renseignée' }));
+    await user.click(dialog.getByRole('button', { name: 'Ajouter une sous-section' }));
+    fireEvent.change(dialog.getByRole('textbox', { name: 'Nom de la sous-section' }), { target: { value: ' Eau douce ' } });
+    const freshWater = within(dialog.getByRole('group', { name: 'Eau douce' }));
+    await user.click(freshWater.getByRole('button', { name: 'Ajouter une cuve' }));
+    fireEvent.change(freshWater.getByRole('textbox', { name: 'Nom de la cuve' }), { target: { value: ' Réserve ' } });
+    fireEvent.change(freshWater.getByRole('spinbutton', { name: 'Capacité (L)' }), { target: { value: '650.5' } });
+    const showInSoutes = freshWater.getByRole('checkbox', { name: 'Afficher dans Soutes — Réserve (Eau douce)' });
+    expect(showInSoutes).not.toBeChecked();
+    await user.click(showInSoutes);
+    await user.click(dialog.getByRole('button', { name: 'Ajouter une sous-section' }));
+    const newSection = within(dialog.getByRole('group', { name: 'Nouvelle sous-section' }));
+    fireEvent.change(newSection.getByRole('textbox', { name: 'Nom de la sous-section' }), { target: { value: 'eau DOUCE' } });
+    const save = dialog.getByRole('button', { name: 'Enregistrer' });
+    expect(save).toBeDisabled();
+    fireEvent.change(newSection.getByRole('textbox', { name: 'Nom de la sous-section' }), { target: { value: 'Huiles' } });
+    await user.click(save);
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      id: 1, hiddenFuelTankKeys: ['main-1'],
+      capacitySections: [
+        { name: 'Eau douce', tanks: [{ id: expect.stringMatching(/^[\da-f-]{36}$/), name: 'Réserve', capacityLiters: 650.5, showInSoutes: true }] },
+        { name: 'Huiles', tanks: [] },
+      ],
+    }));
+    const details = within(screen.getByRole('region', { name: 'Capacités' }));
+    expect(within(details.getByRole('region', { name: 'Eau douce' })).getByText('650,5 L')).toBeVisible();
+    expect(details.getByRole('region', { name: 'Huiles' })).toBeVisible();
+    expect(details.queryByRole('region', { name: 'Eaux grises' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /ROZEL/ }));
+    expect(details.getByRole('region', { name: 'Eaux grises' })).toBeVisible();
+    expect(details.queryByRole('region', { name: 'Eau douce' })).not.toBeInTheDocument();
+  });
+
   it('keeps an unknown vessel draft empty and saves an explicitly entered measurement', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
@@ -227,11 +318,14 @@ describe('FleetPage', () => {
     expect(within(screen.getByRole('table', { name: 'Matrice Hs × période de GOURY' })).getByText('Peu confortable')).toBeInTheDocument();
   });
 
-  it.each(['marin', 'capitaine'] as const)('exposes the saved matrix read-only for a real %s profile fixture', async (role) => {
+  it.each(['marin', 'capitaine'] as const)('exposes the saved capacities and matrix read-only for a real %s profile fixture', async (role) => {
     const user = userEvent.setup();
     vi.mocked(fetchFleetVessels).mockResolvedValue([{
       ...baseVessel, weatherMatrix: GOURY_WEATHER_MATRIX, fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
       dailyFuelTankName: role === 'capitaine' ? 'Caisse service' : null,
+      capacitySections: [{ name: 'Eau douce', tanks: [{
+        id: '8d2ac1e5-e963-4d04-8672-2a092841b402', name: 'Réserve', capacityLiters: 650, showInSoutes: true,
+      }] }],
     }, office, quay]);
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={[role]} /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'GOURY' });
@@ -243,6 +337,9 @@ describe('FleetPage', () => {
     expect(fuel.getByText('800 L')).toBeVisible();
     expect(fuel.queryByRole('textbox')).not.toBeInTheDocument();
     expect(fuel.queryByRole('spinbutton')).not.toBeInTheDocument();
+    const freshWater = within(screen.getByRole('region', { name: 'Eau douce' }));
+    expect(freshWater.getByText('650 L')).toBeVisible();
+    expect(freshWater.queryByRole('checkbox')).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Conditions météo limites' }));
     const table = screen.getByRole('table', { name: 'Matrice Hs × période de GOURY' });
     expect(within(table).getAllByText('Confortable').length).toBeGreaterThan(0);

@@ -28,23 +28,30 @@ La carte affiche aussi la date, l’heure et les jauges par cuve du relevé Sout
 le plus récent par heure de mesure. Les valeurs de ce relevé restent distinctes
 du stock courant recalculé avec les DPR et les avitaillements.
 
-Dans **Navires**, la section **Carburant** permet de déclarer le nombre de cuves
-principales et la capacité de chacune en litres. Une seule s’affiche comme
-**Cuve**, deux comme **Cuve Bâbord** et **Cuve Tribord**. Au-delà de deux, chaque
-cuve reçoit un nom personnalisé. La case **Caisse journalière** affiche des
-champs séparés pour son nom et sa capacité. Le calcul du stock nominal additionne
-les cuves principales. Il reprend l’ancienne capacité totale si leurs volumes
-individuels ne sont pas renseignés.
+Dans **Navires → Capacités → Carburant**, renseigner le nombre de cuves
+principales, leurs noms et leurs volumes en litres. Deux cuves sont nommées par
+défaut **Cuve Bâbord** et **Cuve Tribord**. La case **Caisse journalière** affiche
+des champs séparés pour son nom et sa capacité. Le calcul du stock nominal
+additionne les cuves principales et reprend l’ancienne capacité totale si leurs
+volumes individuels ne sont pas renseignés.
+
+Les administrateurs peuvent créer des sous-sections propres à chaque navire
+et importer plusieurs plans PDF, JPEG, PNG ou WebP de 25 Mo chacun. La case
+**Afficher dans Soutes** est disponible pour chaque cuve, y compris dans les
+sous-sections personnalisées. Les cuves de carburant existantes sont cochées par
+défaut. Cocher les nouvelles cuves des sous-sections pour les ajouter au relevé.
 
 **Soutes**, dans le même ruban, enregistre plusieurs relevés par navire et par
 jour, à des heures distinctes. Choisir une heure dans **Relevés de la journée**
 pour consulter ou corriger ce relevé. Choisir **Nouveau relevé** pour ajouter
 une mesure. Les anciens relevés datés correspondent à 00 h 00.
-Chaque cuve configurée reçoit une mesure en %, L ou m³ et un visuel de son
+Chaque cuve sélectionnée reçoit une mesure en %, L ou m³ et un visuel de son
 remplissage. Les cuves Bâbord ou repérées `P` occupent la gauche, celles
 Tribord ou repérées `S` occupent la droite. La jauge en haut montre la somme
 des volumes mesurés. La référence du bandeau et le décompte des DPR utilisent
 la somme des cuves principales, avec la caisse journalière suivie séparément.
+Seul un relevé complet des cuves principales peut actualiser la référence de
+carburant. Les volumes des autres sous-sections sont conservés dans le relevé.
 Pour les deux cuves calibrées du LANDEMER, une mesure en pourcentage applique
 la table correspondante. Le relevé peut être rouvert à son heure avec ses valeurs
 et unités d’origine. Pour un navire qui a seulement une capacité historique, la

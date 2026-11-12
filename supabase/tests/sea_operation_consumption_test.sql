@@ -1046,7 +1046,7 @@ select is(pg_temp.soutes_read('fuel_office_only', -2)->'reading'->'tanks', '[
 select is((pg_temp.fuel_row('fuel_office_only')->>'fuelLiters')::numeric, 5300::numeric,
   'stock subtracts validated DPR use from the reading date, inclusive');
 select is(pg_temp.fuel_row('fuel_office_only')->'latestTankReading', jsonb_build_object('date', pg_temp.fuel_day(-2), 'time', '00:00',
-  'superseded', false, 'tanks', '[
+  'superseded', false, 'updatesFuelBaseline', true, 'tanks', '[
     {"key":"main-1","name":"Cuve Bâbord","capacityLiters":7000,"liters":3500},
     {"key":"main-2","name":"Cuve Tribord","capacityLiters":3000,"liters":2100},
     {"key":"day","name":"Caisse moteur","capacityLiters":200,"liters":150}]'::jsonb),

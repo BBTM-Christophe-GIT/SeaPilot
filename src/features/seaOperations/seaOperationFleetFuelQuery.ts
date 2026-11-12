@@ -47,6 +47,7 @@ export interface FleetFuelTank {
   name: string;
   capacityLiters: number | null;
   calibration?: 'landemer-v1';
+  sectionName?: string;
 }
 
 type MeasuredFleetFuelTank = FleetFuelTank & { liters: number };
@@ -55,6 +56,7 @@ export interface FleetFuelLatestTankReading {
   date: string;
   time: string;
   superseded: boolean;
+  updatesFuelBaseline: boolean;
   tanks: MeasuredFleetFuelTank[];
 }
 
@@ -64,12 +66,14 @@ export interface SeaOperationFuelTanks {
   time: string | null;
   times: string[];
   canSetBaseline: boolean;
+  updatesFuelBaseline: boolean;
   tanks: FleetFuelTank[];
   reading: {
     version: number;
     savedAt: string;
     mainLiters: number;
     superseded: boolean;
+    updatesFuelBaseline: boolean;
     tanks: Array<FleetFuelTank & FleetFuelTankInput & { liters: number }>;
   } | null;
 }
@@ -167,11 +171,17 @@ export function isFleetFuelReadingTime(value: unknown): value is string {
 
 function fuelTank(value: unknown): FleetFuelTank {
   if (!value || typeof value !== 'object') throw new Error(invalidTanks);
-  const { key, name, capacityLiters, calibration } = value as Record<string, unknown>;
-  if (typeof key !== 'string' || !/^(main-[1-9]\d*|day)$/.test(key) || typeof name !== 'string' || !name.trim()
+  const { key, name, capacityLiters, calibration, sectionName } = value as Record<string, unknown>;
+  const custom = typeof key === 'string' && /^capacity-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(key);
+  if (typeof key !== 'string' || !custom && !/^(main-[1-9]\d*|day)$/.test(key) || typeof name !== 'string' || !name.trim()
     || !quantity(capacityLiters) || capacityLiters === 0 || calibration != null && calibration !== 'landemer-v1') {
     throw new Error(invalidTanks);
   }
+  if (custom) {
+    if (typeof sectionName !== 'string' || !sectionName.trim() || calibration != null) throw new Error(invalidTanks);
+    return { key, name, capacityLiters, sectionName };
+  }
+  if (sectionName != null) throw new Error(invalidTanks);
   return { key, name, capacityLiters, calibration: calibration ?? undefined };
 }
 
@@ -185,29 +195,30 @@ function measuredFuelTank(value: unknown): MeasuredFleetFuelTank {
 function parseLatestTankReading(value: unknown): FleetFuelLatestTankReading | null {
   if (value === null) return null;
   if (!value || typeof value !== 'object') throw new Error(invalidTanks);
-  const { date, time = '00:00', superseded, tanks } = value as Record<string, unknown>;
+  const { date, time = '00:00', superseded, tanks, updatesFuelBaseline = true } = value as Record<string, unknown>;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !isFleetFuelReadingTime(time) || typeof superseded !== 'boolean'
-    || !Array.isArray(tanks) || !tanks.length) throw new Error(invalidTanks);
-  return { date, time, superseded, tanks: tanks.map(measuredFuelTank) };
+    || typeof updatesFuelBaseline !== 'boolean' || !Array.isArray(tanks) || !tanks.length) throw new Error(invalidTanks);
+  return { date, time, superseded, updatesFuelBaseline, tanks: tanks.map(measuredFuelTank) };
 }
 
 function fuelTankReading(data: unknown, vesselId: number, date: string, time: string | null): SeaOperationFuelTanks {
   if (!data || typeof data !== 'object') throw new Error(invalidTanks);
   const result = data as Record<string, unknown>;
-  const { times } = result;
+  const { times, updatesFuelBaseline = true } = result;
   if (result.vesselId !== vesselId || result.date !== date || result.time !== time || typeof result.canSetBaseline !== 'boolean'
-    || !Array.isArray(result.tanks) || !Array.isArray(times) || !times.every(isFleetFuelReadingTime)) {
+    || typeof updatesFuelBaseline !== 'boolean' || !Array.isArray(result.tanks) || !Array.isArray(times) || !times.every(isFleetFuelReadingTime)) {
     throw new Error(invalidTanks);
   }
   const tanks = result.tanks.map(fuelTank);
-  const response = { vesselId, date, time, times, canSetBaseline: result.canSetBaseline, tanks };
+  const response = { vesselId, date, time, times, canSetBaseline: result.canSetBaseline, updatesFuelBaseline, tanks };
   if (result.reading === null) return { ...response, reading: null };
   if (time === null || !times.includes(time) || !result.reading || typeof result.reading !== 'object') throw new Error(invalidTanks);
-  const { version, savedAt, mainLiters, superseded, tanks: recorded } = result.reading as Record<string, unknown>;
+  const { version, savedAt, mainLiters, superseded, tanks: recorded, updatesFuelBaseline: readingUpdatesFuelBaseline = true }
+    = result.reading as Record<string, unknown>;
   if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1
     || typeof savedAt !== 'string' || !Number.isFinite(Date.parse(savedAt)) || !quantity(mainLiters) || mainLiters === null
-    || typeof superseded !== 'boolean' || !Array.isArray(recorded)) throw new Error(invalidTanks);
-  return { ...response, reading: { version, savedAt, mainLiters, superseded, tanks: recorded.map((item: unknown) => {
+    || typeof superseded !== 'boolean' || typeof readingUpdatesFuelBaseline !== 'boolean' || !Array.isArray(recorded)) throw new Error(invalidTanks);
+  return { ...response, reading: { version, savedAt, mainLiters, superseded, updatesFuelBaseline: readingUpdatesFuelBaseline, tanks: recorded.map((item: unknown) => {
     const tank = measuredFuelTank(item);
     const { unit, value } = item as Record<string, unknown>;
     if (unit !== 'percent' && unit !== 'liters' && unit !== 'm3'

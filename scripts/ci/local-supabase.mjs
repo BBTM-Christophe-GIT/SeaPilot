@@ -103,6 +103,7 @@ const apiSessionTests = new Set([
 // the whole mixed supabase/tests directory with pg_prove would reject them.
 const assertionTests = [
   'assignment_vessel_read_window_test.sql',
+  'fleet_vessel_capacities_test.sql',
   'dpr_dashboard_access_scope_test.sql',
   'hr_document_captain_upload_test.sql',
   'exercise_monthly_performance_test.sql',

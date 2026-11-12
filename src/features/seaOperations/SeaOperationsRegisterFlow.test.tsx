@@ -297,15 +297,18 @@ describe('Operation consumption from the register', () => {
   it('preselects the assigned vessel and shows its saved tank reading alongside the current stock', async () => {
     let fuel = { ...stock, assignedToday: true };
     const baselineDate = seaOperationToday(new Date(Date.now() - 7 * 86_400_000));
-    const tanks = [{ key: 'main-1', name: 'Cuve', capacityLiters: 10000 }];
+    const fuelTank = { key: 'main-1', name: 'Cuve', capacityLiters: 10000 };
+    const waterTank = { key: 'capacity-15ec0862-374d-4bbb-82aa-1887a015fbfa', name: 'Eau potable', capacityLiters: 1000, sectionName: 'Eau douce' };
     const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === 'sea_operation_fuel_tanks') return { data: {
-        vesselId: 12, date: args.p_date, time: args.p_time, times: [], canSetBaseline: true, tanks, reading: null,
+        vesselId: 12, date: args.p_date, time: args.p_time, times: [], canSetBaseline: true, updatesFuelBaseline: true,
+        tanks: [fuelTank, waterTank], reading: null,
       }, error: null };
       if (name === 'sea_operation_save_fuel_tanks') {
         fuel = { ...fuel, fuelLiters: 5600, measuredAt: `${baselineDate}T00:00:00Z`, source: 'baseline',
           baselineDate, baselineFuelLiters: 6050, deductedFuelLiters: 450,
-          latestTankReading: { date: baselineDate, time: '14:30', superseded: false, tanks: [{ ...tanks[0], liters: 6050 }] } };
+          latestTankReading: { date: baselineDate, time: '14:30', superseded: false, updatesFuelBaseline: true,
+            tanks: [{ ...fuelTank, liters: 6050 }, { ...waterTank, liters: 500 }] } };
         return { data: fuel, error: null };
       }
       return { data: emptyRegisterConsumption, error: null };
@@ -330,6 +333,8 @@ describe('Operation consumption from the register', () => {
     fireEvent.change(value, { target: { value: '101' } });
     expect(save).toBeDisabled();
     fireEvent.change(value, { target: { value: '60.5' } });
+    expect(save).toBeDisabled();
+    fireEvent.change(within(form.getByRole('group', { name: waterTank.name })).getByLabelText('Niveau'), { target: { value: '500' } });
     fireEvent.click(save);
     await waitFor(() => expect(fleetFuel().getByText('5,6 m³')).toBeVisible());
     expect(fleetFuel().getByText(/56\s%/)).toBeVisible();
@@ -340,10 +345,15 @@ describe('Operation consumption from the register', () => {
     const latest = fleetFuel().getByRole('region', { name: 'Dernier relevé Soutes' });
     expect(latest.querySelector('time')).toHaveAttribute('datetime', `${baselineDate}T14:30`);
     expect(latest.querySelector('time')).toHaveTextContent('14:30');
-    expect(within(latest).getByText('Cuve')).toBeVisible();
-    expect(within(latest).getByText('6,05 m³')).toBeVisible();
+    const latestFuel = within(within(latest).getByRole('region', { name: 'Carburant' }));
+    expect(latestFuel.getByText('Cuve')).toBeVisible();
+    expect(latestFuel.getByText('6,05 m³')).toBeVisible();
+    const latestWater = within(within(latest).getByRole('region', { name: 'Eau douce' }));
+    expect(latestWater.getByText(waterTank.name)).toBeVisible();
+    expect(latestWater.getByText('500 L')).toBeVisible();
+    expect(within(fleetFuel().getByRole('region', { name: 'Stock' })).queryByText(waterTank.name)).not.toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate, p_time: '14:30',
-      p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }] });
+      p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }, { key: waterTank.key, unit: 'liters', value: 500 }] });
   });
 
   it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {

@@ -1,4 +1,6 @@
-.so-soutes-tank-layout { display: grid; min-width: 0; gap: var(--sp-space-3); }
+.so-soutes-tank-groups, .so-soutes-tank-group, .so-soutes-tank-layout { display: grid; min-width: 0; gap: var(--sp-space-3); }
+.so-soutes-tank-group > :is(h3, h4, h5) { margin: 0; color: var(--sp-heading); font-size: .86rem; overflow-wrap: anywhere; }
+.so-soutes-tank-group + .so-soutes-tank-group { padding-top: var(--sp-space-3); border-top: 1px solid var(--sp-border); }
 .so-soutes-sides, .so-soutes-center { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-space-3); }
 .so-soutes-center > :only-child { grid-column: 1 / -1; }
 .so-soutes-center > :only-child, .so-soutes-day > :only-child { justify-self: center; width: min(100%, 18rem); }

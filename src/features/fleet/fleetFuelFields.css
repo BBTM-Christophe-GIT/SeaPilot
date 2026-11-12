@@ -1,8 +1,29 @@
-.fleet-dialog-grid > .fleet-fuel-heading,
-.fleet-dialog-grid > .fleet-fuel-daily,
-.fleet-dialog-grid > .fleet-fuel-names-error { grid-column: 1 / -1; }
+.fleet-capacity-form {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 14px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e9ed;
+}
 
-.fleet-dialog-grid > .fleet-fuel-first-tank { grid-column-start: 1; }
+.fleet-capacity-form h3 { margin: 0; color: #173f56; font-size: 15px; }
+.fleet-capacity-subsection h4,
+.fleet-fuel-heading { margin: 0; color: #173f56; font-size: 14px; overflow-wrap: anywhere; }
+.fleet-capacity-subsection { margin-top: 14px; padding: 0 0 8px; }
+.fleet-capacity-subsection + .fleet-capacity-subsection { padding-top: 14px; border-top: 1px solid #e7eef2; }
+.fleet-capacity-subsection dt { overflow-wrap: anywhere; }
+.fleet-capacity-empty { margin: 8px 0 0; color: var(--sp-muted); }
+
+.fleet-fuel-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fleet-fuel-form > .fleet-fuel-heading,
+.fleet-fuel-form > .fleet-fuel-daily,
+.fleet-fuel-form > .fleet-fuel-names-error { grid-column: 1 / -1; }
+.fleet-fuel-form > .fleet-fuel-first-tank { grid-column-start: 1; }
 
 .fleet-fuel-tank { display: grid; gap: var(--sp-space-2); min-width: 0; }
 .fleet-fuel-tank label { overflow-wrap: anywhere; }
@@ -18,11 +39,13 @@
 
 .fleet-fuel-legacy {
   align-self: end;
-  margin: 0;
   color: var(--sp-muted);
 }
 
-.fleet-dialog-grid .fleet-fuel-check {
+.fleet-fuel-legacy > p { margin: 0; }
+
+.fleet-dialog-grid .fleet-fuel-check,
+.fleet-dialog-grid .fleet-soutes-check {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -30,13 +53,51 @@
   min-height: 40px;
 }
 
-.fleet-dialog-grid .fleet-fuel-check input {
+.fleet-dialog-grid .fleet-fuel-check input,
+.fleet-dialog-grid .fleet-soutes-check input {
   min-height: auto;
   margin: 0;
   padding: 0;
   accent-color: var(--sp-primary);
 }
 
+.fleet-capacity-section-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #dce7ec;
+  border-radius: 8px;
+}
+
+.fleet-capacity-section-fields legend {
+  max-width: 100%;
+  padding: 0 6px;
+  color: #173f56;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.fleet-capacity-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.fleet-capacity-tank-row { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+.fleet-capacity-edit-row input:not([type="checkbox"]) { width: 100%; }
+.fleet-capacity-form button { justify-self: start; }
+
+@media (max-width: 620px) {
+  .fleet-fuel-form { grid-template-columns: minmax(0, 1fr); }
+  .fleet-capacity-edit-row { grid-template-columns: minmax(0, 1fr); }
+  .fleet-capacity-tank-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .fleet-capacity-tank-row label:first-child { grid-column: 1 / -1; }
+}
+
 @media (pointer: coarse) {
-  .fleet-dialog-grid .fleet-fuel-check { min-height: 44px; }
+  .fleet-dialog-grid .fleet-fuel-check,
+  .fleet-dialog-grid .fleet-soutes-check { min-height: 44px; }
 }
