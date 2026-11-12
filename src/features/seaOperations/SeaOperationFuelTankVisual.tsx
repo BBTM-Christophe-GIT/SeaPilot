@@ -16,7 +16,7 @@ export function SeaOperationFuelTankGauge({ liters, capacityLiters }: { liters: 
   </div>;
 }
 
-export function SeaOperationFuelTankLayout<T extends { key: string; name: string }>({ tanks, renderTank }: {
+function SeaOperationFuelTankLayout<T extends { key: string; name: string }>({ tanks, renderTank }: {
   tanks: readonly T[]; renderTank: (tank: T) => ReactNode;
 }) {
   const sides: Record<ReturnType<typeof tankSide>, T[]> = { port: [], starboard: [], center: [] };
@@ -34,5 +34,23 @@ export function SeaOperationFuelTankLayout<T extends { key: string; name: string
     </div>)}
     {center.length > 0 && <div className="so-soutes-center">{center.map(tank => <Fragment key={tank.key}>{renderTank(tank)}</Fragment>)}</div>}
     {day && <div className="so-soutes-day">{renderTank(day)}</div>}
+  </div>;
+}
+
+export function SeaOperationTankGroups<T extends { key: string; name: string; sectionName?: string }>({ tanks, renderTank, heading: Heading }: {
+  tanks: readonly T[]; renderTank: (tank: T) => ReactNode; heading: 'h3' | 'h4' | 'h5';
+}) {
+  const groups = new Map<string, T[]>();
+  for (const tank of tanks) {
+    const name = tank.sectionName ?? 'Carburant';
+    const group = groups.get(name);
+    if (group) group.push(tank);
+    else groups.set(name, [tank]);
+  }
+  return <div className="so-soutes-tank-groups">
+    {Array.from(groups, ([name, group]) => <section key={name} className="so-soutes-tank-group" aria-label={name}>
+      <Heading>{name}</Heading>
+      <SeaOperationFuelTankLayout tanks={group} renderTank={renderTank} />
+    </section>)}
   </div>;
 }

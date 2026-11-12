@@ -14,8 +14,10 @@ const tanks: SeaOperationFuelTanks['tanks'] = [
   { key: 'main-2', name: 'Cuve Bâbord', capacityLiters: 12357, calibration: 'landemer-v1' },
   { key: 'day', name: 'Caisse journalière', capacityLiters: 500 },
 ];
+const water = { key: 'capacity-15ec0862-374d-4bbb-82aa-1887a015fbfa', name: 'Cuve centrale', capacityLiters: 1000, sectionName: 'Eau douce' };
+const waste = { key: 'capacity-5655ef99-66a3-4004-a6a0-93fd71e435d2', name: 'Cuve arrière', capacityLiters: 800, sectionName: 'Eaux usées' };
 const today = '2026-11-08';
-const configuration: SeaOperationFuelTanks = { vesselId: 2, date: today, time: null, times: [], canSetBaseline: true, tanks, reading: null };
+const configuration: SeaOperationFuelTanks = { vesselId: 2, date: today, time: null, times: [], canSetBaseline: true, updatesFuelBaseline: true, tanks, reading: null };
 const tank = (name: string) => within(screen.getByRole('group', { name }));
 const submit = () => screen.getByRole('button', { name: 'Enregistrer les niveaux' });
 
@@ -48,7 +50,7 @@ describe('Soutes fuel readings', () => {
     fireEvent.change(tank('S1 avant').getByLabelText('Niveau'), { target: { value: '4' } });
     expect(submit()).toBeDisabled();
     fireEvent.change(tank('Caisse journalière').getByLabelText('Niveau'), { target: { value: '100' } });
-    const stock = within(screen.getByRole('region', { name: 'Stock total mesuré' }));
+    const stock = within(screen.getByRole('region', { name: 'Stock de carburant mesuré' }));
     expect(stock.getByText('11,569 m³')).toBeVisible();
     expect(stock.getByText(/cuves principales · 11,469 m³/)).toBeVisible();
     fireEvent.click(submit());
@@ -59,12 +61,12 @@ describe('Soutes fuel readings', () => {
     });
   });
 
-  it('preserves a renamed day tank reading and requires a fresh entry after a capacity change', async () => {
+  it('preserves renamed fuel readings and requires a fresh entry after a capacity change', async () => {
     vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
     const reading: SeaOperationFuelTanks['reading'] = {
-      version: 3, savedAt: '2026-11-08T10:00:00Z', mainLiters: 7469, superseded: true,
+      version: 3, savedAt: '2026-11-08T10:00:00Z', mainLiters: 7469, superseded: true, updatesFuelBaseline: true,
       tanks: [{ ...tanks[0], capacityLiters: 10000, unit: 'liters', value: 200, liters: 200 },
-        { ...tanks[1], unit: 'percent', value: 60.442, liters: 7469 },
+        { ...tanks[1], name: 'Ancienne cuve', unit: 'percent', value: 60.442, liters: 7469 },
         { ...tanks[2], name: 'Ancienne caisse', unit: 'liters', value: 0, liters: 0 }],
     };
     const rpc = vi.fn(async (_name: string, params: { p_time: string | null }) => ({
@@ -90,6 +92,60 @@ describe('Soutes fuel readings', () => {
     fireEvent.click(submit());
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_fuel_tanks', expect.objectContaining({ p_time: '08:30', p_expected_version: 3 }));
+  });
+
+  it('groups selected cuves by capacity section and keeps their levels out of the partial fuel total', async () => {
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const rpc = vi.fn().mockResolvedValue({
+      data: { ...configuration, updatesFuelBaseline: false, tanks: [tanks[1], water, waste] }, error: null,
+    });
+    const onSaved = vi.fn();
+    render(<SeaOperationFuelTanksDialog client={{ rpc } as unknown as SupabaseClient} vessels={[landemer]} onClose={vi.fn()} onSaved={onSaved} />);
+    const freshwater = within(await screen.findByRole('region', { name: 'Eau douce' }));
+    const wastewater = within(screen.getByRole('region', { name: 'Eaux usées' }));
+    const fuel = within(screen.getByRole('region', { name: 'Carburant' }));
+    expect(screen.queryByRole('group', { name: 'S1 avant' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Caisse journalière' })).not.toBeInTheDocument();
+    expect(screen.getByText(/La mise à jour du stock de référence carburant/)).toBeVisible();
+    fireEvent.change(fuel.getByLabelText('Niveau'), { target: { value: '100' } });
+    fireEvent.change(freshwater.getByLabelText('Niveau'), { target: { value: '200' } });
+    expect(submit()).toBeDisabled();
+    fireEvent.change(wastewater.getByLabelText('Niveau'), { target: { value: '300' } });
+    const stock = within(screen.getByRole('region', { name: 'Stock de carburant mesuré' }));
+    expect(stock.getByText('0,1 m³')).toBeVisible();
+    expect(stock.getByText('1/1 niveau saisi')).toBeVisible();
+    fireEvent.click(submit());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_fuel_tanks', expect.objectContaining({
+      p_readings: [{ key: 'main-2', unit: 'liters', value: 100 },
+        { key: water.key, unit: 'liters', value: 200 }, { key: waste.key, unit: 'liters', value: 300 }],
+    }));
+  });
+
+  it('loads a custom-only historical reading through tank and section renames and preserves it if the selection changes', async () => {
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const reading: SeaOperationFuelTanks['reading'] = {
+      version: 1, savedAt: '2026-11-08T10:00:00Z', mainLiters: 0, superseded: false, updatesFuelBaseline: false,
+      tanks: [{ ...water, name: 'Ancienne cuve', sectionName: 'Ancienne section', unit: 'percent', value: 20, liters: 200 }],
+    };
+    const rpc = vi.fn(async (_name: string, params: { p_time: string | null }) => ({
+      data: { ...configuration, time: params.p_time, times: ['08:30', '09:00'], updatesFuelBaseline: false,
+        tanks: params.p_time === '09:00' ? [waste] : [water], reading: params.p_time ? reading : null }, error: null,
+    }));
+    render(<SeaOperationFuelTanksDialog client={{ rpc } as unknown as SupabaseClient} vessels={[landemer]}
+      onClose={vi.fn()} onSaved={vi.fn()} />);
+    const selector = await screen.findByLabelText('Relevés de la journée');
+    fireEvent.change(selector, { target: { value: '08:30' } });
+    await waitFor(() => expect(tank(water.name).getByLabelText('Niveau')).toHaveValue(20));
+    expect(screen.queryByRole('region', { name: /stock.*mesuré/i })).not.toBeInTheDocument();
+    expect(submit()).toBeEnabled();
+
+    fireEvent.change(selector, { target: { value: '09:00' } });
+    expect(await screen.findByText(/La sélection des cuves a changé/)).toBeVisible();
+    expect(tank(waste.name).getByLabelText('Niveau')).toBeDisabled();
+    expect(submit()).toBeDisabled();
+    fireEvent.click(screen.getByText('Consulter le relevé précédent'));
+    expect(screen.getByText(/Ancienne section · Ancienne cuve · 20 % · 200 L/)).toBeVisible();
   });
 
   it('preselects the assigned writable vessel and keeps the user’s choice on a historical date', async () => {

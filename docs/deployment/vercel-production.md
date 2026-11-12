@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.100.0` ajoute la section **Capacités** aux fiches Navires. Elle
+regroupe le carburant existant, les sous-sections propres à chaque navire et les
+plans PDF ou image stockés dans le bucket privé `fleet-capacity-plans`.
+La case **Afficher dans Soutes** sélectionne les cuves à relever.
+Appliquer `20261112093611_fleet_vessel_capacities.sql` avant le frontend.
+Voir [les relevés Soutes](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.99.0` refond le bilan Conso des opérations en mer avec six
 indicateurs, une cuve dynamique et un profil GPS interactif en heure de Paris.
 Le niveau est indicatif si la capacité des soutes est inconnue. Voir

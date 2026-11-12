@@ -86,7 +86,8 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
   vessel: SeaOperationFleetFuelLevel; scale: ReturnType<typeof fleetConsumptionScale>;
 }) {
   const { fuelLiters, capacityLiters, maxSpeedKnots, navigationProfiles, source, measuredAt,
-    baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters } = vessel;
+    baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters, latestTankReading } = vessel;
+  const includesCustomTanks = latestTankReading?.tanks.some(tank => tank.sectionName !== undefined);
   const vmax = maxSpeedKnots !== null && maxSpeedKnots > 0 ? maxSpeedKnots : null;
   const highestSpeed = Math.max(navigationProfiles?.normal?.speedKnots ?? 0, navigationProfiles?.towing?.speedKnots ?? 0);
   const scaleLimitKnots = vmax !== null && vmax >= highestSpeed ? vmax : highestSpeed > 0 ? Math.ceil(highestSpeed / 5) * 5 : null;
@@ -106,9 +107,8 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
         {deductedFuelLiters !== null && <li><span className="so-fuel-stock-minus" aria-hidden="true">−</span><span>{formatFuelVolume(deductedFuelLiters, volumeUnit)} déduits via DPR</span></li>}
         {refuelLiters !== null && <li><Fuel size={13} aria-hidden="true" /><span>{formatFuelVolume(refuelLiters, volumeUnit)} avitaillés</span></li>}
       </ul>}
-      {vessel.latestTankReading
-        ? <SeaOperationLatestTankReading reading={vessel.latestTankReading} />
-        : <small>Aucun relevé Soutes enregistré.</small>}
+      {latestTankReading && !includesCustomTanks && <SeaOperationLatestTankReading reading={latestTankReading} />}
+      {!latestTankReading && <small>Aucun relevé Soutes enregistré.</small>}
     </section>
     <section className="so-fuel-card-metric" aria-label="Autonomie estimée">
       <h3><span><Gauge size={16} aria-hidden="true" /></span>Autonomie estimée</h3>
@@ -120,6 +120,7 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
       <small>Tendance par rapport au mois précédent</small>
       <SeaOperationVesselConsumption vessel={vessel} averages={averages} scale={scale} error={averagesError} onRetry={onRetryAverages} />
     </section>
+    {latestTankReading && includesCustomTanks && <SeaOperationLatestTankReading reading={latestTankReading} standalone />}
   </>;
 }
 

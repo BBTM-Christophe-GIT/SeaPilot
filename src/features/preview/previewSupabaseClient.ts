@@ -12,6 +12,7 @@ import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qh
 import { DEFAULT_PROCEDURE_TAGS } from '../procedures/procedureTagCatalogue';
 import { isSeaOperationPreviewProject, seaOperationPreviewDocumentLocationVisible, seaOperationPreviewRpc } from '../seaOperations/seaOperationPreview';
 import { GOURY_WEATHER_MATRIX, isVesselWeatherMatrix, cloneVesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { FLEET_CAPACITY_PLANS_BUCKET } from '../fleet/fleetCapacityPlanQueries';
 import { parseProjectLocationPlan } from '../projects/projectLocation';
 import { DEFAULT_PROJECT_DOCUMENT_CATEGORIES, validateProjectDocumentCategories } from '../projects/projectDocumentCategories';
 import { configurePerformancePreviewAssets, performancePreviewRpc, performancePreviewTable, resolvePerformancePreviewDashboardLinks } from './previewProcessPerformanceFixtures';
@@ -19,6 +20,33 @@ import { createEmploymentContractPreview } from './employmentContractPreview';
 
 const PREVIEW_WRITE_ERROR = {
   message: 'Les données de cette préversion sont démonstratives et ne peuvent pas être enregistrées.',
+};
+const previewCapacityPlans = new Map<string, string>();
+
+const previewCapacityPlanStorage = {
+  async list(folder: string, { limit, offset }: { limit: number; offset: number }) {
+    const prefix = `${folder}/`;
+    return { data: [...previewCapacityPlans.keys()].filter(path => path.startsWith(prefix)).sort()
+      .slice(offset, offset + limit).map(path => ({ id: path, name: path.slice(prefix.length) })), error: null };
+  },
+  async upload(path: string, file: Blob) {
+    previewCapacityPlans.set(path, URL.createObjectURL(file));
+    return { data: { path }, error: null };
+  },
+  async createSignedUrl(path: string) {
+    const signedUrl = previewCapacityPlans.get(path);
+    return signedUrl ? { data: { signedUrl }, error: null } : { data: null, error: PREVIEW_WRITE_ERROR };
+  },
+  async remove(paths: string[]) {
+    const data = paths.flatMap(path => {
+      const url = previewCapacityPlans.get(path);
+      if (!url) return [];
+      URL.revokeObjectURL(url);
+      previewCapacityPlans.delete(path);
+      return [{ name: path }];
+    });
+    return { data, error: null };
+  },
 };
 const previewDeletedProjectDocuments = new Map<string, { projectId: number; expected: Record<string, unknown>; deletedAt: string }>();
 const previewDocumentTables: Record<string, string> = { generated: 'project_generated_documents', project: 'project_documents', contract: 'contract_documents' };
@@ -3358,7 +3386,8 @@ export const previewSupabaseClient = {
     },
   },
   storage: {
-    from: (bucket: string) => employmentContractPreview.storage(bucket) || ({
+    from: (bucket: string) => bucket === FLEET_CAPACITY_PLANS_BUCKET ? previewCapacityPlanStorage
+      : employmentContractPreview.storage(bucket) || ({
       createSignedUrl: (path: string) => Promise.resolve(!seaOperationPreviewDocumentLocationVisible(bucket, path)
         ? { data: null, error: { code: '42501', message: 'Document de démonstration supprimé.' } } : {
         data: {

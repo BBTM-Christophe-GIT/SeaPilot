@@ -1,5 +1,6 @@
 import { compareFleetAssets } from './fleetDisplay';
-import { FLEET_DAILY_FUEL_TANK_NAME_ERROR, FLEET_FUEL_TANK_NAMES_ERROR, isFleetFuelTankCapacity, isFleetFuelTankList, isFleetFuelTankName, isFleetFuelTankNames, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
+import { parseFleetCapacitySections, type FleetCapacitySection } from './fleetCapacityModel';
+import { FLEET_DAILY_FUEL_TANK_NAME_ERROR, FLEET_FUEL_TANK_NAMES_ERROR, isFleetFuelTankCapacity, isFleetFuelTankList, isFleetFuelTankName, isFleetFuelTankNames, isFleetHiddenFuelTankKeys, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
 import { isVesselWeatherMatrix, parseVesselWeatherMatrix, type VesselWeatherMatrix } from './vesselWeatherMatrix';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -18,6 +19,7 @@ const FLEET_VESSEL_SELECT = [
   'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'fuel_tank_names', 'daily_fuel_tank_capacity_liters', 'daily_fuel_tank_name',
+  'capacity_sections', 'hidden_fuel_tank_keys',
   'range_description', 'deck_equipment',
   'electronics_communications', 'accommodation', 'liability_insurer', 'weather_matrix',
 ].join(', ');
@@ -79,6 +81,8 @@ interface FleetVesselRow {
   fuel_tank_names?: string[] | null;
   daily_fuel_tank_capacity_liters?: number | string | null;
   daily_fuel_tank_name?: string | null;
+  capacity_sections?: unknown;
+  hidden_fuel_tank_keys?: unknown;
   range_description: string | null;
   deck_equipment: string | null;
   electronics_communications: string | null;
@@ -87,6 +91,7 @@ interface FleetVesselRow {
 }
 
 export interface FleetVessel extends FleetFuelCapacity {
+  capacitySections?: FleetCapacitySection[];
   id: number;
   companyId: number;
   name: string;
@@ -146,6 +151,7 @@ export interface FleetVessel extends FleetFuelCapacity {
 }
 
 export interface SaveFleetVesselInput extends Partial<FleetFuelCapacity> {
+  capacitySections?: FleetCapacitySection[];
   id?: number;
   name: string;
   acronym: string;
@@ -208,6 +214,10 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     || (dailyTankName !== null && (dailyTankCapacity === null || !isFleetFuelTankName(dailyTankName)))) {
     throw new Error('La configuration carburant reçue pour ce navire est invalide.');
   }
+  const { sections: capacitySections } = parseFleetCapacitySections(row.capacity_sections === undefined ? [] : row.capacity_sections);
+  if (capacitySections === null) throw new Error('Les sous-sections de capacités reçues pour cet actif sont invalides.');
+  const hiddenFuelTankKeys = row.hidden_fuel_tank_keys === undefined ? [] : row.hidden_fuel_tank_keys;
+  if (!isFleetHiddenFuelTankKeys(hiddenFuelTankKeys)) throw new Error('La configuration des cuves pour Soutes est invalide.');
   return {
     id: Number(row.id), companyId: Number(row.company_id), name: row.name, acronym: row.acronym || '',
     assetKind: row.asset_kind || 'vessel', typeLabel: row.type_label || '', unitTypeLabel: row.unit_type_label || '',
@@ -232,6 +242,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     maxSpeedKnots: numberOrNull(row.max_speed_knots), bollardPullTonnes: numberOrNull(row.bollard_pull_tonnes),
     fuelCapacityM3: numberOrNull(row.fuel_capacity_m3), fuelTankCapacitiesLiters: tankCapacities, fuelTankNames: row.fuel_tank_names ?? null,
     dailyFuelTankCapacityLiters: dailyTankCapacity, dailyFuelTankName: dailyTankName, rangeDescription: row.range_description || '',
+    capacitySections, hiddenFuelTankKeys,
     deckEquipment: row.deck_equipment || '', electronicsCommunications: row.electronics_communications || '',
     accommodation: row.accommodation || '', liabilityInsurer: row.liability_insurer || '',
   };
@@ -267,6 +278,14 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
   if (dailyTankName !== null && (input.dailyFuelTankCapacityLiters === null || (!input.id && input.dailyFuelTankCapacityLiters === undefined))) {
     throw new Error('Renseignez une capacité en litres valide pour la caisse journalière.');
   }
+  const capacitySections = input.capacitySections === undefined ? null : parseFleetCapacitySections(input.capacitySections);
+  if (capacitySections?.error) throw new Error(capacitySections.error);
+  if (input.hiddenFuelTankKeys !== undefined && !isFleetHiddenFuelTankKeys(input.hiddenFuelTankKeys)) {
+    throw new Error('La configuration des cuves pour Soutes est invalide.');
+  }
+  if (input.assetKind !== 'vessel' && (capacitySections?.sections?.length || input.hiddenFuelTankKeys?.length)) {
+    throw new Error('Les sous-sections de capacités et les réglages de Soutes sont réservés aux navires.');
+  }
   const payload = {
     name, acronym: optional(input.acronym), asset_kind: input.assetKind, type_label: optional(input.typeLabel),
     unit_type_label: optional(input.unitTypeLabel), registration_number: optional(input.registrationNumber),
@@ -289,6 +308,8 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     ...(fuelTankNames === undefined ? {} : { fuel_tank_names: fuelTankNames }),
     ...(input.dailyFuelTankCapacityLiters === undefined ? {} : { daily_fuel_tank_capacity_liters: input.dailyFuelTankCapacityLiters }),
     ...(input.dailyFuelTankName === undefined && input.dailyFuelTankCapacityLiters !== null ? {} : { daily_fuel_tank_name: dailyTankName }),
+    ...(capacitySections?.sections ? { capacity_sections: capacitySections.sections } : {}),
+    ...(input.hiddenFuelTankKeys === undefined ? {} : { hidden_fuel_tank_keys: input.hiddenFuelTankKeys }),
     range_description: optional(input.rangeDescription), deck_equipment: optional(input.deckEquipment),
     electronics_communications: optional(input.electronicsCommunications), accommodation: optional(input.accommodation),
     liability_insurer: optional(input.liabilityInsurer),

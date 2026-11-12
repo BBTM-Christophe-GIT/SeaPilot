@@ -105,6 +105,43 @@ describe('fleetQueries', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
+  it('round-trips custom capacities and Soutes choices without overwriting omitted fields', async () => {
+    const tank = { id: '8d2ac1e5-e963-4d04-8672-2a092841b402', name: 'Réserve', capacityLiters: 645.25, showInSoutes: true };
+    const sections = [{ name: 'Eau douce', tanks: [tank] }, { name: 'Huiles', tanks: [] }];
+    const single = vi.fn().mockResolvedValue({
+      data: { id: 1, company_id: 1, name: 'Navire test', active: true,
+        fuel_tank_capacities_liters: [1000, 2000], fuel_tank_names: ['Avant', 'Arrière'],
+        capacity_sections: sections, hidden_fuel_tank_keys: ['main-2'] },
+      error: null,
+    });
+    const select = vi.fn().mockReturnValue({ single });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select }) });
+    const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, id: 1, name: 'Navire test' };
+
+    await expect(saveFleetVessel(client, { ...input, fuelTankCapacitiesLiters: [1000, 2000], fuelTankNames: [' Avant ', 'Arrière'],
+      capacitySections: [{ name: ' Eau douce ', tanks: [{ ...tank, name: ' Réserve ' }] }, sections[1]],
+      hiddenFuelTankKeys: ['main-2'] })).resolves.toMatchObject({
+      capacitySections: sections, hiddenFuelTankKeys: ['main-2'], fuelTankNames: ['Avant', 'Arrière'],
+    });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      capacity_sections: sections, hidden_fuel_tank_keys: ['main-2'], fuel_tank_names: ['Avant', 'Arrière'],
+    }));
+    await saveFleetVessel(client, input);
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('capacity_sections');
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('hidden_fuel_tank_keys');
+    await saveFleetVessel(client, { ...input, capacitySections: [], hiddenFuelTankKeys: [] });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ capacity_sections: [], hidden_fuel_tank_keys: [] }));
+  });
+
+  it('rejects reserved section names and duplicate Soutes keys before writing', async () => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, name: 'Navire test' };
+    await expect(saveFleetVessel(client, { ...input, capacitySections: [{ name: ' PLANS ', tanks: [] }] })).rejects.toThrow('sont réservés');
+    await expect(saveFleetVessel(client, { ...input, hiddenFuelTankKeys: ['main-1', 'main-1'] })).rejects.toThrow('Soutes');
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
   it('reads nullable draft measurements from the canonical vessel column', async () => {
     const secondOrder = vi.fn().mockResolvedValue({ data: [
       { id: 1, company_id: 1, name: 'Navire test A', active: true, draft_m: '3.25' },
