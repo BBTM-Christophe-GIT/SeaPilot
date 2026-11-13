@@ -364,7 +364,7 @@ describe('Operation consumption from the register', () => {
     const latestWater = within(within(latest).getByRole('region', { name: 'Eau douce' }));
     expect(latestWater.getByText(waterTank.name)).toBeVisible();
     expect(latestWater.getByText('500 L')).toBeVisible();
-    expect(within(fleetFuel().getByRole('region', { name: 'Stock' })).queryByText(waterTank.name)).not.toBeInTheDocument();
+    expect(within(fleetFuel().getByRole('region', { name: 'Soutes' })).queryByText(waterTank.name)).not.toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate, p_time: '14:30',
       p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }, { key: waterTank.key, unit: 'liters', value: 500 }] });
   });

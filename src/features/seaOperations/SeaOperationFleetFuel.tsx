@@ -87,7 +87,7 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
   vessel: SeaOperationFleetFuelLevel; scale: ReturnType<typeof fleetConsumptionScale>;
 }) {
   const { fuelLiters, capacityLiters, maxSpeedKnots, navigationProfiles, source, measuredAt,
-    baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters, latestTankReading } = vessel;
+    baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters, latestTankReading, sludgeTank } = vessel;
   const includesCustomTanks = latestTankReading?.tanks.some(tank => tank.sectionName !== undefined);
   const vmax = maxSpeedKnots !== null && maxSpeedKnots > 0 ? maxSpeedKnots : null;
   const highestSpeed = Math.max(navigationProfiles?.normal?.speedKnots ?? 0, navigationProfiles?.towing?.speedKnots ?? 0);
@@ -95,10 +95,11 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
   const { fill, level } = tankLevel(fuelLiters, capacityLiters);
   const volumeUnit = fuelVolumeUnit(capacityLiters);
   const sourceLabel = source === 'refuel' ? 'Avitaillement Conso' : source === 'baseline' ? 'Stock de référence' : 'Arrivée Conso';
+  const sludge = sludgeTank && sludgeTankLevel(sludgeTank);
 
   return <>
-    <section className="so-fuel-card-metric" aria-label="Stock">
-      <h3><span><ClipboardList size={16} aria-hidden="true" /></span>Stock</h3>
+    <section className="so-fuel-card-metric" aria-label="Soutes">
+      <h3><span><ClipboardList size={16} aria-hidden="true" /></span>Soutes</h3>
       <SeaOperationStockGauge fuelLiters={fuelLiters} capacityLiters={capacityLiters} fill={fill} level={level} />
       {source && (baselineDate || measuredAt) && <small className="so-fuel-stock-source">{sourceLabel}{' · '}{baselineDate
         ? <time dateTime={baselineDate}>{referenceDate.format(new Date(`${baselineDate}T12:00:00Z`))}</time>
@@ -108,6 +109,12 @@ function FuelDetails({ vessel, averages, averagesError, scale, onRetryAverages }
         {deductedFuelLiters !== null && <li><span className="so-fuel-stock-minus" aria-hidden="true">−</span><span>{formatFuelVolume(deductedFuelLiters, volumeUnit)} déduits via DPR</span></li>}
         {refuelLiters !== null && <li><Fuel size={13} aria-hidden="true" /><span>{formatFuelVolume(refuelLiters, volumeUnit)} avitaillés</span></li>}
       </ul>}
+      {sludge && <dl className="so-fuel-sludge-values" data-level={sludge.level}>
+        <dt><Droplets size={16} aria-hidden="true" />Sludges</dt>
+        <dd><span>{sludge.volume ?? '—'} / {sludge.capacity}</span>
+          {sludge.percentage !== null && <strong>{sludge.percentage}</strong>}
+        </dd>
+      </dl>}
       {latestTankReading && !includesCustomTanks && <SeaOperationLatestTankReading reading={latestTankReading} />}
       {!latestTankReading && <small>Aucun relevé Soutes enregistré.</small>}
     </section>
@@ -189,27 +196,20 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
         <span className="so-fuel-card-tank-fill" style={{ height: fillPercent }} />
         <Fuel size={13} />
       </span>
-      {sludge && <span className="so-fuel-card-tank so-fuel-sludge-tank" data-level={sludge.level}
+      {sludge && <span className="so-fuel-card-tank so-fuel-sludge-tank" data-level={sludge.level} title="Sludges"
         aria-hidden={sludge.position === null || undefined}
         role={sludge.position === null ? undefined : 'meter'} aria-label={sludge.position === null ? undefined : 'Sludges'}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={sludge.position ?? undefined}
         aria-valuetext={sludge.position === null ? undefined : `${sludge.percentage} · ${sludge.volume} sur ${sludge.capacity} · ${sludge.status}`}>
         {sludge.position !== null && <span className="so-fuel-card-tank-fill" style={{ height: `${sludge.position}%` }} />}
         <Droplets size={13} aria-hidden="true" />
+        {sludge.level === 'critical' && <span className="so-fuel-sludge-alert" aria-hidden="true"><TriangleAlert size={11} /></span>}
       </span>}
     </div>
     <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
       {fill !== null && <span>{percent.format(fill)}</span>}
       {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
     </div>
-    {sludge && <div className="so-fuel-sludge-values" data-level={sludge.level}>
-      <span>Sludges</span>
-      <strong>
-        {sludge.level === 'critical' && <span className="so-fuel-sludge-alert" aria-hidden="true"><TriangleAlert size={12} /></span>}
-        {sludge.percentage ?? 'Non renseigné'}
-      </strong>
-      {sludge.volume !== null && <small>{sludge.volume} / {sludge.capacity}</small>}
-    </div>}
     <button type="button" className="sp-button sp-button--secondary so-secondary so-fuel-card-toggle"
       aria-label={`Détails carburant · ${vesselName}`} title={`Détails carburant · ${vesselName}`}
       aria-expanded={expanded} aria-controls={detailId} onClick={onToggle}><ChevronDown size={16} aria-hidden="true" /></button>

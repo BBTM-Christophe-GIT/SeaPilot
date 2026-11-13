@@ -59,18 +59,22 @@
 }
 .so-fuel-sludge-tank[data-level="unknown"] { color: var(--sp-muted); background: var(--sp-canvas); }
 .so-fuel-sludge-values {
-  display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--sp-space-1);
-  font-size: .71rem; line-height: 1.2; font-variant-numeric: tabular-nums;
+  display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: var(--sp-space-2);
+  margin: 0; padding: var(--sp-space-2); border: 1px solid var(--sp-border); border-radius: var(--sp-control-radius);
+  font-size: .8rem; font-variant-numeric: tabular-nums;
 }
-.so-fuel-sludge-values strong { display: inline-flex; align-items: center; gap: var(--sp-space-1); color: var(--sp-success); }
+.so-fuel-sludge-values dt, .so-fuel-sludge-values dd { display: flex; align-items: center; gap: var(--sp-space-2); margin: 0; }
+.so-fuel-sludge-values dt { font-weight: 700; }
+.so-fuel-sludge-values dd { flex-wrap: wrap; color: var(--sp-muted); }
+.so-fuel-sludge-values strong { color: var(--sp-success); }
 .so-fuel-sludge-values[data-level="warning"] strong { color: var(--sp-warning); }
 .so-fuel-sludge-values[data-level="critical"] strong { color: var(--sp-danger); }
-.so-fuel-sludge-values[data-level="unknown"] strong { color: var(--sp-muted); }
 .so-fuel-sludge-alert {
-  display: inline-grid; place-items: center; width: 18px; height: 18px;
+  position: absolute; z-index: 2; inset: 1px 0 auto; margin-inline: auto;
+  display: grid; place-items: center; width: 16px; height: 16px;
   border-radius: 50%; background: var(--sp-danger); color: var(--sp-surface);
 }
-.so-fuel-sludge-values small { flex-basis: 100%; color: var(--sp-muted); text-align: center; overflow-wrap: anywhere; }
+.so-fuel-sludge-alert svg { padding: 0; background: transparent; }
 .so-page button.so-fuel-card-toggle { width: 100%; padding: 0; }
 .so-fuel-card[data-expanded="true"] .so-fuel-card-toggle svg { transform: rotate(180deg); }
 .so-fuel-details-panel:not([hidden]) { display: grid; min-width: 0; gap: var(--sp-space-4); margin-top: var(--sp-space-3); }

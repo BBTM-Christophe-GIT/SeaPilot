@@ -22,7 +22,7 @@ un autre navire autorisé. La date et l’heure de Paris sont proposées par dé
 L’icône utilisée dans le ruban provient du [catalogue Microsoft](https://res.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/excel_48x1.svg).
 La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge
 et s’accompagne d’une pastille d’alerte en haut à droite de la carte du navire.
-Dans la carte **Stock**, la jauge indique le pourcentage et le volume au
+Dans la carte déployée, la section **Soutes** indique le pourcentage et le volume au
 repère du niveau courant, ainsi que la capacité totale à droite. Ces volumes
 s’affichent en m³ au-delà de 1 000 L et en litres jusqu’à 1 000 L inclus.
 La carte affiche aussi la date, l’heure et les jauges par cuve du relevé Soutes
@@ -31,6 +31,8 @@ du stock courant recalculé avec les DPR et les avitaillements.
 
 La carte du **SUROIT** affiche la jauge **Sludges** à côté de celle de carburant, d’après le dernier niveau
 de la cuve mesuré dans **Soutes**. La capacité vient de la fiche du navire.
+La ligne **Sludges** de la carte déployée indique le volume, la capacité et
+le pourcentage mesuré. Avant le premier relevé, seule la capacité est indiquée.
 Le niveau est vert sous 60 %, orange de 60 % à moins de 75 %, puis rouge
 avec une pastille d’alerte dès 75 %. Un relevé carburant plus récent laisse
 le dernier niveau Sludges disponible.
