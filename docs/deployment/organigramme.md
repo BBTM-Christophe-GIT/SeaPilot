@@ -262,7 +262,7 @@ La liste du personnel sélectionne initialement tous les effectifs. La liste des
 numéros d'urgence reprend la liste par défaut enregistrée pour l’entreprise, ou
 les sédentaires lorsqu’aucune liste n’a été enregistrée. Chaque liste dispose
 d'une sélection indépendante, par fonction entière ou par personne. La recherche
-filtre uniquement l'affichage, sans modifier le contenu sélectionné pour le PDF.
+filtre uniquement l'affichage et conserve la sélection pour les exports.
 Une sélection vide désactive l'export. Les téléphones manquants sont signalés.
 Les coordonnées se modifient dans RH / Brevets.
 
@@ -291,6 +291,13 @@ contenu sans supprimer de personnes. Une sélection très longue réduit la tail
 du texte. Les urgences conservent des caractères de taille fixe et des en-têtes
 répétés, avec pagination si nécessaire. L’export des deux listes commence toujours
 les numéros d’urgence sur la deuxième page, avec une pagination globale.
+Dans **Liste du personnel**, le bouton **Exporter le personnel en Excel** télécharge
+un classeur `.xlsx` contenant une ligne par personne sélectionnée, dans l’ordre de
+la liste. Les cases **Informations à inclure** déterminent ses colonnes. Les photos
+sont intégrées au classeur lorsqu’elles sont demandées, et les téléphones gardent
+leurs zéros initiaux. La première ligne permet de filtrer les colonnes et reste
+visible pendant le défilement.
+
 La liste d'urgence utilise un thème rouge bordeaux, des lignes rose pâle et les
 téléphones en gras, à l'écran comme dans le PDF. Le logo BBTM est incorporé depuis
 son image d'origine, sans recoloration. La liste du personnel garde le thème bleu.

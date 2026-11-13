@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileDown } from 'lucide-react';
+import { FileDown, FileSpreadsheet } from 'lucide-react';
 import type { OrgData } from './organigrammeModel';
 import { groupOrgContacts, orgContactPeople, ORG_CONTACT_CONTENT, selectedOrgContacts, toggleOrgContacts, type OrgContactDocument } from './organigrammeContacts';
 import { OrgExportFields, type OrgExportContent } from './OrgExportFields';
@@ -11,7 +11,7 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState('');
   const [search, setSearch] = useState('');
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'xlsx' | null>(null);
   const [error, setError] = useState('');
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
@@ -24,23 +24,34 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const query = normalize(search.trim());
   const visibleGroups = groups.map((group) => ({ ...group, visible: group.people.filter((person) => normalize(`${person.name} ${person.functionLabel} ${person.email || ''} ${person.phone || ''}`).includes(query)) })).filter((group) => group.visible.length);
-  const locked = disabled || exporting || saving;
+  const locked = disabled || exporting !== null || saving;
   const missingPhotos = (document: OrgContactDocument) => contents[document].showPhotos && (document === 'personnel' ? personnel : emergency).some((person) => person.photoUnavailable);
+  const singleExportDisabled = locked || !selected.length || missingPhotos(kind);
+  const combinedExportDisabled = locked || !personnel.length || !emergency.length || missingPhotos('personnel') || missingPhotos('emergency');
   const missing = selected.filter((person) => !person.phone?.trim()).length;
   const setIds = (next: Set<number> | null) => { setSelections((previous) => ({ ...previous, [kind]: next })); setSaved(''); };
   const update = (personIds: number[], checked: boolean) => setIds(toggleOrgContacts(ids, personIds, checked));
-  async function exportPdf(both: boolean) {
-    if (locked || !selected.length || missingPhotos(kind) || (both && (!personnel.length || !emergency.length || missingPhotos('personnel') || missingPhotos('emergency')))) return;
-    setExporting(true); setError('');
+  async function exportContacts(mode: 'pdf' | 'xlsx' | 'combined') {
+    const both = mode === 'combined';
+    if (both ? combinedExportDisabled : singleExportDisabled) return;
+    const format = both ? 'pdf' : mode;
+    setExporting(format); setError('');
     try {
-      const [{ buildOrgContactsPdf }, { downloadOrgBlob }] = await Promise.all([import('./organigrammeContactsPdf'), import('./organigrammeExport')]);
-      const documents = both ? [{ kind: 'personnel' as const, people: personnel, content: contents.personnel }, { kind: 'emergency' as const, people: emergency, content: contents.emergency }] : [{ kind, people: selected, content }];
-      const blob = await buildOrgContactsPdf(documents, data.asOf);
-      const name = `BBTM_${both ? 'Personnel_et_urgences' : kind === 'personnel' ? 'Liste_du_personnel' : 'Numeros_urgence'}_${data.asOf}.pdf`;
+      const { downloadOrgBlob } = await import('./organigrammeExport');
+      let blob: Blob;
+      if (format === 'xlsx') {
+        const { buildOrgPersonnelWorkbook } = await import('./organigrammeContactsWorkbook');
+        blob = await buildOrgPersonnelWorkbook(selected, content);
+      } else {
+        const { buildOrgContactsPdf } = await import('./organigrammeContactsPdf');
+        const documents = both ? [{ kind: 'personnel' as const, people: personnel, content: contents.personnel }, { kind: 'emergency' as const, people: emergency, content: contents.emergency }] : [{ kind, people: selected, content }];
+        blob = await buildOrgContactsPdf(documents, data.asOf);
+      }
+      const name = `BBTM_${both ? 'Personnel_et_urgences' : kind === 'personnel' ? 'Liste_du_personnel' : 'Numeros_urgence'}_${data.asOf}.${format}`;
       setDownload({ url: URL.createObjectURL(blob), name });
       downloadOrgBlob(blob, name);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Export impossible.'); }
-    finally { setExporting(false); }
+    finally { setExporting(null); }
   }
   async function saveDefault() {
     if (locked || !onSaveDefault) return;
@@ -54,7 +65,11 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
   }
   return <section className={`org-contacts org-controls${kind === 'emergency' ? ' org-contacts--emergency' : ''}`} aria-label={kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}>
     <div className="org-contact-heading"><div><h2>{kind === 'personnel' ? 'Liste du personnel' : 'Numéros d’urgence'}</h2><p>{kind === 'personnel' ? 'Classement par fonction et nom de famille. Cochez un groupe de fonction ou choisissez les personnes individuellement.' : 'Choisissez les personnes à joindre en cas d’urgence. Vous pouvez enregistrer cette sélection comme liste par défaut.'}</p></div>
-      <div className="org-actions"><button type="button" className="org-primary" disabled={locked || !selected.length || !!missingPhotos(kind)} onClick={() => void exportPdf(false)}><FileDown size={16} />{kind === 'personnel' ? 'Exporter le personnel en PDF' : 'Exporter les urgences en PDF'}</button><button type="button" disabled={locked || !personnel.length || !emergency.length || !!missingPhotos('personnel') || !!missingPhotos('emergency')} onClick={() => void exportPdf(true)}>Exporter les deux listes</button></div>
+      <div className="org-actions">
+        <button type="button" className="org-primary" disabled={singleExportDisabled} onClick={() => void exportContacts('pdf')}><FileDown size={16} />{kind === 'personnel' ? 'Exporter le personnel en PDF' : 'Exporter les urgences en PDF'}</button>
+        {kind === 'personnel' && <button type="button" disabled={singleExportDisabled} onClick={() => void exportContacts('xlsx')}><FileSpreadsheet aria-hidden="true" size={16} />Exporter le personnel en Excel</button>}
+        <button type="button" disabled={combinedExportDisabled} onClick={() => void exportContacts('combined')}>Exporter les deux listes</button>
+      </div>
     </div>
     <p className="org-contact-help">Président, Julien LECOCQ, Christophe MINASSIAN et Sophie HAMEL en tête ; stagiaires en dernier.</p>
     <p className="org-contact-help">Coordonnées issues des fiches RH. Chaque liste a sa propre sélection. Dans l’export regroupé, les urgences commencent sur une nouvelle page.</p>
@@ -71,7 +86,7 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
     {error && <p className="org-error" role="alert">{error}</p>}
     {saved && <p role="status">{saved}</p>}
     {download && <p className="org-download" role="status">Export prêt : <a href={download.url} download={download.name}>Télécharger {download.name}</a></p>}
-    <fieldset disabled={locked} className="org-contact-selection"><legend className="org-sr-only">Personnes à inclure dans le PDF</legend>
+    <fieldset disabled={locked} className="org-contact-selection"><legend className="org-sr-only">Personnes à inclure dans l’export</legend>
       {visibleGroups.map((group) => {
         const count = group.people.filter((person) => ids.has(person.id)).length;
         return <section className="org-contact-group" key={group.key} aria-label={group.functionLabel}>
@@ -81,6 +96,6 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
       })}
       {!visibleGroups.length && <p>Aucune personne ne correspond à cette recherche.</p>}
     </fieldset>
-    {exporting && <p role="status">Préparation du PDF…</p>}
+    {exporting && <p role="status">{exporting === 'xlsx' ? 'Préparation du fichier Excel…' : 'Préparation du PDF…'}</p>}
   </section>;
 }

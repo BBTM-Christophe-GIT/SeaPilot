@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import { ORG_DEMO } from './organigrammeFixtures';
 import { buildOrgContactsPdf } from './organigrammeContactsPdf';
+import { buildOrgPersonnelWorkbook } from './organigrammeContactsWorkbook';
 import { downloadOrgBlob } from './organigrammeExport';
 
 vi.mock('./organigrammeContactsPdf', () => ({ buildOrgContactsPdf: vi.fn().mockResolvedValue(new Blob(['PDF'])) }));
+vi.mock('./organigrammeContactsWorkbook', () => ({ buildOrgPersonnelWorkbook: vi.fn().mockResolvedValue(new Blob(['XLSX'])) }));
 vi.mock('./organigrammeExport', () => ({ downloadOrgBlob: vi.fn() }));
 beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:contacts-test'), revokeObjectURL: vi.fn() }); });
 afterEach(() => vi.unstubAllGlobals());
@@ -33,6 +35,26 @@ describe('OrgPersonnelPanel', () => {
     const documents = vi.mocked(buildOrgContactsPdf).mock.calls[0][0];
     expect(documents[0].people.map((person) => person.id)).toEqual([8, 6]);
     expect(downloadOrgBlob).toHaveBeenCalled();
+  });
+  it('downloads the selected people and fields as Excel, independently of search', async () => {
+    render(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
+    const excelButton = screen.getByRole('button', { name: 'Exporter le personnel en Excel' });
+    fireEvent.click(screen.getByRole('button', { name: 'Tout désélectionner' }));
+    expect(excelButton).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Inclure Élodie MARTIN'));
+    fireEvent.click(screen.getByLabelText('Inclure les e-mails dans les exports'));
+    fireEvent.click(screen.getByLabelText('Inclure les navires dans les exports'));
+    fireEvent.change(screen.getByLabelText('Rechercher une personne ou une fonction'), { target: { value: 'Alice' } });
+    fireEvent.click(excelButton);
+    expect(screen.getByText('Préparation du fichier Excel…')).toBeInTheDocument();
+    expect(excelButton).toBeDisabled();
+    const name = `BBTM_Liste_du_personnel_${ORG_DEMO.asOf}.xlsx`;
+    expect(await screen.findByRole('link', { name: `Télécharger ${name}` })).toHaveAttribute('download', name);
+    const [people, content] = vi.mocked(buildOrgPersonnelWorkbook).mock.calls[0];
+    expect(people.map((person) => person.id)).toEqual([2]);
+    expect(content).toMatchObject({ showEmails: false, showVessels: true });
+    expect(downloadOrgBlob).toHaveBeenCalledWith(expect.any(Blob), name);
+    expect(buildOrgContactsPdf).not.toHaveBeenCalled();
   });
   it('keeps independent selections when changing sheets and after data refresh', async () => {
     const { rerender } = render(<OrgPersonnelPanel data={ORG_DEMO} kind="emergency" disabled={false} />);
@@ -105,13 +127,18 @@ describe('OrgPersonnelPanel', () => {
   it('blocks unavailable photos only when requested and respects an empty saved default', () => {
     const { rerender } = render(<OrgPersonnelPanel data={{ ...ORG_DEMO, people: [{ ...ORG_DEMO.people[0], photoUnavailable: true }] }} kind="personnel" disabled={false} />);
     const button = screen.getByRole('button', { name: 'Exporter le personnel en PDF' });
+    const excelButton = screen.getByRole('button', { name: 'Exporter le personnel en Excel' });
     expect(button).toBeEnabled();
+    expect(excelButton).toBeEnabled();
     fireEvent.click(screen.getByLabelText('Inclure les photos dans les exports'));
     expect(button).toBeDisabled();
+    expect(excelButton).toBeDisabled();
     fireEvent.click(screen.getByLabelText('Inclure les photos dans les exports'));
     expect(button).toBeEnabled();
+    expect(excelButton).toBeEnabled();
     rerender(<OrgPersonnelPanel data={{ ...ORG_DEMO, emergencyDefaultIds: [] }} kind="emergency" disabled={false} />);
     expect(screen.getByRole('button', { name: 'Exporter les urgences en PDF' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Exporter le personnel en Excel' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inclure Camille DUMONT')).not.toBeChecked();
   });
 });
