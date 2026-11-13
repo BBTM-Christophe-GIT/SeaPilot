@@ -56,6 +56,10 @@ function excelUtcDate(value: string | undefined): number | null {
   return Number.isFinite(epoch) ? epoch / 86_400_000 + 25_569 : null;
 }
 
+function excelGauge(value: number | null, unit: SeaOperationConsumptionExportRecord['gaugeUnit']): number | null {
+  return value === null || unit === null ? null : unit === 'percent' ? value / 100 : value;
+}
+
 const liveColumns: readonly (Column & { value: (row: SeaOperationConsumptionWorkbookRow) => CellValue })[] = [
   { label: 'Date de l’opération', width: 18, style: STYLE.date, value: ({ operation }) => excelDate(seaOperationContextDate(operation.draft) ?? operation.draft.vessel.etd.slice(0, 10)) },
   { label: 'Navire', width: 23, value: ({ operation }) => operation.draft.vessel.name },
@@ -68,9 +72,9 @@ const liveColumns: readonly (Column & { value: (row: SeaOperationConsumptionWork
   { label: 'Durée (h:min)', width: 17, style: STYLE.duration, value: ({ consumption }) => consumption.durationMinutes / 1440 },
   { label: 'Vitesse moyenne (nd)', width: 21, style: STYLE.number, value: ({ consumption }) => consumption.averageSpeedKnots },
   { label: 'Distance (NM)', width: 17, style: STYLE.number, value: ({ consumption }) => consumption.distanceNm },
-  { label: 'Unité de jauge', width: 17, value: ({ consumption }) => consumption.gaugeUnit === 'cm' ? 'cm' : '%' },
-  { label: 'Au départ', width: 14, style: STYLE.number, gauge: true, value: ({ consumption }) => consumption.gaugeUnit === 'percent' ? consumption.departureGauge / 100 : consumption.departureGauge },
-  { label: 'À l’arrivée', width: 14, style: STYLE.number, gauge: true, value: ({ consumption }) => consumption.gaugeUnit === 'percent' ? consumption.arrivalGauge / 100 : consumption.arrivalGauge },
+  { label: 'Unité de jauge', width: 17, value: ({ consumption }) => consumption.gaugeUnit === 'cm' ? 'cm' : consumption.gaugeUnit === 'percent' ? '%' : null },
+  { label: 'Au départ', width: 14, style: STYLE.number, gauge: true, value: ({ consumption }) => excelGauge(consumption.departureGauge, consumption.gaugeUnit) },
+  { label: 'À l’arrivée', width: 14, style: STYLE.number, gauge: true, value: ({ consumption }) => excelGauge(consumption.arrivalGauge, consumption.gaugeUnit) },
   { label: 'Soute au départ (L)', width: 20, style: STYLE.number, value: ({ consumption }) => consumption.departureLiters },
   { label: 'Soute à l’arrivée (L)', width: 20, style: STYLE.number, value: ({ consumption }) => consumption.arrivalLiters },
   { label: 'Totale (L)', width: 16, style: STYLE.number, value: ({ consumption }) => consumption.consumedLiters },

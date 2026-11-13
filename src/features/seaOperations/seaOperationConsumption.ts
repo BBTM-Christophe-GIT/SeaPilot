@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSeaOperationConsumptionTrace, type SeaOperationConsumptionTrace } from './seaOperationConsumptionTrace';
 
 export type SeaOperationGaugeUnit = 'percent' | 'cm';
+export type SeaOperationConsumedFuelUnit = 'liters' | 'm3';
+
+export const MAX_SEA_OPERATION_CONSUMED_FUEL_LITERS = 10_000_000;
 
 export interface SeaOperationTankGaugePair {
   port: number;
@@ -16,9 +19,11 @@ export interface SeaOperationTankGauges {
 export interface SeaOperationConsumptionInputs {
   durationMinutes: number;
   averageSpeedKnots: number;
-  gaugeUnit: SeaOperationGaugeUnit;
-  departureGauge: number;
-  arrivalGauge: number;
+  gaugeUnit?: SeaOperationGaugeUnit | null;
+  departureGauge?: number | null;
+  arrivalGauge?: number | null;
+  consumedFuelLiters?: number | null;
+  consumedFuelUnit?: SeaOperationConsumedFuelUnit | null;
   refuelLiters: number | null;
   pricePerLiter: number | null;
   actualArrival: string | null;
@@ -45,6 +50,9 @@ export interface SeaOperationConsumptionValues {
 }
 
 export interface SeaOperationConsumptionRecord extends SeaOperationConsumptionInputs, SeaOperationConsumptionValues {
+  gaugeUnit: SeaOperationGaugeUnit | null;
+  departureGauge: number | null;
+  arrivalGauge: number | null;
   version: number;
   includedInReference: boolean;
   updatedAt: string;
@@ -90,11 +98,6 @@ function landemerTanksVolumeLiters(gauges: SeaOperationTankGaugePair): number | 
   return port === null || starboard === null ? null : port + starboard;
 }
 
-export function landemerTankGaugePercent(gauges: SeaOperationTankGaugePair): number | null {
-  const liters = landemerTanksVolumeLiters(gauges);
-  return liters === null ? null : liters / (2 * LANDEMER_TANK_CAPACITY_LITERS) * 100;
-}
-
 function gaugeVolume(gauge: number, unit: SeaOperationGaugeUnit, calibration: SeaOperationConsumptionCalibration): number | null {
   if (!Number.isFinite(gauge) || gauge < 0) return null;
   if (unit === 'cm') return calibration.kind === 'suroit' ? 34.3 * gauge : null;
@@ -110,14 +113,18 @@ function gaugeVolume(gauge: number, unit: SeaOperationGaugeUnit, calibration: Se
 export function calculateSeaOperationConsumption(inputs: SeaOperationConsumptionInputs,
   calibration: SeaOperationConsumptionCalibration): SeaOperationConsumptionValues {
   const hours = inputs.durationMinutes / 60;
-  const distanceNm = inputs.trace?.distanceNm ?? hours * inputs.averageSpeedKnots;
-  const convert = (gauge: number, pair?: SeaOperationTankGaugePair) => pair
-    ? calibration.tankCalibration === 'landemer-v1' && inputs.gaugeUnit === 'percent' ? landemerTanksVolumeLiters(pair) : null
-    : gaugeVolume(gauge, inputs.gaugeUnit, calibration);
+  const direct = inputs.consumedFuelLiters != null;
+  const manualDistanceNm = hours * inputs.averageSpeedKnots;
+  const distanceNm = inputs.trace?.distanceNm ?? (direct ? Math.round(manualDistanceNm * 1000) / 1000 : manualDistanceNm);
+  function convert(gauge: number | null | undefined, pair?: SeaOperationTankGaugePair) {
+    if (pair) return calibration.tankCalibration === 'landemer-v1' && inputs.gaugeUnit === 'percent' ? landemerTanksVolumeLiters(pair) : null;
+    return gauge != null && inputs.gaugeUnit != null ? gaugeVolume(gauge, inputs.gaugeUnit, calibration) : null;
+  }
   const departureLiters = convert(inputs.departureGauge, inputs.tankGauges?.departure);
   const arrivalLiters = convert(inputs.arrivalGauge, inputs.tankGauges?.arrival);
-  const consumedLiters = departureLiters === null || arrivalLiters === null || departureLiters < arrivalLiters
+  const gaugeConsumption = departureLiters === null || arrivalLiters === null || departureLiters < arrivalLiters
     ? null : departureLiters - arrivalLiters;
+  const consumedLiters = inputs.consumedFuelLiters ?? gaugeConsumption;
   return {
     distanceNm,
     departureLiters,
@@ -145,6 +152,13 @@ function gaugeUnit(value: unknown): value is SeaOperationGaugeUnit {
   return value === 'percent' || value === 'cm';
 }
 
+export function consumedFuelLitersFromQuantity(quantity: number, unit: SeaOperationConsumedFuelUnit): number | null {
+  const precision = unit === 'm3' ? 6 : 3;
+  if (!Number.isFinite(quantity) || quantity < 0 || Number(quantity.toFixed(precision)) !== quantity) return null;
+  const liters = unit === 'm3' ? Math.round(quantity * 1_000_000) / 1000 : quantity;
+  return liters <= MAX_SEA_OPERATION_CONSUMED_FUEL_LITERS ? liters : null;
+}
+
 function isTankGaugePair(value: unknown): value is SeaOperationTankGaugePair {
   const pair = object(value);
   return pair !== null && [pair.port, pair.starboard].every(gauge => number(gauge) && gauge >= 0 && gauge <= 100
@@ -163,9 +177,13 @@ export function isSeaOperationConsumptionRecordFields(value: unknown): value is 
   const record = object(value);
   return record !== null && number(record.version) && record.completed === true
     && typeof record.updatedAt === 'string' && typeof record.includedInReference === 'boolean'
-    && gaugeUnit(record.gaugeUnit) && (record.actualArrival === null || typeof record.actualArrival === 'string')
+    && (record.actualArrival === null || typeof record.actualArrival === 'string')
+    && (record.consumedFuelLiters == null || number(record.consumedFuelLiters) && consumedFuelLitersFromQuantity(record.consumedFuelLiters, 'liters') !== null)
+    && (record.consumedFuelUnit == null || record.consumedFuelLiters != null && (record.consumedFuelUnit === 'liters' || record.consumedFuelUnit === 'm3'))
+    && (gaugeUnit(record.gaugeUnit) && number(record.departureGauge) && number(record.arrivalGauge)
+      || record.consumedFuelLiters != null && record.gaugeUnit === null && record.departureGauge === null && record.arrivalGauge === null)
     && (record.tankGauges === undefined || record.gaugeUnit === 'percent' && isTankGauges(record.tankGauges))
-    && ['durationMinutes', 'averageSpeedKnots', 'departureGauge', 'arrivalGauge', 'distanceNm'].every(key => number(record[key]))
+    && ['durationMinutes', 'averageSpeedKnots', 'distanceNm'].every(key => number(record[key]))
     && nullableFields.every(key => nullableNumber(record[key]));
 }
 

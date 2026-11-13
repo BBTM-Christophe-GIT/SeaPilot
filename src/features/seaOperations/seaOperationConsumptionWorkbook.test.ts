@@ -43,6 +43,17 @@ async function readWorkbook(blob: Blob) {
 }
 
 describe('Excel consumption export', () => {
+  it('exports direct consumption and leaves unmeasured fuel levels empty', async () => {
+    const { readSheet } = await readWorkbook(await buildSeaOperationConsumptionWorkbook([{
+      ...rozel,
+      consumption: { ...rozel.consumption, gaugeUnit: null, departureGauge: null, arrivalGauge: null,
+        departureLiters: null, arrivalLiters: null, consumedLiters: 1335 },
+    }]));
+    const { at, numeric } = await readSheet(0);
+    for (const column of ['L', 'M', 'N', 'O', 'P']) expect(at(`${column}4`)).toBeNull();
+    expect(numeric('Q4')).toBe(1335);
+  });
+
   it('writes searchable headers and typed dates, durations and readings for both gauge units', async () => {
     const blob = await buildSeaOperationConsumptionWorkbook([rozel, suroit]);
     expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

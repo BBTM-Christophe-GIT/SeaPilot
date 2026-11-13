@@ -69,3 +69,41 @@ describe('fleet autonomy by navigation profile', () => {
     expect(towing.querySelector('.so-speed-dial-progress')).toHaveAttribute('stroke-dasharray', '0.5 1');
   });
 });
+
+describe('Sludges on the SUROIT fleet card', () => {
+  function showSludges(liters: number | null) {
+    const suroit: SeaOperationFleetFuelLevel = {
+      ...vessel, vesselId: 16, vesselName: 'SUROIT', sludgeTank: { liters, capacityLiters: 10_000 },
+    };
+    render(<SeaOperationFleetFuel client={{} as SupabaseClient} historyRefresh={0} rows={[vessel, suroit]} error={undefined}
+      reload={vi.fn()} onRetryAverages={vi.fn()} />);
+    const card = screen.getByRole('heading', { name: 'SUROIT' }).closest('li')!;
+    expect(within(card).getByRole('button', { name: 'Détails carburant · SUROIT' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(screen.getByRole('heading', { name: 'LANDEMER' }).closest('li')!).queryByText('Sludges')).not.toBeInTheDocument();
+    return within(card);
+  }
+
+  it.each([
+    [0, 'normal', '0'],
+    [5999, 'normal', '59,9'],
+    [6000, 'warning', '60'],
+    [7499, 'warning', '74,9'],
+    [7500, 'critical', '75'],
+    [8000, 'critical', '80'],
+    [9500, 'critical', '95'],
+  ] as const)('shows %s liters with the %s threshold status before expanding the card', (liters, level, displayedPercent) => {
+    const card = showSludges(liters);
+    const meter = card.getByRole('meter', { name: 'Sludges' });
+    expect(meter).toHaveAttribute('data-level', level);
+    expect(Number(meter.getAttribute('aria-valuenow'))).toBeCloseTo(liters / 100);
+    expect(within(meter).getByText(new RegExp(`^${displayedPercent}\\s%$`))).toBeVisible();
+    expect(!!meter.querySelector('.lucide-triangle-alert')).toBe(level === 'critical');
+  });
+
+  it('shows a distinct unavailable state before the first sludge reading', () => {
+    const card = showSludges(null);
+    expect(card.getByText('Sludges')).toBeVisible();
+    expect(card.getByText('Non renseigné')).toBeVisible();
+    expect(card.queryByRole('meter', { name: 'Sludges' })).not.toBeInTheDocument();
+  });
+});

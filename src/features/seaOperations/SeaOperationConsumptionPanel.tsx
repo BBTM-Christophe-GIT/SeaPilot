@@ -6,11 +6,12 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { AppDialog } from '../../components/AppDialog';
 import {
   calculateSeaOperationConsumption,
-  landemerTankGaugePercent,
+  consumedFuelLitersFromQuantity,
+  MAX_SEA_OPERATION_CONSUMED_FUEL_LITERS,
   saveSeaOperationConsumption,
   type SeaOperationConsumption as ConsumptionContext,
   type SeaOperationConsumptionInputs,
-  type SeaOperationTankGauges,
+  type SeaOperationConsumedFuelUnit,
 } from './seaOperationConsumption';
 import { SeaOperationConsumptionSpeedProfile } from './SeaOperationConsumptionCharts';
 import { SeaOperationConsumptionTank } from './SeaOperationConsumptionTank';
@@ -26,6 +27,7 @@ type ConsumptionResults = ReturnType<typeof calculateSeaOperationConsumption>;
 type ConsumptionRecord = NonNullable<ConsumptionContext['record']>;
 
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+const liters = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 });
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
 const fuelPrice = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 });
 const parisDateTime = new Intl.DateTimeFormat('fr-FR', {
@@ -45,14 +47,14 @@ function parisArrivalInput(utc: string) {
   }
 }
 
-function ConsumptionReadout({ result, showArrival, dashboard }: {
-  result: ConsumptionResults; showArrival?: boolean; dashboard?: boolean;
+function ConsumptionReadout({ result, showSoutes = true, showArrival, dashboard }: {
+  result: ConsumptionResults; showSoutes?: boolean; showArrival?: boolean; dashboard?: boolean;
 }) {
   const metrics = [
     { label: 'Distance parcourue', value: amount(result.distanceNm, 'NM'), icon: Route },
-    { label: 'Soute au départ', value: amount(result.departureLiters, 'L'), icon: Fuel },
-    ...(showArrival ? [{ label: 'Soute à l’arrivée', value: amount(result.arrivalLiters, 'L'), icon: Fuel }] : []),
-    { label: 'Consommation totale', value: amount(result.consumedLiters, 'L'), icon: Droplet },
+    ...(showSoutes && result.departureLiters !== null ? [{ label: 'Soute au départ', value: amount(result.departureLiters, 'L'), icon: Fuel }] : []),
+    ...(showSoutes && showArrival && result.arrivalLiters !== null ? [{ label: 'Soute à l’arrivée', value: amount(result.arrivalLiters, 'L'), icon: Fuel }] : []),
+    { label: 'Consommation totale', value: result.consumedLiters === null ? 'Indisponible' : `${liters.format(result.consumedLiters)} L`, icon: Droplet },
     { label: 'À l’heure', value: amount(result.litersPerHour, 'L/h'), icon: Gauge },
     { label: 'Au mille nautique', value: amount(result.litersPerNm, 'L/NM'), icon: TrendingUp },
     { label: 'Coût du carburant HT', value: result.costEuros === null ? 'Indisponible' : currency.format(result.costEuros), icon: Coins },
@@ -94,7 +96,8 @@ function ConsumptionDashboard({ reading, capacityLiters }: { reading: Consumptio
         <dd>{value}</dd>
       </div>)}
     </dl>
-    <SeaOperationConsumptionTank record={reading} capacityLiters={capacityLiters} />
+    {(reading.gaugeUnit !== null || reading.departureLiters !== null || reading.arrivalLiters !== null)
+      && <SeaOperationConsumptionTank record={reading} capacityLiters={capacityLiters} />}
     {trace && <SeaOperationConsumptionSpeedProfile trace={trace} />}
     {(refuelLiters !== null || pricePerLiter !== null) && <dl className="so-consumption-fuel-details">
       {refuelLiters !== null && <div><dt>Avitaillement avant départ</dt><dd>{amount(refuelLiters, 'L')}</dd></div>}
@@ -124,33 +127,28 @@ export function SeaOperationConsumptionSummary({ response, reload }: ReturnType<
   </section>;
 }
 
-type TankGaugeFields = { port: string; starboard: string };
-type TankGaugeForm = { departure: TankGaugeFields; arrival: TankGaugeFields };
-
 type FormValues = {
-  hours: string; minutes: string; averageSpeedKnots: string; gaugeUnit: SeaOperationConsumptionInputs['gaugeUnit'];
-  departureGauge: string; arrivalGauge: string; refuelLiters: string; pricePerLiter: string; actualArrival: string;
-  tankGauges?: TankGaugeForm;
+  hours: string; minutes: string; averageSpeedKnots: string;
+  consumedFuelQuantity: string; consumedFuelUnit: SeaOperationConsumedFuelUnit;
+  refuelLiters: string; pricePerLiter: string; actualArrival: string;
 };
 
-function editableTankGauges(saved?: SeaOperationTankGauges | null): TankGaugeForm {
-  return {
-    departure: { port: String(saved?.departure.port ?? ''), starboard: String(saved?.departure.starboard ?? '') },
-    arrival: { port: String(saved?.arrival.port ?? ''), starboard: String(saved?.arrival.starboard ?? '') },
-  };
+const fuelQuantityLabel = 'Quantité de fuel consommée (GE + MPx)';
+
+function fuelQuantityInput(liters: number | null | undefined, unit: SeaOperationConsumedFuelUnit) {
+  if (liters == null) return '';
+  return String(unit === 'm3' ? Number((liters / 1000).toFixed(6)) : liters);
 }
 
 function initialValues(context: ConsumptionContext): FormValues {
   const record = context.record;
+  const consumedFuelUnit = record?.consumedFuelUnit ?? 'liters';
   return {
     hours: record ? String(Math.floor(record.durationMinutes / 60)) : '',
     minutes: record ? String(record.durationMinutes % 60) : '',
     averageSpeedKnots: String(record?.averageSpeedKnots ?? ''),
-    gaugeUnit: record?.gaugeUnit ?? context.calibration.defaultGaugeUnit,
-    departureGauge: String(record?.departureGauge ?? ''),
-    arrivalGauge: String(record?.arrivalGauge ?? ''),
-    tankGauges: context.calibration.tankCalibration === 'landemer-v1' && (!record || record.tankGauges)
-      ? editableTankGauges(record?.tankGauges) : undefined,
+    consumedFuelQuantity: fuelQuantityInput(record?.consumedFuelLiters ?? record?.consumedLiters, consumedFuelUnit),
+    consumedFuelUnit,
     refuelLiters: String(record?.refuelLiters ?? ''),
     pricePerLiter: String(record?.pricePerLiter ?? ''),
     actualArrival: record?.actualArrival ?? '',
@@ -159,51 +157,32 @@ function initialValues(context: ConsumptionContext): FormValues {
 
 function estimate(values: FormValues, calibration: ConsumptionContext['calibration'],
   trace: SeaOperationConsumptionTrace | null, removeSavedTrace: boolean) {
-  const { hours, minutes, averageSpeedKnots, departureGauge, arrivalGauge } = values;
+  const { hours, minutes, averageSpeedKnots, consumedFuelQuantity, consumedFuelUnit } = values;
+  if (!consumedFuelQuantity) return null;
+  const consumedFuelLiters = consumedFuelLitersFromQuantity(Number(consumedFuelQuantity), consumedFuelUnit);
+  if (consumedFuelLiters === null) return { error: consumedFuelUnit === 'm3'
+    ? 'Saisissez une quantité entre 0 et 10 000 m³, avec six décimales au maximum.'
+    : 'Saisissez une quantité entre 0 et 10 000 000 L, avec trois décimales au maximum.' };
   if ((!hours && !minutes) || !averageSpeedKnots) return null;
-  let departure = Number(departureGauge), arrival = Number(arrivalGauge);
-  let tankGauges: SeaOperationTankGauges | undefined;
-  if (values.tankGauges) {
-    const { departure: start, arrival: end } = values.tankGauges;
-    const readings = [start.port, start.starboard, end.port, end.starboard];
-    if (readings.some(gauge => !gauge)) return null;
-    const gauges = readings.map(Number);
-    const [departurePort, departureStarboard, arrivalPort, arrivalStarboard] = gauges;
-    tankGauges = { departure: { port: departurePort, starboard: departureStarboard }, arrival: { port: arrivalPort, starboard: arrivalStarboard } };
-    const combinedDeparture = landemerTankGaugePercent(tankGauges.departure);
-    const combinedArrival = landemerTankGaugePercent(tankGauges.arrival);
-    if (combinedDeparture === null || combinedArrival === null
-      || gauges.some(gauge => Number(gauge.toFixed(3)) !== gauge)) {
-      return { error: 'Saisissez une jauge entre 0 et 100 % pour chaque soute, avec trois décimales au maximum.' };
-    }
-    departure = combinedDeparture;
-    arrival = combinedArrival;
-  } else if (!departureGauge || !arrivalGauge) return null;
 
   const wholeHours = Number(hours), extraMinutes = Number(minutes);
   if (!Number.isSafeInteger(wholeHours) || wholeHours < 0 || !Number.isInteger(extraMinutes) || extraMinutes < 0 || extraMinutes > 59) {
     return { error: 'Saisissez des heures entières et des minutes comprises entre 0 et 59.' };
   }
   const inputs: SeaOperationConsumptionInputs = {
-    durationMinutes: wholeHours * 60 + extraMinutes, averageSpeedKnots: Number(averageSpeedKnots), gaugeUnit: tankGauges ? 'percent' : values.gaugeUnit,
-    departureGauge: departure, arrivalGauge: arrival,
+    durationMinutes: wholeHours * 60 + extraMinutes, averageSpeedKnots: Number(averageSpeedKnots),
+    consumedFuelLiters, consumedFuelUnit,
     refuelLiters: values.refuelLiters ? Number(values.refuelLiters) : null,
     pricePerLiter: values.pricePerLiter ? Number(values.pricePerLiter) : null,
     actualArrival: values.actualArrival || null, completed: true,
-    ...(tankGauges ? { tankGauges } : {}),
     ...(trace || removeSavedTrace ? { trace } : {}),
   };
-  const maxGauge = inputs.gaugeUnit === 'percent' ? 100 : 1000;
   const inRange = (value: number, min: number, max: number) => Number.isFinite(value) && value >= min && value <= max;
   if (!inRange(inputs.durationMinutes, 1, 525600) || !inRange(inputs.averageSpeedKnots, 0, 100)
-    || !inRange(inputs.departureGauge, 0, maxGauge) || !inRange(inputs.arrivalGauge, 0, maxGauge)
     || inputs.refuelLiters !== null && !inRange(inputs.refuelLiters, 0, 10000000)
     || inputs.pricePerLiter !== null && (!inRange(inputs.pricePerLiter, .0001, 10000) || Number(inputs.pricePerLiter.toFixed(4)) !== inputs.pricePerLiter)) {
-    return { error: 'Vérifiez les limites de durée, de vitesse, de jauge et d’avitaillement. Le prix accepte jusqu’à quatre décimales.' };
+    return { error: 'Vérifiez les limites de durée, de vitesse et d’avitaillement. Le prix accepte jusqu’à quatre décimales.' };
   }
-  if (inputs.arrivalGauge > inputs.departureGauge) return { error: tankGauges
-    ? 'Le volume total à l’arrivée dépasse celui du départ. Vérifiez les deux jauges de départ après l’avitaillement.'
-    : 'La jauge à l’arrivée dépasse celle du départ. Vérifiez la jauge de départ après l’avitaillement.' };
   if (trace && Date.parse(trace.endedAt) > Date.now()) {
     return { error: 'La trace GPS doit correspondre à une navigation terminée.' };
   }
@@ -223,22 +202,6 @@ function NumberField({ label, value, onChange, min = 0, max, step = 'any', readO
   return <label className="so-field"><span className="so-field-label">{label}</span>
     <input type="number" inputMode={step === 1 ? 'numeric' : 'decimal'} min={min} max={max} step={step} value={value} readOnly={readOnly} onChange={event => onChange(event.target.value)} />
   </label>;
-}
-
-function TankGaugePairFields({ legend, gauges, onChange }: {
-  legend: string; gauges: TankGaugeFields; onChange: (side: keyof TankGaugeFields, value: string) => void;
-}) {
-  return <fieldset className="so-consumption-tank-gauges"><legend>{legend}</legend>
-    <NumberField label="Bâbord (%)" value={gauges.port} max={100} step={.001} onChange={value => onChange('port', value)} />
-    <NumberField label="Tribord (%)" value={gauges.starboard} max={100} step={.001} onChange={value => onChange('starboard', value)} />
-  </fieldset>;
-}
-
-function CalibrationNote({ calibration, unit }: { calibration: ConsumptionContext['calibration']; unit: FormValues['gaugeUnit'] }) {
-  if (calibration.kind === 'rozel') return <p className="so-help">La conversion utilise la courbe de jauge du Rozel.</p>;
-  if (calibration.kind === 'suroit' && unit === 'cm') return <p className="so-help">La jauge du Suroît correspond à 34,3 L par centimètre.</p>;
-  if (calibration.nominalCapacityLiters !== null) return <p className="so-help">Le pourcentage s’applique à la capacité nominale des soutes de {amount(calibration.nominalCapacityLiters, 'L')}.</p>;
-  return <p className="so-help">Capacité des soutes indisponible. Les jauges et la distance peuvent être enregistrées.</p>;
 }
 
 interface DialogProps {
@@ -262,17 +225,18 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const preview = estimate(values, context.calibration, trace, Boolean(context.record?.trace));
   const traceHasWarnings = trace && (trace.gapCount > 0 || trace.reorderedPointCount > 0 || trace.excludedPointCount > 0);
-  const unit = values.gaugeUnit === 'cm' ? 'cm' : '%';
-  const maxGauge = values.gaugeUnit === 'percent' ? 100 : 1000;
-  const canChangeGaugeMode = context.calibration.tankCalibration === 'landemer-v1' && context.record && !context.record.tankGauges;
-  function change(field: Exclude<keyof FormValues, 'gaugeUnit' | 'tankGauges'>, value: string) {
+  const cubicMeters = values.consumedFuelUnit === 'm3';
+  function change(field: Exclude<keyof FormValues, 'consumedFuelUnit'>, value: string) {
     setValues(current => ({ ...current, [field]: value }));
     if (!conflict) setError('');
   }
 
-  function changeTankGauge(phase: keyof TankGaugeForm, side: keyof TankGaugeFields, value: string) {
-    setValues(current => current.tankGauges ? { ...current,
-      tankGauges: { ...current.tankGauges, [phase]: { ...current.tankGauges[phase], [side]: value } } } : current);
+  function changeFuelUnit(consumedFuelUnit: SeaOperationConsumedFuelUnit) {
+    setValues(current => {
+      const liters = current.consumedFuelQuantity
+        ? consumedFuelLitersFromQuantity(Number(current.consumedFuelQuantity), current.consumedFuelUnit) : null;
+      return { ...current, consumedFuelUnit, consumedFuelQuantity: fuelQuantityInput(liters, consumedFuelUnit) };
+    });
     if (!conflict) setError('');
   }
 
@@ -359,7 +323,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
             </div>
             <button type="button" className="sp-button sp-button--secondary" disabled={importing} onClick={() => setTrace(null)}>Revenir à la saisie manuelle</button>
           </div>}
-          {!trace && <p className="so-help">Une trace horodatée préremplit la durée, la vitesse moyenne et l’arrivée. Les jauges se saisissent à bord.</p>}
+          {!trace && <p className="so-help">Une trace horodatée préremplit la durée, la vitesse moyenne et l’arrivée.</p>}
         </div>
         <fieldset className="so-consumption-duration"><legend>Durée réelle de navigation</legend>
           <NumberField label="Heures" step={1} max={8760} value={values.hours} readOnly={Boolean(trace)} onChange={value => change('hours', value)} />
@@ -371,32 +335,15 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
         </label>
         <p className="so-help so-consumption-wide">L’arrivée réelle permet de vérifier si ce relevé peut alimenter la référence Projet.</p>
       </fieldset>
-      <fieldset className="so-consumption-section"><legend>Jauges</legend>
-        {context.calibration.kind === 'suroit' && <label className="so-field so-consumption-wide"><span className="so-field-label">Unité des jauges</span>
-          <select value={values.gaugeUnit} onChange={event => {
-            const gaugeUnit = event.target.value === 'cm' ? 'cm' : 'percent';
-            setValues(current => ({ ...current, gaugeUnit, departureGauge: '', arrivalGauge: '' }));
-            if (!conflict) setError('');
-          }}><option value="cm">Hauteur de jauge (cm)</option><option value="percent">Pourcentage de la capacité nominale (%)</option></select>
-        </label>}
-        {values.tankGauges ? <>
-          <TankGaugePairFields legend="Départ après avitaillement" gauges={values.tankGauges.departure}
-            onChange={(side, value) => changeTankGauge('departure', side, value)} />
-          <TankGaugePairFields legend="Arrivée" gauges={values.tankGauges.arrival}
-            onChange={(side, value) => changeTankGauge('arrival', side, value)} />
-          <p className="so-help so-consumption-wide">Les jauges bâbord et tribord sont converties séparément avec les courbes de LANDEMER, puis les volumes sont additionnés.</p>
-        </> : <>
-          <NumberField label={`Jauge au départ après avitaillement (${unit})`} value={values.departureGauge} max={maxGauge} onChange={value => change('departureGauge', value)} />
-          <NumberField label={`Jauge à l’arrivée (${unit})`} value={values.arrivalGauge} max={maxGauge} onChange={value => change('arrivalGauge', value)} />
-          <div className="so-consumption-wide"><CalibrationNote calibration={context.calibration} unit={values.gaugeUnit} /></div>
-        </>}
-        {canChangeGaugeMode && <div className="so-consumption-wide so-consumption-gauge-mode">
-          {!values.tankGauges && <p className="so-help">Ce relevé a été enregistré avec des jauges globales.</p>}
-          <button type="button" className="sp-button sp-button--secondary" onClick={() => {
-            setValues(current => ({ ...current, tankGauges: current.tankGauges ? undefined : editableTankGauges() }));
-            if (!conflict) setError('');
-          }}>{values.tankGauges ? 'Revenir aux jauges globales' : 'Renseigner les deux soutes'}</button>
-        </div>}
+      <fieldset className="so-consumption-section"><legend>Carburant consommé</legend>
+        <NumberField label={fuelQuantityLabel} value={values.consumedFuelQuantity}
+          max={MAX_SEA_OPERATION_CONSUMED_FUEL_LITERS / (cubicMeters ? 1000 : 1)} step={cubicMeters ? .000001 : .001}
+          onChange={value => change('consumedFuelQuantity', value)} />
+        <label className="so-field"><span className="so-field-label">Unité de la quantité consommée</span>
+          <select value={values.consumedFuelUnit} onChange={event => changeFuelUnit(event.target.value === 'm3' ? 'm3' : 'liters')}>
+            <option value="liters">L</option><option value="m3">m³</option>
+          </select>
+        </label>
       </fieldset>
       <fieldset className="so-consumption-section"><legend>Avitaillement et prix</legend>
         <NumberField label="Avitaillement avant départ (L, facultatif)" max={10000000} value={values.refuelLiters} onChange={value => change('refuelLiters', value)} />
@@ -405,7 +352,7 @@ function EditableConsumptionDialog({ client, context, description, onClose, onSa
       </fieldset>
     </fieldset>
     {preview?.result && <section className="sp-panel so-consumption-preview" aria-label="Récapitulatif calculé"><h3>Récapitulatif calculé</h3>
-      <ConsumptionReadout result={preview.result} showArrival={Boolean(preview.inputs.tankGauges)} />
+      <ConsumptionReadout result={preview.result} showSoutes={false} />
     </section>}
     {(error || preview?.error) && <p className="so-alert so-danger" role="alert">{error || preview?.error}</p>}
     {conflict && <button className="sp-button sp-button--secondary" type="button" onClick={onReload}>Recharger le relevé</button>}

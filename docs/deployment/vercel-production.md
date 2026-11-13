@@ -1,5 +1,11 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.101.0` saisit directement le fuel consommé dans **Conso** et
+ajoute la jauge **Sludges** du SUROIT à partir des relevés **Soutes**.
+Appliquer `20261113082137_sea_operation_direct_fuel_consumption.sql` et
+`20261113082245_sea_operation_suroit_sludges.sql` avant le frontend.
+Voir [Consommation après une opération en mer](./sea-operation-consumption.md).
+
 La version `3.100.0` ajoute la section **Capacités** aux fiches Navires. Elle
 regroupe le carburant existant, les sous-sections propres à chaque navire et les
 plans PDF ou image stockés dans le bucket privé `fleet-capacity-plans`.
