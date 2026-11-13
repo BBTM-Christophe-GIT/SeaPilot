@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.102.1` permet d’écarter une fiche de la **Liste du personnel** et
+de ses exports tout en préservant ses références opérationnelles.
+Appliquer `20261113110101_organigramme_personnel_exclusions.sql` avant le frontend.
+Voir [la liste du personnel](./organigramme.md#liste-du-personnel-et-numéros-durgence).
+
 La version `3.102.0` ajoute l’export Excel dans **Organigramme → Liste du personnel**.
 Le classeur reprend les personnes sélectionnées et les champs cochés.
 Voir [la liste du personnel](./organigramme.md#liste-du-personnel-et-numéros-durgence).

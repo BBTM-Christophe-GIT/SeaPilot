@@ -266,6 +266,11 @@ filtre uniquement l'affichage et conserve la sélection pour les exports.
 Une sélection vide désactive l'export. Les téléphones manquants sont signalés.
 Les coordonnées se modifient dans RH / Brevets.
 
+Une fiche qui doit être conservée pour le suivi opérationnel peut être exclue
+de la **Liste du personnel** et de sa partie dans les exports PDF et Excel.
+La configuration est gérée en base par société et par identifiant de fiche.
+Elle est transmise par `organigramme_snapshot_v2` dans `personnelExcludedIds`.
+
 Les sélections sont conservées entre les vues et pendant les actualisations tant
 que le module reste ouvert. Les réglages de contenu restent temporaires.
 Pour les urgences, modifier les cases puis **Enregistrer comme liste par défaut**

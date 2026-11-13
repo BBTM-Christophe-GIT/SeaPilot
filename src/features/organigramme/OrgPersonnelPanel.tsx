@@ -16,8 +16,13 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
   const [download, setDownload] = useState<{ url: string; name: string } | null>(null);
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
   const people = useMemo(() => orgContactPeople(data), [data]);
-  const groups = useMemo(() => groupOrgContacts(people), [people]);
-  const personnel = useMemo(() => selectedOrgContacts(people, selections.personnel, 'personnel'), [people, selections.personnel]);
+  const personnelPeople = useMemo(() => {
+    const excluded = new Set(data.personnelExcludedIds);
+    return people.filter((person) => !excluded.has(person.id));
+  }, [people, data.personnelExcludedIds]);
+  const availablePeople = kind === 'personnel' ? personnelPeople : people;
+  const groups = useMemo(() => groupOrgContacts(availablePeople), [availablePeople]);
+  const personnel = useMemo(() => selectedOrgContacts(personnelPeople, selections.personnel, 'personnel'), [personnelPeople, selections.personnel]);
   const emergency = useMemo(() => selectedOrgContacts(people, selections.emergency, 'emergency', data.emergencyDefaultIds), [people, selections.emergency, data.emergencyDefaultIds]);
   const selected = kind === 'personnel' ? personnel : emergency;
   const ids = new Set(selected.map((person) => person.id));
@@ -76,7 +81,7 @@ export function OrgPersonnelPanel({ data, kind, disabled, onSaveDefault, preview
     <div className="org-contact-export-settings"><OrgExportFields options={content} disabled={locked} onChange={(key, value) => setContents((previous) => ({ ...previous, [kind]: { ...previous[kind], [key]: value } }))} /><p className="org-export-help">{kind === 'personnel' ? 'PDF sur une page A4, avec une mise en page ajustée à la sélection.' : 'Le PDF conserve une taille de texte lisible et ajoute des pages si nécessaire.'} Les colonnes ci-dessous reflètent les informations choisies.</p></div>
     {kind === 'emergency' && <div className="org-emergency-default"><p>{data.emergencyDefaultIds == null ? 'Liste par défaut : les sédentaires.' : 'Une liste personnalisée est enregistrée pour l’entreprise.'} Modifiez les cases des personnes, puis enregistrez pour la retrouver à la prochaine ouverture.</p><div className="org-actions"><button type="button" disabled={locked || !onSaveDefault} onClick={() => void saveDefault()}>{saving ? 'Enregistrement…' : 'Enregistrer comme liste par défaut'}</button><button type="button" disabled={locked} onClick={() => setIds(null)}>Charger la liste par défaut</button></div>{previewMode && <p>En démonstration, la liste mémorisée reste locale à cette préversion.</p>}</div>}
     <div className="org-contact-toolbar"><label>Rechercher une personne ou une fonction<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-      <button type="button" disabled={locked} onClick={() => setIds(new Set(data.people.map((person) => person.id)))}>Tout sélectionner</button><button type="button" disabled={locked} onClick={() => setIds(new Set())}>Tout désélectionner</button>
+      <button type="button" disabled={locked} onClick={() => setIds(new Set(availablePeople.map((person) => person.id)))}>Tout sélectionner</button><button type="button" disabled={locked} onClick={() => setIds(new Set())}>Tout désélectionner</button>
       {kind === 'emergency' && <button type="button" disabled={locked} onClick={() => setIds(new Set(data.people.filter((person) => person.population === 'sedentary').map((person) => person.id)))}>Rétablir les sédentaires</button>}
     </div>
     <p role="status">{selected.length} personne(s) sélectionnée(s) pour {kind === 'personnel' ? 'la liste du personnel' : 'les urgences'}{query ? ' · La recherche ne modifie pas la sélection exportée.' : ''}</p>
