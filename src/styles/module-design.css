@@ -476,7 +476,7 @@
 }
 
 .app-shell .content-area :is(
-  .sp-tabs, .ia-tabs, .annual-review-tabs, .annual-review-response-switcher,
+  .sp-tabs, .ia-tabs, .annual-review-tabs,
   .expense-tabs, .org-tabs, .service-note-status-tabs, .working-time-side-tabs,
   .lifting-view-switch, .useful-links__filters
 ) :is(button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='page'], button.is-active) {
@@ -564,7 +564,7 @@
 }
 
 .app-shell .content-area :is(
-  .ia-tabs, .annual-review-tabs, .annual-review-response-switcher, .expense-tabs,
+  .ia-tabs, .annual-review-tabs, .expense-tabs,
   .org-tabs, .service-note-status-tabs, .working-time-side-tabs, .fleet-tabs,
   .fleet-kind-tabs, .planning-perspective-switch, .working-time-view-toggle
 ) > button {

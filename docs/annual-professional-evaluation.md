@@ -22,10 +22,10 @@ Les 23 critères d’évaluation utilisent une réponse unique parmi `Non Applic
 1. Un manager sélectionne un collaborateur actif et propose une date/heure de début par quart d’heure, une durée en heures et minutes par paliers de 15 minutes, ainsi qu’un lieu physique ou un lien de visioconférence. L’année est déduite de la date de début côté interface et côté serveur.
 2. Le collaborateur reçoit l’invitation dans la cloche. Il accepte le créneau ou en propose un autre.
 3. En cas de contre-proposition, le manager l’accepte. Le rendez-vous n’apparaît dans le Planning qu’une fois le créneau accepté.
-4. Le collaborateur et le manager remplissent leurs questionnaires séparément. Le collaborateur peut télécharger ou imprimer sa propre version.
+4. Le collaborateur et le manager saisissent chacun leurs réponses. Le collaborateur peut télécharger ou imprimer sa propre version.
 5. Avant la remise, le collaborateur choisit explicitement de partager ses réponses avec le manager ou de les garder privées. Ce choix reste modifiable jusqu’à la remise.
-6. Après la remise du collaborateur, le manager valide ses propres réponses. Son identité, la date et sa signature active sont figées avec le rapport PDF.
-7. Le collaborateur reçoit une notification, lit le rapport du manager, puis le signe avec sa signature active.
+6. Après une remise avec partage, le manager voit les réponses du collaborateur et celles du management pour chaque question, avec un libellé et une couleur pour chaque auteur. Le manager peut modifier ses propres réponses jusqu’à la validation. Son identité, la date et sa signature active sont figées avec le rapport PDF.
+7. Le collaborateur reçoit une notification, lit le rapport du manager, puis le signe avec sa signature active. À partir de la validation, le collaborateur et son manager peuvent consulter les deux réponses à l’écran si le partage a été autorisé, y compris après l’archivage.
 8. Le PDF final signé est archivé dans **Dossier collaborateur > Entretien Annuel**. Son nom contient l’année de l’entretien.
 9. L’échéance initiale est fixée au 31 décembre de l’année N+1. Seuls les rôles `admin` et `direction` peuvent la modifier dans la fiche RH.
 10. Après validation du management, les rôles `admin`, `direction`, `armement` et `capitaine` peuvent mettre à jour le pourcentage d’atteinte jusqu’à l’échéance. Le profil `marin` reste en lecture seule.
@@ -36,7 +36,7 @@ Le rapport transmis et archivé contient exclusivement les réponses du manager.
 
 - Les entretiens, réponses et événements utilisent des politiques RLS dédiées et des RPC transactionnelles ; les mutations directes par un client authentifié sont interdites.
 - Une réponse privée reste lisible uniquement par son auteur. Le manager ne reçoit que l’état de complétude.
-- Une réponse partagée devient lisible par le manager de l’entretien, sans être ajoutée au rapport final.
+- Dans le questionnaire, le choix de partager donne accès aux réponses du collaborateur au manager désigné pour l’entretien.
 - Le choix de partage est tri-état en base (`non choisi`, `partagé`, `privé`) et la remise est refusée tant qu’il n’est pas renseigné.
 - La complétude et les valeurs autorisées sont contrôlées côté serveur au moment de la remise et de la validation du manager.
 - Les PDF et signatures sont conservés dans des buckets privés. Les signatures actives utilisées sont enregistrées sous forme d’instantanés d’identité et de métadonnées.

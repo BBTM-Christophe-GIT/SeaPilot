@@ -96,12 +96,56 @@
 .annual-review-objective-tracker label > div { display: flex; align-items: center; gap: 10px; }
 .annual-review-objective-tracker input { flex: 1; accent-color: #0c7d88; }
 .annual-review-objective-tracker output { min-width: 58px; border-radius: 999px; background: #def1f1; color: #08727a; font-size: .78rem; font-weight: 800; padding: 5px 8px; text-align: center; }
-.annual-review-response-switcher { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; border-bottom: 1px solid #e0e8eb; background: #f8fafb; }
-.annual-review-response-switcher > div:first-child { display: grid; }
-.annual-review-response-switcher span { color: #6a7f8a; font-size: .75rem; }
-.annual-review-response-switcher > div:last-child { display: flex; gap: 5px; }
-.annual-review-response-switcher button { border-color: transparent; background: transparent; color: #58717e; padding: 6px 9px; font-size: .75rem; }
-.annual-review-response-switcher button.is-active { background: #dff1f1; color: #08757d; }
+.annual-review-response-header {
+  display: grid;
+  gap: var(--sp-space-1);
+  padding: var(--sp-space-3) var(--sp-space-4);
+  border-bottom: 1px solid var(--sp-border);
+  background: var(--sp-surface-subtle);
+}
+.annual-review-response-header span { color: var(--sp-muted); font-size: .75rem; }
+.annual-review-response-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
+  gap: var(--sp-space-2);
+  margin-top: var(--sp-space-2);
+}
+.annual-review-answer {
+  --answer-color: var(--sp-primary);
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-inline-start: 3px solid var(--answer-color);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-primary-soft);
+  color: var(--sp-text);
+  overflow-wrap: anywhere;
+}
+.annual-review-answer.is-collaborator {
+  --answer-color: var(--sp-category-contract);
+  background: color-mix(in srgb, var(--answer-color) 8%, var(--sp-surface));
+}
+.annual-review-answer-label { color: var(--answer-color); font-size: .8rem; }
+.annual-review-answer-text { white-space: pre-wrap; }
+.annual-review-answer-empty { color: var(--sp-muted); font-size: .85rem; }
+.annual-review-answer .annual-review-rating-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+.annual-review-answer :is(.annual-review-rating-options label, .annual-review-choice-options label) {
+  background: var(--sp-surface);
+}
+.annual-review-answer :is(.annual-review-rating-options label, .annual-review-choice-options label).is-selected {
+  border-color: var(--sp-primary);
+  color: var(--sp-primary);
+}
+.annual-review-questionnaire :is(.annual-review-rating-options, .annual-review-choice-options) label:has(input:focus-visible) {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
 .annual-review-privacy { display: flex; align-items: center; gap: 9px; margin: 13px; padding: 11px 13px; border-radius: 9px; background: #f2f5f6; color: #627984; font-size: .78rem; }
 .annual-review-privacy > span { display: grid; }
 .annual-review-privacy strong { color: #284a5b; }
@@ -127,11 +171,12 @@
 .annual-review-long-field small, .annual-review-rich-field small { color: #718690; font-size: .76rem; font-weight: 400; }
 .annual-review-choice-field { margin: 14px 0; padding: 13px; border: 1px solid #dce6e9; border-radius: 10px; }
 .annual-review-choice-field legend { padding: 0 5px; font-weight: 750; font-size: .82rem; }
-.annual-review-choice-field > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.annual-review-choice-options { display: flex; gap: 6px; flex-wrap: wrap; }
 .annual-review-choice-field label { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #d9e3e6; border-radius: 8px; color: #5b727d; font-size: .73rem; cursor: pointer; }
 .annual-review-choice-field label.is-selected { border-color: #10848c; background: #e7f5f5; color: #08727a; font-weight: 750; }
 .annual-review-choice-field input { width: auto; }
 .annual-review-condition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.annual-review-condition-grid:has(.annual-review-response-pair) { grid-template-columns: minmax(0, 1fr); }
 .annual-review-rich-readonly { min-height: 100px; padding: 13px; border: 1px solid #d8e3e6; border-radius: 9px; background: #f9fbfb; }
 .annual-review-goals-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 10px; }
 .annual-review-goals-heading > div { display: grid; gap: 4px; }
@@ -142,9 +187,12 @@
 .annual-review-goal > header button { width: 34px; height: 32px; padding: 0; }
 .annual-review-goal label { display: grid; gap: 6px; color: #365565; font-size: .77rem; }
 .annual-review-goal label:first-of-type, .annual-review-goal label:last-of-type { grid-column: 1 / -1; }
+.annual-review-goal-summary { display: grid; grid-column: 1 / -1; gap: var(--sp-space-2); }
+.annual-review-answer .annual-review-goal { grid-template-columns: minmax(0, 1fr); }
 .annual-review-goal input[type='text'], .annual-review-goal input:not([type]), .annual-review-goal textarea { width: 100%; border: 1px solid #cbd8de; border-radius: 8px; background: white; color: #17394b; font: inherit; padding: 9px 10px; box-sizing: border-box; }
 .annual-review-goal-progress > div { display: flex; align-items: center; gap: 12px; }
 .annual-review-goal-progress input { flex: 1; accent-color: #0c7d88; }
+.annual-review-answer .annual-review-goal-progress input { min-width: 0; }
 .annual-review-goal-progress output { min-width: 58px; border-radius: 999px; background: #def1f1; color: #08727a; font-weight: 800; padding: 5px 9px; text-align: center; }
 .annual-review-page .service-note-rich-editor { overflow: hidden; border: 1px solid #cddae0; border-radius: 8px; background: #fff; transition: border .15s ease, box-shadow .15s ease; }
 .annual-review-page .service-note-rich-editor:focus-within { border-color: #3ca5a6; box-shadow: 0 0 0 3px rgba(15, 143, 145, .1); }
@@ -192,7 +240,7 @@
   .annual-review-summary dl, .annual-review-editor-grid, .annual-review-condition-grid, .annual-review-guide-grid, .annual-review-share-choice { grid-template-columns: 1fr; }
   .annual-review-objective-tracker article { grid-template-columns: 1fr; }
   .annual-review-rating-options { grid-template-columns: repeat(2, 1fr); }
-  .annual-review-response-switcher { align-items: flex-start; flex-direction: column; }
+  .annual-review-response-pair { grid-template-columns: minmax(0, 1fr); }
   .annual-review-goals-heading { align-items: stretch; flex-direction: column; }
   .annual-review-goal { grid-template-columns: 1fr; }
   .annual-review-goal > * { grid-column: 1 !important; }
