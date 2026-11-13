@@ -257,7 +257,7 @@ function PlanningFleetTimelineRowContent({
   useLayoutEffect(() => {
     const row = rowRef.current;
     const calendar = row?.closest('.planning-calendar-scroll');
-    if (!row || !calendar || !hasExpandedNames) return;
+    if (!row || !(calendar instanceof HTMLElement) || !hasExpandedNames) return;
     const label = row.querySelector<HTMLElement>('.planning-row-label');
     const captions = row.querySelectorAll<HTMLElement>('.planning-mission-caption');
     const measure = () => {
