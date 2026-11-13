@@ -75,7 +75,9 @@ describe('Sludges on the SUROIT fleet card', () => {
     const suroit: SeaOperationFleetFuelLevel = {
       ...vessel, vesselId: 16, vesselName: 'SUROIT', sludgeTank: { liters, capacityLiters: 10_000 },
     };
-    render(<SeaOperationFleetFuel client={{} as SupabaseClient} historyRefresh={0} rows={[vessel, suroit]} error={undefined}
+    const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, liters: null, costEuros: null, unpricedLiters: 0 }));
+    const rpc = vi.fn().mockResolvedValue({ data: { years: [], months, costSource: 'dpr' }, error: null });
+    render(<SeaOperationFleetFuel client={{ rpc } as unknown as SupabaseClient} historyRefresh={0} rows={[vessel, suroit]} error={undefined}
       reload={vi.fn()} onRetryAverages={vi.fn()} />);
     const card = screen.getByRole('heading', { name: 'SUROIT' }).closest('li')!;
     expect(within(card).getByRole('button', { name: 'Détails carburant · SUROIT' })).toHaveAttribute('aria-expanded', 'false');
@@ -96,15 +98,32 @@ describe('Sludges on the SUROIT fleet card', () => {
     const meter = card.getByRole('meter', { name: 'Sludges' });
     expect(meter).toHaveAttribute('data-level', level);
     expect(Number(meter.getAttribute('aria-valuenow'))).toBeCloseTo(liters / 100);
-    expect(card.getByText(new RegExp(`^${displayedPercent}\\s%$`))).toBeVisible();
+    expect(meter).toHaveAttribute('aria-valuetext', expect.stringMatching(new RegExp(`^${displayedPercent}\\s% ·`)));
+    expect(card.queryByText('Sludges')).not.toBeInTheDocument();
     expect(meter.previousElementSibling?.querySelector('.lucide-fuel')).toBeInTheDocument();
     expect(!!meter.closest('li')?.querySelector('.so-fuel-sludge-alert .lucide-triangle-alert')).toBe(level === 'critical');
   });
 
-  it('shows a distinct unavailable state before the first sludge reading', () => {
+  it('shows the empty gauge without a caption and lists the configured capacity in Soutes', async () => {
     const card = showSludges(null);
-    expect(card.getByText('Sludges')).toBeVisible();
-    expect(card.getByText('Non renseigné')).toBeVisible();
+    expect(card.getByTitle('Sludges')).toHaveAttribute('data-level', 'unknown');
+    expect(card.queryByText('Sludges')).not.toBeInTheDocument();
+    expect(card.queryByText('Non renseigné')).not.toBeInTheDocument();
     expect(card.queryByRole('meter', { name: 'Sludges' })).not.toBeInTheDocument();
+    fireEvent.click(card.getByRole('button', { name: 'Détails carburant · SUROIT' }));
+    await screen.findByText('Aucune consommation renseignée pour cette année.');
+    const soutes = within(screen.getByRole('region', { name: 'Soutes' }));
+    expect(soutes.getByText('Sludges')).toBeVisible();
+    expect(soutes.getByText('— / 10 m³')).toBeVisible();
+  });
+
+  it('lists the measured sludge volume and percentage in the expanded Soutes panel', async () => {
+    const card = showSludges(7500);
+    fireEvent.click(card.getByRole('button', { name: 'Détails carburant · SUROIT' }));
+    await screen.findByText('Aucune consommation renseignée pour cette année.');
+    const soutes = within(screen.getByRole('region', { name: 'Soutes' }));
+    expect(soutes.getByText('Sludges')).toBeVisible();
+    expect(soutes.getByText('7,5 m³ / 10 m³')).toBeVisible();
+    expect(soutes.getByText(/^75\s%$/)).toBeVisible();
   });
 });

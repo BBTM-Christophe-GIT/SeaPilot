@@ -1,5 +1,8 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.101.2` renomme le détail **Stock** en **Soutes** et y affiche
+les valeurs de la jauge **Sludges** du SUROIT.
+
 La version `3.101.1` place la jauge **Sludges** à côté de la jauge de
 carburant sur la carte du SUROIT.
 
