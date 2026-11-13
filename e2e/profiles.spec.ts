@@ -157,31 +157,50 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
-    test('planning : lire le nom complet d’une mission diffusée sur une journée', async ({ page, isMobile }) => {
+    test('planning : lire le nom complet d’une mission diffusée sur une journée', async ({ page }) => {
       const published = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/latest_planning_release');
       await signIn(page, profile, '/modules/planning');
       expect((await published).ok()).toBe(true);
 
-      const namesSwitch = page.getByRole('switch', { name: 'Afficher les noms', exact: true });
       const missionTitle = 'P601 - Assistance et remorquage portuaire à Cherbourg';
-      const mission = page.getByRole('button', { name: new RegExp(missionTitle) });
+      const nextMissionTitle = 'P602 - Inspection et assistance portuaire à Cherbourg';
+      const row = page.locator('[data-vessel="CI VESSEL ASSIGNED"]');
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+      const tomorrowDate = new Date(`${today}T12:00:00Z`);
+      tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+      const tomorrow = tomorrowDate.toISOString().slice(0, 10);
+      const dayCell = row.locator(`[data-planning-drop-date="${today}"]`);
+      const nextDayCell = row.locator(`[data-planning-drop-date="${tomorrow}"]`);
+      const mission = row.getByRole('button', { name: new RegExp(missionTitle) });
+      const nextMission = row.getByRole('button', { name: new RegExp(nextMissionTitle) });
       const title = mission.getByText(missionTitle, { exact: true });
-      await expect(mission).toBeVisible();
-      await expect(namesSwitch).not.toBeChecked();
-      if (isMobile) await namesSwitch.tap();
-      else await namesSwitch.press('Space');
-      await expect(namesSwitch).toBeChecked();
+      await expect(page.getByRole('switch', { name: 'Afficher les noms', exact: true })).toHaveCount(0);
       await expect(title).toBeInViewport();
       await expect(title).toHaveCSS('white-space', 'normal');
       await expect.poll(() => title.evaluate((node) =>
         node.scrollWidth <= node.clientWidth + 1 && node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+      await expect.poll(async () => {
+        const [cell, nextCell, bar, nextBar] = await Promise.all([
+          dayCell.boundingBox(), nextDayCell.boundingBox(), mission.boundingBox(), nextMission.boundingBox(),
+        ]);
+        if (!cell || !nextCell || !bar || !nextBar) return null;
+        const center = (box: { x: number; width: number }) => box.x + box.width / 2;
+        return {
+          dayWidth: Math.round(cell.width),
+          overflowsLeft: bar.x < cell.x,
+          overflowsRight: bar.x + bar.width > cell.x + cell.width,
+          centered: Math.abs(center(bar) - center(cell)) <= 1,
+          nextCentered: Math.abs(center(nextBar) - center(nextCell)) <= 1,
+          labelsOverlapHorizontally: bar.x + bar.width > nextBar.x,
+          nextLabelOnLowerTrack: bar.y + bar.height <= nextBar.y,
+        };
+      }).toEqual({ dayWidth: 52, overflowsLeft: true, overflowsRight: true, centered: true, nextCentered: true,
+        labelsOverlapHorizontally: true, nextLabelOnLowerTrack: true });
       await expect(mission).toHaveAttribute('draggable', 'false');
 
       await page.getByRole('tab', { name: 'Projet', exact: true }).click();
-      await expect(namesSwitch).toBeChecked();
       await expect(title).toBeInViewport();
-      await namesSwitch.click();
-      await expect(namesSwitch).not.toBeChecked();
+      await expect(title).toHaveCSS('white-space', 'normal');
     });
 
     test('registre du travail : amplitude calée sur les heures enregistrées et actualisée pendant la saisie', async ({ page, isMobile }) => {

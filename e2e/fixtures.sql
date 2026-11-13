@@ -82,13 +82,17 @@ join public.vessels vessel on vessel.company_id = person.company_id and vessel.a
 join public.people captain on captain.sailor_number = 'CI-BROWSER-2'
 where person.sailor_number in ('CI-BROWSER-1', 'CI-BROWSER-2');
 
--- Publish the existing assignment fixtures and a one-day mission for both field profiles.
+-- Publish the existing assignments and two adjacent one-day missions for both field profiles.
 insert into public.planning_releases (company_id, version_number, snapshot, published_by, published_by_name)
 select vessel.company_id, 1 + coalesce((select max(release.version_number)
   from public.planning_releases release where release.company_id = vessel.company_id), 0),
   public.planning_release_snapshot(vessel.company_id) || jsonb_build_object('projects', jsonb_build_array(
     jsonb_build_object('id', 601, 'title', 'P601 - Assistance et remorquage portuaire à Cherbourg',
       'starts_on', current_date, 'ends_on', current_date, 'primary_vessel_id', vessel.id,
+      'primary_vessel_name', vessel.name, 'event_type', 'operation', 'status', 'Confirmé',
+      'source_label', 'seapilot_browser_ci'),
+    jsonb_build_object('id', 602, 'title', 'P602 - Inspection et assistance portuaire à Cherbourg',
+      'starts_on', current_date + 1, 'ends_on', current_date + 1, 'primary_vessel_id', vessel.id,
       'primary_vessel_name', vessel.name, 'event_type', 'operation', 'status', 'Confirmé',
       'source_label', 'seapilot_browser_ci')
   )), 'c1b00000-0000-4000-8000-000000000002'::uuid, 'CI CAPITAINE'
@@ -97,7 +101,7 @@ join public.companies company on company.id = vessel.company_id and company.code
 where vessel.acronym = 'CI-A' and not exists (
   select 1 from public.planning_releases release
   where release.company_id = vessel.company_id and release.snapshot -> 'projects' @> jsonb_build_array(
-    jsonb_build_object('source_label', 'seapilot_browser_ci', 'id', 601, 'starts_on', current_date)
+    jsonb_build_object('source_label', 'seapilot_browser_ci', 'id', 602, 'starts_on', current_date + 1)
   )
 );
 

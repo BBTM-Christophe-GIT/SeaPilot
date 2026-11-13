@@ -550,41 +550,6 @@
   background: var(--sp-primary-soft);
 }
 
-.planning-toolbar-navigation .planning-mission-names-toggle {
-  flex: 0 0 auto;
-  gap: var(--sp-space-2);
-  white-space: nowrap;
-}
-
-.planning-mission-names-track {
-  display: flex;
-  width: 28px;
-  height: 16px;
-  align-items: center;
-  border-radius: 999px;
-  padding-inline: 2px;
-  background: var(--sp-muted);
-}
-
-.planning-mission-names-track::before {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--sp-surface);
-  content: "";
-}
-
-.planning-mission-names-toggle[aria-checked="true"] .planning-mission-names-track {
-  justify-content: flex-end;
-  background: var(--sp-primary);
-}
-
-@media (max-width: 480px) {
-  .planning-workspace .planning-layout .planning-calendar-scroll.is-showing-mission-names {
-    --planning-label-width: 118px;
-  }
-}
-
 .app-shell .content-area .planning-ribbon-command:focus-visible {
   box-shadow: inset 0 0 0 1px var(--sp-focus);
 }
