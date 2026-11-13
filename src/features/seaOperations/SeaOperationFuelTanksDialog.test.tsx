@@ -61,6 +61,51 @@ describe('Soutes fuel readings', () => {
     });
   });
 
+  it('converts reference heights only for calibrated Goury tanks and preserves earlier volume entries', async () => {
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const goury = { ...landemer, vesselId: 1, vesselName: 'GOURY' };
+    const port = { key: 'main-1', name: 'Caisse 1 - 25-P', capacityLiters: 13280, soundingCode: '25P' };
+    const starboard = { key: 'main-2', name: 'Caisse 2 - 20-S', capacityLiters: 16790, soundingCode: '20S' };
+    const day = tanks[2];
+    const reading: SeaOperationFuelTanks['reading'] = {
+      version: 1, savedAt: '2026-11-08T10:00:00Z', mainLiters: 12600, superseded: false, updatesFuelBaseline: true,
+      tanks: [{ key: port.key, name: port.name, capacityLiters: port.capacityLiters, unit: 'm3', value: 4.2, liters: 4200 },
+        { ...starboard, unit: 'm', value: 2.48, liters: 8400 }, { ...day, unit: 'liters', value: 0, liters: 0 }],
+    };
+    const rpc = vi.fn(async (_name: string, params: { p_time: string | null }) => ({
+      data: { ...configuration, vesselId: 1, time: params.p_time, times: ['08:30'], reading: params.p_time ? reading : null,
+        tanks: [{ ...port, soundingPoints: [[740, 660], [3920, 13020]] },
+          { ...starboard, soundingPoints: [[800, 840], [2480, 8400], [2810, 10070], [3960, 16450]] }, day] }, error: null,
+    }));
+    const onSaved = vi.fn();
+    render(<SeaOperationFuelTanksDialog client={{ rpc } as unknown as SupabaseClient} vessels={[goury]} onClose={vi.fn()} onSaved={onSaved} />);
+
+    const selector = await screen.findByLabelText('Relevés de la journée');
+    fireEvent.change(selector, { target: { value: '08:30' } });
+    const height = await screen.findByLabelText('Hauteur');
+    expect(tank(port.name).getByLabelText('Niveau')).toHaveValue(4.2);
+    expect(tank(port.name).getByRole('option', { name: 'm' })).toBeVisible();
+    expect(tank(day.name).queryByRole('option', { name: 'm' })).not.toBeInTheDocument();
+    expect(height).toHaveValue(2.48);
+    expect(height).toHaveAccessibleDescription('Hauteur au-dessus de la ligne de base 0H (Ref Ht Z/0H), sans assiette ni gîte. De 0,8 à 3,96 m.');
+    expect(tank(starboard.name).getByText('8,4 m³')).toBeVisible();
+
+    fireEvent.change(height, { target: { value: '0.799' } });
+    expect(height).toHaveAttribute('aria-invalid', 'true');
+    expect(submit()).toBeDisabled();
+    fireEvent.change(height, { target: { value: '3.961' } });
+    expect(height).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(height, { target: { value: '2.481' } });
+    expect(tank(starboard.name).getByText('8,405 m³')).toBeVisible();
+    fireEvent.click(submit());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenLastCalledWith('sea_operation_save_fuel_tanks', {
+      p_vessel_id: 1, p_date: today, p_time: '08:30', p_expected_version: 1,
+      p_readings: [{ key: port.key, unit: 'm3', value: 4.2 }, { key: starboard.key, unit: 'm', value: 2.481, soundingCode: '20S' },
+        { key: day.key, unit: 'liters', value: 0 }],
+    });
+  });
+
   it('preserves renamed fuel readings and requires a fresh entry after a capacity change', async () => {
     vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
     const reading: SeaOperationFuelTanks['reading'] = {

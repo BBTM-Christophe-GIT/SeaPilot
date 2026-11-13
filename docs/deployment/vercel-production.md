@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.101.3` convertit dans **Soutes** la hauteur de référence en
+mètres des cuves diesel du GOURY en volume. Appliquer
+`20261113091335_sea_operation_goury_fuel_sounding.sql` avant le frontend.
+Voir [les relevés Soutes](./sea-operation-consumption.md#carburant-et-autonomie-de-la-flotte).
+
 La version `3.101.2` renomme le détail **Stock** en **Soutes** et y affiche
 les valeurs de la jauge **Sludges** du SUROIT.
 

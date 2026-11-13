@@ -21,7 +21,7 @@ type TankField = Tank & { draft: Draft; value: number | null; liters: number | n
 type RequestScope = { client: SupabaseClient; vesselId: number; date: string; time: string | null; revision: number };
 type LoadedState = RequestScope & { times: readonly string[] } & ({ configuration: Configuration; drafts: Record<string, Draft> } | { error: string });
 
-const units: Record<Unit, string> = { percent: '%', liters: 'L', m3: 'm³' };
+const units: Record<Unit, string> = { percent: '%', liters: 'L', m3: 'm³', m: 'm' };
 const percent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 });
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 6 });
 const earliestDate = '1900-01-01';
@@ -34,20 +34,44 @@ function newMeasurement(date?: string) {
   return { date: day, time: day === today ? parisClock.format(now) : '00:00' };
 }
 
-function maximumValue(tank: Tank, unit: Unit) {
+function measurementRange(tank: Tank, unit: Unit) {
+  if (unit === 'm') {
+    const points = tank.soundingPoints;
+    if (!points) return null;
+    return { minimum: points[0][0] / 1000, maximum: points[points.length - 1][0] / 1000 };
+  }
   const limit = tank.capacityLiters ?? MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY;
-  return unit === 'percent' ? 100 : unit === 'm3' ? limit / 1000 : limit;
+  return { minimum: 0, maximum: unit === 'percent' ? 100 : unit === 'm3' ? limit / 1000 : limit };
 }
 
 function draftValue(tank: Tank, draft: Draft) {
   if (!/^(?:\d+(?:\.\d{1,3})?|\.\d{1,3})$/.test(draft.value) || draft.unit === 'percent' && tank.capacityLiters === null) return null;
+  const range = measurementRange(tank, draft.unit);
   const value = Number(draft.value);
-  return value <= maximumValue(tank, draft.unit) ? value : null;
+  return range && value >= range.minimum && value <= range.maximum ? value : null;
+}
+
+function soundedLiters(tank: Tank, meters: number) {
+  const points = tank.soundingPoints;
+  if (!points) return null;
+  const height = Math.round(meters * 1000);
+  const upperIndex = points.findIndex(([pointHeight]) => pointHeight >= height);
+  if (upperIndex < 0) return null;
+  const [upperHeight, upperLiters] = points[upperIndex];
+  if (upperHeight === height) return upperLiters;
+  if (upperIndex === 0) return null;
+  const [lowerHeight, lowerLiters] = points[upperIndex - 1];
+  const span = upperHeight - lowerHeight;
+  const scaledDifference = (height - lowerHeight) * (upperLiters - lowerLiters) * 1000;
+  // Round the interpolated thousandths to match Postgres numeric arithmetic.
+  const scaledLiters = lowerLiters * 1000 + Math.floor((scaledDifference + Math.floor(span / 2)) / span);
+  return scaledLiters / 1000;
 }
 
 function measuredLiters(tank: Tank, unit: Unit, value: number) {
   if (unit === 'liters') return value;
   if (unit === 'm3') return Math.round(value * 1000);
+  if (unit === 'm') return soundedLiters(tank, value);
   if (tank.capacityLiters === null) return null;
   if (tank.calibration === 'landemer-v1') {
     const liters = landemerTankVolumeLiters(value);
@@ -58,7 +82,8 @@ function measuredLiters(tank: Tank, unit: Unit, value: number) {
 }
 
 function matchesTank(saved: SavedTank, tank: Tank) {
-  return saved.key === tank.key && saved.capacityLiters === tank.capacityLiters && saved.calibration === tank.calibration;
+  return saved.key === tank.key && saved.capacityLiters === tank.capacityLiters && saved.calibration === tank.calibration
+    && (saved.unit !== 'm' || Boolean(tank.soundingPoints) && saved.soundingCode === tank.soundingCode);
 }
 
 function matchesSelection(saved: readonly SavedTank[], tanks: readonly Tank[]) {
@@ -78,7 +103,8 @@ function TankEntry({ field, onChange }: { field: TankField; onChange: (draft: Dr
   const { key, name, capacityLiters, draft, value, liters } = field;
   const displayUnit = fuelVolumeUnit(capacityLiters);
   const invalid = Boolean(draft.value) && value === null;
-  const maximum = maximumValue(field, draft.unit);
+  const range = measurementRange(field, draft.unit);
+  const height = draft.unit === 'm';
   return <fieldset className="so-soutes-tank" data-tank={key}>
     <legend>{name}</legend>
     <div className="so-soutes-tank-reading">
@@ -92,15 +118,19 @@ function TankEntry({ field, onChange }: { field: TankField; onChange: (draft: Dr
         <select value={draft.unit} onChange={event => onChange({ unit: event.target.value as Unit, value: '' })}>
           <option value="liters">L</option><option value="m3">m³</option>
           <option value="percent" disabled={capacityLiters === null}>%</option>
+          {field.soundingPoints && <option value="m">m</option>}
         </select>
       </label>
-      <label className="so-field"><span className="so-field-label">Niveau</span>
-        <input type="number" inputMode="decimal" min={0} max={maximum} step={.001} value={draft.value}
-          aria-invalid={invalid || undefined} aria-describedby={invalid ? hint : undefined}
+      <label className="so-field"><span className="so-field-label">{height ? 'Hauteur' : 'Niveau'}</span>
+        <input type="number" inputMode="decimal" min={range?.minimum} max={range?.maximum} step={.001} value={draft.value}
+          aria-invalid={invalid || undefined} aria-describedby={height || invalid ? hint : undefined}
           onChange={event => onChange({ ...draft, value: event.target.value })} />
       </label>
     </div>
-    {invalid && <p id={hint} className="so-soutes-invalid">De 0 à {decimal.format(maximum)} {units[draft.unit]}, trois décimales au maximum.</p>}
+    {(height || invalid) && range && <p id={hint} className={invalid ? 'so-soutes-invalid' : 'so-soutes-hint'}>
+      {height && 'Hauteur au-dessus de la ligne de base 0H (Ref Ht Z/0H), sans assiette ni gîte. '}
+      De {decimal.format(range.minimum)} à {decimal.format(range.maximum)} {units[draft.unit]}{invalid ? ', trois décimales au maximum.' : '.'}
+    </p>}
   </fieldset>;
 }
 
@@ -216,7 +246,9 @@ export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current || conflict || !configuration?.canSetBaseline || vesselId === undefined || !valid) return;
-    const readings = fields.flatMap(({ key, draft, value }) => value === null ? [] : [{ key, unit: draft.unit, value }]);
+    const readings = fields.flatMap(({ key, draft, value, soundingCode }) => value === null ? [] : [{
+      key, unit: draft.unit, value, ...(draft.unit === 'm' ? { soundingCode } : {}),
+    }]);
     setSelection(vesselId);
     pending.current = true;
     setSaving(true);

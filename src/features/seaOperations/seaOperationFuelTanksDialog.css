@@ -32,7 +32,8 @@
 .so-soutes-tank-reading strong, .so-soutes-tank-reading small { display: block; overflow-wrap: anywhere; }
 .so-soutes-tank-reading strong { color: var(--sp-heading); font-size: .94rem; font-variant-numeric: tabular-nums; }
 .so-soutes-tank-fields { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr); gap: var(--sp-space-2); }
-.so-soutes-invalid { margin: var(--sp-space-1) 0 0; color: var(--sp-danger); font-size: .74rem; }
+.so-soutes-hint, .so-soutes-invalid { margin: var(--sp-space-1) 0 0; color: var(--sp-muted); font-size: .74rem; }
+.so-soutes-invalid { color: var(--sp-danger); }
 .so-soutes-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-space-2); }
 .so-soutes-previous { padding: var(--sp-space-2) var(--sp-space-3); border-radius: var(--sp-panel-radius); background: var(--sp-surface-subtle); color: var(--sp-muted); font-size: .78rem; }
 .so-soutes-previous p { margin: 0 0 var(--sp-space-1); }

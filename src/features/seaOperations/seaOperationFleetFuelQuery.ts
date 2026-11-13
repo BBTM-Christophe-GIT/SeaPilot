@@ -40,12 +40,15 @@ export interface FleetFuelNavigationProfiles {
 
 export const MAX_BASELINE_FUEL_LITERS_WITHOUT_CAPACITY = 10_000_000;
 
-export type FleetFuelTankUnit = 'liters' | 'percent' | 'm3';
+export type FleetFuelTankUnit = 'liters' | 'percent' | 'm3' | 'm';
+
+type FuelSoundingPoint = [heightMillimeters: number, liters: number];
 
 export interface FleetFuelTankInput {
   key: string;
   unit: FleetFuelTankUnit;
   value: number;
+  soundingCode?: string;
 }
 
 export interface FleetFuelTank {
@@ -53,6 +56,8 @@ export interface FleetFuelTank {
   name: string;
   capacityLiters: number | null;
   calibration?: 'landemer-v1';
+  soundingCode?: string;
+  soundingPoints?: FuelSoundingPoint[];
   sectionName?: string;
 }
 
@@ -186,20 +191,43 @@ export function isFleetFuelReadingTime(value: unknown): value is string {
   return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+const gourySoundingCodes = new Set(['20S', '25P', '30S', '30P', '40S', '40P', '60S', '60P', '70S', '70P', '80P']);
+
+function fuelSoundingPoints(value: unknown, capacityLiters: number): FuelSoundingPoint[] {
+  if (!Array.isArray(value) || value.length < 2) throw new Error(invalidTanks);
+  let previousHeight = -1;
+  let previousLiters = 0;
+  return value.map((point: unknown) => {
+    if (!Array.isArray(point) || point.length !== 2) throw new Error(invalidTanks);
+    const [height, liters] = point;
+    if (!Number.isSafeInteger(height) || height <= previousHeight || !Number.isSafeInteger(liters)
+      || liters < previousLiters || liters > capacityLiters) throw new Error(invalidTanks);
+    previousHeight = height;
+    previousLiters = liters;
+    return [height, liters];
+  });
+}
+
 function fuelTank(value: unknown): FleetFuelTank {
   if (!value || typeof value !== 'object') throw new Error(invalidTanks);
-  const { key, name, capacityLiters, calibration, sectionName } = value as Record<string, unknown>;
+  const { key, name, capacityLiters, calibration, sectionName, soundingCode, soundingPoints } = value as Record<string, unknown>;
   const custom = typeof key === 'string' && /^capacity-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(key);
   if (typeof key !== 'string' || !custom && !/^(main-[1-9]\d*|day)$/.test(key) || typeof name !== 'string' || !name.trim()
     || !quantity(capacityLiters) || capacityLiters === 0 || calibration != null && calibration !== 'landemer-v1') {
     throw new Error(invalidTanks);
   }
   if (custom) {
-    if (typeof sectionName !== 'string' || !sectionName.trim() || calibration != null) throw new Error(invalidTanks);
+    if (typeof sectionName !== 'string' || !sectionName.trim() || calibration != null
+      || soundingCode !== undefined || soundingPoints !== undefined) throw new Error(invalidTanks);
     return { key, name, capacityLiters, sectionName };
   }
   if (sectionName != null) throw new Error(invalidTanks);
-  return { key, name, capacityLiters, calibration: calibration ?? undefined };
+  const tank: FleetFuelTank = { key, name, capacityLiters, calibration: calibration ?? undefined };
+  if (soundingCode === undefined && soundingPoints === undefined) return tank;
+  if (typeof soundingCode !== 'string' || !gourySoundingCodes.has(soundingCode) || capacityLiters === null
+    || calibration != null || (key === 'day') !== (soundingCode === '80P')) throw new Error(invalidTanks);
+  if (soundingPoints === undefined) return { ...tank, soundingCode };
+  return { ...tank, soundingCode, soundingPoints: fuelSoundingPoints(soundingPoints, capacityLiters) };
 }
 
 function measuredFuelTank(value: unknown): MeasuredFleetFuelTank {
@@ -238,7 +266,7 @@ function fuelTankReading(data: unknown, vesselId: number, date: string, time: st
   return { ...response, reading: { version, savedAt, mainLiters, superseded, updatesFuelBaseline: readingUpdatesFuelBaseline, tanks: recorded.map((item: unknown) => {
     const tank = measuredFuelTank(item);
     const { unit, value } = item as Record<string, unknown>;
-    if (unit !== 'percent' && unit !== 'liters' && unit !== 'm3'
+    if (unit !== 'percent' && unit !== 'liters' && unit !== 'm3' && (unit !== 'm' || !tank.soundingCode)
       || !quantity(value) || value === null) throw new Error(invalidTanks);
     return { ...tank, unit, value };
   }) } };
