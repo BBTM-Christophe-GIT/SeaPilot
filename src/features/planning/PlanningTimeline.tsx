@@ -1,6 +1,6 @@
 import { formatPlanningCrewBalance, type PlanningCrewBalanceDays } from './planningCrewBalance';
 import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
 import validIcon from './assets/icone_valide.svg';
@@ -83,27 +83,60 @@ function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOve
   return `planning-day-cell${day.isWeekend ? ' is-weekend' : ''}${day.date === today ? ' is-today' : ''}${options.drop ? ' is-drop-target' : ''}${options.create ? ' is-quick-create' : ''}${options.dragOver ? ' is-drag-over' : ''}`;
 }
 
+type ProjectTimelineItem = Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>;
+
+function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number) {
+  const center = (day - .5) * dayWidth;
+  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2));
+  return { left, right: left + width, shift: left + width / 2 - center };
+}
+
 export function buildPlanningProjectStack(
-  projects: Array<Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>>,
+  projects: ProjectTimelineItem[],
   days: PlanningTimelineDay[],
+  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number> },
 ): { count: number; stackById: Map<number, number> } {
+  const dayWidth = layout?.dayWidth ?? 1;
   const visibleProjects = projects
     .flatMap((project) => {
       const placement = dateGridPlacement(project.startsOn, project.endsOn, days);
       return placement ? [{ id: project.id, start: placement.start, end: placement.start + placement.span - 1 }] : [];
     })
     .sort((left, right) => left.start - right.start || left.end - right.end || left.id - right.id);
-  const stackEnds: number[] = [];
   const stackById = new Map<number, number>();
+  if (!layout) {
+    const stackEnds: number[] = [];
+    for (const project of visibleProjects) {
+      const reusableStack = stackEnds.findIndex((end) => end < project.start);
+      const stack = reusableStack === -1 ? stackEnds.length : reusableStack;
+      stackEnds[stack] = project.end;
+      stackById.set(project.id, stack);
+    }
+    return { count: stackEnds.length, stackById };
+  }
+
+  const stacks: { left: number; right: number; expanded: boolean }[][] = [];
 
   visibleProjects.forEach((project) => {
-    const reusableStack = stackEnds.findIndex((end) => end < project.start);
-    const stack = reusableStack === -1 ? stackEnds.length : reusableStack;
-    stackEnds[stack] = project.end;
+    const width = layout.titleWidths.get(project.id);
+    const left = (project.start - 1) * dayWidth;
+    const right = project.end * dayWidth;
+    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length);
+    const footprint = title
+      ? { left: Math.min(left, title.left - 4), right: Math.max(right, title.right + 4), expanded: true }
+      : { left, right, expanded: false };
+    const overlaps = (item: typeof footprint) => footprint.left < item.right && footprint.right > item.left;
+    const lastExpandedConflict = stacks.findLastIndex((items) => items.some((item) => (
+      (footprint.expanded || item.expanded) && overlaps(item)
+    )));
+    const reusableStack = stacks.findIndex((items, index) => index > lastExpandedConflict && !items.some(overlaps));
+    const stack = reusableStack === -1 ? stacks.length : reusableStack;
+    if (!stacks[stack]) stacks.push([]);
+    stacks[stack].push(footprint);
     stackById.set(project.id, stack);
   });
 
-  return { count: stackEnds.length, stackById };
+  return { count: stacks.length, stackById };
 }
 
 function buildPlanningVisitStack(
@@ -131,7 +164,6 @@ function buildPlanningVisitStack(
 
 function PlanningFleetTimelineRowContent({
   projectsOnly = false,
-  showMissionNames = false,
   referenceDate,
   lane,
   days,
@@ -162,7 +194,6 @@ function PlanningFleetTimelineRowContent({
   onToggle,
 }: TimelineBaseProps & {
   projectsOnly?: boolean;
-  showMissionNames?: boolean;
   referenceDate?: string;
   lane: PlanningFleetLane;
   dayWidth: number;
@@ -200,17 +231,52 @@ function PlanningFleetTimelineRowContent({
   const [draggingVisitId, setDraggingVisitId] = useState<number | null>(null);
   const [visitMovePreview, setVisitMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [measuredTitleWidths, setMeasuredTitleWidths] = useState<ReadonlyMap<number, number>>(() => new Map());
   const watchGroup = 'Bordée 1';
   const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
-  const projectStack = buildPlanningProjectStack(lane.projects.map((project) => {
-    const preview = resizePreview?.id === project.id ? resizePreview : null;
-    return {
-      id: project.id,
-      startsOn: preview?.startsOn || project.startsOn,
-      endsOn: preview?.endsOn || project.endsOn,
+  const projectItems = useMemo(() => lane.projects.map((project) => {
+    if (resizePreview?.id === project.id) return { ...project, ...resizePreview };
+    return project.endsOn ? project : { ...project, endsOn: project.startsOn };
+  }), [lane.projects, resizePreview]);
+  const titleWidths = new Map<number, number>();
+  for (const project of projectItems) {
+    if (project.startsOn === project.endsOn && dateGridPlacement(project.startsOn, project.endsOn, days)) {
+      titleWidths.set(project.id, measuredTitleWidths.get(project.id) ?? Math.min(240, Math.max(dayWidth - 4, project.title.length * 7 + 26)));
+    }
+  }
+  const hasExpandedNames = titleWidths.size > 0;
+  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths } : undefined;
+  const projectStack = buildPlanningProjectStack(projectItems, days, projectLayout);
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const calendar = row?.closest('.planning-calendar-scroll');
+    if (!row || !calendar || !hasExpandedNames) return;
+    const label = row.querySelector<HTMLElement>('.planning-row-label');
+    const bars = row.querySelectorAll<HTMLElement>('.is-mission-name-expanded');
+    const measure = () => {
+      const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
+      if (availableWidth > 0) {
+        row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
+      }
+      const widths = new Map<number, number>();
+      for (const bar of bars) {
+        if (bar.offsetWidth > 0) widths.set(Number(bar.dataset.projectId), bar.offsetWidth);
+      }
+      setMeasuredTitleWidths((previous) => (
+        previous.size === widths.size && [...widths].every(([id, width]) => previous.get(id) === width) ? previous : widths
+      ));
     };
-  }), days);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(calendar);
+    if (label) observer.observe(label, { box: 'border-box' });
+    bars.forEach((bar) => observer.observe(bar, { box: 'border-box' }));
+    return () => observer.disconnect();
+  }, [dayWidth, days, hasExpandedNames, projectItems]);
   const visitTimelineItems = visits.flatMap((visit) => {
     if (visit.visitType === 'technical_stop') {
       const range = planningVesselVisitDateRange(visit);
@@ -241,12 +307,12 @@ function PlanningFleetTimelineRowContent({
         id: project.id,
         startsOn: project.id === draggingId ? movePreview.startsOn : project.startsOn,
         endsOn: project.id === draggingId ? movePreview.endsOn : project.endsOn,
-      })), days).stackById.get(draggingId) ?? 0
+      })), days, projectLayout).stackById.get(draggingId) ?? 0
     : 0;
   const projectTracks = Math.max(1, projectStack.count, moveProjectStack + 1);
   const visitTracks = Math.max(maxVisitStack, visitMovePreview ? 1 : 0);
   const timelineTracks = projectTracks + visitTracks;
-  const backgroundGridRow = showMissionNames ? '1 / -1' : 1;
+  const backgroundGridRow = hasExpandedNames ? '1 / -1' : 1;
   const rowMinHeight = projectsOnly ? 38 + additionalProjectStacks * 27 : maxVisitStack
     ? 76 + additionalProjectStacks * 27 + maxVisitStack * 25
     : projectStack.count > 1
@@ -262,6 +328,45 @@ function PlanningFleetTimelineRowContent({
       if (parsed.type === 'person' && Number.isSafeInteger(parsed.id) && Number(parsed.id) > 0) onAssignPerson(Number(parsed.id), lane, watchGroup);
     } catch {
       // Ignore malformed or unrelated payloads.
+    }
+  }
+
+  function dateUnderBar(clientX: number) {
+    const firstDay = rowRef.current?.querySelector<HTMLElement>('[data-planning-drop-date]');
+    if (!firstDay) return undefined;
+    const index = Math.floor((clientX - firstDay.getBoundingClientRect().left) / dayWidth);
+    return days[index]?.date;
+  }
+
+  function dragOverDate(event: React.DragEvent, date: string) {
+    if (event.dataTransfer.types.includes('application/x-seapilot-planning')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (draggingId !== null) {
+      const project = lane.projects.find((item) => item.id === draggingId);
+      if (project) setMovePreview({ startsOn: date, endsOn: addPlanningDays(date, daysBetween(project.startsOn, project.endsOn)) });
+    }
+    if (draggingVisitId !== null) {
+      const visit = visits.find((item) => item.id === draggingVisitId);
+      const range = visit ? planningVesselVisitDateRange(visit) : null;
+      if (range) setVisitMovePreview({ startsOn: date, endsOn: addPlanningDays(date, daysBetween(range.startsOn, range.endsOn)) });
+    }
+  }
+
+  function dropOnDate(event: React.DragEvent, date: string) {
+    event.preventDefault();
+    setDragOver(null);
+    setMovePreview(null);
+    setVisitMovePreview(null);
+    const visitId = Number(event.dataTransfer.getData('application/x-seapilot-technical-stop'));
+    if (Number.isSafeInteger(visitId) && visitId > 0) {
+      onMoveVisit(visitId, lane, date);
+      return;
+    }
+    const id = Number(event.dataTransfer.getData('application/x-seapilot-project'));
+    const sourceVesselId = Number(event.dataTransfer.getData('application/x-seapilot-project-vessel'));
+    if (Number.isSafeInteger(id) && id > 0) {
+      onMove(id, Number.isSafeInteger(sourceVesselId) && sourceVesselId > 0 ? sourceVesselId : null, lane, date);
     }
   }
 
@@ -344,12 +449,13 @@ function PlanningFleetTimelineRowContent({
   };
   return (
     <div
-      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}${showMissionNames ? ' has-expanded-mission-names' : ''}`}
+      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}${hasExpandedNames ? ' has-expanded-mission-names' : ''}`}
       data-project-stack-count={projectStack.count}
       data-vessel={lane.vessel}
+      ref={rowRef}
       style={{
         minHeight: rowMinHeight ? rowMinHeight * 0.9 : undefined,
-        gridTemplateRows: showMissionNames ? `repeat(${timelineTracks}, auto)` : undefined,
+        gridTemplateRows: hasExpandedNames ? `repeat(${timelineTracks}, auto)` : undefined,
       }}
     >
       <div
@@ -387,36 +493,8 @@ function PlanningFleetTimelineRowContent({
           onDoubleClick: editable ? () => onOpenCell(lane, day.date) : undefined,
           onDragEnter: editable ? (event: React.DragEvent) => { if (!event.dataTransfer.types.includes('application/x-seapilot-planning')) setDragOver(day.date); } : undefined,
           onDragLeave: editable ? () => setDragOver((current) => current === day.date ? null : current) : undefined,
-          onDragOver: editable ? (event: React.DragEvent) => {
-            if (event.dataTransfer.types.includes('application/x-seapilot-planning')) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = 'move';
-            if (draggingId !== null) {
-              const project = lane.projects.find((item) => item.id === draggingId);
-              if (project) setMovePreview({ startsOn: day.date, endsOn: addPlanningDays(day.date, daysBetween(project.startsOn, project.endsOn)) });
-            }
-            if (draggingVisitId !== null) {
-              const visit = visits.find((item) => item.id === draggingVisitId);
-              const range = visit ? planningVesselVisitDateRange(visit) : null;
-              if (range) setVisitMovePreview({ startsOn: day.date, endsOn: addPlanningDays(day.date, daysBetween(range.startsOn, range.endsOn)) });
-            }
-          } : undefined,
-          onDrop: editable ? (event: React.DragEvent) => {
-            event.preventDefault();
-            setDragOver(null);
-            setMovePreview(null);
-            setVisitMovePreview(null);
-            const visitId = Number(event.dataTransfer.getData('application/x-seapilot-technical-stop'));
-            if (Number.isSafeInteger(visitId) && visitId > 0) {
-              onMoveVisit(visitId, lane, day.date);
-              return;
-            }
-            const id = Number(event.dataTransfer.getData('application/x-seapilot-project'));
-            const sourceVesselId = Number(event.dataTransfer.getData('application/x-seapilot-project-vessel'));
-            if (Number.isSafeInteger(id) && id > 0) {
-              onMove(id, Number.isSafeInteger(sourceVesselId) && sourceVesselId > 0 ? sourceVesselId : null, lane, day.date);
-            }
-          } : undefined,
+          onDragOver: editable ? (event: React.DragEvent) => dragOverDate(event, day.date) : undefined,
+          onDrop: editable ? (event: React.DragEvent) => dropOnDate(event, day.date) : undefined,
           style: { gridColumn: index + 2, gridRow: backgroundGridRow },
           title: editable ? `Double-cliquer pour planifier un projet sur ${lane.label}` : 'Planning en lecture seule',
           type: 'button' as const,
@@ -431,8 +509,8 @@ function PlanningFleetTimelineRowContent({
             className="planning-move-preview is-project"
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: showMissionNames ? moveProjectStack + 1 : 1,
-              marginTop: showMissionNames ? undefined : (7 + moveProjectStack * 27) * 0.9,
+              gridRow: hasExpandedNames ? moveProjectStack + 1 : 1,
+              marginTop: hasExpandedNames ? undefined : (7 + moveProjectStack * 27) * 0.9,
             }}
           />
         ) : null;
@@ -445,26 +523,27 @@ function PlanningFleetTimelineRowContent({
             className="planning-move-preview is-technical-stop"
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: showMissionNames ? projectTracks + 1 : 1,
-              marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27) * 0.9,
+              gridRow: hasExpandedNames ? projectTracks + 1 : 1,
+              marginTop: hasExpandedNames ? undefined : (35 + additionalProjectStacks * 27) * 0.9,
             }}
           />
         ) : null;
       })() : null}
-      {lane.projects.map((project) => {
-        const preview = resizePreview?.id === project.id ? resizePreview : null;
-        const startsOn = preview?.startsOn || project.startsOn;
-        const endsOn = preview?.endsOn || project.endsOn;
+      {lane.projects.map((project, index) => {
+        const preview = resizePreview?.id === project.id;
+        const { startsOn, endsOn } = projectItems[index];
         const placement = dateGridPlacement(startsOn, endsOn, days);
         if (!placement) return null;
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
-        const expandedName = showMissionNames && startsOn === endsOn;
+        const titleWidth = titleWidths.get(project.id);
+        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length);
         return (
           <button
             aria-busy={isPending}
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}${expandedName ? ' is-mission-name-expanded' : ''}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}${title ? ' is-mission-name-expanded' : ''}`}
+            data-project-id={project.id}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
             key={project.id}
@@ -477,6 +556,14 @@ function PlanningFleetTimelineRowContent({
               onOpenContextMenu(project, { x: event.clientX, y: event.clientY });
             }}
             onDragEnd={() => { setDraggingId(null); setMovePreview(null); }}
+            onDragOver={editable && title ? (event) => {
+              const date = dateUnderBar(event.clientX);
+              if (date) dragOverDate(event, date);
+            } : undefined}
+            onDrop={editable && title ? (event) => {
+              const date = dateUnderBar(event.clientX);
+              if (date) dropOnDate(event, date);
+            } : undefined}
             onDragStart={(event) => {
               setDraggingId(project.id);
               event.dataTransfer.effectAllowed = 'move';
@@ -485,9 +572,10 @@ function PlanningFleetTimelineRowContent({
             }}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: showMissionNames ? stack + 1 : 1,
-              marginTop: !showMissionNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
-            }}
+              gridRow: hasExpandedNames ? stack + 1 : 1,
+              marginTop: !hasExpandedNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
+              ...(title ? { '--planning-mission-shift': `${title.shift}px` } : {}),
+            } as CSSProperties}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
@@ -532,8 +620,8 @@ function PlanningFleetTimelineRowContent({
             } : undefined}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: showMissionNames ? projectTracks + stack + 1 : 1,
-              marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9,
+              gridRow: hasExpandedNames ? projectTracks + stack + 1 : 1,
+              marginTop: hasExpandedNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9,
             }}
             title={`${planningVisitTypeLabel(visit.visitType)}\n${visit.provider.name}\n${dateLabel}${isTechnicalStop && editable ? '\nDéplacer ou étirer la période avec ses poignées.' : ''}`}
             type="button"
@@ -556,8 +644,8 @@ function PlanningFleetTimelineRowContent({
           title={`${label}\n${audit.siteName}\n${formatPlanningDate(startsOn)} · ${status}${audit.title ? `\n${audit.title}` : ''}`}
           onClick={() => onOpenAudit?.(audit)}
           style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`,
-            gridRow: showMissionNames ? projectTracks + stack + 1 : 1,
-            marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9 }}>
+            gridRow: hasExpandedNames ? projectTracks + stack + 1 : 1,
+            marginTop: hasExpandedNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9 }}>
           <CalendarCheck2 aria-hidden="true" size={12} /><span>{label}</span>
         </button>;
       })}
