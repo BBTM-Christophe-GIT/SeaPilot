@@ -56,6 +56,26 @@ describe('OrgPersonnelPanel', () => {
     expect(downloadOrgBlob).toHaveBeenCalledWith(expect.any(Blob), name);
     expect(buildOrgContactsPdf).not.toHaveBeenCalled();
   });
+  it('applies personnel exclusions to the visible list and both export formats after refresh', async () => {
+    const { rerender } = render(<OrgPersonnelPanel data={ORG_DEMO} kind="personnel" disabled={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Tout sélectionner' }));
+    const updated = { ...ORG_DEMO, personnelExcludedIds: [2], emergencyDefaultIds: [2] };
+    rerender(<OrgPersonnelPanel data={updated} kind="personnel" disabled={false} />);
+    expect(screen.queryByLabelText('Inclure Élodie MARTIN')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tout sélectionner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Exporter le personnel en Excel' }));
+    await waitFor(() => expect(downloadOrgBlob).toHaveBeenCalledTimes(1));
+    const [people] = vi.mocked(buildOrgPersonnelWorkbook).mock.calls[0];
+    expect(people).toHaveLength(ORG_DEMO.people.length - 1);
+    expect(people.map((person) => person.id)).not.toContain(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Exporter les deux listes' }));
+    await waitFor(() => expect(downloadOrgBlob).toHaveBeenCalledTimes(2));
+    const [documents] = vi.mocked(buildOrgContactsPdf).mock.calls[0];
+    expect(documents[0].people.map((person) => person.id)).not.toContain(2);
+    expect(documents[1].people.map((person) => person.id)).toEqual([2]);
+    rerender(<OrgPersonnelPanel data={updated} kind="emergency" disabled={false} />);
+    expect(screen.getByLabelText('Inclure Élodie MARTIN')).toBeChecked();
+  });
   it('keeps independent selections when changing sheets and after data refresh', async () => {
     const { rerender } = render(<OrgPersonnelPanel data={ORG_DEMO} kind="emergency" disabled={false} />);
     expect(screen.getByLabelText('Inclure Camille DUMONT')).toBeChecked();

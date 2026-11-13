@@ -4,10 +4,13 @@ do $$
 declare
   company bigint; other_company bigint; person bigint; departed bigint; future_person bigint;
   other_person bigint; ship bigint; actor uuid; role_name text; n integer:=0;
-  snapshot jsonb; saved bigint; link_id bigint; other_ship bigint; saved_watch_id bigint; foreign_watch bigint;
+  snapshot jsonb; snapshot_before_exclusion jsonb;
+  saved bigint; link_id bigint; other_ship bigint; saved_watch_id bigint; foreign_watch bigint;
 begin
   assert not has_table_privilege('authenticated','public.organigramme_emergency_defaults','TRUNCATE'), 'Authenticated profile can truncate defaults';
   assert not has_table_privilege('anon','public.organigramme_emergency_defaults','SELECT'), 'Anonymous table grant';
+  assert not has_table_privilege('authenticated','private.organigramme_personnel_exclusions','INSERT,UPDATE,DELETE,TRUNCATE'), 'Authenticated profile can change exclusions';
+  assert not has_table_privilege('anon','private.organigramme_personnel_exclusions','SELECT'), 'Anonymous exclusion table grant';
   select id into strict company from public.companies where code='bbtm';
   insert into public.companies(code,name) values('org-fixture-other','Organigramme fixture') returning id into other_company;
   foreach role_name in array array['admin','direction','armement','capitaine','marin'] loop
@@ -22,6 +25,11 @@ begin
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,departed_on,active) values(company,'Org','DEPARTED','Capitaine',current_date-365,current_date,false) returning id into departed;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(company,'Org','FUTURE','Capitaine',current_date+10,true) returning id into future_person;
   insert into public.people(company_id,first_name,last_name,function_label,hired_on,active) values(other_company,'Org','OTHER','Capitaine',current_date-365,true) returning id into other_person;
+  insert into private.organigramme_personnel_exclusions(company_id,person_id) values(other_company,other_person);
+  begin
+    insert into private.organigramme_personnel_exclusions(company_id,person_id) values(company,other_person);
+    raise exception 'Cross-company exclusion accepted';
+  exception when foreign_key_violation then null; end;
   insert into public.organigramme_emergency_defaults(company_id,person_ids) values(other_company,array[other_person]);
   insert into public.vessels(company_id,name,asset_kind,active) values(company,'ORG FIXTURE','vessel',true) returning id into ship;
   insert into public.vessels(company_id,name,asset_kind,active) values(other_company,'OTHER FIXTURE','vessel',true) returning id into other_ship;
@@ -38,6 +46,20 @@ begin
     if role_name in ('admin','direction') then
       perform public.save_organigramme_emergency_default(array[person,person]);
       snapshot:=public.organigramme_snapshot_v2(current_date);
+      if role_name='admin' then
+        assert snapshot->'personnelExcludedIds'='[]'::jsonb, 'Missing empty personnel exclusion list';
+        snapshot_before_exclusion:=snapshot;
+        execute 'reset role';
+        insert into private.organigramme_personnel_exclusions(company_id,person_id) values(company,person);
+        assert exists(select 1 from public.people where id=person and active), 'Exclusion deactivated the person';
+        assert exists(select 1 from public.planning_board_rows where person_id=person and vessel_id=ship), 'Exclusion changed the planning assignment';
+        execute 'set local role authenticated';
+        snapshot:=public.organigramme_snapshot_v2(current_date);
+        assert snapshot - 'personnelExcludedIds' = snapshot_before_exclusion - 'personnelExcludedIds', 'Exclusion changed existing snapshot fields';
+      end if;
+      assert snapshot->'personnelExcludedIds'=to_jsonb(array[person]), 'Personnel exclusions missing or leaked between companies';
+      assert exists(select 1 from private.organigramme_personnel_exclusions where company_id=company and person_id=person), 'Authorized profile cannot read exclusions';
+      assert not exists(select 1 from private.organigramme_personnel_exclusions where company_id=other_company), 'Foreign personnel exclusion leaked';
       assert snapshot->'emergencyDefaultIds'=to_jsonb(array[person]), 'Saved emergency default missing or duplicated';
       assert not exists(select 1 from public.organigramme_emergency_defaults where company_id=other_company), 'Foreign emergency default leaked';
       begin
@@ -145,6 +167,7 @@ begin
       assert exists(select 1 from jsonb_array_elements(snapshot->'people') p where (p->>'id')::bigint=departed), 'Historical employee missing';
     else
       assert (select count(*)=0 from public.organigramme_emergency_defaults), 'Emergency defaults leaked to forbidden profile';
+      assert not exists(select 1 from private.organigramme_personnel_exclusions), 'Personnel exclusion leaked to forbidden profile';
       begin
         perform public.save_organigramme_emergency_default(array[person]);
         raise exception 'Forbidden profile could save emergency default';
@@ -189,6 +212,7 @@ begin
   update public.role_module_permissions set is_visible=false where module_key='organigramme' and role_key='direction';
   perform set_config('request.jwt.claim.sub','a9570000-0000-4000-8000-000000000102',true);
   execute 'set local role authenticated';
+  assert not exists(select 1 from private.organigramme_personnel_exclusions), 'Revoked permission still allows exclusion reads';
   begin
     perform public.organigramme_snapshot_v2(current_date);
     raise exception 'Revoked permission still allows reads';
