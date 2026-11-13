@@ -264,10 +264,10 @@ function PlanningFleetTimelineRowContent({
       const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
       if (availableWidth > 0) {
         row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
-        // A reserved scrollbar gutter can leave part of the last column beyond the scrollable viewport.
-        const viewportEnd = calendar.getBoundingClientRect().left + calendar.clientLeft + calendar.clientWidth;
-        const scrollRemaining = calendar.scrollWidth - calendar.clientWidth - calendar.scrollLeft;
-        setCaptionEndInset(Math.max(0, Math.ceil(row.getBoundingClientRect().right - viewportEnd - scrollRemaining)));
+        // The browser can include both reserved scrollbar gutters in the final scroll position.
+        const calendarStyle = getComputedStyle(calendar);
+        const borderWidth = Number.parseFloat(calendarStyle.borderLeftWidth) + Number.parseFloat(calendarStyle.borderRightWidth);
+        setCaptionEndInset(Math.max(0, Math.ceil(calendar.offsetWidth - calendar.clientWidth - (borderWidth || 0))));
       }
       const widths = new Map<number, number>();
       for (const caption of captions) {
