@@ -126,9 +126,12 @@ export function buildPlanningProjectStack(
       ? { left: Math.min(left, title.left - 4), right: Math.max(right, title.right + 4), expanded: true }
       : { left, right, expanded: false };
     const overlaps = (item: typeof footprint) => footprint.left < item.right && footprint.right > item.left;
-    const lastExpandedConflict = stacks.findLastIndex((items) => items.some((item) => (
+    let lastExpandedConflict = stacks.length - 1;
+    while (lastExpandedConflict >= 0 && !stacks[lastExpandedConflict].some((item) => (
       (footprint.expanded || item.expanded) && overlaps(item)
-    )));
+    ))) {
+      lastExpandedConflict -= 1;
+    }
     const reusableStack = stacks.findIndex((items, index) => index > lastExpandedConflict && !items.some(overlaps));
     const stack = reusableStack === -1 ? stacks.length : reusableStack;
     if (!stacks[stack]) stacks.push([]);
