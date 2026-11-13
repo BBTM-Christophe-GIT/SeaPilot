@@ -264,6 +264,19 @@ describe('Operation consumption from the register', () => {
     expect(within(lowMeter).getByText('3 m³')).toBeVisible();
   });
 
+  it.each(['marin', 'capitaine'] as const)('shows the SUROIT sludge reading independently of fuel for a %s profile', async role => {
+    mount([role], [], undefined, ['SUROIT', 'GOURY'], () => [
+      { ...stock, vesselName: 'SUROIT', fuelLiters: 8000, canSetBaseline: role === 'capitaine',
+        sludgeTank: { capacityLiters: 27740, liters: 21637.2 } },
+      { ...stock, vesselId: 13, vesselName: 'GOURY', canSetBaseline: false },
+    ]);
+    const meter = await screen.findByRole('meter', { name: 'Sludges' });
+    expect(meter).toHaveAttribute('data-level', 'critical');
+    expect(meter).toHaveAttribute('aria-valuetext', expect.stringMatching(/78\s%.*21,637 m³.*27,74 m³.*Niveau critique/));
+    expect(within(meter.closest('li')!).getByText('8 m³')).toBeVisible();
+    expect(within(meter.closest('li')!).getByRole('button', { name: 'Détails carburant · SUROIT' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('opens annual history for GOURY and shows the cost source of the selected year', async () => {
     const currentYear = Number(today.slice(0, 4));
     const readHistory = vi.fn((_id: number, year: number) => ({ years: [currentYear, currentYear - 1],
@@ -358,7 +371,9 @@ describe('Operation consumption from the register', () => {
 
   it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {
     const operations = [signedGo('A'), signedGo('B')];
-    const saved: SeaOperationConsumption = { ...initialConsumption('B'), record: savedReading,
+    const saved: SeaOperationConsumption = { ...initialConsumption('B'),
+      record: { ...savedReading, consumedFuelLiters: 1000, consumedFuelUnit: 'liters', gaugeUnit: null,
+        departureGauge: null, arrivalGauge: null, departureLiters: null, arrivalLiters: null },
       reference: { ...initialConsumption('B').reference, pricePerLiter: 1.2 } };
     const reload = deferred<{ data: null; error: { message: string } }>();
     const afterSaveRead = vi.fn(() => reload.promise);
@@ -373,8 +388,8 @@ describe('Operation consumption from the register', () => {
       return { data: initialConsumption(String(args.p_id)), error: null };
     });
     mount(['capitaine'], operations, rpc, ['GOURY'], () => [didSave
-      ? { ...stock, fuelLiters: 6800, measuredAt: '2026-11-06T09:00:00Z', source: 'operation', baselineDate: '2026-11-06',
-        baselineFuelLiters: 7000, deductedFuelLiters: 200, refuelLiters: 1800,
+      ? { ...stock, fuelLiters: 6800, measuredAt: '2026-11-06T09:00:00Z', source: 'baseline', baselineDate: '2026-11-06',
+        baselineFuelLiters: 7000, deductedFuelLiters: 200, refuelLiters: null,
         navigationProfiles: { normal: { speedKnots: 10, litersPerNm: 50, sampleCount: 1 }, towing: null } }
       : stock]);
     await select('A');
@@ -384,15 +399,15 @@ describe('Operation consumption from the register', () => {
     await screen.findByLabelText('Heures');
     const form = within(screen.getByRole('dialog', { name: 'Consommation de carburant' }));
     for (const [label, value] of [
-      ['Heures', '2'], ['Vitesse moyenne (nœuds)', '10'], ['Jauge au départ après avitaillement (%)', '80'],
-      ['Jauge à l’arrivée (%)', '70'], ['Prix du fuel HT en €/L', '1.2'], ['Avitaillement avant départ (L, facultatif)', '1800'],
+      ['Heures', '2'], ['Vitesse moyenne (nœuds)', '10'], ['Quantité de fuel consommée (GE + MPx)', '1000'],
+      ['Prix du fuel HT en €/L', '1.2'], ['Avitaillement avant départ (L, facultatif)', '1800'],
     ]) {
       fireEvent.change(form.getByLabelText(label), { target: { value } });
     }
     fireEvent.click(form.getByRole('button', { name: 'Enregistrer la consommation' }));
 
     const dashboard = within(await screen.findByRole('dialog', { name: 'Bilan de consommation' }));
-    expect(dashboard.getByRole('region', { name: 'Soutes au départ et à l’arrivée' })).toBeVisible();
+    expect(dashboard.queryByRole('region', { name: 'Soutes au départ et à l’arrivée' })).not.toBeInTheDocument();
     fireEvent.click(dashboard.getByRole('button', { name: 'Fermer le bilan' }));
     const metrics = await screen.findByRole('region', { name: 'Carburant du relevé Conso' });
     expect(screen.getByRole('button', { name: /^Projet B/ })).toHaveAttribute('aria-pressed', 'true');
@@ -404,10 +419,11 @@ describe('Operation consumption from the register', () => {
     expect(await fleetFuel().findByText('6,8 m³')).toBeVisible();
     fireEvent.click(fleetFuel().getByRole('button', { name: 'Détails carburant · GOURY' }));
     expect(fleetFuel().getByText('13,6 h · 136 NM')).toBeVisible();
-    expect(fleetFuel().getByText(/Avitaillement Conso/)).toBeVisible();
+    expect(fleetFuel().queryByText(/Avitaillement Conso/)).not.toBeInTheDocument();
     expect(fleetFuel().getByText('0,2 m³ déduits via DPR')).toBeVisible();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_consumption', { p_id: 'B', p_expected_version: null,
-      p_inputs: expect.objectContaining({ durationMinutes: 120, pricePerLiter: 1.2, refuelLiters: 1800, completed: true }) });
+      p_inputs: expect.objectContaining({ durationMinutes: 120, consumedFuelLiters: 1000, consumedFuelUnit: 'liters',
+        pricePerLiter: 1.2, refuelLiters: 1800, completed: true }) });
     await waitFor(() => expect(afterSaveRead).toHaveBeenCalled());
     await act(async () => reload.resolve({ data: null, error: { message: 'Lecture momentanément indisponible' } }));
     expect(metrics).toBeVisible();

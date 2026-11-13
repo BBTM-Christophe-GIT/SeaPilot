@@ -3,8 +3,9 @@
 Dans le registre **Opération en mer**, **Conso** ouvre le relevé de la fiche
 signée. Après une navigation terminée, le capitaine signataire et les profils
 bureau autorisés peuvent renseigner les heures et minutes, la vitesse moyenne
-en nœuds, la jauge de départ après ravitaillement, la jauge d’arrivée, le
-ravitaillement avant départ et le prix du fuel HT en €/L. Le relevé
+en nœuds, la **Quantité de fuel consommée (GE + MPx)**, le ravitaillement
+avant départ et le prix du fuel HT en €/L. La quantité se saisit en litres par
+défaut ou en m³. Le relevé
 est enregistré séparément des informations signées. Les comptes autorisés à
 consulter la fiche accèdent à son récapitulatif.
 
@@ -27,6 +28,12 @@ s’affichent en m³ au-delà de 1 000 L et en litres jusqu’à 1 000 L inclus.
 La carte affiche aussi la date, l’heure et les jauges par cuve du relevé Soutes
 le plus récent par heure de mesure. Les valeurs de ce relevé restent distinctes
 du stock courant recalculé avec les DPR et les avitaillements.
+
+La carte du **SUROIT** affiche la jauge **Sludges** d’après le dernier niveau
+de la cuve mesuré dans **Soutes**. La capacité vient de la fiche du navire.
+Le niveau est vert sous 60 %, orange de 60 % à moins de 75 %, puis rouge
+avec une pastille d’alerte dès 75 %. Un relevé carburant plus récent laisse
+le dernier niveau Sludges disponible.
 
 Dans **Navires → Capacités → Carburant**, renseigner le nombre de cuves
 principales, leurs noms et leurs volumes en litres. Deux cuves sont nommées par
@@ -66,12 +73,15 @@ correction d’un relevé antérieur conserve la référence la plus récente. U
 DPR renseigné est pris par navire et par jour. En cas de doublon, un DPR
 SeaPilot prime sur un import historique, puis la validation la plus récente prévaut.
 
-Si un relevé Conso sur une fiche GO signée enregistre un avitaillement positif,
-le stock calculé à l’arrivée devient la référence lorsqu’il est plus récent.
+Si un relevé historique Conso sur une fiche GO signée associe un avitaillement
+positif à une mesure d’arrivée, le stock à l’arrivée devient la référence
+lorsqu’il est plus récent.
 Le décompte reprend le lendemain de l’arrivée, dont la jauge intègre déjà le
 carburant embarqué et consommé en route. L’arrivée réelle, la fin GPX ou la
 date de mission déterminent l’ordre des mesures. En l’absence de référence
 datée ou d’avitaillement, la dernière arrivée Conso connue fournit le niveau.
+Les nouveaux relevés Conso enregistrent le volume consommé et l’avitaillement
+éventuel. Les nouveaux niveaux de stock se relèvent dans **Soutes**.
 
 L’autonomie estimée affiche deux cadrans, **Vitesse moyenne** et **Vitesse
 moyenne en remorque**. Chaque vitesse divise la distance totale en milles
@@ -129,14 +139,9 @@ carburant.
 
 ## Saisie et bilan d’un relevé
 
-Sur le LANDEMER, Conso demande les pourcentages Bâbord et Tribord au départ
-après avitaillement et à l’arrivée. Chaque table convertit la jauge en volume
-par interpolation entre les points fournis, jusqu’à 12 357 L par cuve. Les
-volumes sont additionnés pour obtenir les soutes totales. Leur différence
-donne la consommation. Les anciens relevés à jauge globale restent consultables
-et peuvent être complétés par des mesures séparées si elles sont disponibles.
-
-La saisie regroupe le **Trajet**, les **Jauges**, puis **Avitaillement et prix**.
+La saisie regroupe le **Trajet**, le **Carburant consommé**, puis
+**Avitaillement et prix**. Un m³ correspond à 1 000 L. Les calculs et l’export
+utilisent le volume en litres.
 Le bouton **Enregistrer la consommation** valide directement le relevé lorsque
 les champs requis sont valides.
 Une trace GPX horodatée peut préremplir la durée, la vitesse moyenne et l’arrivée
@@ -146,11 +151,12 @@ et le profil de vitesse réduit sont enregistrés. La durée couvre la période
 enregistrée, arrêts compris. Le calcul de distance additionne les segments
 valables et laisse les coupures de plus de cinq minutes hors de la distance.
 Revenir à la saisie manuelle permet d’ajuster les paramètres si la trace ne
-correspond pas à la mission. Les jauges restent saisies à bord.
+correspond pas à la mission.
 
 Après l’enregistrement, la fenêtre **Bilan de consommation** affiche les
-indicateurs, les volumes comparés des soutes et, pour les relevés GPS, le profil
-de vitesse avec ses coupures. La carte reprend le relevé confirmé par le serveur.
+indicateurs et, pour les relevés GPS, le profil de vitesse avec ses coupures.
+Les relevés historiques conservent leurs jauges et les volumes comparés des
+soutes. La carte reprend le relevé confirmé par le serveur.
 Le bouton **Consos Excel** exporte les relevés correspondant aux filtres du
 registre, avec la provenance de la distance. Chaque navire possède son onglet.
 Les archives Suroît et Rozel sont intégrées à l’onglet de leur navire et restent
@@ -162,15 +168,15 @@ L’archive contient 854 relevés datés et 11 points de courbe. Les valeurs des
 conservées, y compris leurs anomalies historiques, et les lignes de préparation
 sans date sont écartées.
 
-La soute de départ est estimée à partir de la jauge. La consommation totale
-correspond à l’écart entre les soutes de départ et d’arrivée. Le ravitaillement
-d’avant départ est déjà compris dans la jauge de départ. Les litres par heure
-utilisent la durée du relevé. Les litres par mille utilisent la distance de la
-trace ou, en saisie manuelle, le produit de la durée et de la vitesse moyenne. Le montant en euros multiplie les litres
-consommés par le prix du relevé. Un trajet à vitesse nulle conserve les
-litres par heure et laisse le taux par mille indisponible.
+La consommation totale reprend le volume saisi. Les litres par heure divisent
+ce volume par la durée. Les litres par mille le divisent par la distance de
+la trace ou par la distance obtenue en multipliant la durée par la vitesse
+moyenne. Le coût HT multiplie le volume par le prix saisi en €/L. À distance
+nulle, le taux horaire reste disponible et le taux par mille reste vide.
 
-Le Rozel utilise la courbe du classeur. Le Suroît utilise 34,3 L par
+Pour les anciens relevés à jauge, la consommation provenait de l’écart entre
+le volume de départ et celui d’arrivée. Le Rozel utilise la courbe du classeur.
+Le Suroît utilise 34,3 L par
 centimètre dans son mode de saisie natif. Une jauge linéaire en pourcentage
 correspond à la part du volume nominal des soutes renseigné dans Navires.
 Une capacité absente ou une conversion incohérente laisse les volumes

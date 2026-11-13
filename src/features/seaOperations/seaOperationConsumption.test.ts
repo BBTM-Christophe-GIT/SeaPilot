@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calculateSeaOperationConsumption, landemerTankVolumeLiters, type SeaOperationConsumptionInputs } from './seaOperationConsumption';
+import {
+  calculateSeaOperationConsumption, consumedFuelLitersFromQuantity, isSeaOperationConsumptionRecord,
+  landemerTankVolumeLiters, type SeaOperationConsumptionInputs,
+} from './seaOperationConsumption';
 
 const inputs: SeaOperationConsumptionInputs = {
   durationMinutes: 1200,
@@ -14,6 +17,49 @@ const inputs: SeaOperationConsumptionInputs = {
 };
 
 describe('sea operation consumption preview', () => {
+  it('calculates fuel metrics directly without a gauge or capacity', () => {
+    const calibration = { kind: 'unavailable', defaultGaugeUnit: 'percent', nominalCapacityLiters: null } as const;
+    const direct = {
+      durationMinutes: 60, averageSpeedKnots: 20, consumedFuelLiters: 400, consumedFuelUnit: 'liters',
+      refuelLiters: 250, pricePerLiter: 1.2, actualArrival: null, completed: true,
+    } satisfies SeaOperationConsumptionInputs;
+    expect(calculateSeaOperationConsumption(direct, calibration)).toEqual({
+      distanceNm: 20, departureLiters: null, arrivalLiters: null, consumedLiters: 400,
+      litersPerHour: 400, litersPerNm: 20, costEuros: 480,
+    });
+    expect(calculateSeaOperationConsumption({ ...inputs, consumedFuelLiters: 0 }, calibration).consumedLiters).toBe(0);
+    const result = calculateSeaOperationConsumption({ ...inputs, consumedFuelLiters: 0 }, {
+      kind: 'nominal', defaultGaugeUnit: 'percent', nominalCapacityLiters: 10_000,
+    });
+    expect(result).toMatchObject({ departureLiters: 7800, consumedLiters: 0 });
+    expect(result.arrivalLiters).toBeCloseTo(6900);
+    expect(calculateSeaOperationConsumption({ ...direct, durationMinutes: 1, averageSpeedKnots: .02 }, calibration))
+      .toMatchObject({ distanceNm: 0, litersPerHour: 24_000, litersPerNm: null });
+  });
+
+  it('converts cubic metres with milliliter precision and rejects out-of-range quantities', () => {
+    expect(consumedFuelLitersFromQuantity(2.100456, 'm3')).toBe(2100.456);
+    expect(consumedFuelLitersFromQuantity(.000001, 'm3')).toBe(.001);
+    expect(consumedFuelLitersFromQuantity(10_000, 'm3')).toBe(10_000_000);
+    expect(consumedFuelLitersFromQuantity(10_000.000001, 'm3')).toBeNull();
+    expect(consumedFuelLitersFromQuantity(2.0000001, 'm3')).toBeNull();
+    expect(consumedFuelLitersFromQuantity(2.0001, 'liters')).toBeNull();
+    expect(consumedFuelLitersFromQuantity(-1, 'liters')).toBeNull();
+  });
+
+  it('validates direct records and continues to read legacy gauge records', () => {
+    const legacy = { ...inputs, version: 1, updatedAt: '2026-11-01T00:00:00Z', includedInReference: true,
+      distanceNm: 70, departureLiters: 7800, arrivalLiters: 6900, consumedLiters: 900,
+      litersPerHour: 45, litersPerNm: 12.857, costEuros: 773.1 };
+    const direct = { ...legacy, gaugeUnit: null, departureGauge: null, arrivalGauge: null,
+      departureLiters: null, arrivalLiters: null, consumedFuelLiters: 0, consumedFuelUnit: 'm3', consumedLiters: 0 };
+    expect(isSeaOperationConsumptionRecord(legacy)).toBe(true);
+    expect(isSeaOperationConsumptionRecord(direct)).toBe(true);
+    expect(isSeaOperationConsumptionRecord({ ...direct, consumedFuelUnit: 'cm' })).toBe(false);
+    expect(isSeaOperationConsumptionRecord({ ...direct, consumedFuelLiters: null })).toBe(false);
+    expect(isSeaOperationConsumptionRecord({ ...direct, consumedFuelLiters: -3 })).toBe(false);
+  });
+
   it('reconciles the Rozel workbook without adding the pre-departure refill twice', () => {
     const result = calculateSeaOperationConsumption(inputs, {
       kind: 'rozel', defaultGaugeUnit: 'percent', nominalCapacityLiters: 18000,

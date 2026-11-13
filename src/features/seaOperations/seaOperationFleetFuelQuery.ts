@@ -16,9 +16,15 @@ export interface SeaOperationFleetFuelLevel {
   canSetBaseline: boolean;
   assignedToday?: boolean;
   latestTankReading?: FleetFuelLatestTankReading | null;
+  sludgeTank?: FleetSludgeTank | null;
   rateLitersPerHour: number | null;
   rateSampleCount: number;
   navigationProfiles?: FleetFuelNavigationProfiles;
+}
+
+export interface FleetSludgeTank {
+  capacityLiters: number;
+  liters: number | null;
 }
 
 export interface FleetFuelNavigationProfile {
@@ -115,12 +121,22 @@ function parseNavigationProfiles(value: unknown): FleetFuelNavigationProfiles {
   return { normal: navigationProfile(normal), towing: navigationProfile(towing) };
 }
 
+function parseSludgeTank(value: unknown): FleetSludgeTank | null {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object') throw new Error(invalidResponse);
+  const { capacityLiters, liters } = value as Record<string, unknown>;
+  if (!quantity(capacityLiters) || capacityLiters === null || capacityLiters === 0 || !quantity(liters)) {
+    throw new Error(invalidResponse);
+  }
+  return { capacityLiters, liters };
+}
+
 function fuelLevel(value: unknown): SeaOperationFleetFuelLevel {
   if (!value || typeof value !== 'object') throw new Error(invalidResponse);
   const { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters,
     measuredAt, source, baselineDate = null, baselineFuelLiters = null, deductedFuelLiters = null, refuelLiters = null,
     canSetBaseline, assignedToday = false, latestTankReading = null, rateLitersPerHour, rateSampleCount,
-    navigationProfiles } = value as Record<string, unknown>;
+    navigationProfiles, sludgeTank = null } = value as Record<string, unknown>;
   if (typeof vesselId !== 'number' || !Number.isSafeInteger(vesselId) || vesselId <= 0 || typeof vesselName !== 'string'
     || lengthOverall !== null && typeof lengthOverall !== 'string' || !quantity(maxSpeedKnots) || !quantity(capacityLiters)
     || !quantity(fuelLiters) || measuredAt !== null && (typeof measuredAt !== 'string' || !Number.isFinite(Date.parse(measuredAt)))
@@ -133,7 +149,8 @@ function fuelLevel(value: unknown): SeaOperationFleetFuelLevel {
   const stockSource = source === 'operation' && refuelLiters !== null && refuelLiters > 0 ? 'refuel' : source;
   return { vesselId, vesselName, lengthOverall, maxSpeedKnots, capacityLiters, fuelLiters, measuredAt, source: stockSource,
     baselineDate, baselineFuelLiters, deductedFuelLiters, refuelLiters,
-    canSetBaseline, assignedToday, latestTankReading: parseLatestTankReading(latestTankReading), rateLitersPerHour, rateSampleCount,
+    canSetBaseline, assignedToday, latestTankReading: parseLatestTankReading(latestTankReading), sludgeTank: parseSludgeTank(sludgeTank),
+    rateLitersPerHour, rateSampleCount,
     ...(navigationProfiles === undefined ? {} : { navigationProfiles: parseNavigationProfiles(navigationProfiles) }) };
 }
 

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BarChart3, ChevronDown, ClipboardList, Fuel, Gauge, Ship, TriangleAlert } from 'lucide-react';
+import { BarChart3, ChevronDown, ClipboardList, Droplets, Fuel, Gauge, Ship, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { compareFleetAssets, fleetIllustration, normalizeFleetName } from '../fleet/fleetDisplay';
 import { fleetConsumptionScale, SeaOperationVesselConsumption } from './SeaOperationFleetConsumption';
@@ -9,7 +9,8 @@ import { SeaOperationSpeedDial } from './SeaOperationSpeedDial';
 import { SeaOperationStockGauge } from './SeaOperationStockGauge';
 import {
   fetchSeaOperationFleetFuel, fetchSeaOperationFleetFuelHistory,
-  type FleetFuelNavigationProfile, type SeaOperationFleetFuelCostSource, type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
+  type FleetFuelNavigationProfile, type FleetSludgeTank, type SeaOperationFleetFuelCostSource,
+  type SeaOperationFleetFuelLevel, type SeaOperationFleetFuelMonth,
 } from './seaOperationFleetFuelQuery';
 import { formatFuelVolume, fuelVolumeUnit } from './seaOperationFuelVolume';
 import { seaOperationToday } from './seaOperationModel';
@@ -153,6 +154,34 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
     costSource={current?.costSource} lastEntryDate={current?.lastEntryDate} loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
 }
 
+function SludgeTankGauge({ capacityLiters, liters }: FleetSludgeTank) {
+  const fill = liters === null ? null : liters / capacityLiters;
+  const position = fill === null ? undefined : Math.min(fill * 100, 100);
+  const level = fill === null ? 'unknown' : fill >= .75 ? 'critical' : fill >= .6 ? 'warning' : 'normal';
+  const status = level === 'critical' ? 'Niveau critique' : level === 'warning' ? 'Niveau élevé' : 'Niveau normal';
+  const volumeUnit = fuelVolumeUnit(capacityLiters);
+  const volume = liters === null ? null : formatFuelVolume(liters, volumeUnit);
+  const capacity = formatFuelVolume(capacityLiters, volumeUnit);
+  const percentage = fill === null ? null : percent.format(Math.floor((fill + Number.EPSILON) * 1000) / 1000);
+
+  return <div className="so-fuel-sludge-gauge" data-level={level} role={fill === null ? undefined : 'meter'}
+    aria-label={fill === null ? undefined : 'Sludges'} aria-valuemin={fill === null ? undefined : 0}
+    aria-valuemax={fill === null ? undefined : 100} aria-valuenow={position}
+    aria-valuetext={fill === null ? undefined : `${percentage} · ${volume} sur ${capacity} · ${status}`}>
+    <div className="so-fuel-sludge-values">
+      <span className="so-fuel-sludge-label"><Droplets size={14} aria-hidden="true" />Sludges</span>
+      <strong>
+        {level === 'critical' && <span className="so-fuel-sludge-alert" aria-hidden="true"><TriangleAlert size={12} /></span>}
+        {percentage ?? 'Non renseigné'}
+      </strong>
+    </div>
+    <div className="so-fuel-sludge-track" aria-hidden="true">
+      {position !== undefined && <span style={{ width: `${position}%` }} />}
+    </div>
+    {volume !== null && <small>{volume} / {capacity}</small>}
+  </div>;
+}
+
 function FuelCard({ vessel, detailId, expanded, onToggle }: {
   vessel: SeaOperationFleetFuelLevel; detailId: string; expanded: boolean; onToggle: () => void;
 }) {
@@ -178,6 +207,7 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
       {fill !== null && <span>{percent.format(fill)}</span>}
       {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
     </div>
+    {vessel.sludgeTank && <SludgeTankGauge {...vessel.sludgeTank} />}
     <button type="button" className="sp-button sp-button--secondary so-secondary so-fuel-card-toggle"
       aria-label={`Détails carburant · ${vesselName}`} title={`Détails carburant · ${vesselName}`}
       aria-expanded={expanded} aria-controls={detailId} onClick={onToggle}><ChevronDown size={16} aria-hidden="true" /></button>

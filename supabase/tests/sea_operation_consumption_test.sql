@@ -1374,5 +1374,96 @@ select is((pg_temp.fuel_row('native_cm')#>>'{navigationProfiles,towing,sampleCou
 select is(round((pg_temp.fuel_row('native_cm')#>>'{navigationProfiles,towing,speedKnots}')::numeric, 3), 8::numeric,
   'archive and distinct GPX distances and durations combine in the same weighted regime');
 reset role;
+
+-- Use existing actual profile fixtures and an isolated new signed GO voyage.
+insert into conso_fixture(key, id, vessel_id, draft)
+select 'direct_fuel', gen_random_uuid(), vessel_id, draft
+from conso_fixture where key = 'missing_calibration';
+insert into public.sea_operations(id, company_id, vessel_id, status, draft, created_by, created_by_name, updated_by, updated_by_name,
+  signed_by, signed_by_name, signed_at, captain_name)
+select fixture.id, base.company_id, fixture.vessel_id, base.status, fixture.draft, base.created_by, base.created_by_name,
+  base.updated_by, base.updated_by_name, base.signed_by, base.signed_by_name, base.signed_at, base.captain_name
+from conso_fixture fixture cross join public.sea_operations base
+where fixture.key = 'direct_fuel' and base.id = pg_temp.conso_id('missing_calibration');
+
+create function pg_temp.direct_conso_input() returns jsonb language sql stable as $$
+  select (pg_temp.conso_input() - array['gaugeUnit', 'departureGauge', 'arrivalGauge'])
+    || jsonb_build_object('consumedFuelLiters', 1260.125, 'consumedFuelUnit', 'm3',
+      'refuelLiters', 1000, 'pricePerLiter', 1.25, 'actualArrival', to_char(pg_temp.fuel_day(0), 'YYYY-MM-DD"T00:00"'));
+$$;
+
+set local role authenticated;
+select pg_temp.conso_actor(2);
+select public.sea_operation_save_fuel_baseline(pg_temp.fuel_vessel('direct_fuel'), 'liters', 1250, pg_temp.fuel_day(-1));
+select pg_temp.conso_actor(3);
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), null,
+  pg_temp.direct_conso_input() || '{"consumedFuelLiters":-1}')$$, '22023', null, 'direct volumes cannot be negative');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), null,
+  pg_temp.direct_conso_input() || '{"consumedFuelLiters":10000000.001}')$$, '22023', null, 'direct volume has a finite upper limit');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), null,
+  pg_temp.direct_conso_input() || '{"consumedFuelLiters":1.0001}')$$, '22023', null, 'direct volume keeps milliliter precision');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), null,
+  pg_temp.direct_conso_input() || '{"consumedFuelUnit":"percent"}')$$, '22023', null, 'direct volume requires a supported display unit');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), null,
+  pg_temp.direct_conso_input() - 'consumedFuelLiters')$$, '22023', null, 'a display unit requires a direct volume');
+
+update conso_fixture set response = public.sea_operation_save_consumption(id, null, pg_temp.direct_conso_input())
+where key = 'direct_fuel';
+select is(response#>>'{record,consumedFuelUnit}', 'm3', 'a signing captain can store a direct volume and retain m³ for reopening')
+from conso_fixture where key = 'direct_fuel';
+select is(array[(response#>>'{record,consumedFuelLiters}')::numeric, (response#>>'{record,consumedLiters}')::numeric,
+  (response#>>'{record,litersPerHour}')::numeric, (response#>>'{record,litersPerNm}')::numeric, (response#>>'{record,costEuros}')::numeric],
+  array[1260.125, 1260.125, 630.063, 78.758, 1575.16]::numeric[], 'direct volume drives all derived consumption metrics')
+from conso_fixture where key = 'direct_fuel';
+select ok(response->'record' @> '{"gaugeUnit":null,"departureGauge":null,"arrivalGauge":null,"departureLiters":null,"arrivalLiters":null}',
+  'direct-only recording needs no calibration and creates no synthetic measurements')
+from conso_fixture where key = 'direct_fuel';
+select is(public.sea_operation_consumption_export(array[pg_temp.conso_id('direct_fuel')])->0->'record',
+  (select response->'record' from conso_fixture where key = 'direct_fuel'), 'direct volume flows through the scoped export');
+select ok(public.sea_operation_register_consumption(array[pg_temp.conso_id('direct_fuel')], false)->'recordedOperationIds'
+  @> jsonb_build_array(pg_temp.conso_id('direct_fuel')), 'the register recognizes a completed direct reading');
+select is((public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), 1,
+  pg_temp.conso_input() || '{"refuelLiters":1000,"pricePerLiter":1.25}' || jsonb_build_object('actualArrival', pg_temp.direct_conso_input()->'actualArrival'))
+  #>>'{record,consumedLiters}')::numeric, 1260.125::numeric, 'older saves without direct fields retain the previously entered volume');
+
+select pg_temp.conso_actor(2);
+select is((pg_temp.fuel_row('direct_fuel')->>'fuelLiters')::numeric, 1250::numeric,
+  'direct refuelling without measured arrival preserves the existing Soutes reference');
+select is(pg_temp.fuel_row('direct_fuel')->>'source', 'baseline',
+  'no fictitious refuel reference replaces the dated sounding');
+select is(round((rate->>'otherLitersPerNm')::numeric, 3), round((100 + 1260.125) / (40 + 16), 3),
+  'the fleet consumption average includes a direct volume without calibration')
+from jsonb_array_elements(public.sea_operation_register_consumption('{}', true)->'vesselAverages') rate
+where (rate->>'vesselId')::bigint = pg_temp.fuel_vessel('direct_fuel');
+
+select pg_temp.conso_actor(3);
+update conso_fixture set response = public.sea_operation_save_consumption(id, 3, pg_temp.direct_conso_input()
+  || jsonb_build_object('actualArrival', response#>'{record,actualArrival}', 'refuelLiters', response#>'{record,refuelLiters}'))
+where key = 'landemer';
+select is(response#>'{record,tankGauges}', pg_temp.landemer_inputs()->'tankGauges',
+  'editing an earlier Conso with direct liters retains original paired gauge readings')
+from conso_fixture where key = 'landemer';
+select is(array[(response#>>'{record,departureLiters}')::numeric, (response#>>'{record,arrivalLiters}')::numeric,
+  (response#>>'{record,consumedLiters}')::numeric], array[18219, 8779, 1260.125]::numeric[],
+  'direct fuel replaces the calculated consumption while preserving historical measured volumes')
+from conso_fixture where key = 'landemer';
+
+select pg_temp.conso_actor(5);
+select is((public.sea_operation_consumption(pg_temp.conso_id('direct_fuel'))#>>'{record,consumedLiters}')::numeric,
+  1260.125::numeric, 'a real Marin can consult a direct reading');
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), 2, pg_temp.direct_conso_input())$$,
+  '42501', null, 'a real Marin cannot modify a direct reading');
+select pg_temp.conso_actor(6);
+select throws_ok($$select public.sea_operation_save_consumption(pg_temp.conso_id('direct_fuel'), 2, pg_temp.direct_conso_input())$$,
+  '42501', null, 'direct volumes retain tenant isolation');
+select pg_temp.conso_actor(3);
+update conso_fixture set response = public.sea_operation_save_consumption(id, 2,
+  (pg_temp.direct_conso_input() - 'consumedFuelUnit') || '{"consumedFuelLiters":0}')
+where key = 'direct_fuel';
+select ok(response->'record' @> '{"consumedLiters":0,"consumedFuelUnit":"liters","litersPerHour":0,"litersPerNm":0,"costEuros":0}',
+  'zero is a complete measurement, and omitted units default to liters')
+from conso_fixture where key = 'direct_fuel';
+reset role;
+
 select * from finish();
 rollback;

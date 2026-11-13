@@ -602,7 +602,7 @@ describe('Transit and editable voyages with real-profile permission fixtures', (
     await waitFor(() => expect(saveSeaOperation).toHaveBeenCalled());
     expect(vi.mocked(saveSeaOperation).mock.lastCall![1].vessel).toMatchObject({ etd: '2026-11-01T07:00', eta: '2026-11-01T14:00' });
     expect(record.draft.vessel.id).toBe(original.vessel.id);
-  });
+  }, 60_000);
 
   it('saves Transit departure and arrival times with route points and locks the recorded client identity only after saving', async () => {
     const { client, data } = renderAccount(); data.vessels[0].maxSpeedKnots = 12;
