@@ -131,6 +131,7 @@ function buildPlanningVisitStack(
 
 function PlanningFleetTimelineRowContent({
   projectsOnly = false,
+  showMissionNames = false,
   referenceDate,
   lane,
   days,
@@ -161,6 +162,7 @@ function PlanningFleetTimelineRowContent({
   onToggle,
 }: TimelineBaseProps & {
   projectsOnly?: boolean;
+  showMissionNames?: boolean;
   referenceDate?: string;
   lane: PlanningFleetLane;
   dayWidth: number;
@@ -234,6 +236,17 @@ function PlanningFleetTimelineRowContent({
   const visitStack = buildPlanningVisitStack([...visitTimelineItems, ...auditTimelineItems], days);
   const maxVisitStack = visitStack.count;
   const additionalProjectStacks = Math.max(0, projectStack.count - 1);
+  const moveProjectStack = movePreview && draggingId !== null
+    ? buildPlanningProjectStack(lane.projects.map((project) => ({
+        id: project.id,
+        startsOn: project.id === draggingId ? movePreview.startsOn : project.startsOn,
+        endsOn: project.id === draggingId ? movePreview.endsOn : project.endsOn,
+      })), days).stackById.get(draggingId) ?? 0
+    : 0;
+  const projectTracks = Math.max(1, projectStack.count, moveProjectStack + 1);
+  const visitTracks = Math.max(maxVisitStack, visitMovePreview ? 1 : 0);
+  const timelineTracks = projectTracks + visitTracks;
+  const backgroundGridRow = showMissionNames ? '1 / -1' : 1;
   const rowMinHeight = projectsOnly ? 38 + additionalProjectStacks * 27 : maxVisitStack
     ? 76 + additionalProjectStacks * 27 + maxVisitStack * 25
     : projectStack.count > 1
@@ -331,10 +344,13 @@ function PlanningFleetTimelineRowContent({
   };
   return (
     <div
-      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}`}
+      className={`planning-calendar-grid planning-timeline-row is-fleet${projectsOnly ? ' is-projects-only' : ''}${maxVisitStack ? ' has-visits' : ''}${projectStack.count > 1 ? ' has-project-stacks' : ''}${showMissionNames ? ' has-expanded-mission-names' : ''}`}
       data-project-stack-count={projectStack.count}
       data-vessel={lane.vessel}
-      style={rowMinHeight ? { minHeight: rowMinHeight * 0.9 } : undefined}
+      style={{
+        minHeight: rowMinHeight ? rowMinHeight * 0.9 : undefined,
+        gridTemplateRows: showMissionNames ? `repeat(${timelineTracks}, auto)` : undefined,
+      }}
     >
       <div
         className={`planning-row-label planning-tree-row is-vessel${personDropOver || touchPersonOver ? ' is-person-drop-target' : ''}`}
@@ -344,6 +360,7 @@ function PlanningFleetTimelineRowContent({
         onDragLeave={canDropPerson ? () => setPersonDropOver(false) : undefined}
         onDragOver={canDropPerson ? (event) => { if (event.dataTransfer.types.includes('application/x-seapilot-planning')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } } : undefined}
         onDrop={dropPerson}
+        style={{ gridRow: backgroundGridRow }}
       >
         {projectsOnly || lane.vesselId === null && audits.length > 0 ? <span className="planning-project-vessel-name" title={lane.label}><strong>{lane.label}</strong><small>{lane.detail}</small></span> : <button aria-expanded={expanded} aria-label={`${expanded ? 'Replier' : 'Déplier'} ${lane.label}`} className="planning-tree-toggle" onClick={onToggle} type="button">
           <span><strong>{lane.label}</strong><small>{lane.detail}</small></span>
@@ -400,7 +417,7 @@ function PlanningFleetTimelineRowContent({
               onMove(id, Number.isSafeInteger(sourceVesselId) && sourceVesselId > 0 ? sourceVesselId : null, lane, day.date);
             }
           } : undefined,
-          style: { gridColumn: index + 2, gridRow: 1 },
+          style: { gridColumn: index + 2, gridRow: backgroundGridRow },
           title: editable ? `Double-cliquer pour planifier un projet sur ${lane.label}` : 'Planning en lecture seule',
           type: 'button' as const,
         };
@@ -408,21 +425,14 @@ function PlanningFleetTimelineRowContent({
       })}
       {movePreview ? (() => {
         const placement = dateGridPlacement(movePreview.startsOn, movePreview.endsOn, days);
-        const prospectiveStack = draggingId === null
-          ? 0
-          : buildPlanningProjectStack(lane.projects.map((project) => ({
-              id: project.id,
-              startsOn: project.id === draggingId ? movePreview.startsOn : project.startsOn,
-              endsOn: project.id === draggingId ? movePreview.endsOn : project.endsOn,
-            })), days).stackById.get(draggingId) || 0;
         return placement ? (
           <span
             aria-hidden="true"
             className="planning-move-preview is-project"
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: 1,
-              marginTop: (7 + prospectiveStack * 27) * 0.9,
+              gridRow: showMissionNames ? moveProjectStack + 1 : 1,
+              marginTop: showMissionNames ? undefined : (7 + moveProjectStack * 27) * 0.9,
             }}
           />
         ) : null;
@@ -435,8 +445,8 @@ function PlanningFleetTimelineRowContent({
             className="planning-move-preview is-technical-stop"
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: 1,
-              marginTop: (35 + additionalProjectStacks * 27) * 0.9,
+              gridRow: showMissionNames ? projectTracks + 1 : 1,
+              marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27) * 0.9,
             }}
           />
         ) : null;
@@ -449,11 +459,12 @@ function PlanningFleetTimelineRowContent({
         if (!placement) return null;
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
+        const expandedName = showMissionNames && startsOn === endsOn;
         return (
           <button
             aria-busy={isPending}
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}${expandedName ? ' is-mission-name-expanded' : ''}`}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
             key={project.id}
@@ -474,8 +485,8 @@ function PlanningFleetTimelineRowContent({
             }}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: 1,
-              ...((projectStack.count > 1 || maxVisitStack) ? { marginTop: (7 + stack * 27) * 0.9 } : {}),
+              gridRow: showMissionNames ? stack + 1 : 1,
+              marginTop: !showMissionNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
             }}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
@@ -521,8 +532,8 @@ function PlanningFleetTimelineRowContent({
             } : undefined}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: 1,
-              marginTop: (35 + additionalProjectStacks * 27 + stack * 25) * 0.9,
+              gridRow: showMissionNames ? projectTracks + stack + 1 : 1,
+              marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9,
             }}
             title={`${planningVisitTypeLabel(visit.visitType)}\n${visit.provider.name}\n${dateLabel}${isTechnicalStop && editable ? '\nDéplacer ou étirer la période avec ses poignées.' : ''}`}
             type="button"
@@ -539,12 +550,14 @@ function PlanningFleetTimelineRowContent({
         if (!placement) return null;
         const label = PLANNING_AUDIT_LABELS[audit.kind];
         const status = { planned: 'Planifié', in_progress: 'En cours', completed: 'Réalisé' }[audit.status];
+        const stack = visitStack.stackByKey.get(key) || 0;
         return <button key={key} type="button" className="planning-visit-bar" data-audit-id={audit.id}
           aria-label={`${label} · ${audit.siteName}, ${formatPlanningDate(startsOn)}`}
           title={`${label}\n${audit.siteName}\n${formatPlanningDate(startsOn)} · ${status}${audit.title ? `\n${audit.title}` : ''}`}
           onClick={() => onOpenAudit?.(audit)}
-          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`, gridRow: 1,
-            marginTop: (35 + additionalProjectStacks * 27 + (visitStack.stackByKey.get(key) || 0) * 25) * 0.9 }}>
+          style={{ gridColumn: `${placement.start + 1} / span ${placement.span}`,
+            gridRow: showMissionNames ? projectTracks + stack + 1 : 1,
+            marginTop: showMissionNames ? undefined : (35 + additionalProjectStacks * 27 + stack * 25) * 0.9 }}>
           <CalendarCheck2 aria-hidden="true" size={12} /><span>{label}</span>
         </button>;
       })}

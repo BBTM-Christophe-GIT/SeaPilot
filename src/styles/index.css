@@ -18171,6 +18171,29 @@ button.planning-p12-conflict-card {
   text-align: center;
 }
 
+.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-project-bar,
+.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-visit-bar,
+.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-move-preview {
+  align-self: start;
+  margin-block: var(--sp-space-1);
+}
+
+.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-project-bar.is-mission-name-expanded {
+  height: auto;
+  min-height: var(--sp-control-height);
+  font-size: .75rem;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-project-title {
+  overflow: visible;
+  padding-block: var(--sp-space-2);
+  overflow-wrap: anywhere;
+  text-align: left;
+  text-overflow: clip;
+}
+
 .planning-timeline-row.is-fleet .planning-project-bar > small {
   display: none;
 }
