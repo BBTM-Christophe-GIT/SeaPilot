@@ -85,16 +85,16 @@ function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOve
 
 type ProjectTimelineItem = Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>;
 
-function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number) {
+function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number, endInset: number) {
   const center = (day - .5) * dayWidth;
-  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2));
+  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2 - endInset));
   return { left, right: left + width, shift: left + width / 2 - center };
 }
 
 export function buildPlanningProjectStack(
   projects: ProjectTimelineItem[],
   days: PlanningTimelineDay[],
-  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number> },
+  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number>; endInset?: number },
 ): { count: number; stackById: Map<number, number> } {
   const dayWidth = layout?.dayWidth ?? 1;
   const visibleProjects = projects
@@ -121,7 +121,7 @@ export function buildPlanningProjectStack(
     const width = layout.titleWidths.get(project.id);
     const left = (project.start - 1) * dayWidth;
     const right = project.end * dayWidth;
-    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length);
+    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length, layout.endInset ?? 0);
     const footprint = title
       ? { left: Math.min(left, title.left - 4), right: Math.max(right, title.right + 4), expanded: true }
       : { left, right, expanded: false };
@@ -236,6 +236,7 @@ function PlanningFleetTimelineRowContent({
   const suppressClickRef = useRef(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const [measuredTitleWidths, setMeasuredTitleWidths] = useState<ReadonlyMap<number, number>>(() => new Map());
+  const [captionEndInset, setCaptionEndInset] = useState(0);
   const watchGroup = 'Bordée 1';
   const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
@@ -250,7 +251,7 @@ function PlanningFleetTimelineRowContent({
     }
   }
   const hasExpandedNames = titleWidths.size > 0;
-  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths } : undefined;
+  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths, endInset: captionEndInset } : undefined;
   const projectStack = buildPlanningProjectStack(projectItems, days, projectLayout);
 
   useLayoutEffect(() => {
@@ -263,6 +264,10 @@ function PlanningFleetTimelineRowContent({
       const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
       if (availableWidth > 0) {
         row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
+        // A reserved scrollbar gutter can leave part of the last column beyond the scrollable viewport.
+        const viewportEnd = calendar.getBoundingClientRect().left + calendar.clientLeft + calendar.clientWidth;
+        const scrollRemaining = calendar.scrollWidth - calendar.clientWidth - calendar.scrollLeft;
+        setCaptionEndInset(Math.max(0, Math.ceil(row.getBoundingClientRect().right - viewportEnd - scrollRemaining)));
       }
       const widths = new Map<number, number>();
       for (const caption of captions) {
@@ -533,7 +538,7 @@ function PlanningFleetTimelineRowContent({
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
         const titleWidth = titleWidths.get(project.id);
-        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length);
+        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length, captionEndInset);
         const gridPlacement = {
           gridColumn: `${placement.start + 1} / span ${placement.span}`,
           gridRow: hasExpandedNames ? stack + 1 : 1,
