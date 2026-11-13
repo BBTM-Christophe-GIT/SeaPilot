@@ -96,8 +96,9 @@ describe('Sludges on the SUROIT fleet card', () => {
     const meter = card.getByRole('meter', { name: 'Sludges' });
     expect(meter).toHaveAttribute('data-level', level);
     expect(Number(meter.getAttribute('aria-valuenow'))).toBeCloseTo(liters / 100);
-    expect(within(meter).getByText(new RegExp(`^${displayedPercent}\\s%$`))).toBeVisible();
-    expect(!!meter.querySelector('.lucide-triangle-alert')).toBe(level === 'critical');
+    expect(card.getByText(new RegExp(`^${displayedPercent}\\s%$`))).toBeVisible();
+    expect(meter.previousElementSibling?.querySelector('.lucide-fuel')).toBeInTheDocument();
+    expect(!!meter.closest('li')?.querySelector('.so-fuel-sludge-alert .lucide-triangle-alert')).toBe(level === 'critical');
   });
 
   it('shows a distinct unavailable state before the first sludge reading', () => {

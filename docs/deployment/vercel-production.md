@@ -1,5 +1,8 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.101.1` place la jauge **Sludges** à côté de la jauge de
+carburant sur la carte du SUROIT.
+
 La version `3.101.0` saisit directement le fuel consommé dans **Conso** et
 ajoute la jauge **Sludges** du SUROIT à partir des relevés **Soutes**.
 Appliquer `20261113082137_sea_operation_direct_fuel_consumption.sql` et
