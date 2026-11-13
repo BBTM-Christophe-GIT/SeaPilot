@@ -29,7 +29,7 @@ La carte affiche aussi la date, l’heure et les jauges par cuve du relevé Sout
 le plus récent par heure de mesure. Les valeurs de ce relevé restent distinctes
 du stock courant recalculé avec les DPR et les avitaillements.
 
-La carte du **SUROIT** affiche la jauge **Sludges** d’après le dernier niveau
+La carte du **SUROIT** affiche la jauge **Sludges** à côté de celle de carburant, d’après le dernier niveau
 de la cuve mesuré dans **Soutes**. La capacité vient de la fiche du navire.
 Le niveau est vert sous 60 %, orange de 60 % à moins de 75 %, puis rouge
 avec une pastille d’alerte dès 75 %. Un relevé carburant plus récent laisse

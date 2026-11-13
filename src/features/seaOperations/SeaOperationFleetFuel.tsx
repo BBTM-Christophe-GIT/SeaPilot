@@ -154,32 +154,18 @@ function FuelHistory({ client, vessel, refresh }: { client: SupabaseClient; vess
     costSource={current?.costSource} lastEntryDate={current?.lastEntryDate} loading={!current} error={current?.error} onRetry={reload} onYearChange={setYear} />;
 }
 
-function SludgeTankGauge({ capacityLiters, liters }: FleetSludgeTank) {
+function sludgeTankLevel({ capacityLiters, liters }: FleetSludgeTank) {
   const fill = liters === null ? null : liters / capacityLiters;
-  const position = fill === null ? undefined : Math.min(fill * 100, 100);
   const level = fill === null ? 'unknown' : fill >= .75 ? 'critical' : fill >= .6 ? 'warning' : 'normal';
   const status = level === 'critical' ? 'Niveau critique' : level === 'warning' ? 'Niveau élevé' : 'Niveau normal';
   const volumeUnit = fuelVolumeUnit(capacityLiters);
-  const volume = liters === null ? null : formatFuelVolume(liters, volumeUnit);
-  const capacity = formatFuelVolume(capacityLiters, volumeUnit);
-  const percentage = fill === null ? null : percent.format(Math.floor((fill + Number.EPSILON) * 1000) / 1000);
-
-  return <div className="so-fuel-sludge-gauge" data-level={level} role={fill === null ? undefined : 'meter'}
-    aria-label={fill === null ? undefined : 'Sludges'} aria-valuemin={fill === null ? undefined : 0}
-    aria-valuemax={fill === null ? undefined : 100} aria-valuenow={position}
-    aria-valuetext={fill === null ? undefined : `${percentage} · ${volume} sur ${capacity} · ${status}`}>
-    <div className="so-fuel-sludge-values">
-      <span className="so-fuel-sludge-label"><Droplets size={14} aria-hidden="true" />Sludges</span>
-      <strong>
-        {level === 'critical' && <span className="so-fuel-sludge-alert" aria-hidden="true"><TriangleAlert size={12} /></span>}
-        {percentage ?? 'Non renseigné'}
-      </strong>
-    </div>
-    <div className="so-fuel-sludge-track" aria-hidden="true">
-      {position !== undefined && <span style={{ width: `${position}%` }} />}
-    </div>
-    {volume !== null && <small>{volume} / {capacity}</small>}
-  </div>;
+  return {
+    level, status,
+    position: fill === null ? null : Math.min(fill * 100, 100),
+    percentage: fill === null ? null : percent.format(Math.floor((fill + Number.EPSILON) * 1000) / 1000),
+    volume: liters === null ? null : formatFuelVolume(liters, volumeUnit),
+    capacity: formatFuelVolume(capacityLiters, volumeUnit),
+  };
 }
 
 function FuelCard({ vessel, detailId, expanded, onToggle }: {
@@ -189,6 +175,7 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
   const photo = fleetIllustration({ name: vesselName, assetKind: 'vessel' });
   const { fill, level, fillPercent } = tankLevel(fuelLiters, capacityLiters);
   const volumeUnit = fuelVolumeUnit(capacityLiters);
+  const sludge = vessel.sludgeTank && sludgeTankLevel(vessel.sludgeTank);
 
   return <li className="so-fuel-card" data-expanded={expanded}>
     <div className="so-fuel-card-heading">
@@ -196,18 +183,33 @@ function FuelCard({ vessel, detailId, expanded, onToggle }: {
       {level === 'critical' && <span className="so-fuel-critical" role="img" aria-label="Carburant critique · moins de 25 %" title="Carburant critique · moins de 25 %">
         <TriangleAlert size={12} aria-hidden="true" /></span>}
     </div>
-    <div className="so-fuel-card-illustration" aria-hidden="true">
-      <span className="so-fuel-card-photo">{photo ? <img src={photo} alt="" loading="lazy" /> : <Ship size={28} />}</span>
-      <span className="so-fuel-card-tank" data-level={level}>
+    <div className="so-fuel-card-illustration">
+      <span className="so-fuel-card-photo" aria-hidden="true">{photo ? <img src={photo} alt="" loading="lazy" /> : <Ship size={28} />}</span>
+      <span className="so-fuel-card-tank" data-level={level} aria-hidden="true">
         <span className="so-fuel-card-tank-fill" style={{ height: fillPercent }} />
         <Fuel size={13} />
       </span>
+      {sludge && <span className="so-fuel-card-tank so-fuel-sludge-tank" data-level={sludge.level}
+        aria-hidden={sludge.position === null || undefined}
+        role={sludge.position === null ? undefined : 'meter'} aria-label={sludge.position === null ? undefined : 'Sludges'}
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={sludge.position ?? undefined}
+        aria-valuetext={sludge.position === null ? undefined : `${sludge.percentage} · ${sludge.volume} sur ${sludge.capacity} · ${sludge.status}`}>
+        {sludge.position !== null && <span className="so-fuel-card-tank-fill" style={{ height: `${sludge.position}%` }} />}
+        <Droplets size={13} aria-hidden="true" />
+      </span>}
     </div>
     <div className="so-fuel-card-values"><strong>{fuelLiters === null ? 'Non renseigné' : formatFuelVolume(fuelLiters, volumeUnit)}</strong>
       {fill !== null && <span>{percent.format(fill)}</span>}
       {level === 'warning' && <span className="so-sr-only">Niveau de carburant bas</span>}
     </div>
-    {vessel.sludgeTank && <SludgeTankGauge {...vessel.sludgeTank} />}
+    {sludge && <div className="so-fuel-sludge-values" data-level={sludge.level}>
+      <span>Sludges</span>
+      <strong>
+        {sludge.level === 'critical' && <span className="so-fuel-sludge-alert" aria-hidden="true"><TriangleAlert size={12} /></span>}
+        {sludge.percentage ?? 'Non renseigné'}
+      </strong>
+      {sludge.volume !== null && <small>{sludge.volume} / {sludge.capacity}</small>}
+    </div>}
     <button type="button" className="sp-button sp-button--secondary so-secondary so-fuel-card-toggle"
       aria-label={`Détails carburant · ${vesselName}`} title={`Détails carburant · ${vesselName}`}
       aria-expanded={expanded} aria-controls={detailId} onClick={onToggle}><ChevronDown size={16} aria-hidden="true" /></button>
