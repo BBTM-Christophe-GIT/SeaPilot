@@ -862,21 +862,83 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Opération déplacée et synchronisée sur ses navires.')).toBeInTheDocument();
   });
 
+  it('widens the fleet and project calendars to show one-day names and restores the compact zoom', async () => {
+    const user = userEvent.setup();
+    const oneDay = {
+      ...planningProjectRow,
+      id: 601,
+      title: 'P601 - Inspection et assistance portuaire',
+      ends_on: planningProjectRow.starts_on,
+    };
+    const visibleRangeStart = shiftPlanningMonths(todayPlanningDate(), -2);
+    const clippedProject = {
+      ...planningProjectRow,
+      id: 602,
+      title: 'P602 - Mission commencée hors période',
+      starts_on: shiftPlanningMonths(visibleRangeStart, -1),
+      ends_on: visibleRangeStart,
+    };
+    const { client } = createClient({ projects: [planningProjectRow, oneDay, clippedProject] });
+    const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
+    const oneDayName = /^Transit P601 - Inspection et assistance portuaire,/;
+    const oneDayBar = await screen.findByRole('button', { name: oneDayName });
+    const calendar = container.querySelector<HTMLElement>('.planning-calendar-scroll')!;
+    const namesSwitch = screen.getByRole('switch', { name: 'Afficher les noms' });
+
+    expect(namesSwitch).not.toBeChecked();
+    expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('52px');
+    expect(oneDayBar).not.toHaveClass('is-mission-name-expanded');
+
+    await user.click(namesSwitch);
+    expect(namesSwitch).toBeChecked();
+    expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('176px');
+    expect(oneDayBar).toHaveClass('is-mission-name-expanded');
+    expect(within(oneDayBar).getByText(oneDay.title)).toBeVisible();
+    const multiDayBar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    const clippedBar = screen.getByRole('button', { name: /^Transit P602 - Mission commencée hors période,/ });
+    expect(multiDayBar).not.toHaveClass('is-mission-name-expanded');
+    expect(clippedBar).not.toHaveClass('is-mission-name-expanded');
+    expect(clippedBar.style.gridColumn).toMatch(/span 1$/);
+    expect(oneDayBar.style.gridRow).not.toBe(multiDayBar.style.gridRow);
+
+    await user.click(screen.getByRole('button', { name: 'Zoom avant' }));
+    expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('211px');
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.queryByRole('switch', { name: 'Afficher les noms' })).not.toBeInTheDocument();
+    expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
+
+    await user.click(screen.getByRole('tab', { name: 'Projet' }));
+    const projectNamesSwitch = screen.getByRole('switch', { name: 'Afficher les noms' });
+    expect(projectNamesSwitch).toBeChecked();
+    expect(screen.getByRole('button', { name: oneDayName })).toHaveClass('is-mission-name-expanded');
+    await user.click(projectNamesSwitch);
+    expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
+    expect(screen.getByRole('button', { name: oneDayName })).not.toHaveClass('is-mission-name-expanded');
+  });
+
   it.each(['marin', 'capitaine'] as const)('keeps the published project view read-only for %s', async (role) => {
     const user = userEvent.setup();
-    const { client, updateProject, deleteProject } = createClient({
+    const oneDay = { ...planningProjectRow, title: 'P600 - Remorquage portuaire', ends_on: planningProjectRow.starts_on };
+    const { client, rpc, updateProject, deleteProject } = createClient({
       versions: [{ id: 1, publication_id: 1, version_number: 1, comment: '', created_at: '2026-07-13T10:00:00Z', created_by: 'user-publish', created_by_name: 'Direction BBTM' }],
-      publishedSnapshot: { assignments: [], days: [], periods: [], projects: [planningProjectRow], handovers: [], derogations: [] },
+      publishedSnapshot: { assignments: [], days: [], periods: [], projects: [oneDay], handovers: [], derogations: [] },
     });
-    render(<PlanningPage client={client as never} roles={[role]} />);
+    render(<MemoryRouter><Routes><Route element={<Outlet context={{ currentPerson: { id: role === 'capitaine' ? 10 : 11 }, roles: [role], client, previewMode: false }} />}>
+      <Route path="/" element={<PlanningPage />} />
+    </Route></Routes></MemoryRouter>);
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Projet' }));
-    const bar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
+    const bar = screen.getByRole('button', { name: /P600 - Remorquage portuaire/ });
+    await user.click(screen.getByRole('switch', { name: 'Afficher les noms' }));
+    expect(bar).toHaveClass('is-mission-name-expanded');
+    expect(within(bar).getByText(oneDay.title)).toBeVisible();
     expect(bar).toHaveAttribute('draggable', 'false');
     expect(bar.querySelector('.planning-resize-handle')).toBeNull();
     expect(screen.queryByRole('button', { name: /Ajouter un projet|Nouveau projet/ })).not.toBeInTheDocument();
     fireEvent.contextMenu(bar);
     expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('latest_planning_release');
+    expect(rpc).not.toHaveBeenCalledWith('planning_assignment_overview_with_revisions');
     expect(updateProject).not.toHaveBeenCalled();
     expect(deleteProject).not.toHaveBeenCalled();
   });
@@ -1328,6 +1390,12 @@ describe('PlanningPage cockpit', () => {
       expect(calendar.scrollLeft).toBe((index + 0.5) * 62 - 300);
       viewportWidth = 1018;
       notifyResize();
+      const namesSwitch = screen.getByRole('switch', { name: 'Afficher les noms' });
+      calendar.scrollLeft = 1770;
+      fireEvent.click(namesSwitch);
+      expect(calendar.scrollLeft).toBe(35 * 211 - 400);
+      fireEvent.click(namesSwitch);
+      expect(calendar.scrollLeft).toBe(1770);
       fireEvent.change(screen.getByLabelText('Mois de référence'), { target: { value: '2025-12' } });
       expect(calendar.scrollLeft).toBe((daysBetween('2025-10-01', '2025-12-01') + 0.5) * 62 - 400);
       fireEvent.click(screen.getByRole('button', { name: 'Aujourd’hui' }));

@@ -313,6 +313,8 @@ function PlanningRibbonGroup({ children, className = '', label }: { children?: R
 
 const EMPTY_FILTERS: PlanningFilters = { vesselName: '', personName: '', eventType: '', status: '', responsible: '' };
 const PLANNING_VIEW_MODE = 'month' as const;
+const PLANNING_DAY_WIDTH = 52;
+const PLANNING_NAMED_DAY_WIDTH = 176;
 const PLANNING_ASSIGNMENT_FUNCTIONS = [
   'Capitaine',
   'Chef Mécanicien',
@@ -415,6 +417,11 @@ function timelineStyle(dayWidth: number, dayCount: number) {
     '--planning-day-width': `${dayWidth}px`,
     '--planning-day-count': dayCount,
   } as React.CSSProperties;
+}
+
+function calendarViewportWidth(calendar: HTMLDivElement) {
+  const labelWidth = Number.parseFloat(getComputedStyle(calendar).getPropertyValue('--planning-label-width')) || 0;
+  return Math.max(0, calendar.clientWidth - labelWidth);
 }
 
 function createPreviewAbsences(anchorDate: string): PlanningAbsenceRecord[] {
@@ -522,6 +529,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const usesLivePlanning = effectiveRoles.some((role) => role === 'admin' || role === 'direction' || role === 'armement');
   const workspaceRef = useRef<HTMLElement>(null);
   const calendarScrollRef = useRef<HTMLDivElement>(null);
+  const calendarCenterOnNamesToggleRef = useRef<number | null>(null);
   const [calendarFocusVersion, setCalendarFocusVersion] = useState(0);
   const initialAnchorDate = useMemo(() => todayPlanningDate(), []);
   const previewOverview = useMemo(
@@ -565,6 +573,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }));
   }, [defaultFilters, filterScope]);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [showMissionNames, setShowMissionNames] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('billing');
   const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
@@ -849,23 +858,25 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
-  const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
+  const canShowMissionNames = perspective !== 'crew';
+  const missionNamesVisible = canShowMissionNames && showMissionNames;
+  const dayWidth = missionNamesVisible ? PLANNING_NAMED_DAY_WIDTH : PLANNING_DAY_WIDTH;
+  const effectiveDayWidth = Math.round(dayWidth * zoomLevel / 100);
 
   useLayoutEffect(() => {
     const calendar = calendarScrollRef.current;
     if (!calendar || !hasLoaded) return;
-    const centerOnAnchor = () => {
-      const labelWidth = Number.parseFloat(getComputedStyle(calendar).getPropertyValue('--planning-label-width')) || 0;
-      const visibleDayWidth = Math.max(0, calendar.clientWidth - labelWidth);
-      const anchorIndex = daysBetween(range.start, anchorDate);
-      calendar.scrollLeft = Math.max(0, (anchorIndex + 0.5) * effectiveDayWidth - visibleDayWidth / 2);
+    const centerOnDay = (day: number) => {
+      calendar.scrollLeft = Math.max(0, day * effectiveDayWidth - calendarViewportWidth(calendar) / 2);
     };
-    centerOnAnchor();
+    const anchorDay = daysBetween(range.start, anchorDate) + 0.5;
+    centerOnDay(calendarCenterOnNamesToggleRef.current ?? anchorDay);
+    calendarCenterOnNamesToggleRef.current = null;
     let observedWidth = calendar.clientWidth;
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => {
       if (calendar.clientWidth === observedWidth) return;
       observedWidth = calendar.clientWidth;
-      centerOnAnchor();
+      centerOnDay(anchorDay);
     });
     observer?.observe(calendar);
     return () => observer?.disconnect();
@@ -1144,6 +1155,14 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       responsible: '',
     }));
     setIsOperationalPanelOpen(false);
+  }
+
+  function toggleMissionNames() {
+    const calendar = calendarScrollRef.current;
+    if (calendar && hasLoaded) {
+      calendarCenterOnNamesToggleRef.current = (calendar.scrollLeft + calendarViewportWidth(calendar) / 2) / effectiveDayWidth;
+    }
+    setShowMissionNames((value) => !value);
   }
 
   async function assignPersonByDrop(personId: number, lane: PlanningFleetLane, watchGroup: string) {
@@ -2626,6 +2645,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       <PlanningFleetTimelineRow
         referenceDate={anchorDate}
         projectsOnly={projectsOnly}
+        showMissionNames={missionNamesVisible}
         crewCount={fleetTreeCounts.get(rowKey) || 0}
         dayWidth={effectiveDayWidth}
         days={days}
@@ -2767,6 +2787,18 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
             </div>
 
             <div className="planning-toolbar-navigation">
+              {canShowMissionNames ? (
+                <button
+                  aria-checked={missionNamesVisible}
+                  className="sp-button sp-button--secondary planning-mission-names-toggle"
+                  onClick={toggleMissionNames}
+                  role="switch"
+                  type="button"
+                >
+                  <span aria-hidden="true" className="planning-mission-names-track" />
+                  Afficher les noms
+                </button>
+              ) : null}
               <div className="planning-zoom-controls" aria-label="Zoom du planning">
                 <button aria-label="Zoom arrière" disabled={zoomLevel <= 60} onClick={() => setZoomLevel((value) => Math.max(60, value - 20))} type="button"><Minus aria-hidden="true" size={15} /></button>
                 <output aria-label="Niveau de zoom">{zoomLevel} %</output>
@@ -2795,7 +2827,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           </div>
 
           <div
-            className={`planning-calendar-scroll${isCalendarPanning ? ' is-panning' : ''}`}
+            className={`planning-calendar-scroll${isCalendarPanning ? ' is-panning' : ''}${missionNamesVisible ? ' is-showing-mission-names' : ''}`}
             data-planning-range-end={range.end}
             data-planning-range-start={range.start}
             data-planning-view-mode={PLANNING_VIEW_MODE}
