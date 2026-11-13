@@ -85,16 +85,16 @@ function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOve
 
 type ProjectTimelineItem = Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>;
 
-function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number) {
+function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number, endInset: number) {
   const center = (day - .5) * dayWidth;
-  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2));
+  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2 - endInset));
   return { left, right: left + width, shift: left + width / 2 - center };
 }
 
 export function buildPlanningProjectStack(
   projects: ProjectTimelineItem[],
   days: PlanningTimelineDay[],
-  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number> },
+  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number>; endInset?: number },
 ): { count: number; stackById: Map<number, number> } {
   const dayWidth = layout?.dayWidth ?? 1;
   const visibleProjects = projects
@@ -121,7 +121,7 @@ export function buildPlanningProjectStack(
     const width = layout.titleWidths.get(project.id);
     const left = (project.start - 1) * dayWidth;
     const right = project.end * dayWidth;
-    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length);
+    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length, layout.endInset ?? 0);
     const footprint = title
       ? { left: Math.min(left, title.left - 4), right: Math.max(right, title.right + 4), expanded: true }
       : { left, right, expanded: false };
@@ -236,6 +236,7 @@ function PlanningFleetTimelineRowContent({
   const suppressClickRef = useRef(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const [measuredTitleWidths, setMeasuredTitleWidths] = useState<ReadonlyMap<number, number>>(() => new Map());
+  const [captionEndInset, setCaptionEndInset] = useState(0);
   const watchGroup = 'Bordée 1';
   const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
@@ -250,23 +251,27 @@ function PlanningFleetTimelineRowContent({
     }
   }
   const hasExpandedNames = titleWidths.size > 0;
-  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths } : undefined;
+  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths, endInset: captionEndInset } : undefined;
   const projectStack = buildPlanningProjectStack(projectItems, days, projectLayout);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
     const calendar = row?.closest('.planning-calendar-scroll');
-    if (!row || !calendar || !hasExpandedNames) return;
+    if (!row || !(calendar instanceof HTMLElement) || !hasExpandedNames) return;
     const label = row.querySelector<HTMLElement>('.planning-row-label');
-    const bars = row.querySelectorAll<HTMLElement>('.is-mission-name-expanded');
+    const captions = row.querySelectorAll<HTMLElement>('.planning-mission-caption');
     const measure = () => {
       const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
       if (availableWidth > 0) {
         row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
+        // The browser can include both reserved scrollbar gutters in the final scroll position.
+        const calendarStyle = getComputedStyle(calendar);
+        const borderWidth = Number.parseFloat(calendarStyle.borderLeftWidth) + Number.parseFloat(calendarStyle.borderRightWidth);
+        setCaptionEndInset(Math.max(0, Math.ceil(calendar.offsetWidth - calendar.clientWidth - (borderWidth || 0))));
       }
       const widths = new Map<number, number>();
-      for (const bar of bars) {
-        if (bar.offsetWidth > 0) widths.set(Number(bar.dataset.projectId), bar.offsetWidth);
+      for (const caption of captions) {
+        if (caption.offsetWidth > 0) widths.set(Number(caption.dataset.projectId), caption.offsetWidth);
       }
       setMeasuredTitleWidths((previous) => (
         previous.size === widths.size && [...widths].every(([id, width]) => previous.get(id) === width) ? previous : widths
@@ -277,7 +282,7 @@ function PlanningFleetTimelineRowContent({
     const observer = new ResizeObserver(measure);
     observer.observe(calendar);
     if (label) observer.observe(label, { box: 'border-box' });
-    bars.forEach((bar) => observer.observe(bar, { box: 'border-box' }));
+    captions.forEach((caption) => observer.observe(caption, { box: 'border-box' }));
     return () => observer.disconnect();
   }, [dayWidth, days, hasExpandedNames, projectItems]);
   const visitTimelineItems = visits.flatMap((visit) => {
@@ -332,13 +337,6 @@ function PlanningFleetTimelineRowContent({
     } catch {
       // Ignore malformed or unrelated payloads.
     }
-  }
-
-  function dateUnderBar(clientX: number) {
-    const firstDay = rowRef.current?.querySelector<HTMLElement>('[data-planning-drop-date]');
-    if (!firstDay) return undefined;
-    const index = Math.floor((clientX - firstDay.getBoundingClientRect().left) / dayWidth);
-    return days[index]?.date;
   }
 
   function dragOverDate(event: React.DragEvent, date: string) {
@@ -540,16 +538,19 @@ function PlanningFleetTimelineRowContent({
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
         const titleWidth = titleWidths.get(project.id);
-        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length);
-        return (
+        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length, captionEndInset);
+        const gridPlacement = {
+          gridColumn: `${placement.start + 1} / span ${placement.span}`,
+          gridRow: hasExpandedNames ? stack + 1 : 1,
+        };
+        const bar = (
           <button
             aria-busy={isPending}
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}${title ? ' is-mission-name-expanded' : ''}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             data-project-id={project.id}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
-            key={project.id}
             onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
             onDoubleClick={() => onOpen(project)}
             onContextMenu={(event) => {
@@ -559,35 +560,40 @@ function PlanningFleetTimelineRowContent({
               onOpenContextMenu(project, { x: event.clientX, y: event.clientY });
             }}
             onDragEnd={() => { setDraggingId(null); setMovePreview(null); }}
-            onDragOver={editable && title ? (event) => {
-              const date = dateUnderBar(event.clientX);
-              if (date) dragOverDate(event, date);
-            } : undefined}
-            onDrop={editable && title ? (event) => {
-              const date = dateUnderBar(event.clientX);
-              if (date) dropOnDate(event, date);
-            } : undefined}
             onDragStart={(event) => {
               setDraggingId(project.id);
               event.dataTransfer.effectAllowed = 'move';
               event.dataTransfer.setData('application/x-seapilot-project', String(project.id));
               if (lane.vesselId) event.dataTransfer.setData('application/x-seapilot-project-vessel', String(lane.vesselId));
             }}
-            style={{
-              gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: hasExpandedNames ? stack + 1 : 1,
+            style={title ? undefined : {
+              ...gridPlacement,
               marginTop: !hasExpandedNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
-              ...(title ? { '--planning-mission-shift': `${title.shift}px` } : {}),
-            } as CSSProperties}
+            }}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
-            <span className="planning-project-title">{project.title}</span>
+            {title ? null : <span className="planning-project-title">{project.title}</span>}
             <small>{planningFleetEventTypeLabel(project.eventType)}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
           </button>
+        );
+        return (
+          <div
+            className={title ? 'planning-project-with-caption' : 'planning-project-without-caption'}
+            key={project.id}
+            style={title ? gridPlacement : undefined}
+          >
+            {bar}
+            {title ? <span
+              aria-hidden="true"
+              className="planning-mission-caption"
+              data-project-id={project.id}
+              style={{ '--planning-mission-shift': `${title.shift}px` } as CSSProperties}
+            >{project.title}</span> : null}
+          </div>
         );
       })}
       {visitTimelineItems.map(({ key, visit, startsOn, endsOn }) => {

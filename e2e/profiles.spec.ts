@@ -157,7 +157,7 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
-    test('planning : lire le nom complet d’une mission diffusée sur une journée', async ({ page }) => {
+    test('planning : lire le nom complet sous la barre d’une mission diffusée sur une journée', async ({ page }) => {
       const published = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/latest_planning_release');
       await signIn(page, profile, '/modules/planning');
       expect((await published).ok()).toBe(true);
@@ -173,29 +173,34 @@ for (const profile of profiles) {
       const nextDayCell = row.locator(`[data-planning-drop-date="${tomorrow}"]`);
       const mission = row.getByRole('button', { name: new RegExp(missionTitle) });
       const nextMission = row.getByRole('button', { name: new RegExp(nextMissionTitle) });
-      const title = mission.getByText(missionTitle, { exact: true });
+      const title = row.locator('.planning-mission-caption').filter({ hasText: missionTitle });
+      const nextTitle = row.locator('.planning-mission-caption').filter({ hasText: nextMissionTitle });
       await expect(page.getByRole('switch', { name: 'Afficher les noms', exact: true })).toHaveCount(0);
+      await expect(title).toHaveText(missionTitle);
       await expect(title).toBeInViewport();
       await expect(title).toHaveCSS('white-space', 'normal');
       await expect.poll(() => title.evaluate((node) =>
         node.scrollWidth <= node.clientWidth + 1 && node.scrollHeight <= node.clientHeight + 1)).toBe(true);
       await expect.poll(async () => {
-        const [cell, nextCell, bar, nextBar] = await Promise.all([
-          dayCell.boundingBox(), nextDayCell.boundingBox(), mission.boundingBox(), nextMission.boundingBox(),
+        const [cell, nextCell, bar, nextBar, caption, nextCaption] = await Promise.all([
+          dayCell.boundingBox(), nextDayCell.boundingBox(), mission.boundingBox(), nextMission.boundingBox(), title.boundingBox(), nextTitle.boundingBox(),
         ]);
-        if (!cell || !nextCell || !bar || !nextBar) return null;
+        if (!cell || !nextCell || !bar || !nextBar || !caption || !nextCaption) return null;
         const center = (box: { x: number; width: number }) => box.x + box.width / 2;
         return {
           dayWidth: Math.round(cell.width),
-          overflowsLeft: bar.x < cell.x,
-          overflowsRight: bar.x + bar.width > cell.x + cell.width,
-          centered: Math.abs(center(bar) - center(cell)) <= 1,
-          nextCentered: Math.abs(center(nextBar) - center(nextCell)) <= 1,
-          labelsOverlapHorizontally: bar.x + bar.width > nextBar.x,
-          nextLabelOnLowerTrack: bar.y + bar.height <= nextBar.y,
+          compactBarWidth: Math.round(bar.width),
+          nextCompactBarWidth: Math.round(nextBar.width),
+          barsCentered: Math.abs(center(bar) - center(cell)) <= 1 && Math.abs(center(nextBar) - center(nextCell)) <= 1,
+          captionsUnderBars: caption.y >= bar.y + bar.height && nextCaption.y >= nextBar.y + nextBar.height,
+          captionOverflows: caption.x < cell.x && caption.x + caption.width > cell.x + cell.width,
+          captionsCentered: Math.abs(center(caption) - center(cell)) <= 1 && Math.abs(center(nextCaption) - center(nextCell)) <= 1,
+          captionsOverlapHorizontally: caption.x + caption.width > nextCaption.x,
+          captionsDoNotCollide: caption.y + caption.height <= nextBar.y,
         };
-      }).toEqual({ dayWidth: 52, overflowsLeft: true, overflowsRight: true, centered: true, nextCentered: true,
-        labelsOverlapHorizontally: true, nextLabelOnLowerTrack: true });
+      }).toEqual({ dayWidth: 52, compactBarWidth: 48, nextCompactBarWidth: 48, barsCentered: true,
+        captionsUnderBars: true, captionOverflows: true, captionsCentered: true,
+        captionsOverlapHorizontally: true, captionsDoNotCollide: true });
       await expect(mission).toHaveAttribute('draggable', 'false');
 
       await page.getByRole('tab', { name: 'Projet', exact: true }).click();

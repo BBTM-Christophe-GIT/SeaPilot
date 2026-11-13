@@ -18178,57 +18178,42 @@ button.planning-p12-conflict-card {
   margin-block: var(--sp-space-1);
 }
 
-.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-project-bar.is-mission-name-expanded {
-  width: max-content;
-  min-width: calc(var(--planning-day-width) - 4px);
-  max-width: var(--planning-mission-max-width, 240px);
-  height: auto;
-  min-height: 20.7px;
-  justify-self: center;
-  margin-inline: 0;
-  border-radius: var(--sp-control-radius);
-  translate: var(--planning-mission-shift, 0px);
-  container-type: normal;
-  font-size: .68rem;
-  line-height: 1.25;
-  white-space: normal;
+.planning-project-without-caption {
+  display: contents;
 }
 
-.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-project-title {
-  width: auto;
-  overflow: visible;
-  padding: 3px var(--sp-space-3) 5px;
+.planning-project-with-caption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-self: start;
+  pointer-events: none;
+}
+
+.planning-timeline-row.is-fleet.has-expanded-mission-names .planning-project-with-caption .planning-project-bar {
+  align-self: stretch;
+  margin-bottom: 0;
+  pointer-events: auto;
+}
+
+.planning-mission-caption {
+  position: relative;
+  z-index: 4;
+  width: max-content;
+  max-width: var(--planning-mission-max-width, 240px);
+  align-self: center;
+  margin-block: 2px var(--sp-space-1);
+  color: var(--sp-text);
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.25;
   overflow-wrap: anywhere;
   text-align: center;
-  text-overflow: clip;
+  translate: var(--planning-mission-shift, 0px);
 }
 
-.planning-timeline-row.is-fleet .is-mission-name-expanded:has(.planning-resize-handle) .planning-project-title {
-  padding-bottom: 12px;
-}
-
-.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-project-status-rail {
-  right: auto;
-  left: calc(50% - var(--planning-mission-shift, 0px));
-  width: min(calc(var(--planning-day-width) - 4px), 100%);
-  transform: translateX(-50%);
-}
-
-.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-resize-handle {
-  --mission-half-day: calc((var(--planning-day-width) - 4px) / 2);
-  top: auto;
-  bottom: 0;
-  height: 12px;
-  left: clamp(0px, calc(50% - var(--planning-mission-shift, 0px) - var(--mission-half-day)), calc(100% - 11px));
-}
-
-.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-resize-handle::after {
-  height: 7px;
-}
-
-.planning-timeline-row.is-fleet .is-mission-name-expanded .planning-resize-handle.is-end {
-  right: auto;
-  left: clamp(0px, calc(50% - var(--planning-mission-shift, 0px) + var(--mission-half-day) - 11px), calc(100% - 11px));
+.planning-project-with-caption .planning-project-bar.is-cancelled + .planning-mission-caption {
+  text-decoration: line-through;
 }
 
 .planning-timeline-row.is-fleet .planning-project-bar > small {
