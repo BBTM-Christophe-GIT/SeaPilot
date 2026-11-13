@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.102.0` ajoute l’export Excel dans **Organigramme → Liste du personnel**.
+Le classeur reprend les personnes sélectionnées et les champs cochés.
+Voir [la liste du personnel](./organigramme.md#liste-du-personnel-et-numéros-durgence).
+
 La version `3.101.3` convertit dans **Soutes** la hauteur de référence en
 mètres des cuves diesel du GOURY en volume. Appliquer
 `20261113091335_sea_operation_goury_fuel_sounding.sql` avant le frontend.
