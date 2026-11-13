@@ -288,7 +288,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     steps: [
       { title: 'Choisir le navire et la période', detail: 'Votre navire d’affectation du jour est sélectionné à l’ouverture. Utilisez le filtre pour choisir un autre navire ou Tous les navires, puis les commandes de date pour consulter la période souhaitée.' },
       { title: 'Consulter une affectation', detail: 'Ouvrez les informations proposées sur une période pour vérifier le navire, le projet et les dates.' },
-      { title: 'Lire le nom complet d’une mission', detail: 'Dans la vue Flotte ou Projet, le titre d’une mission d’une journée est centré sur sa date et peut déborder sur les colonnes voisines. Si deux titres se chevauchent, le planning place la mission suivante sur une autre ligne.' },
+      { title: 'Lire le nom complet d’une mission', detail: 'Dans la vue Flotte ou Projet, le nom complet d’une mission d’une journée s’affiche sous sa barre colorée et peut déborder sur les colonnes voisines. Si deux noms se chevauchent, la mission suivante descend d’une ligne avec sa barre.' },
       { title: 'Demander des congés ou des RTT', detail: 'Cliquez sur Demander des congés. Vérifiez votre nom et votre solde, choisissez le type Congés ou RTT, renseignez les dates de début et de fin et un motif si nécessaire, puis cliquez sur Envoyer la demande.' },
       { title: 'Suivre la décision', detail: 'Consultez le statut de votre demande. Une demande en attente n’est pas encore une absence approuvée.' },
       { title: 'Générer une crew list', detail: 'Utilisez Générer une crew list, choisissez le navire et la date demandés, puis vérifiez les personnes proposées avant de générer le document.' },

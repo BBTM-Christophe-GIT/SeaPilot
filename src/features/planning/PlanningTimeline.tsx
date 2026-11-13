@@ -258,15 +258,15 @@ function PlanningFleetTimelineRowContent({
     const calendar = row?.closest('.planning-calendar-scroll');
     if (!row || !calendar || !hasExpandedNames) return;
     const label = row.querySelector<HTMLElement>('.planning-row-label');
-    const bars = row.querySelectorAll<HTMLElement>('.is-mission-name-expanded');
+    const captions = row.querySelectorAll<HTMLElement>('.planning-mission-caption');
     const measure = () => {
       const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
       if (availableWidth > 0) {
         row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
       }
       const widths = new Map<number, number>();
-      for (const bar of bars) {
-        if (bar.offsetWidth > 0) widths.set(Number(bar.dataset.projectId), bar.offsetWidth);
+      for (const caption of captions) {
+        if (caption.offsetWidth > 0) widths.set(Number(caption.dataset.projectId), caption.offsetWidth);
       }
       setMeasuredTitleWidths((previous) => (
         previous.size === widths.size && [...widths].every(([id, width]) => previous.get(id) === width) ? previous : widths
@@ -277,7 +277,7 @@ function PlanningFleetTimelineRowContent({
     const observer = new ResizeObserver(measure);
     observer.observe(calendar);
     if (label) observer.observe(label, { box: 'border-box' });
-    bars.forEach((bar) => observer.observe(bar, { box: 'border-box' }));
+    captions.forEach((caption) => observer.observe(caption, { box: 'border-box' }));
     return () => observer.disconnect();
   }, [dayWidth, days, hasExpandedNames, projectItems]);
   const visitTimelineItems = visits.flatMap((visit) => {
@@ -332,13 +332,6 @@ function PlanningFleetTimelineRowContent({
     } catch {
       // Ignore malformed or unrelated payloads.
     }
-  }
-
-  function dateUnderBar(clientX: number) {
-    const firstDay = rowRef.current?.querySelector<HTMLElement>('[data-planning-drop-date]');
-    if (!firstDay) return undefined;
-    const index = Math.floor((clientX - firstDay.getBoundingClientRect().left) / dayWidth);
-    return days[index]?.date;
   }
 
   function dragOverDate(event: React.DragEvent, date: string) {
@@ -541,15 +534,18 @@ function PlanningFleetTimelineRowContent({
         const stack = projectStack.stackById.get(project.id) || 0;
         const titleWidth = titleWidths.get(project.id);
         const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length);
-        return (
+        const gridPlacement = {
+          gridColumn: `${placement.start + 1} / span ${placement.span}`,
+          gridRow: hasExpandedNames ? stack + 1 : 1,
+        };
+        const bar = (
           <button
             aria-busy={isPending}
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}${title ? ' is-mission-name-expanded' : ''}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             data-project-id={project.id}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
-            key={project.id}
             onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
             onDoubleClick={() => onOpen(project)}
             onContextMenu={(event) => {
@@ -559,35 +555,40 @@ function PlanningFleetTimelineRowContent({
               onOpenContextMenu(project, { x: event.clientX, y: event.clientY });
             }}
             onDragEnd={() => { setDraggingId(null); setMovePreview(null); }}
-            onDragOver={editable && title ? (event) => {
-              const date = dateUnderBar(event.clientX);
-              if (date) dragOverDate(event, date);
-            } : undefined}
-            onDrop={editable && title ? (event) => {
-              const date = dateUnderBar(event.clientX);
-              if (date) dropOnDate(event, date);
-            } : undefined}
             onDragStart={(event) => {
               setDraggingId(project.id);
               event.dataTransfer.effectAllowed = 'move';
               event.dataTransfer.setData('application/x-seapilot-project', String(project.id));
               if (lane.vesselId) event.dataTransfer.setData('application/x-seapilot-project-vessel', String(lane.vesselId));
             }}
-            style={{
-              gridColumn: `${placement.start + 1} / span ${placement.span}`,
-              gridRow: hasExpandedNames ? stack + 1 : 1,
+            style={title ? undefined : {
+              ...gridPlacement,
               marginTop: !hasExpandedNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
-              ...(title ? { '--planning-mission-shift': `${title.shift}px` } : {}),
-            } as CSSProperties}
+            }}
             title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
-            <span className="planning-project-title">{project.title}</span>
+            {title ? null : <span className="planning-project-title">{project.title}</span>}
             <small>{planningFleetEventTypeLabel(project.eventType)}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
           </button>
+        );
+        return (
+          <div
+            className={title ? 'planning-project-with-caption' : 'planning-project-without-caption'}
+            key={project.id}
+            style={title ? gridPlacement : undefined}
+          >
+            {bar}
+            {title ? <span
+              aria-hidden="true"
+              className="planning-mission-caption"
+              data-project-id={project.id}
+              style={{ '--planning-mission-shift': `${title.shift}px` } as CSSProperties}
+            >{project.title}</span> : null}
+          </div>
         );
       })}
       {visitTimelineItems.map(({ key, visit, startsOn, endsOn }) => {

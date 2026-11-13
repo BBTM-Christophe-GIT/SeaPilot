@@ -862,7 +862,7 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Opération déplacée et synchronisée sur ses navires.')).toBeInTheDocument();
   });
 
-  it('shows full one-day names on separate tracks in the compact fleet and project calendars', async () => {
+  it('shows full one-day names below their bars in the compact fleet and project calendars', async () => {
     const user = userEvent.setup();
     const oneDay = {
       ...planningProjectRow,
@@ -894,19 +894,24 @@ describe('PlanningPage cockpit', () => {
 
     expect(screen.queryByRole('switch', { name: 'Afficher les noms' })).not.toBeInTheDocument();
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('52px');
-    expect(oneDayBar).toHaveClass('is-mission-name-expanded');
-    expect(within(oneDayBar).getByText(oneDay.title)).toBeVisible();
+    const oneDayTrack = oneDayBar.closest<HTMLElement>('.planning-project-with-caption')!;
+    const oneDayCaption = oneDayTrack.querySelector('.planning-mission-caption');
+    expect(oneDayBar.nextElementSibling).toBe(oneDayCaption);
+    expect(oneDayCaption).toHaveTextContent(oneDay.title);
+    expect(oneDayCaption).toBeVisible();
+    expect(within(oneDayBar).queryByText(oneDay.title)).not.toBeInTheDocument();
     const multiDayBar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
     const clippedBar = screen.getByRole('button', { name: /^Transit P602 - Mission commencée hors période,/ });
     const adjacentBar = screen.getByRole('button', { name: /^Transit P603 - Inspection et assistance portuaire,/ });
-    expect(multiDayBar).not.toHaveClass('is-mission-name-expanded');
-    expect(clippedBar).not.toHaveClass('is-mission-name-expanded');
+    expect(multiDayBar.closest('.planning-project-with-caption')).toBeNull();
+    expect(clippedBar.closest('.planning-project-with-caption')).toBeNull();
     expect(clippedBar.style.gridColumn).toMatch(/span 1$/);
-    expect(adjacentBar).toHaveClass('is-mission-name-expanded');
-    expect(oneDayBar.style.gridColumn).toMatch(/span 1$/);
-    expect(adjacentBar.style.gridColumn).toMatch(/span 1$/);
-    expect(adjacentBar.style.gridColumn).not.toBe(oneDayBar.style.gridColumn);
-    expect(adjacentBar.style.gridRow).not.toBe(oneDayBar.style.gridRow);
+    const adjacentTrack = adjacentBar.closest<HTMLElement>('.planning-project-with-caption')!;
+    expect(adjacentTrack.querySelector('.planning-mission-caption')).toHaveTextContent(adjacentProject.title);
+    expect(oneDayTrack.style.gridColumn).toMatch(/span 1$/);
+    expect(adjacentTrack.style.gridColumn).toMatch(/span 1$/);
+    expect(adjacentTrack.style.gridColumn).not.toBe(oneDayTrack.style.gridColumn);
+    expect(Number(adjacentTrack.style.gridRow)).toBeGreaterThan(Number(oneDayTrack.style.gridRow));
 
     await user.click(screen.getByRole('button', { name: 'Zoom avant' }));
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
@@ -916,7 +921,8 @@ describe('PlanningPage cockpit', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Projet' }));
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
-    expect(screen.getByRole('button', { name: oneDayName })).toHaveClass('is-mission-name-expanded');
+    const projectBar = screen.getByRole('button', { name: oneDayName });
+    expect(projectBar.nextElementSibling).toHaveTextContent(oneDay.title);
   });
 
   it.each(['marin', 'capitaine'] as const)('keeps the published project view read-only for %s', async (role) => {
@@ -932,8 +938,9 @@ describe('PlanningPage cockpit', () => {
     await screen.findByRole('heading', { name: 'Planning' });
     await user.click(screen.getByRole('tab', { name: 'Projet' }));
     const bar = screen.getByRole('button', { name: /P600 - Remorquage portuaire/ });
-    expect(bar).toHaveClass('is-mission-name-expanded');
-    expect(within(bar).getByText(oneDay.title)).toBeVisible();
+    expect(bar.nextElementSibling).toHaveClass('planning-mission-caption');
+    expect(bar.nextElementSibling).toHaveTextContent(oneDay.title);
+    expect(bar.nextElementSibling).toBeVisible();
     expect(bar).toHaveAttribute('draggable', 'false');
     expect(bar.querySelector('.planning-resize-handle')).toBeNull();
     expect(screen.queryByRole('button', { name: /Ajouter un projet|Nouveau projet/ })).not.toBeInTheDocument();
