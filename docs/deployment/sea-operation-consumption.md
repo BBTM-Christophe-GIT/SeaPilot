@@ -62,7 +62,13 @@ la somme des cuves principales, avec la caisse journalière suivie séparément.
 Seul un relevé complet des cuves principales peut actualiser la référence de
 carburant. Les volumes des autres sous-sections sont conservés dans le relevé.
 Pour les deux cuves calibrées du LANDEMER, une mesure en pourcentage applique
-la table correspondante. Le relevé peut être rouvert à son heure avec ses valeurs
+la table correspondante. Pour les onze cuves diesel du GOURY, choisir **m**
+pour saisir la hauteur de référence **Z/0H** du dossier de stabilité (chapitre 8,
+pages 46 à 62), sans assiette ni gîte. SeaPilot interpole le volume entre les
+hauteurs publiées de 5 à 98 % de remplissage. Pour une mesure hors de cette
+plage, utiliser le volume ou le pourcentage connu. Le barème est associé au
+repère de la cuve en fin de libellé et à sa capacité nominale.
+Le relevé peut être rouvert à son heure avec ses valeurs
 et unités d’origine. Pour un navire qui a seulement une capacité historique, la
 mesure se saisit dans une cuve unique. Quand la capacité est inconnue, la saisie
 en volume reste disponible.
