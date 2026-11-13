@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.102.2` affiche les réponses partagées du collaborateur et celles
+du management dans un même questionnaire, avec une couleur par auteur.
+Voir [Entretien Professionnel et d’Evaluation](../annual-professional-evaluation.md#workflow).
+
 La version `3.102.1` permet d’écarter une fiche de la **Liste du personnel** et
 de ses exports tout en préservant ses références opérationnelles.
 Appliquer `20261113110101_organigramme_personnel_exclusions.sql` avant le frontend.

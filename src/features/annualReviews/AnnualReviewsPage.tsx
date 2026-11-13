@@ -3,7 +3,7 @@ import {
   Clock3, Download, ExternalLink, FileCheck2, FileSignature, MapPin, Plus, Printer,
   Save, Send, ShieldCheck, UserRoundCheck, Video,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { AnnualReviewQuestionnaire } from './AnnualReviewForm';
@@ -146,12 +146,12 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
   const [objectives, setObjectives] = useState<AnnualReviewObjectiveRecord[]>([]);
   const [answers, setAnswers] = useState<AnnualReviewAnswers>(emptyAnnualReviewAnswers());
   const [activeTab, setActiveTab] = useState<AnnualReviewTabKey>('guide');
-  const [responseView, setResponseView] = useState<'mine' | 'collaborator' | 'manager'>('mine');
   const [invitation, setInvitation] = useState<InvitationForm>(initialInvitationForm);
   const [counterForm, setCounterForm] = useState({ startsAt: '', endsAt: '', note: '' });
   const [isCreating, setIsCreating] = useState(false);
   const [shareChoice, setShareChoice] = useState<'share' | 'private' | ''>('');
-  const [hasReadReport, setHasReadReport] = useState(false);
+  const [readReportId, setReadReportId] = useState<number | null>(null);
+  const [loadedReview, setLoadedReview] = useState<AnnualReviewRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -161,9 +161,15 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
   const isReviewManager = Boolean(selectedReview && selectedReview.managerPersonId === currentPersonId);
   const isCollaborator = Boolean(selectedReview && selectedReview.employeePersonId === currentPersonId);
   const ownRole = isReviewManager ? 'manager' : isCollaborator ? 'collaborator' : null;
-  const ownResponse = responses.find((response) => response.respondentRole === ownRole);
-  const collaboratorResponse = responses.find((response) => response.respondentRole === 'collaborator');
-  const managerResponse = responses.find((response) => response.respondentRole === 'manager');
+  const reviewDetailsReady = selectedReview === loadedReview;
+  const hasReadReport = readReportId === selectedReview?.id;
+  const ownResponse = reviewDetailsReady ? responses.find((response) => response.respondentRole === ownRole) : undefined;
+  const collaboratorResponse = reviewDetailsReady ? responses.find((response) => response.respondentRole === 'collaborator') : undefined;
+  const managerResponse = reviewDetailsReady ? responses.find((response) => response.respondentRole === 'manager') : undefined;
+  const sharedCollaboratorAnswers = ownRole && collaboratorResponse?.shareWithManager && collaboratorResponse.submittedAt
+    ? collaboratorResponse.answers
+    : undefined;
+  const questionnaireOpen = selectedReview?.status === 'scheduled' || selectedReview?.status === 'collaborator_submitted';
   const canUpdateObjectives = context.roles.some((role) => ['admin', 'direction', 'armement', 'capitaine'].includes(role));
 
   const load = useCallback(async () => {
@@ -201,30 +207,32 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
     } finally { setIsLoading(false); }
   }, [context.client, context.previewMode, currentPersonId, isManagerProfile, recipientRoute, requestedReviewId, requestedPersonId]);
 
-  const loadResponses = useCallback(async (review: AnnualReviewRecord | null) => {
-    if (!review || context.previewMode) { setResponses([]); setObjectives([]); setAnswers(emptyAnnualReviewAnswers()); return; }
-    try {
-      const [loaded, loadedObjectives] = await Promise.all([
-        fetchAnnualReviewResponses(context.client, review.id), fetchAnnualReviewObjectives(context.client, review.id),
-      ]);
-      setResponses(loaded);
-      setObjectives(loadedObjectives);
-      const role = review.managerPersonId === currentPersonId ? 'manager' : 'collaborator';
-      const own = loaded.find((response) => response.respondentRole === role);
-      setAnswers(own?.answers || emptyAnnualReviewAnswers());
-      setShareChoice(own?.respondentRole === 'collaborator' && own.shareWithManager !== null ? (own.shareWithManager ? 'share' : 'private') : '');
-      setResponseView('mine');
-    } catch (error) { setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les réponses.'); }
-  }, [context.client, context.previewMode, currentPersonId]);
-
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { void loadResponses(selectedReview); }, [loadResponses, selectedReview]);
+  useEffect(() => {
+    if (!selectedReview) return;
+    let cancelled = false;
 
-  const displayedAnswers = useMemo(() => {
-    if (responseView === 'collaborator') return collaboratorResponse?.answers || emptyAnnualReviewAnswers();
-    if (responseView === 'manager') return managerResponse?.answers || emptyAnnualReviewAnswers();
-    return answers;
-  }, [answers, collaboratorResponse?.answers, managerResponse?.answers, responseView]);
+    async function loadResponses(review: AnnualReviewRecord) {
+      try {
+        const [loaded, loadedObjectives] = await Promise.all([
+          context.previewMode ? [] : fetchAnnualReviewResponses(context.client, review.id),
+          context.previewMode ? [] : fetchAnnualReviewObjectives(context.client, review.id),
+        ]);
+        if (cancelled) return;
+        const own = loaded.find((response) => response.respondentRole === ownRole);
+        setResponses(loaded);
+        setObjectives(loadedObjectives);
+        setAnswers(own?.answers || emptyAnnualReviewAnswers());
+        setShareChoice(own?.respondentRole === 'collaborator' && own.shareWithManager !== null ? (own.shareWithManager ? 'share' : 'private') : '');
+        setLoadedReview(review);
+      } catch (error) {
+        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les réponses.');
+      }
+    }
+
+    void loadResponses(selectedReview);
+    return () => { cancelled = true; };
+  }, [context.client, context.previewMode, ownRole, selectedReview]);
 
   async function mutate(action: () => Promise<unknown>, success: string) {
     if (context.previewMode) { setMessage('Préversion : le parcours est interactif, sans écriture dans les données.'); return; }
@@ -330,27 +338,34 @@ export function AnnualReviewsPage({ recipientRoute = false }: AnnualReviewsPageP
           {isCreating ? <InvitationEditor form={invitation} isSaving={isSaving} onChange={setInvitation} onSend={() => void sendInvitation()} people={people} /> : selectedReview ? (
             <>
               <ReviewSummary review={selectedReview} />
-              {objectives.length ? <AnnualReviewObjectiveTracker canUpdate={canUpdateObjectives} isSaving={isSaving} objectives={objectives} onUpdate={(objective, percent) => void updateObjectiveProgress(objective, percent)} review={selectedReview} /> : null}
+              {!reviewDetailsReady && (ownRole || selectedReview.managerValidatedAt) && !errorMessage ? <div className="annual-review-state" role="status">Chargement des réponses…</div> : null}
+              {reviewDetailsReady && objectives.length ? <AnnualReviewObjectiveTracker canUpdate={canUpdateObjectives} isSaving={isSaving} objectives={objectives} onUpdate={(objective, percent) => void updateObjectiveProgress(objective, percent)} review={selectedReview} /> : null}
               <WorkflowActions
-                answers={answers} collaboratorResponse={collaboratorResponse} counterForm={counterForm} hasReadReport={hasReadReport}
-                isCollaborator={isCollaborator} isManager={isReviewManager} isSaving={isSaving} managerResponse={managerResponse}
+                collaboratorResponse={collaboratorResponse} counterForm={counterForm} hasReadReport={hasReadReport}
+                isCollaborator={isCollaborator} isManager={isReviewManager} isSaving={isSaving}
+                reviewDetailsReady={reviewDetailsReady} canSign={Boolean(managerResponse)}
                 onAccept={() => void mutate(() => acceptAnnualReviewInvitation(context.client, selectedReview.id), 'Invitation acceptée. Le rendez-vous apparaît maintenant dans le Planning.')}
                 onAcceptCounter={() => void mutate(() => managerScheduleAnnualReview(context.client, selectedReview.id, true), 'Le nouveau créneau est accepté et ajouté au Planning.')}
                 onCounterChange={setCounterForm}
                 onCounter={() => void mutate(() => counterProposeAnnualReview(context.client, selectedReview.id, toUtc(counterForm.startsAt), toUtc(counterForm.endsAt), counterForm.note), 'Votre nouveau créneau a été envoyé au manager.')}
                 onDownload={() => void personalPdf(false)} onPrint={() => void personalPdf(true)} onOpenReport={() => void openStoredReport(false)}
-                onReadChange={setHasReadReport} onSave={() => void saveResponse(false)} onSign={() => void signFinalReport()}
+                onReadChange={(read) => setReadReportId(read ? selectedReview.id : null)} onSave={() => void saveResponse(false)} onSign={() => void signFinalReport()}
                 onSubmit={() => void saveResponse(true)} onValidate={() => void validateManager()} review={selectedReview}
                 shareChoice={shareChoice} onShareChoice={setShareChoice}
               />
-              {(selectedReview.status === 'scheduled' || selectedReview.status === 'collaborator_submitted') && ownRole ? (
+              {reviewDetailsReady && questionnaireOpen && ownRole ? (
                 <section className="annual-review-response-area">
-                  <header className="annual-review-response-switcher"><div><strong>Questionnaire</strong><span>{ownRole === 'manager' ? 'Réponses du management' : 'Vos réponses personnelles'}</span></div><div><button className={responseView === 'mine' ? 'is-active' : ''} onClick={() => setResponseView('mine')} type="button">Mes réponses</button>{isReviewManager && collaboratorResponse ? <button className={responseView === 'collaborator' ? 'is-active' : ''} onClick={() => setResponseView('collaborator')} type="button">Réponses partagées du collaborateur</button> : null}</div></header>
-                  {isReviewManager && selectedReview.status === 'collaborator_submitted' && !collaboratorResponse ? <div className="annual-review-privacy"><ShieldCheck size={18} /><span><strong>Réponses privées</strong>Le collaborateur a remis son questionnaire sans autoriser son partage.</span></div> : null}
-                  <AnnualReviewQuestionnaire activeTab={activeTab} answers={displayedAnswers} onChange={setAnswers} onTabChange={setActiveTab} readOnly={responseView !== 'mine' || Boolean(ownResponse?.submittedAt)} />
+                  <header className="annual-review-response-header"><strong>Questionnaire</strong><span>{isReviewManager ? sharedCollaboratorAnswers ? 'Réponses partagées du collaborateur et réponses du management' : 'Réponses du management' : 'Vos réponses personnelles'}</span></header>
+                  {isReviewManager && selectedReview.status === 'collaborator_submitted' && !sharedCollaboratorAnswers ? <div className="annual-review-privacy"><ShieldCheck size={18} /><span><strong>Réponses privées</strong>Le collaborateur a remis son questionnaire sans autoriser son partage.</span></div> : null}
+                  <AnnualReviewQuestionnaire activeTab={activeTab} answers={answers} collaboratorAnswers={isReviewManager ? sharedCollaboratorAnswers : undefined} onChange={setAnswers} onTabChange={setActiveTab} readOnly={Boolean(ownResponse?.submittedAt)} />
                 </section>
               ) : null}
-              {(selectedReview.status === 'awaiting_signature' || selectedReview.status === 'archived') && managerResponse ? <section className="annual-review-response-area"><header className="annual-review-response-switcher"><div><strong>Rapport final</strong><span>Seules les réponses du management sont reprises dans le document.</span></div></header><AnnualReviewQuestionnaire activeTab={activeTab} answers={managerResponse.answers} onChange={() => undefined} onTabChange={setActiveTab} readOnly /></section> : null}
+              {(selectedReview.status === 'awaiting_signature' || selectedReview.status === 'archived') && managerResponse ? (
+                <section className="annual-review-response-area">
+                  <header className="annual-review-response-header"><strong>Rapport final</strong><span>Seules les réponses du management sont reprises dans le document.</span></header>
+                  <AnnualReviewQuestionnaire activeTab={activeTab} answers={managerResponse.answers} collaboratorAnswers={sharedCollaboratorAnswers} onChange={() => undefined} onTabChange={setActiveTab} readOnly />
+                </section>
+              ) : null}
               {selectedReview.status === 'archived' ? <button className="annual-review-archive-link" onClick={() => void openStoredReport(true)} type="button"><FileCheck2 size={18} /><span><strong>Rapport signé archivé</strong>{selectedReview.finalReportFileName}</span><ExternalLink size={16} /></button> : null}
             </>
           ) : <section className="annual-review-empty"><CalendarCheck2 size={34} /><h2>Préparez la campagne d’entretiens</h2><p>Sélectionnez un entretien ou envoyez une invitation à un collaborateur actif.</p>{isManagerProfile ? <button onClick={() => setIsCreating(true)} type="button"><Plus size={17} />Nouvel entretien</button> : null}</section>}
@@ -379,8 +394,9 @@ function AnnualReviewObjectiveTracker({ objectives, review, canUpdate, isSaving,
 
 function WorkflowActions(props: {
   review: AnnualReviewRecord; isCollaborator: boolean; isManager: boolean; isSaving: boolean;
+  reviewDetailsReady: boolean; canSign: boolean;
   counterForm: { startsAt: string; endsAt: string; note: string }; onCounterChange: (value: { startsAt: string; endsAt: string; note: string }) => void;
-  collaboratorResponse?: AnnualReviewResponseRecord; managerResponse?: AnnualReviewResponseRecord; answers: AnnualReviewAnswers;
+  collaboratorResponse?: AnnualReviewResponseRecord;
   shareChoice: 'share' | 'private' | ''; onShareChoice: (value: 'share' | 'private') => void; hasReadReport: boolean; onReadChange: (value: boolean) => void;
   onAccept: () => void; onCounter: () => void; onAcceptCounter: () => void; onSave: () => void; onSubmit: () => void; onValidate: () => void;
   onDownload: () => void; onPrint: () => void; onOpenReport: () => void; onSign: () => void;
@@ -388,11 +404,11 @@ function WorkflowActions(props: {
   const { review } = props;
   if (props.isCollaborator && review.status === 'invitation_pending') return <section className="annual-review-action-card is-invitation"><div><BellRing size={23} /><span><strong>Répondez à l’invitation</strong>Ce rendez-vous n’apparaîtra dans le Planning qu’après accord.</span></div><div className="annual-review-primary-actions"><button disabled={props.isSaving} onClick={props.onAccept} type="button"><CalendarCheck2 size={17} />Accepter le créneau</button></div><details><summary>Proposer un nouvel horaire</summary><div className="annual-review-counter-grid"><label>Nouveau début<input onChange={(event) => props.onCounterChange({ ...props.counterForm, startsAt: event.target.value })} step="900" type="datetime-local" value={props.counterForm.startsAt} /></label><label>Nouvelle fin<input onChange={(event) => props.onCounterChange({ ...props.counterForm, endsAt: event.target.value })} step="900" type="datetime-local" value={props.counterForm.endsAt} /></label><label>Message<textarea onChange={(event) => props.onCounterChange({ ...props.counterForm, note: event.target.value })} rows={2} value={props.counterForm.note} /></label><button disabled={props.isSaving} onClick={props.onCounter} type="button"><Clock3 size={17} />Envoyer la proposition</button></div></details></section>;
   if (props.isManager && review.status === 'counter_proposed') return <section className="annual-review-action-card is-invitation"><div><Clock3 size={23} /><span><strong>Nouveau créneau proposé</strong>Le Planning sera mis à jour dès votre acceptation.</span></div><button disabled={props.isSaving} onClick={props.onAcceptCounter} type="button"><CalendarCheck2 size={17} />Accepter le nouveau créneau</button></section>;
-  if ((review.status === 'scheduled' || review.status === 'collaborator_submitted') && (props.isCollaborator || props.isManager)) {
+  if (props.reviewDetailsReady && (review.status === 'scheduled' || review.status === 'collaborator_submitted') && (props.isCollaborator || props.isManager)) {
     const submitted = props.isCollaborator && Boolean(props.collaboratorResponse?.submittedAt);
     return <section className="annual-review-action-card"><div><FileSignature size={23} /><span><strong>{props.isManager ? 'Questionnaire du management' : 'Votre questionnaire'}</strong>{submitted ? 'Vos réponses ont été remises et sont maintenant figées.' : 'Enregistrez un brouillon ou finalisez vos réponses.'}</span></div>{props.isCollaborator ? <div className="annual-review-export-actions"><button className="is-secondary" disabled={props.isSaving} onClick={props.onDownload} type="button"><Download size={16} />Télécharger mes réponses</button><button className="is-secondary" disabled={props.isSaving} onClick={props.onPrint} type="button"><Printer size={16} />Imprimer</button></div> : null}{props.isCollaborator && !submitted ? <fieldset className="annual-review-share-choice"><legend>Confidentialité de vos réponses</legend><label className={props.shareChoice === 'share' ? 'is-selected' : ''}><input checked={props.shareChoice === 'share'} onChange={() => props.onShareChoice('share')} type="radio" /><strong>Partager avec le manager</strong><small>Le manager pourra consulter vos réponses dans BBTM.</small></label><label className={props.shareChoice === 'private' ? 'is-selected' : ''}><input checked={props.shareChoice === 'private'} onChange={() => props.onShareChoice('private')} type="radio" /><strong>Garder mes réponses privées</strong><small>Le manager sera seulement informé que le questionnaire est terminé.</small></label></fieldset> : null}<div className="annual-review-primary-actions">{!submitted ? <button className="is-secondary" disabled={props.isSaving} onClick={props.onSave} type="button"><Save size={17} />Enregistrer le brouillon</button> : null}{props.isCollaborator && !submitted ? <button disabled={props.isSaving} onClick={props.onSubmit} type="button"><Send size={17} />Remettre mes réponses</button> : null}{props.isManager ? <button disabled={props.isSaving || review.status !== 'collaborator_submitted'} onClick={props.onValidate} type="button"><FileCheck2 size={17} />Valider et transmettre le rapport</button> : null}</div>{props.isManager && review.status !== 'collaborator_submitted' ? <small className="annual-review-wait-note">Validation disponible après remise des réponses du collaborateur.</small> : null}</section>;
   }
-  if (props.isCollaborator && review.status === 'awaiting_signature') return <section className="annual-review-action-card is-signature"><div><FileSignature size={23} /><span><strong>Lire et signer le rapport</strong>Le rapport contient uniquement les réponses validées par le management.</span></div><button className="is-secondary" onClick={props.onOpenReport} type="button"><ExternalLink size={16} />Lire le rapport PDF</button><label className="annual-review-read-confirm"><input checked={props.hasReadReport} onChange={(event) => props.onReadChange(event.target.checked)} type="checkbox" />J’ai lu le rapport et je confirme vouloir le signer avec ma signature enregistrée.</label><button disabled={!props.hasReadReport || props.isSaving} onClick={props.onSign} type="button"><FileSignature size={17} />Signer et archiver</button></section>;
+  if (props.isCollaborator && review.status === 'awaiting_signature') return <section className="annual-review-action-card is-signature"><div><FileSignature size={23} /><span><strong>Lire et signer le rapport</strong>Le rapport contient uniquement les réponses validées par le management.</span></div><button className="is-secondary" onClick={props.onOpenReport} type="button"><ExternalLink size={16} />Lire le rapport PDF</button><label className="annual-review-read-confirm"><input checked={props.hasReadReport} onChange={(event) => props.onReadChange(event.target.checked)} type="checkbox" />J’ai lu le rapport et je confirme vouloir le signer avec ma signature enregistrée.</label><button disabled={!props.hasReadReport || !props.canSign || props.isSaving} onClick={props.onSign} type="button"><FileSignature size={17} />Signer et archiver</button></section>;
   if (review.status === 'archived') return <section className="annual-review-action-card is-complete"><div><CheckCircle2 size={23} /><span><strong>Entretien terminé</strong>Le rapport signé est archivé dans le Dossier collaborateur.</span></div></section>;
   return null;
 }
