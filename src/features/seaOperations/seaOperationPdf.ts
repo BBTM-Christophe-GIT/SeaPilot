@@ -9,7 +9,7 @@ import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPayload } from 
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
 import { seaOperationWeatherGridLocations } from './seaOperationWeatherLocation';
-import { forecastTotalSeaText, weatherPeriod } from './seaOperationWeatherPresentation';
+import { forecastTotalSeaText, forecastWindUnavailableMessage, weatherPeriod } from './seaOperationWeatherPresentation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
@@ -397,7 +397,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const messageLines = message ? document.splitTextToSize(clean(message), weatherColumnWidth - 26) as string[] : [];
       const totalSeaLines = forecast?.seaState ? document.splitTextToSize(clean(forecastTotalSeaText(forecast).join('\n')), weatherColumnWidth - 26) as string[] : [];
       const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
-        : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
+        : document.splitTextToSize(clean(forecastWindUnavailableMessage(forecast) || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
       const observed = row.observation;
       const observationSummary = !signed ? '' : observed?.status === 'recorded' ? [
         'MESURES APRÈS LE PASSAGE',

@@ -15,7 +15,7 @@ export function SeaOperationUkcField({ payload, point, index, disabled, readOnly
   const requestStatus = readOnly ? undefined : status;
   let message = presentation.caption;
   if (requestStatus?.loading) message = 'Calcul UKC en cours…';
-  else if (requestStatus?.error) message = presentation.approximate ? requestStatus.error : `UKC indisponible · ${requestStatus.error}`;
+  else if (requestStatus?.error) message = requestStatus.error;
   else if (automatic && !readOnly && !presentation.capture && !presentation.fallback && !seaOperationUkcPrerequisite(payload, point)) {
     message = Date.parse(seaOperationEtaUtc(point.eta)) <= Date.now()
       ? 'UKC indisponible · L’ETA est passée. Aucune prévision UKC enregistrée.' : 'Préparation du calcul UKC…';

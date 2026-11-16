@@ -27,6 +27,11 @@ export function forecastSeaStateAssessment(matrix: VesselWeatherMatrix | null | 
   return evaluateVesselSeaState(matrix, swell?.periodKind === 'peak' ? undefined : swell);
 }
 
+export function forecastWindUnavailableMessage(forecast: SeaOperationWaypointWeather | undefined) {
+  if (!forecast?.waves && forecast?.windMessage === forecast?.wavesMessage) return undefined;
+  return forecast?.windMessage || undefined;
+}
+
 export function forecastTotalSeaText(forecast: SeaOperationWaypointWeather) {
   const sea = forecast.seaState;
   if (!sea) return [];

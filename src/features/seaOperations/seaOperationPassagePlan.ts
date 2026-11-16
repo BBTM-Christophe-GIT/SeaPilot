@@ -4,7 +4,7 @@ import { waypointRadioSnapshot } from './seaOperationWaypointSnapshots';
 import type { VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationFootnote, observationText, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
-import { forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
+import { forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, forecastWindUnavailableMessage, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
 import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { seaOperationUkcPresentation } from './seaOperationUkcPresentation';
 
@@ -32,7 +32,7 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { payl
       : `Hs / période : ${forecast.wavesMessage || 'prévision indisponible à cette ETA.'}`,
     ...(forecast.seaState ? [forecastTotalSeaText(forecast).join('\n')] : []),
     forecast.wind ? `Vent moyen 10 m : ${number(forecast.wind.speedKnots)} nd · de ${number(forecast.wind.directionDegrees, 0)}°`
-      : `Vent : ${forecast.windMessage || 'prévision indisponible à cette ETA.'}`,
+      : `Vent : ${forecastWindUnavailableMessage(forecast) || 'prévision indisponible à cette ETA.'}`,
   ].join('\n\n') : 'Prévisions météo non enregistrées pour cette position et cette ETA.';
   const observation = options.includeObservations ? waypointWeatherObservation(point, options.observations) : undefined;
   const observedWeather = options.includeObservations ? observationText(observation, observationWaitingMessage(point)) : '';

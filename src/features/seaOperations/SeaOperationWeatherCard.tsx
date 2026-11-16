@@ -7,7 +7,7 @@ import { SeaOperationWeatherObservationCard, SeaOperationWeatherObservationOrigi
 import type { WeatherRequestStatus } from './seaOperationWeatherStatus';
 import { observationTime, observationWaitingMessage, waypointWeatherObservation, weatherUncertaintyLabel } from './seaOperationWeatherHistory';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
-import { forecastModelDetails, forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
+import { forecastModelDetails, forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, forecastWindUnavailableMessage, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
 
 const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -44,7 +44,7 @@ export function SeaOperationWeatherCard({ point, matrix, compact = false, showIn
       <p className="so-waypoint-weather-direction"><Compass size={13} aria-hidden="true" />Provenance de la houle : {waves?.directionDegrees != null ? `${amount(waves.directionDegrees, integer)}°` : 'indisponible'}</p>
       {!waves && <p className="so-waypoint-weather-unavailable">{forecast.wavesMessage || 'Prévision de houle indisponible.'}</p>}
       {forecast.seaState && <p className="so-waypoint-weather-direction">{forecastTotalSeaText(forecast).join(' · ')}</p>}
-      <div className="so-waypoint-weather-wind"><Wind size={15} aria-hidden="true" /><span>Vent moyen 10 m<strong>{forecast.wind ? <>{amount(forecast.wind.speedKnots)} nd{forecast.wind.directionDegrees !== null && ` · de ${amount(forecast.wind.directionDegrees, integer)}°`}</> : forecast.windMessage || 'Indisponible'}</strong></span></div>
+      <div className="so-waypoint-weather-wind"><Wind size={15} aria-hidden="true" /><span>Vent moyen 10 m<strong>{forecast.wind ? <>{amount(forecast.wind.speedKnots)} nd{forecast.wind.directionDegrees !== null && ` · de ${amount(forecast.wind.directionDegrees, integer)}°`}</> : forecastWindUnavailableMessage(forecast) || 'Indisponible'}</strong></span></div>
       <div className="so-waypoint-weather-time"><span>ETA : {date.format(new Date(forecast.etaUtc))} UTC</span>{forecastSourceLinks(forecast).map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>)}</div>
       {waves && <small className="so-waypoint-weather-model">Modèle houle : {date.format(new Date(waves.time))} UTC</small>}
       {forecast.seaState && <small className="so-waypoint-weather-model">Échéance mer totale {observationTime(forecast.seaState.time)}</small>}
@@ -108,7 +108,7 @@ function SeaOperationWeatherComparison({ point, matrix, showIndicator, validated
           {forecast.seaState && <p className="so-weather-comparison-message">{forecastTotalSeaText(forecast).join(' · ')}</p>}
           {showIndicator && <SeaStateIndicator assessment={assessment} />}
           {!waves && <p className="so-weather-comparison-message">{forecast.wavesMessage || 'Prévision de houle indisponible.'}</p>}
-          {!forecast.wind && <p className="so-weather-comparison-message">{forecast.windMessage || 'Prévision de vent indisponible.'}</p>}
+          {!forecast.wind && forecastWindUnavailableMessage(forecast) && <p className="so-weather-comparison-message">{forecastWindUnavailableMessage(forecast)}</p>}
           <details className="so-weather-comparison-details"><summary>Sources et horaires de prévision</summary><div>
             {forecastSourceDetails(forecast).map(detail => <p key={detail}>{detail}</p>)}
             {forecastSourceLinks(forecast).map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>)}
