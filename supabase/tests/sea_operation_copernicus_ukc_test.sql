@@ -252,7 +252,8 @@ select is((select to_jsonb(operation) from public.sea_operations operation where
 
 insert into copernicus_fixture(kind,payload)
 select 'unavailable',jsonb_set(payload,'{waypoints,0,ukcForecast}',(payload#>'{waypoints,0,ukcForecast}')||jsonb_build_object(
-  'draftMeters',4.1,'status','unavailable','message','Synthetic provider unavailable.',
+  'draftMeters',4.1,'status','unavailable','message','Maille terrestre.',
+  'reasonCode','land-cell','cellPosition',jsonb_build_object('latitude',49.65,'longitude',-1.625),
   'source',null,'cell',null,'waterLevel',null,'estimate',null)) from copernicus_fixture where kind='source';
 set local role authenticated;
 select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000001',true);
@@ -261,6 +262,15 @@ select 'unavailable-record',(saved->>'id')::uuid,saved->'draft' from (select pub
   (select payload from copernicus_fixture where kind='unavailable'))saved)response;
 select is((select payload#>>'{waypoints,0,ukcForecast,status}' from copernicus_fixture where kind='unavailable-record'),'unavailable',
   'an unavailable result may be retained in a preparation without manufacturing a value');
+select is((select payload#>'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='unavailable-record'),
+  (select payload#>'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='unavailable'),
+  'the land rejection retains its cell coordinates and reason without a model depth');
+select throws_ok($$select public.sea_operation_save(null,null,jsonb_set(
+    (select payload from copernicus_fixture where kind='unavailable'),'{waypoints,0,ukcForecast,cellPosition,latitude}','91'))$$,
+  '22023','Position de maille UKC invalide.','a rejected cell must keep valid coordinates');
+select throws_ok($$select public.sea_operation_save(null,null,jsonb_set(
+    (select payload from copernicus_fixture where kind='unavailable'),'{waypoints,0,ukcForecast,reasonCode}','"unknown"'))$$,
+  '22023','Motif d’indisponibilité UKC invalide.','only documented UKC rejection reasons are accepted');
 select is(public.sea_operation_sign((select id from copernicus_fixture where kind='unavailable-record'),1,'COPERNICUS TEST 1',true)->>'status','signed',
   'NO GO remains signable with unavailable automatic UKC evidence');
 insert into copernicus_fixture(kind,id,payload)

@@ -46,7 +46,9 @@ describe('UKC capture before save and captain signature', () => {
     const draft = payload(); draft.waypoints[0].ukcForecast = forecast();
     const afterEta = Date.parse(forecast().etaUtc) + 1;
     expect(await captureSeaOperationValidationUkc(client, draft, { now: afterEta })).toBe(draft);
-    expect(await captureSeaOperationValidationUkc(client, payload(), { now: afterEta })).not.toHaveProperty('waypoints.0.ukcForecast');
+    expect((await captureSeaOperationValidationUkc(client, payload(), { now: afterEta })).waypoints[0].ukcForecast).toMatchObject({
+      status: 'unavailable', reasonCode: 'past-eta', estimate: null,
+    });
     expect(fetchSeaOperationWaypointUkc).not.toHaveBeenCalled();
   });
 
@@ -66,6 +68,9 @@ describe('UKC capture before save and captain signature', () => {
     const draft = payload(), onError = vi.fn(); draft.waypoints[0].ukcForecast = forecast();
     expect(await captureSeaOperationValidationUkc(client, draft, { now, onError })).toBe(draft);
     expect(onError).toHaveBeenCalledWith(draft.waypoints[0], 'Connexion Copernicus indisponible.');
+    expect((await captureSeaOperationValidationUkc(client, payload(), { now })).waypoints[0].ukcForecast).toMatchObject({
+      status: 'unavailable', message: 'Connexion Copernicus indisponible.', estimate: null,
+    });
   });
 
   it('rejects a response belonging to a different vessel', async () => {

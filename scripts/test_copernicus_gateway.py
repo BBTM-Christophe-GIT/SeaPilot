@@ -143,6 +143,7 @@ class GatewayTests(unittest.TestCase):
         status, result = self.call({**self.input, "eta": "2026-10-25T12:00"})
         self.assertEqual(status, 200)
         self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["reasonCode"], "past-eta")
         self.assertIsNone(result["estimate"])
         self.provider.assert_not_called()
 
@@ -171,7 +172,36 @@ class GatewayTests(unittest.TestCase):
         status, result = self.call()
         self.assertEqual(status, 200)
         self.assertNotIn("synthetic-password", json.dumps(result))
+        self.assertEqual(result["reasonCode"], "shallow-water")
         self.assertIsNone(result["estimate"])
+
+    def test_unavailable_keeps_only_the_evidence_that_was_qualified(self):
+        source = FIXTURE["provider"]["source"]
+        cell = FIXTURE["provider"]["cell"]
+        position = {key: self.input[key] for key in ("latitude", "longitude")}
+        for code, reason, evidence in [
+            ("maskedCell", "land-cell", {"cellPosition": position}),
+            ("missingDepth", "missing-depth", {"cellPosition": position}),
+            ("missingTime", "missing-water-level", {"cell": cell}),
+            ("outsideHorizon", "outside-horizon", {}),
+        ]:
+            with self.subTest(code=code):
+                self.provider.return_value = {"status": "unavailable", "code": code, "source": source, **evidence}
+                status, result = self.call()
+                self.assertEqual(status, 200)
+                self.assertEqual(result["reasonCode"], reason)
+                self.assertEqual(result["source"], source)
+                for key, expected in evidence.items():
+                    self.assertEqual(result[key], expected)
+                self.assertIsNone(result["estimate"])
+                self.assertIsNone(result["waterLevel"])
+        self.provider.return_value = {"status": "unavailable", "code": "updating", "source": source}
+        self.assertNotIn("reasonCode", self.call()[1])
+
+    def test_unavailable_centre_cannot_belong_to_a_neighbour_cell(self):
+        self.provider.return_value = {"status": "unavailable", "code": "maskedCell", "source": FIXTURE["provider"]["source"],
+                                      "cellPosition": {"latitude": self.input["latitude"] + .03, "longitude": self.input["longitude"]}}
+        self.assertEqual(self.call(), (502, {"error": "UKC_SERVICE_UNAVAILABLE"}))
 
 
 if __name__ == "__main__":

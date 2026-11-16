@@ -1,14 +1,13 @@
 import { CloudSun, Compass, Timer, Waves, Wind, type LucideIcon } from 'lucide-react';
-import { evaluateVesselSeaState, type VesselSeaStateAssessment, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import type { VesselSeaStateAssessment, VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import type { SeaOperationWaypoint } from './seaOperationModel';
-import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import './seaOperationWeatherCard.css';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { SeaOperationWeatherObservationCard, SeaOperationWeatherObservationOrigin } from './SeaOperationWeatherObservationCard';
 import type { WeatherRequestStatus } from './seaOperationWeatherStatus';
-import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
-import { observationTime, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
+import { observationTime, observationWaitingMessage, waypointWeatherObservation, weatherUncertaintyLabel } from './seaOperationWeatherHistory';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { forecastModelDetails, forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
 
 const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -30,28 +29,34 @@ export function SeaOperationWeatherCard({ point, matrix, compact = false, showIn
   requestStatus?: WeatherRequestStatus;
 }) {
   if (variant === 'comparison') return <SeaOperationWeatherComparison point={point} matrix={matrix} showIndicator={showIndicator} validatedAt={validatedAt} observations={observations} />;
-  const forecast = waypointWeatherSnapshot(point);
-  const assessment = evaluateVesselSeaState(matrix, forecast?.waves);
+  const forecast = waypointWeatherAtValidation(point, validatedAt);
+  const assessment = forecastSeaStateAssessment(matrix, forecast);
   const waves = forecast?.waves;
+  const wavePeriod = weatherPeriod(waves ? waves.periodKind ?? 'mean' : undefined);
+  const signatureTime = validatedAt && Number.isFinite(Date.parse(validatedAt)) ? validatedAt : undefined;
   return <div className={`so-waypoint-weather-card${compact ? ' is-compact' : ''}${variant === 'editor' ? ' is-editor' : ''}${!forecast ? ' is-unavailable' : ''}${validatedAt ? ' is-validated' : ''}`}>
     <div className="so-waypoint-weather-heading"><span>{validatedAt ? 'Prévision conservée à la validation' : 'État de mer prévu'}</span>{showIndicator && <SeaStateIndicator assessment={assessment} />}</div>
     {forecast ? <>
       <dl className="so-waypoint-weather-metrics">
         <div><dt><Waves size={15} aria-hidden="true" />Houle Hs</dt><dd>{amount(waves?.heightMeters ?? null, height)}<small> m</small></dd></div>
-        <div><dt title="Période moyenne de la houle"><Timer size={15} aria-hidden="true" />Période<small>moyenne</small></dt><dd>{amount(waves?.periodSeconds ?? null)}<small> s</small></dd></div>
+        <div><dt title={`${wavePeriod.label} de la houle`}><Timer size={15} aria-hidden="true" />Période{waves && <small>{wavePeriod.detail}</small>}</dt><dd>{amount(waves?.periodSeconds ?? null)}<small> s</small></dd></div>
       </dl>
       <p className="so-waypoint-weather-direction"><Compass size={13} aria-hidden="true" />Provenance de la houle : {waves?.directionDegrees != null ? `${amount(waves.directionDegrees, integer)}°` : 'indisponible'}</p>
       {!waves && <p className="so-waypoint-weather-unavailable">{forecast.wavesMessage || 'Prévision de houle indisponible.'}</p>}
-      <div className="so-waypoint-weather-wind"><Wind size={15} aria-hidden="true" /><span>Vent moyen 10 m<strong>{forecast.wind ? <>{amount(forecast.wind.speedKnots)} nd · de {amount(forecast.wind.directionDegrees, integer)}°</> : 'Indisponible'}</strong></span></div>
-      <div className="so-waypoint-weather-time"><span>ETA : {date.format(new Date(forecast.etaUtc))} UTC</span><span>{forecast.attribution}</span></div>
+      {forecast.seaState && <p className="so-waypoint-weather-direction">{forecastTotalSeaText(forecast).join(' · ')}</p>}
+      <div className="so-waypoint-weather-wind"><Wind size={15} aria-hidden="true" /><span>Vent moyen 10 m<strong>{forecast.wind ? <>{amount(forecast.wind.speedKnots)} nd{forecast.wind.directionDegrees !== null && ` · de ${amount(forecast.wind.directionDegrees, integer)}°`}</> : forecast.windMessage || 'Indisponible'}</strong></span></div>
+      <div className="so-waypoint-weather-time"><span>ETA : {date.format(new Date(forecast.etaUtc))} UTC</span>{forecastSourceLinks(forecast).map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>)}</div>
       {waves && <small className="so-waypoint-weather-model">Modèle houle : {date.format(new Date(waves.time))} UTC</small>}
+      {forecast.seaState && <small className="so-waypoint-weather-model">Échéance mer totale {observationTime(forecast.seaState.time)}</small>}
       {forecast.wind && <small className="so-waypoint-weather-model">Modèle vent : {date.format(new Date(forecast.wind.time))} UTC</small>}
-      {forecast.model && <small className="so-waypoint-weather-model">{seaOperationWeatherLocation(forecast)}</small>}
+      {forecastModelDetails(forecast).map(detail => <small key={detail} className="so-waypoint-weather-model">{detail}</small>)}
+      <small className="so-waypoint-weather-model">Consultée le {observationTime(forecast.fetchedAt)}.</small>
+      {(forecast.wind || waves || forecast.seaState) && <small className="so-waypoint-weather-model">{weatherUncertaintyLabel}</small>}
       {assessment.hsRange && <small className="so-waypoint-weather-band">Matrice : Hs {assessment.hsRange} · {assessment.periodRange}</small>}
     </> : <p className="so-waypoint-weather-unavailable" role={requestStatus ? 'status' : undefined}>{requestStatus?.error || (requestStatus?.loading ? 'Chargement des prévisions météo…' : 'Prévisions météo non enregistrées pour cette position et cette ETA.')}</p>}
     {forecast && requestStatus?.loading && <small role="status" className="so-waypoint-weather-model">Actualisation des prévisions météo…</small>}
     {forecast && requestStatus?.error && <p role="status" className="so-waypoint-weather-unavailable">{requestStatus.error} Les prévisions déjà enregistrées sont conservées.</p>}
-    {validatedAt && <small className="so-waypoint-weather-model">Validation du Capitaine : {date.format(new Date(validatedAt))} UTC</small>}
+    {signatureTime && <small className="so-waypoint-weather-model">Validation du Capitaine : {date.format(new Date(signatureTime))} UTC</small>}
     {showObservations && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
   </div>;
 }
@@ -69,15 +74,15 @@ function SeaOperationWeatherComparison({ point, matrix, showIndicator, validated
   point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; showIndicator: boolean;
   validatedAt?: string | null; observations?: readonly ObservationResult[];
 }) {
-  const captured = waypointWeatherSnapshot(point);
   const signatureTime = validatedAt && Number.isFinite(Date.parse(validatedAt)) ? validatedAt : undefined;
-  const forecast = validatedAt && (!signatureTime || captured && Date.parse(captured.fetchedAt) > Date.parse(signatureTime)) ? undefined : captured;
+  const forecast = waypointWeatherAtValidation(point, validatedAt);
   const observation = waypointWeatherObservation(point, observations);
   const measured = signatureTime && observation?.status === 'recorded' ? observation : undefined;
   const waves = forecast?.waves;
+  const wavePeriod = weatherPeriod(waves?.periodKind ?? 'mean');
   const measuredWaves = measured?.waves;
   const measuredWind = measured?.wind;
-  const assessment = evaluateVesselSeaState(matrix, waves);
+  const assessment = forecastSeaStateAssessment(matrix, forecast);
   let etaUtc: string | undefined;
   try { etaUtc = seaOperationEtaUtc(point.eta); } catch { /* Historical records may have an incomplete ETA. */ }
   const pending = !signatureTime || observation?.status === 'pending' || !observation && Boolean(etaUtc && Date.parse(etaUtc) + 7 * 86_400_000 >= Date.now());
@@ -86,7 +91,7 @@ function SeaOperationWeatherComparison({ point, matrix, showIndicator, validated
   const forecastTitle = validatedAt ? 'Données prévues à la signature du Capitaine' : 'Prévisions du brouillon';
   const forecastMissing = validatedAt ? 'Aucune prévision conservée à la signature pour ce waypoint.' : 'Aucune prévision enregistrée pour ce waypoint.';
   const differentWaves = Boolean(waves && measuredWaves?.component === 'total');
-  const differentPeriod = Boolean(waves?.periodSeconds != null && measuredWaves?.periodSeconds != null && measuredWaves.periodKind === 'peak');
+  const differentPeriod = Boolean(waves?.periodSeconds != null && measuredWaves?.periodSeconds != null && measuredWaves.periodKind !== (waves.periodKind ?? 'mean'));
   const differentWind = Boolean(forecast?.wind && measuredWind && measuredWind.instrumentHeightMeters !== 10);
   return <section className="so-waypoint-weather-card is-comparison" aria-label={`Comparaison météo du waypoint ${point.number || point.id}`}>
     <header className="so-weather-comparison-heading"><strong><CloudSun size={17} aria-hidden="true" />Météo à l’ETA</strong><span>{etaUtc ? observationTime(etaUtc) : 'ETA complète à renseigner'}</span></header>
@@ -97,18 +102,16 @@ function SeaOperationWeatherComparison({ point, matrix, showIndicator, validated
         {forecast ? <>
           <dl className="so-weather-comparison-metrics">
             <WeatherComparisonMetric icon={Waves} label="Hs · houle" value={waves?.heightMeters ?? null} unit="m" formatter={height} detail={direction(waves?.directionDegrees)} />
-            <WeatherComparisonMetric icon={Timer} label="Période Tm" value={waves?.periodSeconds ?? null} unit="s" detail="moyenne" />
+            <WeatherComparisonMetric icon={Timer} label={wavePeriod.shortLabel} value={waves?.periodSeconds ?? null} unit="s" detail={wavePeriod.detail} />
             <WeatherComparisonMetric icon={Wind} label="Vent moyen · 10 m" value={forecast.wind?.speedKnots ?? null} unit="nd" detail={direction(forecast.wind?.directionDegrees)} />
           </dl>
+          {forecast.seaState && <p className="so-weather-comparison-message">{forecastTotalSeaText(forecast).join(' · ')}</p>}
           {showIndicator && <SeaStateIndicator assessment={assessment} />}
           {!waves && <p className="so-weather-comparison-message">{forecast.wavesMessage || 'Prévision de houle indisponible.'}</p>}
           {!forecast.wind && <p className="so-weather-comparison-message">{forecast.windMessage || 'Prévision de vent indisponible.'}</p>}
           <details className="so-weather-comparison-details"><summary>Sources et horaires de prévision</summary><div>
-            <p>Consultée le {observationTime(forecast.fetchedAt)}.</p>
-            {waves && <p>Échéance houle : {observationTime(waves.time)}.</p>}
-            {forecast.wind && <p>Échéance vent : {observationTime(forecast.wind.time)}.</p>}
-            {forecast.model && <><p>{forecast.model.name} · réseau du {observationTime(forecast.model.referenceTime)}.</p><p>{seaOperationWeatherLocation(forecast)}</p></>}
-            <a href={forecast.sourceUrl} target="_blank" rel="noopener noreferrer">{forecast.attribution}</a>
+            {forecastSourceDetails(forecast).map(detail => <p key={detail}>{detail}</p>)}
+            {forecastSourceLinks(forecast).map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>)}
           </div></details>
         </> : <p className="so-weather-comparison-message">{forecastMissing}</p>}
       </section>
@@ -136,6 +139,6 @@ function SeaOperationWeatherComparison({ point, matrix, showIndicator, validated
         </> : <p className="so-weather-comparison-message">{observationMissing}</p>}
       </section>
     </div>
-    {(differentWaves || differentPeriod || differentWind) && <p className="so-weather-comparison-note">À lire séparément : {[differentWaves ? 'houle prévue et mer totale mesurée' : '', differentPeriod ? 'période moyenne Tm et période de pic Tp' : '', differentWind ? 'vent prévu à 10 m et vent mesuré à une autre hauteur ou non renseignée' : ''].filter(Boolean).join(' ; ')}.</p>}
+    {(differentWaves || differentPeriod || differentWind) && <p className="so-weather-comparison-note">À lire séparément : {[differentWaves ? 'houle prévue et mer totale mesurée' : '', differentPeriod ? `${wavePeriod.label.toLowerCase()} ${waves?.periodKind === 'peak' ? 'Tp' : 'Tm'} et ${measuredWaves?.periodKind === 'peak' ? 'période de pic Tp' : 'période moyenne Tm'}` : '', differentWind ? 'vent prévu à 10 m et vent mesuré à une autre hauteur ou non renseignée' : ''].filter(Boolean).join(' ; ')}.</p>}
   </section>;
 }

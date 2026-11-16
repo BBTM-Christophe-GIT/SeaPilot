@@ -1,17 +1,19 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { loadSeaOperationForecast, sameSeaOperationTransitContext, seaOperationEtaUtc, seaOperationWeatherProviderUrl, validateSeaOperationWeatherInput, type SeaOperationWeatherInput } from './seaOperationWeatherModel';
+import { isSeaOperationWaypointWeather, loadSeaOperationForecast, sameSeaOperationTransitContext, seaOperationEtaUtc, seaOperationWeatherProviderUrl, validateSeaOperationWeatherInput, type SeaOperationWeatherInput } from './seaOperationWeatherModel';
 
 const point: SeaOperationWeatherInput = { projectId: '12', pointId: 'p1', latitude: 49.7, longitude: -1.6, eta: '2026-10-22T12:25' };
 const now = Date.parse('2026-10-20T06:00:00Z');
 const hour = Date.parse('2026-10-22T10:00:00Z') / 1000;
 function provider(kind: 'wind' | 'waves', times = [hour, hour + 3600]): {
-  utc_offset_seconds: number; hourly: Record<string, (number | null)[]>; hourly_units: Record<string, string>;
+  latitude: number; longitude: number; utc_offset_seconds: number; hourly: Record<string, (number | null)[]>; hourly_units: Record<string, string>;
 } {
-  const variable = kind === 'wind' ? ['wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m'] : ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction'];
-  const values = kind === 'wind' ? [12, 18, 270] : [1.2, 9, 280];
-  return { utc_offset_seconds: 0, hourly: { time: times, ...Object.fromEntries(variable.map((key, index) => [key, times.map(() => values[index])])) },
-    hourly_units: Object.fromEntries(variable.map((key, index) => [key, (kind === 'wind' ? ['kn', 'kn', '°'] : ['m', 's', '°'])[index]])) };
+  const variable = kind === 'wind' ? ['wind_speed_10m', 'wind_direction_10m']
+    : ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction', 'wave_height', 'wave_period', 'wave_direction'];
+  const values = kind === 'wind' ? [12, 270] : [1.2, 9, 280, 2.3, 7, 240];
+  return { latitude: point.latitude, longitude: kind === 'wind' ? -1.6 : -1.65,
+    utc_offset_seconds: 0, hourly: { time: times, ...Object.fromEntries(variable.map((key, index) => [key, times.map(() => values[index])])) },
+    hourly_units: Object.fromEntries(variable.map((key, index) => [key, (kind === 'wind' ? ['kn', '°'] : ['m', 's', '°', 'm', 's', '°'])[index]])) };
 }
 const fetcher = () => vi.fn(async (url: URL | RequestInfo) => Response.json(provider(String(url).includes('/marine?') ? 'waves' : 'wind'))) as unknown as typeof fetch;
 
@@ -46,7 +48,7 @@ describe('sea operation forecast time and provider model', () => {
     'rejects malformed request coordinates and project identities', (value) => expect(() => validateSeaOperationWeatherInput(value)).toThrow(),
   );
 
-  it('uses commercial hosts only with a server key and explicit UTC, knots, swell variables and supported horizons', () => {
+  it('requests wind without gusts, swell and total sea on the explicit UTC time axis', () => {
     const wind = seaOperationWeatherProviderUrl('wind', point, 'secret');
     const waves = seaOperationWeatherProviderUrl('waves', point, 'secret');
     expect(wind.hostname).toBe('customer-api.open-meteo.com');
@@ -54,17 +56,22 @@ describe('sea operation forecast time and provider model', () => {
     expect(wind.searchParams.get('wind_speed_unit')).toBe('kn');
     expect(wind.searchParams.get('forecast_days')).toBe('16');
     expect(waves.searchParams.get('forecast_days')).toBe('7');
-    expect(waves.searchParams.get('hourly')).toBe('swell_wave_height,swell_wave_period,swell_wave_direction');
+    expect(wind.searchParams.get('hourly')).toBe('wind_speed_10m,wind_direction_10m');
+    expect(waves.searchParams.get('hourly')).toBe('swell_wave_height,swell_wave_period,swell_wave_direction,wave_height,wave_period,wave_direction');
     expect(waves.searchParams.get('timeformat')).toBe('unixtime');
     expect(waves.searchParams.get('timezone')).toBe('UTC');
   });
 
-  it('keeps ETA and nearest model hour distinct, with Hs of swell and wind in knots', async () => {
+  it('keeps ETA, model hour and the independent wind and marine grids distinct', async () => {
     const result = await loadSeaOperationForecast(point, { fetcher: fetcher(), now });
     expect(result.etaUtc).toBe('2026-10-22T10:25:00.000Z');
-    expect(result.wind).toEqual({ time: '2026-10-22T10:00:00.000Z', speedKnots: 12, gustKnots: 18, directionDegrees: 270 });
-    expect(result.waves).toEqual({ time: '2026-10-22T10:00:00.000Z', heightMeters: 1.2, periodSeconds: 9, directionDegrees: 280, component: 'swell' });
+    expect(result.wind).toEqual({ time: '2026-10-22T10:00:00.000Z', speedKnots: 12, gustKnots: null, directionDegrees: 270,
+      grid: { latitude: 49.7, longitude: -1.6, distanceKm: 0 } });
+    expect(result.waves).toEqual({ time: '2026-10-22T10:00:00.000Z', heightMeters: 1.2, periodSeconds: 9, directionDegrees: 280, component: 'swell', periodKind: 'mean',
+      grid: { latitude: 49.7, longitude: -1.65, distanceKm: expect.closeTo(3.596, 2) } });
+    expect(result.seaState).toMatchObject({ heightMeters: 2.3, periodSeconds: 7, directionDegrees: 240, component: 'total', periodKind: 'mean', grid: result.waves?.grid });
     expect(result.attribution).toBe('Open-Meteo');
+    expect(isSeaOperationWaypointWeather(result)).toBe(true);
     expect(JSON.stringify(result)).not.toContain('apikey');
   });
 
@@ -88,7 +95,18 @@ describe('sea operation forecast time and provider model', () => {
     const result = await loadSeaOperationForecast(point, { fetcher: request, now });
     expect(result.wind?.speedKnots).toBe(12);
     expect(result.waves).toBeNull();
+    expect(result.seaState?.heightMeters).toBe(2.3);
     expect(result.wavesMessage).toContain('données manquantes');
+  });
+
+  it('rejects an Open-Meteo marine cell farther than ten kilometres while retaining the independent wind cell', async () => {
+    const request = vi.fn(async (url) => Response.json(String(url).includes('/marine?')
+      ? { ...provider('waves'), latitude: point.latitude + 0.1 } : provider('wind'))) as typeof fetch;
+    const result = await loadSeaOperationForecast(point, { fetcher: request, now });
+    expect(result.wind?.speedKnots).toBe(12);
+    expect(result.waves).toBeNull();
+    expect(result.seaState).toBeUndefined();
+    expect(result.wavesMessage).toContain('10 km');
   });
 
   it('rejects unknown upstream units while keeping an independent valid marine forecast', async () => {

@@ -13,10 +13,11 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zoneinfo import ZoneInfo
 
-from server.copernicus_provider import MODELS, fetch_copernicus_point
+from server.copernicus_provider import GRID_TOLERANCE_DEGREES, MESSAGES, MODELS, UNAVAILABLE_REASONS, fetch_copernicus_point
 
 HEADERS = {"Cache-Control": "private, no-store", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff"}
 MAX_BODY = 4096
+PAST_ETA_MESSAGE = "L’ETA est passée. La prévision UKC enregistrée reste conservée."
 
 
 class UkcError(Exception):
@@ -151,17 +152,41 @@ def contains(bounds, latitude, longitude):
     return south <= latitude <= north and any(west <= lon <= east if west < east else lon >= west or lon <= east for lon in candidates)
 
 
+def _cell_position(value):
+    if not isinstance(value, dict) or not finite(value.get("latitude")) or not finite(value.get("longitude")):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    if abs(value["latitude"]) > 90 or abs(value["longitude"]) > 180:
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    return {key: value[key] for key in ("latitude", "longitude")}
+
+
+def _normalize_cell(cell, point):
+    position = _cell_position(cell)
+    if not contains(cell.get("bounds"), **position) or not contains(cell.get("bounds"), point["latitude"], point["longitude"]):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    if not finite(cell.get("resolutionMeters")) or cell["resolutionMeters"] <= 0 or not finite(cell.get("depthMeters")) or cell["depthMeters"] <= 0:
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    lower, upper = cell.get("depthMinMeters"), cell.get("depthMaxMeters")
+    if lower is not None and (not finite(lower) or not 0 <= lower <= cell["depthMeters"]):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    if upper is not None and (not finite(upper) or upper < cell["depthMeters"]):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    return {**position, "bounds": {key: cell["bounds"][key] for key in ("west", "east", "south", "north")},
+            "resolutionMeters": cell["resolutionMeters"], "depthMeters": cell["depthMeters"],
+            "depthMinMeters": lower, "depthMaxMeters": upper}
+
+
 def build_estimate(point, eta, provider, fetched_at):
     """The TS consumer and SQL guard independently validate this recorded arithmetic."""
     if not isinstance(provider, dict):
-        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
-    if provider.get("status") == "available" and fetched_at > eta:
         raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
     source, cell, water = (provider.get(key) for key in ("source", "cell", "waterLevel"))
     result = {"version": 1, **{key: point[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "draftMeters")},
               **({"transit": point["transit"]} if "transit" in point else {}),
               "etaUtc": iso(eta), "fetchedAt": iso(fetched_at), "status": "unavailable", "message": "Données Copernicus indisponibles à cette position et cette ETA.",
-              "source": source, "cell": cell, "waterLevel": water, "estimate": None}
+              "source": None, "cell": None, "waterLevel": None, "estimate": None}
+    if fetched_at > eta:
+        return {**result, "message": PAST_ETA_MESSAGE, "reasonCode": "past-eta"}
     if source is not None:
         if not isinstance(source, dict) or source.get("model") not in MODELS:
             raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
@@ -176,27 +201,28 @@ def build_estimate(point, eta, provider, fetched_at):
         result["source"] = source
     if provider.get("status") != "available":
         # Only fixed messages authored by our provider, never exception repr or request URLs.
-        from server.copernicus_provider import MESSAGES
-        result["source"], result["cell"], result["waterLevel"] = source, None, None
-        result["message"] = MESSAGES.get(provider.get("code"), result["message"])
+        code = provider.get("code")
+        result["message"] = MESSAGES.get(code, result["message"])
+        if code in UNAVAILABLE_REASONS:
+            result["reasonCode"] = UNAVAILABLE_REASONS[code]
+        if code in ("shallowWater", "missingTime", "missingWaterLevel") and source and cell is not None:
+            result["cell"] = _normalize_cell(cell, point)
+        if code in ("maskedCell", "missingDepth") and source and provider.get("cellPosition") is not None:
+            position = _cell_position(provider["cellPosition"])
+            lon_step, lat_step = MODELS[source["model"]]["step"]
+            if (abs(position["latitude"] - point["latitude"]) > lat_step / 2 + GRID_TOLERANCE_DEGREES
+                or abs(position["longitude"] - point["longitude"]) > lon_step / 2 + GRID_TOLERANCE_DEGREES):
+                raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+            result["cellPosition"] = position
         return result
     if not source or not isinstance(cell, dict) or not isinstance(water, dict):
         raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
-    cell = {key: cell.get(key) for key in ("latitude", "longitude", "bounds", "resolutionMeters", "depthMeters", "depthMinMeters", "depthMaxMeters")}
+    cell = _normalize_cell(cell, point)
     water = {key: water.get(key) for key in ("timeBeforeUtc", "timeAfterUtc", "heightBeforeMeters", "heightAfterMeters")}
     result["cell"], result["waterLevel"] = cell, water
-    if not finite(cell.get("latitude")) or not finite(cell.get("longitude")) or abs(cell["latitude"]) > 90 or abs(cell["longitude"]) > 180:
+    if cell["depthMeters"] <= 10:
         raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
-    if not contains(cell.get("bounds"), cell["latitude"], cell["longitude"]) or not contains(cell["bounds"], point["latitude"], point["longitude"]):
-        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
-    if not finite(cell.get("resolutionMeters")) or cell["resolutionMeters"] <= 0 or not finite(cell.get("depthMeters")) or cell["depthMeters"] <= 10:
-        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
-    for key in ("depthMinMeters", "depthMaxMeters"):
-        if cell.get(key) is not None and not finite(cell[key]):
-            raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
     lower, upper = cell.get("depthMinMeters"), cell.get("depthMaxMeters")
-    if lower is not None and not 0 <= lower <= cell["depthMeters"] or upper is not None and upper < cell["depthMeters"]:
-        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
     before, after = utc(water.get("timeBeforeUtc")), utc(water.get("timeAfterUtc"))
     if not before <= eta <= after or not 0 <= (after-before).total_seconds() <= 900 or before.timestamp() % 900 or after.timestamp() % 900:
         raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
@@ -269,10 +295,7 @@ class UkcGateway:
                     self.users.pop(next(iter(self.users)))
             stamp = datetime.fromtimestamp(current, timezone.utc)
             if eta < stamp:
-                return 200, {"version": 1, **{key: point[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "draftMeters")},
-                             **({"transit": point["transit"]} if "transit" in point else {}),
-                             "etaUtc": iso(eta), "fetchedAt": iso(stamp), "status": "unavailable", "message": "L’ETA est passée : aucune nouvelle prévision UKC n’est calculée. Les captures enregistrées restent conservées.",
-                             "source": None, "cell": None, "waterLevel": None, "estimate": None}
+                return 200, build_estimate(point, eta, {}, stamp)
             username, password = self.env.get("COPERNICUSMARINE_SERVICE_USERNAME"), self.env.get("COPERNICUSMARINE_SERVICE_PASSWORD")
             if not username or not username.strip() or not password:
                 raise UkcError(503, "UKC_NOT_CONFIGURED")
@@ -288,8 +311,6 @@ class UkcGateway:
                 source = self.provider(point["latitude"], point["longitude"], iso(eta), username, password)
                 finished = datetime.fromtimestamp(self.now(), timezone.utc)
                 result = build_estimate(point, eta, source, finished)
-                if result["status"] == "available" and finished > eta:
-                    raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
                 if result["status"] == "available":
                     with self.lock:
                         self.cache[key] = (min(self.now()+900, eta.timestamp()), copy.deepcopy(source), finished)

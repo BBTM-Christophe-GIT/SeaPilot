@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SeaOperationPayload } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
-import { isSeaOperationTransitRequestContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
+import { hasSeaOperationForecast, isSeaOperationTransitRequestContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { fetchSeaOperationWaypointWeather } from './seaOperationWeatherQueries';
 import { retainSeaOperationWeather, seaOperationWeatherReference, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 
@@ -14,7 +14,7 @@ export async function captureSeaOperationValidationWeather(client: SupabaseClien
   const now = options.now ?? Date.now();
   const pending = payload.waypoints.flatMap((point) => {
     const stored = waypointWeatherSnapshot(point);
-    if (options.missingOnly && (stored?.wind || stored?.waves)) return [];
+    if (options.missingOnly && hasSeaOperationForecast(stored)) return [];
     const position = seaWaypointPosition(point);
     if (!position) return [];
     try { if (Date.parse(seaOperationEtaUtc(point.eta)) <= now) return []; } catch { return []; }

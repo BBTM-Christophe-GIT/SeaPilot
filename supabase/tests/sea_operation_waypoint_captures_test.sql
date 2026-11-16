@@ -53,6 +53,15 @@ select 'captured',jsonb_set(jsonb_set(jsonb_set(payload,'{waypoints,0,eta}','"20
   '{waypoints,0,radio}','{"version":1,"latitude":49.65,"longitude":-1.62,"capturedAt":"2026-10-23T08:00:00.000Z","verifiedOn":"2026-10-22","contacts":[{"id":"cherbourg-port","kind":"port","name":"Cherbourg · Capitainerie","area":"Port de Cherbourg","vhf":"12","phone":"+33 2 33 20 41 25","mmsi":"002275100","source":"https://portsdenormandie.fr/en/harbour-masters-office/cherbourg","sourceLabel":"Ports de Normandie","distanceNm":0}]}')
 from capture_fixture where kind = 'legacy';
 
+insert into capture_fixture(kind,payload)
+select 'with-provenance', jsonb_set(payload, '{waypoints,0,weather}',
+  payload#>'{waypoints,0,weather}' || jsonb_build_object(
+    'waves', payload#>'{waypoints,0,weather,waves}' || '{"periodKind":"mean"}'::jsonb,
+    'seaState', '{"component":"total","time":"2026-10-23T12:00:00Z","heightMeters":1.5,"periodSeconds":7,"directionDegrees":250,"periodKind":"mean"}'::jsonb,
+    'model', payload#>'{waypoints,0,weather,model}' || '{"product":"MFWAM 0,025° · SP1","distanceKm":0.36,"selection":"nearest","validTime":"2026-10-23T12:00:00Z"}'::jsonb
+  ))
+from capture_fixture where kind = 'captured';
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub','a6370000-0000-0000-0000-000000000005',true);
 select lives_ok($$select public.sea_operation_save(null,null,(select payload from capture_fixture where kind = 'legacy'))$$,'legacy time-only ETA without captures remains compatible');
@@ -123,13 +132,25 @@ select throws_ok($$select public.sea_operation_save(null,null,jsonb_set((select 
   '22023',null,'weather messages have a bounded length');
 select throws_ok($$select public.sea_operation_save(null,null,(select payload #- '{waypoints,0,weather,wind,speedKnots}' from capture_fixture where kind = 'captured'))$$,
   '22023',null,'missing weather component fields are refused');
+select throws_ok(format($$select public.sea_operation_save(null,null,jsonb_set((select payload from capture_fixture where kind = 'with-provenance'),%L::text[],%L::jsonb))$$,path,value),
+  '22023',null,'invalid provenance is refused: '||label)
+from (values
+  ('{waypoints,0,weather,seaState,component}','"swell"','total sea incorrectly identified as swell'),
+  ('{waypoints,0,weather,seaState,heightMeters}','-1','negative total wave height'),
+  ('{waypoints,0,weather,seaState,periodKind}','"unknown"','unknown total wave period kind'),
+  ('{waypoints,0,weather,waves,periodKind}','"unknown"','unknown swell period kind'),
+  ('{waypoints,0,weather,waves,grid}','{"latitude":49.65,"longitude":-1.625,"distanceKm":11}','wave grid beyond the 10 km limit'),
+  ('{waypoints,0,weather,model,distanceKm}','11','model grid beyond the 10 km limit'),
+  ('{waypoints,0,weather,model,validTime}','"2026-10-23T12:00:00"','missing timezone for model validity'),
+  ('{waypoints,0,weather,model,selection}','"unknown"','unknown grid selection')
+) invalid(path,value,label);
 
 -- Real accounts exercise the existing RPC and RLS; no role simulation is used.
-select lives_ok(format($$select set_config('request.jwt.claim.sub',%L,true); insert into capture_fixture(kind,id) select %L,(public.sea_operation_save(null,null,(select payload from capture_fixture where kind = 'captured'))->>'id')::uuid$$,
+select lives_ok(format($$select set_config('request.jwt.claim.sub',%L,true); insert into capture_fixture(kind,id) select %L,(public.sea_operation_save(null,null,(select payload from capture_fixture where kind = 'with-provenance'))->>'id')::uuid$$,
   'a6370000-0000-0000-0000-'||lpad(n::text,12,'0'),'role-'||n),'real profile '||n||' persists optional captures') from generate_series(1,5) n;
 select is((public.sea_operation_detail((select id from capture_fixture where kind = 'role-5')) #> '{draft,waypoints}'),
-  (select payload->'waypoints' from capture_fixture where kind = 'captured'),'read detail returns exact saved waypoint captures');
-select lives_ok($$select public.sea_operation_save((select id from capture_fixture where kind = 'role-5'),1,jsonb_set((select payload from capture_fixture where kind = 'captured'),'{description}','"Edited mission, identical captures"'))$$,
+  (select payload->'waypoints' from capture_fixture where kind = 'with-provenance'),'read detail returns exact saved waypoint captures');
+select lives_ok($$select public.sea_operation_save((select id from capture_fixture where kind = 'role-5'),1,jsonb_set((select payload from capture_fixture where kind = 'with-provenance'),'{description}','"Edited mission, identical captures"'))$$,
   'capture guard also permits a valid draft update');
 select throws_ok($$select public.sea_operation_save((select id from capture_fixture where kind = 'role-5'),2,jsonb_set((select payload from capture_fixture where kind = 'captured'),'{waypoints,0,radio,version}','2'))$$,
   '22023',null,'capture guard refuses malformed draft updates');
@@ -139,7 +160,7 @@ select is((select draft #>> '{waypoints,0,ukc}' from public.sea_operations where
 select set_config('request.jwt.claim.sub','a6370000-0000-0000-0000-000000000004',true);
 select lives_ok($$select public.sea_operation_sign((select id from capture_fixture where kind = 'role-5'),2,'Capture Test 4',true)$$,'the assigned real captain signs the saved capture revision');
 select is((public.sea_operation_detail((select id from capture_fixture where kind = 'role-5')) #> '{draft,waypoints}'),
-  (select payload->'waypoints' from capture_fixture where kind = 'captured'),'signing freezes the exact captured weather and radio directory');
+  (select payload->'waypoints' from capture_fixture where kind = 'with-provenance'),'signing freezes the exact captured weather provenance and radio directory');
 select throws_ok($$select public.sea_operation_save((select id from capture_fixture where kind = 'role-5'),3,(select payload from capture_fixture where kind = 'captured'))$$,
   '42501',null,'signed captures remain uneditable through the existing RPC');
 

@@ -459,7 +459,7 @@ describe('Sea operation PDF', () => {
     const textBody = bodies.join('\n').replace(/\x92/g, '’');
     expect(textBody).toContain('(~ 19,62 m) Tj');
     expect(textBody).toContain('Annexe UKC - estimations statiques indicatives');
-    expect(textBody).toContain('Incertitude totale non quantifiée');
+    expect(textBody).toContain('Incertitude non quantifiée');
     expect(textBody).toContain('version 202511');
     expect(textBody.replace(/\x92/g, '’')).toContain('niveau d’eau 1,62 m - tirant d’eau');
     expect(textBody).toContain('10.48670/moi-00054');
@@ -477,7 +477,7 @@ describe('Sea operation PDF', () => {
     record.draft.vessel.draftMeters = 3;
     const staleGenerated = await generateSeaOperationPdf(record, { templateBytes: await template() });
     const stale = (await generatedBodies(staleGenerated.bytes)).join('\n');
-    expect(stale).toContain('(Indisponible) Tj');
+    expect(stale).toContain('(UKC indisponible) Tj');
     expect(stale).toContain('(Automatique) Tj');
     expect(stale).toContain('(Annexe UKC) Tj');
     expect(stale).not.toContain('MANUAL-OLD');
@@ -521,6 +521,40 @@ describe('Sea operation PDF', () => {
     expect(historical).not.toContain('0.09 0.396 0.247 rg');
     expect(historical.replace(/\) Tj\s*T\* \(/g, '').includes('4,000001')).toBe(true);
     expect(record.draft.decision).toBe('GO');
+  });
+
+  it('exports model provenance and an explicit land-cell rejection alongside the frozen forecast and observations', async () => {
+    const source = JSON.parse(await readFile(new URL('./testFixtures/copernicus-ukc.json', import.meta.url), 'utf8')) as {
+      input: SeaOperationCopernicusInput; provider: SeaOperationCopernicusProviderResult;
+    };
+    const record = fixture();
+    const { draft } = record;
+    draft.description = 'Contrôle de la météo à l’ETA et de la maille UKC côtière.';
+    draft.planning = { date: '2026-10-16', operationId: '1', projectId: source.input.projectId, captainPersonId: '3' };
+    draft.vessel.id = source.input.vesselId; draft.vessel.draftMeters = source.input.draftMeters;
+    draft.waypoints = draft.waypoints.slice(0, 2);
+    const [coast, laterRun] = draft.waypoints;
+    [coast.number, laterRun.number] = ['CÔTE', 'TARDIF'];
+    coast.weather!.seaState = { ...coast.weather!.waves!, component: 'total', heightMeters: 1.72, periodSeconds: 8.4, periodKind: 'peak' };
+    coast.weather!.model = { ...coast.weather!.model!, product: 'MFWAM 0,025° · SP1', latitude: 49.7,
+      longitude: -1.62, distanceKm: 5.6, selection: 'marine-fallback' };
+    coast.ukcMode = 'automatic'; coast.ukc = 'MANUAL-OLD'; coast.ukcFallbackMeters = 7;
+    coast.ukcForecast = calculateSeaOperationCopernicusEstimate({ ...source.input, pointId: coast.id, eta: coast.eta }, {
+      status: 'unavailable', message: 'La maille de ce waypoint est terrestre.', reasonCode: 'land-cell',
+      source: source.provider.source, cell: null, cellPosition: { latitude: 49.65, longitude: -1.62 }, waterLevel: null,
+    }, coast.weather!.fetchedAt);
+    laterRun.weather!.fetchedAt = '2026-10-16T09:30:00Z';
+    laterRun.weather!.wind!.speedKnots = 89;
+    record.weatherObservations = [recordedObservation(coast.id)];
+    const original = structuredClone(record);
+    const output = await generateSeaOperationPdf(record, { templateBytes: await template(), sections: ['passage'] });
+    const text = (await landscapeBodies(output.bytes)).join('\n').replace(/\x92/g, '’').replace(/\) Tj\s*T\* \(/g, ' ');
+    for (const label of ['UKC indisponible', 'La maille de ce waypoint est terrestre.', 'Profondeur de repli', 'Maille examinée', 'à 0 m du waypoint', 'NWSHELF_ANALYSISFORECAST_PHY_004_013',
+      'Hs mer totale · 1,72 m', 'Période de pic · 8,4 s', 'MFWAM 0,025° · SP1', 'Maille marine voisine', '5,6 km du waypoint', 'Échéance mer totale', 'MESURES APRÈS LE PASSAGE',
+      'Archives annuelles des observations bouées', 'Incertitude non quantifiée']) expect(text).toContain(label);
+    expect(text).not.toMatch(/89 nd|MANUAL-OLD|rafale/i);
+    expect(record).toEqual(original);
+    if (process.env.SEAPILOT_PDF_PROVENANCE_QA_OUTPUT) await writeFile(process.env.SEAPILOT_PDF_PROVENANCE_QA_OUTPUT, output.bytes);
   });
   it('keeps portrait chapters and landscape Passage Plan pages with native-size Word chrome on every page', async () => {
     const generated = await generateSeaOperationPdf(fixture(), { templateBytes: await template() });

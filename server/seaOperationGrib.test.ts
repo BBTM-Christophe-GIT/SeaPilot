@@ -22,7 +22,7 @@ function message(code: string, value: number, validHour = 13): Message {
       scanningMode: 0, iScansNegatively: 0, jScansPositively: 0, jPointsAreConsecutive: 0, alternativeRowScanning: 0,
       iDirectionIncrementInDegrees: 1, jDirectionIncrementInDegrees: 1, latitudeOfFirstGridPointInDegrees: 51,
       longitudeOfFirstGridPointInDegrees: 352, latitudeOfLastGridPointInDegrees: 50, longitudeOfLastGridPointInDegrees: 354 },
-    strings: { units: code === '0/2/1' ? 'm s**-1' : ['0/2/0', '10/0/7'].includes(code) ? 'Degree true' : code === '10/0/8' ? 'm' : 's',
+    strings: { units: code === '0/2/1' ? 'm s**-1' : ['0/2/0', '10/0/7', '10/0/14'].includes(code) ? 'Degree true' : ['10/0/3', '10/0/8'].includes(code) ? 'm' : 's',
       packingType: 'grid_ccsds', gridType: 'regular_ll', stepType: 'instant', typeOfLevel: wind ? 'heightAboveGround' : 'meanSea' },
     values: Array<number>(6).fill(value), bitmap: [1, 1, 1, 1, 1, 1],
   };
@@ -77,7 +77,8 @@ describe('MFWAM GRIB point decoder', () => {
     const runtime = engine(fields());
     const { decodeMfwamPoint } = await load();
     await expect(decodeMfwamPoint(bytes(), POINT, TARGET)).resolves.toEqual({ referenceTime: '2026-10-22T12:00:00.000Z', validTime: '2026-10-22T13:00:00.000Z',
-      latitude: 50, longitude: -7, windSpeedMps: 6.83, windDirectionDegrees: 203.24, heightMeters: 0.228, periodSeconds: 8.188, swellDirectionDegrees: 236.43 });
+      latitude: 50, longitude: -7, windSpeedMps: 6.83, windDirectionDegrees: 203.24, heightMeters: 0.228, periodSeconds: 8.188, swellDirectionDegrees: 236.43,
+      totalHeightMeters: null, totalPeriodSeconds: null, totalDirectionDegrees: null });
     expect(runtime.deletes).toHaveLength(10);
     expect(runtime.deletes.every((release) => release.mock.calls.length === 1)).toBe(true);
     expect(runtime.unlink).toHaveBeenCalledOnce();
@@ -187,18 +188,33 @@ describe('MFWAM GRIB point decoder', () => {
     await expect(decodeMfwamPoint(bytes(), POINT, TARGET)).resolves.toMatchObject({ windSpeedMps: null, periodSeconds: null, heightMeters: 0.228, windDirectionDegrees: 203.24 });
   });
 
-  it('selects the nearest complete common forecast time, never combining hours or substituting total sea state', async () => {
-    engine([...fields(13), ...fields(14), ...fields(15).slice(0, 4), message('10/0/3', 9, 15)]);
+  it('keeps separate swell and total sea at the closest hour without filling gaps from other hours or the peak period', async () => {
+    engine([...fields(13), ...fields(14), ...fields(15).slice(0, 4), message('10/0/3', 9, 15), message('10/0/15', 7, 15),
+      message('10/0/14', 250, 15), message('10/0/34', 11, 15)]);
     const { decodeMfwamPoint } = await load();
-    expect((await decodeMfwamPoint(bytes(), POINT, Date.parse('2026-10-22T14:55Z'))).validTime).toBe('2026-10-22T14:00:00.000Z');
+    await expect(decodeMfwamPoint(bytes(), POINT, Date.parse('2026-10-22T14:55Z'))).resolves.toMatchObject({
+      validTime: '2026-10-22T15:00:00.000Z', heightMeters: 0.228, periodSeconds: 8.188, swellDirectionDegrees: null,
+      totalHeightMeters: 9, totalPeriodSeconds: 7, totalDirectionDegrees: 250 });
   });
 
   it('does not combine fields from different model reference runs', async () => {
     const records = fields(); records.slice(3).forEach((item) => { item.numbers.dataTime = 600; });
     const runtime = engine(records);
     const { decodeMfwamPoint } = await load();
-    await expect(decodeMfwamPoint(bytes(), POINT, TARGET)).rejects.toMatchObject({ code: 'MFWAM_INCOMPLETE_FORECAST' });
+    await expect(decodeMfwamPoint(bytes(), POINT, TARGET)).resolves.toMatchObject({ referenceTime: '2026-10-22T12:00:00.000Z',
+      heightMeters: 0.228, periodSeconds: null, swellDirectionDegrees: null });
     expect(runtime.unlink).toHaveBeenCalledOnce();
+  });
+
+  it('uses total sea height to identify a marine neighbour even when the swell fields are missing', async () => {
+    const records = coastalFields();
+    const totalHeight = { ...structuredClone(records[2]), numbers: { ...records[2].numbers, parameterNumber: 3 } };
+    records.slice(2).forEach((item) => { for (let index = 0; index < item.values.length; index++) mask(item, index); });
+    mask(totalHeight, 7);
+    engine([...records, totalHeight]);
+    const { decodeMfwamPoint } = await load();
+    await expect(decodeMfwamPoint(bytes(), COASTAL_POINT, TARGET)).resolves.toMatchObject({
+      longitude: expect.closeTo(0.025, 10), heightMeters: null, totalHeightMeters: 0.7, marineFallback: true });
   });
 
   it.each(['units', 'level', 'packing', 'scan', 'coordinates', 'bitmap', 'array', 'direction', 'negative', 'nonfinite', 'date', 'duplicate'])(

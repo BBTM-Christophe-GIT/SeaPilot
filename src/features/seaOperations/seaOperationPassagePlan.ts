@@ -1,11 +1,11 @@
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { seaOperationRadioContacts, SEA_RADIO_VERIFIED_ON } from './seaOperationRadio';
-import { waypointRadioSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
-import { evaluateVesselSeaState, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
+import { waypointRadioSnapshot } from './seaOperationWaypointSnapshots';
+import type { VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { observationFootnote, observationText, observationWaitingMessage, waypointWeatherObservation } from './seaOperationWeatherHistory';
-import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
-import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
+import { forecastSeaStateAssessment, forecastSourceDetails, forecastSourceLinks, forecastTotalSeaText, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
+import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates';
 import { seaOperationUkcPresentation } from './seaOperationUkcPresentation';
 
 const value = (text: string) => text.trim() || 'À renseigner';
@@ -19,8 +19,8 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { payl
   const ukcPresentation = seaOperationUkcPresentation(options.payload, point);
   const radio = waypointRadioSnapshot(point);
   const contacts = radio?.contacts ?? (options.allowLiveRadio ? seaOperationRadioContacts([point]).contacts : undefined);
-  const forecast = waypointWeatherSnapshot(point);
-  const seaState = evaluateVesselSeaState(options.weatherMatrix, forecast?.waves);
+  const forecast = waypointWeatherAtValidation(point, options.validatedAt);
+  const seaState = forecastSeaStateAssessment(options.weatherMatrix, forecast);
   const hasSeaStateIndicator = seaState.code !== 'no_matrix' && seaState.code !== 'not_defined';
   const vhf = contacts === undefined ? 'Contacts VHF non enregistrés.' : contacts.length ? contacts.map((contact) => [
     `${contact.name} · Ch ${contact.vhf}`,
@@ -28,8 +28,9 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { payl
   ].filter(Boolean).join('\n')).join('\n\n') : 'Aucun contact de l’annuaire trouvé à proximité.';
   const forecastText = forecast ? [
     ...(hasSeaStateIndicator ? [seaState.label] : []),
-    forecast.waves ? `Houle Hs : ${number(forecast.waves.heightMeters, 2)} m\nPériode : ${number(forecast.waves.periodSeconds)} s\nProvenance houle : ${number(forecast.waves.directionDegrees, 0)}°`
+    forecast.waves ? `Houle Hs : ${number(forecast.waves.heightMeters, 2)} m\n${weatherPeriod(forecast.waves.periodKind ?? 'mean').label} : ${number(forecast.waves.periodSeconds)} s\nProvenance houle : ${number(forecast.waves.directionDegrees, 0)}°`
       : `Hs / période : ${forecast.wavesMessage || 'prévision indisponible à cette ETA.'}`,
+    ...(forecast.seaState ? [forecastTotalSeaText(forecast).join('\n')] : []),
     forecast.wind ? `Vent moyen 10 m : ${number(forecast.wind.speedKnots)} nd · de ${number(forecast.wind.directionDegrees, 0)}°`
       : `Vent : ${forecast.windMessage || 'prévision indisponible à cette ETA.'}`,
   ].join('\n\n') : 'Prévisions météo non enregistrées pour cette position et cette ETA.';
@@ -41,19 +42,16 @@ export function passagePlanCellData(point: SeaOperationWaypoint, options: { payl
     ...contacts.map((contact) => `${contact.name} : ${contact.sourceLabel} · ${contact.source}`),
   ].join('\n') : '';
   const forecastFootnote = forecast ? [
-    `${forecast.attribution} · consultée le ${utc(forecast.fetchedAt)}`,
-    `ETA : ${utc(forecast.etaUtc)}${forecast.waves ? ` · modèle houle : ${utc(forecast.waves.time)}` : ''}${forecast.wind ? ` · modèle vent : ${utc(forecast.wind.time)}` : ''}`,
-    ...(forecast.model ? [`${forecast.model.name} · réseau du ${utc(forecast.model.referenceTime)} · maille ${formatSeaPosition(forecast.model)}`] : []),
-    ...(forecast.model ? [seaOperationWeatherLocation(forecast)] : []),
+    ...forecastSourceDetails(forecast),
     ...(hasSeaStateIndicator && seaState.hsRange ? [`Matrice du navire enregistrée : Hs ${seaState.hsRange} · période ${seaState.periodRange}. Aide à la lecture, sans décision GO automatique.`] : []),
-    forecast.sourceUrl,
+    ...forecastSourceLinks(forecast).map(source => `${source.label} · ${source.url}`),
   ].join('\n') : '';
   const weatherFootnote = [options.validatedAt ? `Validation du Capitaine : ${utc(options.validatedAt)}.` : '', forecastFootnote, observationFootnote(observation)].filter(Boolean).join('\n');
   return {
     waypoint: value(point.number), description: value(point.descriptionVhf), latitude: value(formatSeaLatitude(point.latitude)), longitude: value(formatSeaLongitude(point.longitude)),
-    ukc: ukcPresentation.automatic ? ukcPresentation.displayValue || 'Indisponible' : value(point.ukc), ukcPresentation,
+    ukc: ukcPresentation.automatic ? ukcPresentation.displayValue || 'UKC indisponible' : value(point.ukc), ukcPresentation,
     ukcFootnote: ukcPresentation.automatic ? ukcPresentation.sourceFootnote : '',
     eta: value(point.eta.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}).*$/, '$3/$2/$1 à $4')),
-    vhf, weather, observedWeather, observation, seaState, hasSeaStateIndicator, denseTraffic: point.denseTraffic ? 'Oui' : 'Non', weatherFootnote, radioFootnote,
+    vhf, forecast, weather, observedWeather, observation, seaState, hasSeaStateIndicator, denseTraffic: point.denseTraffic ? 'Oui' : 'Non', weatherFootnote, radioFootnote,
   };
 }

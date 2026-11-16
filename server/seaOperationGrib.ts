@@ -10,6 +10,9 @@ export interface MfwamPointForecast {
   heightMeters: number | null;
   periodSeconds: number | null;
   swellDirectionDegrees: number | null;
+  totalHeightMeters: number | null;
+  totalPeriodSeconds: number | null;
+  totalDirectionDegrees: number | null;
   /** Internal proof that a marine cell was selected within the bounded spatial search. */
   marineFallback?: true;
 }
@@ -37,17 +40,19 @@ interface Eccodes {
   forEachMessage(path: string, callback: (handle: Handle) => void): void;
   _module: { FS: { unlink(path: string): void } };
 }
-type Field = 'windSpeedMps' | 'windDirectionDegrees' | 'heightMeters' | 'periodSeconds' | 'swellDirectionDegrees';
+type Field = Exclude<keyof MfwamPointForecast, 'referenceTime' | 'validTime' | 'latitude' | 'longitude' | 'marineFallback'>;
 interface FieldSpec { field: Field; units: readonly string[]; wind?: boolean; direction?: boolean }
-// Météo-France MFWAM SP1: SHS/MPS/MDS are total swell, distinct from SWH/mer totale.
+// MFWAM SP1 encodes the swell and the combined sea separately. MPS and MWP are mean periods.
 const PARAMETERS: Record<string, FieldSpec> = {
   '0/2/1': { field: 'windSpeedMps', units: ['m s**-1', 'm s-1', 'm/s'], wind: true },
   '0/2/0': { field: 'windDirectionDegrees', units: ['degree true', 'degrees true'], wind: true, direction: true },
   '10/0/8': { field: 'heightMeters', units: ['m'] },
   '10/0/9': { field: 'periodSeconds', units: ['s'] },
   '10/0/7': { field: 'swellDirectionDegrees', units: ['degree true', 'degrees true'], direction: true },
+  '10/0/3': { field: 'totalHeightMeters', units: ['m'] },
+  '10/0/15': { field: 'totalPeriodSeconds', units: ['s'] },
+  '10/0/14': { field: 'totalDirectionDegrees', units: ['degree true', 'degrees true'], direction: true },
 };
-const FIELD_COUNT = 5;
 const PATH = '/seapilot-mfwam.grib2';
 const EPSILON = 1e-7;
 const MARINE_RADIUS_KM = 10;
@@ -226,11 +231,11 @@ async function decode(bytes: Uint8Array, point: { latitude: number; longitude: n
       group.fields.set(spec.field, readDescriptor(handle, ordinal, spec));
       groups.set(key, group);
     });
-    const candidates = [...groups.values()].filter((group) => group.fields.size === FIELD_COUNT).sort((a, b) =>
+    const candidates = [...groups.values()].sort((a, b) =>
       Math.abs(Date.parse(a.validTime) - targetTime) - Math.abs(Date.parse(b.validTime) - targetTime)
       || Date.parse(a.validTime) - Date.parse(b.validTime) || Date.parse(b.referenceTime) - Date.parse(a.referenceTime));
     const group = candidates[0];
-    if (!group) throw new SeaOperationGribError('MFWAM_INCOMPLETE_FORECAST', 'Aucune échéance commune aux cinq champs vent et houle MFWAM.');
+    if (!group) throw new SeaOperationGribError('MFWAM_INCOMPLETE_FORECAST', 'Aucun champ vent ou vagues MFWAM reconnu.');
     const descriptors = [...group.fields.values()];
     const grid = descriptors[0].grid;
     if (descriptors.some((descriptor) => JSON.stringify(descriptor.grid) !== JSON.stringify(grid))) unsupported('les champs ne partagent pas la même grille');
@@ -245,13 +250,17 @@ async function decode(bytes: Uint8Array, point: { latitude: number; longitude: n
       if (descriptor) sampled.set(descriptor.spec.field, samples(handle, descriptor, cells, requestedCell.index));
     });
     const hasMarine = (cell: Cell) => {
-      const height = sampled.get('heightMeters')?.get(cell.index);
-      const period = sampled.get('periodSeconds')?.get(cell.index);
-      return (typeof height === 'number' && height >= 0 && height <= 100) || (typeof period === 'number' && period > 0 && period <= 100);
+      const usable = (field: Field, minimum: number) => {
+        const value = sampled.get(field)?.get(cell.index);
+        return typeof value === 'number' && value >= minimum && value <= 100;
+      };
+      return usable('heightMeters', 0) || usable('totalHeightMeters', 0)
+        || usable('periodSeconds', Number.MIN_VALUE) || usable('totalPeriodSeconds', Number.MIN_VALUE);
     };
     const cell = hasMarine(requestedCell) ? requestedCell : neighbours.find(hasMarine) ?? requestedCell;
     const result: MfwamPointForecast = { referenceTime: group.referenceTime, validTime: group.validTime, latitude: cell.latitude, longitude: cell.longitude,
       windSpeedMps: null, windDirectionDegrees: null, heightMeters: null, periodSeconds: null, swellDirectionDegrees: null,
+      totalHeightMeters: null, totalPeriodSeconds: null, totalDirectionDegrees: null,
       ...(cell.index !== requestedCell.index ? { marineFallback: true } : {}) };
     for (const field of descriptors) result[field.spec.field] = sampled.get(field.spec.field)?.get(cell.index) ?? null;
     return result;

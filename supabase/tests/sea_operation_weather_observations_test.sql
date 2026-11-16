@@ -65,13 +65,14 @@ select set_config('request.jwt.claim.sub','a6380000-0000-0000-0000-000000000004'
 update history_fixture set id=(public.sea_operation_save(null,null,payload)->>'id')::uuid;
 select is(public.sea_operation_weather_observations((select id from history_fixture))->'points','[]'::jsonb,'a draft does not collect observations');
 select lives_ok($$select public.sea_operation_sign((select id from history_fixture),1,'Observation TEST 4',true)$$,'the actual assigned captain signs the persisted revision');
-update history_fixture set signed_record=public.sea_operation_detail(id);
 select lives_ok(format($$select set_config('request.jwt.claim.sub',%L,true); select public.sea_operation_weather_observations((select id from history_fixture))$$,
   'a6380000-0000-0000-0000-'||lpad(n::text,12,'0')),'real profile '||n||' can read only its company annex') from generate_series(1,5) n;
 select set_config('request.jwt.claim.sub','a6380000-0000-0000-0000-000000000006',true);
 select throws_ok($$select public.sea_operation_weather_observations((select id from history_fixture))$$,'42501',null,'another company admin cannot read the annex');
 select throws_ok($$select public.sea_operation_weather_observations_claim(40)$$,'42501',null,'an authenticated user cannot run the worker');
 reset role;
+update history_fixture fixture set signed_record=to_jsonb(operation)
+from public.sea_operations operation where operation.id=fixture.id;
 select is((select count(*)::integer from sea_operation_private.weather_observations where operation_id=(select id from history_fixture)),7,'signature enqueues all valid past and future ETAs, excluding time-only ETA and blank legacy IDs');
 select lives_ok($$select sea_operation_private.enqueue_weather_observations((select operation from public.sea_operations operation where id=(select id from history_fixture)))$$,'enqueue is idempotent');
 select is((select count(*)::integer from sea_operation_private.weather_observations where operation_id=(select id from history_fixture)),7,'repeated enqueue creates no duplicates');
@@ -188,7 +189,7 @@ select public.sea_operation_weather_observations_claim(40);
 reset role;
 select ok((select completed_at is not null and result#>>'{wind,speedKnots}'='12' from sea_operation_private.weather_observations where operation_id=(select id from history_fixture) and point_id='history-past'),'expiry terminates partial collection while preserving recorded measurements');
 select is((select to_jsonb(operation) from public.sea_operations operation where id=(select id from history_fixture)),
-  (select signed_record-'can_edit'-'can_sign'-'can_revise'-'can_delete'-'previous_revision_id'-'superseded_by_id' from history_fixture),'collecting observations never changes the signed row, forecast, signature, version or timestamps');
+  (select signed_record from history_fixture),'collecting observations never changes the signed row, forecast, signature, version or timestamps');
 select throws_ok($$update public.sea_operations set draft=jsonb_set(draft,'{description}','"changed"') where id=(select id from history_fixture)$$,
   '55000',null,'the signed document freeze remains enforced even for privileged writers');
 

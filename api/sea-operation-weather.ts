@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { isSeaOperationTransitRequestContext, loadSeaOperationForecast, validateSeaOperationWeatherInput, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from '../src/features/seaOperations/seaOperationWeatherModel.js';
+import { hasSeaOperationForecast, isSeaOperationTransitRequestContext, loadSeaOperationForecast, validateSeaOperationWeatherInput, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from '../src/features/seaOperations/seaOperationWeatherModel.js';
 import { loadMeteoFranceForecast } from '../server/seaOperationMeteoFrance.js';
 
 type Json = Record<string, unknown>;
@@ -61,7 +61,7 @@ export function createSeaOperationWeatherGateway(deps: Dependencies) {
         ? await (deps.meteoFrance ?? loadMeteoFranceForecast)(point, { fetcher: deps.fetcher, now: now(), signal: request.signal })
         : await loadSeaOperationForecast(point, { key, fetcher: deps.fetcher, now: now(), signal: request.signal }); }
       finally { running -= 1; }
-      if (result.wind || result.waves) {
+      if (hasSeaOperationForecast(result)) {
         cache.set(cacheKey, { expires: Math.min(now() + 15 * 60_000, Date.parse(result.etaUtc)), result });
         if (cache.size > 128) cache.delete(cache.keys().next().value!);
       }

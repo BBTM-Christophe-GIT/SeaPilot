@@ -106,6 +106,27 @@ describe('waypoint weather card', () => {
 });
 
 describe('saved waypoint weather comparison', () => {
+  it('shows each captured wave component, its period type and the retained coastal model origin', () => {
+    const record = point();
+    const weather = record.weather!;
+    weather.attribution = 'Météo-France';
+    weather.sourceUrl = 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg';
+    weather.model = { name: 'MFWAM', product: 'MFWAM 0,025° · SP1', referenceTime: '2026-10-23T00:00:00Z',
+      latitude: 49.7, longitude: -1.62, selection: 'marine-fallback', distanceKm: 5.6 };
+    weather.seaState = { ...weather.waves!, component: 'total', heightMeters: 1.72, periodSeconds: 8.4, periodKind: 'peak' };
+    const original = structuredClone(record);
+    render(<SeaOperationWeatherCard point={record} variant="comparison" validatedAt="2026-10-23T06:00:00Z" observations={[observed()]} matrix={GOURY_WEATHER_MATRIX} />);
+    const forecast = screen.getByRole('region', { name: 'Données prévues à la signature du Capitaine' });
+    expect(forecast).toHaveTextContent('Hs · houle');
+    expect(forecast).toHaveTextContent('Hs mer totale · 1,72 m · Période de pic · 8,4 s');
+    expect(forecast).toHaveTextContent('Confortable');
+    fireEvent.click(within(forecast).getByText('Sources et horaires de prévision'));
+    expect(within(forecast).getByText(/MFWAM 0,025° · SP1 · réseau/)).toBeVisible();
+    expect(within(forecast).getByText(/5,6 km du waypoint. Maille marine voisine/)).toBeVisible();
+    expect(within(forecast).getByText('Incertitude non quantifiée')).toBeVisible();
+    expect(record).toEqual(original);
+  });
+
   it('compares the immutable signed forecast with nearby official measurements and collapses their provenance', () => {
     const record = point(); const observation = observed(); const original = structuredClone({ record, observation });
     const { container } = render(<SeaOperationWeatherCard point={record} variant="comparison" validatedAt="2026-10-23T06:00:00Z" observations={[observation]} matrix={GOURY_WEATHER_MATRIX} />);

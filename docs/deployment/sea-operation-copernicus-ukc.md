@@ -25,6 +25,10 @@ Le catalogue STAC officiel est consulté avant l’extraction pour vérifier
 références, dimensions, grille, version et horizon réellement publié.
 Les versions sont fixées : un changement incompatible provoque une
 indisponibilité explicite, sans migration silencieuse vers un autre produit.
+Le 16 novembre 2026, le catalogue annonçait une dernière échéance à
+00:00 UTC le 23 novembre pour NWS et le 26 novembre pour IBI. Le service
+vérifie les échéances du catalogue et celles effectivement ouvertes dans la
+grille. Les bornes constatées à cette date ne sont pas des horizons garantis.
 
 L’ETA est saisie à l’heure de Paris et convertie en UTC. Les heures inexistantes
 ou ambiguës des changements d’heure sont refusées. L’interpolation utilise
@@ -38,12 +42,20 @@ une ancienne prévision ; les captures déjà enregistrées restent conservées.
 - La maille est kilométrique : environ 1,5 km pour NWS et 2–3 km pour IBI.
   L’estimation ne représente pas une sonde de carte ni une profondeur minimale
   garantie dans un chenal, un port ou au voisinage d’un haut-fond.
+  La dimension de maille affichée correspond à son plus grand côté sur la
+  grille publiée, évalué à la latitude de son centre.
 - SeaPilot refuse le calcul lorsque la profondeur de modèle est **≤ 10 m**.
   NWS impose un minimum de 10 m dans sa dynamique ; le même seuil appliqué à IBI
   est une barrière conservatrice de SeaPilot, pas un plancher officiel IBI.
 - Une cellule masquée, non marine ou incompatible reste indisponible. Aucun
   déplacement vers une cellule voisine, même si la météo utilise un rayon de
   recherche. Un rejet NWS pour petits fonds ou masque n’est pas contourné par IBI.
+- La fiche et le PDF présentent le même motif sous « UKC indisponible »,
+  avec le modèle et le centre de maille quand le service a pu les établir.
+  La distance au waypoint décrit l’écart au centre de la maille. Elle ne
+  contribue pas à un intervalle d’incertitude. Une recherche future qui
+  confirme un rejet remplace la précédente estimation du brouillon. Un échec
+  temporaire conserve une capture compatible déjà acquise.
 - L’incertitude totale ponctuelle n’est pas fournie par ces produits. Fond,
   niveau d’eau, tirant d’eau, effet de position et interpolation restent
   explicitement inconnus lorsqu’ils ne sont pas quantifiés. Aucun chiffre
@@ -117,6 +129,9 @@ La canonisation du tirant d’eau intervient avant la suppression d’une captur
 obsolète. Aucun backfill des fiches signées. Une révision administrative
 commence par le clone exact de la version historique ; les contrôles courants
 s’appliquent aux sauvegardes ordinaires suivantes.
+La migration `20261116150758_sea_operation_waypoint_provenance.sql` ajoute
+la validation des motifs, des coordonnées de maille rejetée et des champs
+météo facultatifs. Les versions de fiche existantes restent lisibles.
 
 Un brouillon incomplet reste enregistrable. À l’enregistrement, en l’absence
 d’une UKC automatique disponible, SeaPilot conserve une profondeur théorique
@@ -142,6 +157,14 @@ sans cette donnée. La signature fige la valeur et sa provenance avec la fiche.
 - [SDK et authentification serveur](https://toolbox-docs.marine.copernicus.eu/en/stable/usage/quickoverview.html).
 - [Fonctions Python Vercel dans `/api`](https://vercel.com/docs/functions/runtimes/python/api-directory).
 - [Attribution Copernicus](https://help.marine.copernicus.eu/en/articles/4444611-citing-copernicus-marine-products-and-services).
+- [Exemple officiel d’extraction aux points et échéances](https://help.marine.copernicus.eu/en/articles/7970637-download-data-for-multiple-points-from-a-csv-with-python)
+  et [Toolbox Copernicus](https://github.com/mercator-ocean/copernicus-marine-toolbox).
+  SeaPilot contrôle la cellule et les instants retournés après l’ouverture du sous-ensemble.
+- [maridatadownloader de 52North](https://github.com/52North/maridatadownloader#available-datasetsdownloaders),
+  [notebook de démonstration](https://github.com/52North/maridatadownloader/blob/main/notebooks/demo.ipynb)
+  et [WeatherRoutingTool](https://github.com/52North/WeatherRoutingTool)
+  servent de références pour l’extraction par position et heure et pour
+  l’examen des différentes familles de données, dont GFS/NOAA et ETOPO.
 
 L’export conserve « Generated using E.U. Copernicus Marine Service Information. »
 et le lien produit / DOI. Les tests partagent une fixture arithmétique Python /

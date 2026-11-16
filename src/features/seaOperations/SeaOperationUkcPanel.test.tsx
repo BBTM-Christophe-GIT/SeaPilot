@@ -116,7 +116,7 @@ describe('UKC editor field', () => {
     expect(output).toHaveTextContent('≈ 19,62 m');
     expect(screen.queryByRole('textbox', { name: 'UKC · point 1' })).not.toBeInTheDocument();
     expect(output.querySelectorAll('.so-ukc-pill')).toHaveLength(1);
-    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Indicative · incertitude non quantifiée');
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Indicative · Incertitude non quantifiée');
     expect(screen.getByText('Détails UKC')).toBeInTheDocument();
     expect(screen.getByText('Détails UKC').closest('details')).not.toHaveAttribute('open');
     expect(screen.getAllByRole('link', { name: 'Source Copernicus Marine', hidden: true })[0]).toHaveAttribute('href', fixture.provider.source.sourceUrl);
@@ -126,15 +126,35 @@ describe('UKC editor field', () => {
     const draft = payload();
     render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false}
       status={{ loading: false, error: 'Hors horizon du modèle.' }} onChange={vi.fn()} />);
-    expect(screen.getByLabelText('UKC · point 1')).toHaveTextContent('Indisponible');
+    expect(screen.getByLabelText('UKC · point 1')).toHaveTextContent('UKC indisponible');
     expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Hors horizon du modèle.');
     expect(screen.queryByText(/12,5 m/)).not.toBeInTheDocument();
+  });
+
+  it('shows the recorded land-cell reason and neutral fallback while retaining manual input', () => {
+    const draft = payload(), point = draft.waypoints[0], onChange = vi.fn();
+    point.ukcFallbackMeters = fixture.input.draftMeters + 5;
+    point.ukcForecast = calculateSeaOperationCopernicusEstimate(fixture.input, {
+      status: 'unavailable', message: 'La maille de ce waypoint est terrestre.', reasonCode: 'land-cell',
+      source: fixture.provider.source, cell: null, waterLevel: null, cellPosition: { latitude: 49.65, longitude: -1.62 },
+    }, fixture.fetchedAt);
+    render(<SeaOperationUkcField payload={draft} point={point} index={0} disabled={false} onChange={onChange} />);
+    const output = screen.getByLabelText('UKC · point 1');
+    expect(output).toHaveTextContent('UKC indisponible');
+    expect(output).toHaveTextContent('Profondeur de repli · 7,00 m');
+    expect(output.querySelector('.so-ukc-pill')).toBeNull();
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('La maille de ce waypoint est terrestre.');
+    fireEvent.click(screen.getByText('Détails UKC'));
+    expect(screen.getByText(/Maille examinée.*à 0 m du waypoint/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Manuel' }));
+    expect(onChange).toHaveBeenCalledWith({ ukcMode: 'manual' });
+    expect(point.ukc).toBe('12.5');
   });
 
   it('keeps prerequisite and loading messages below the noneditable automatic output', () => {
     const draft = payload(), onChange = vi.fn(); delete draft.planning;
     const view = render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={onChange} />);
-    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Sélectionnez un projet du planning.');
+    expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('Sélectionnez un projet du planning ou renseignez le Transit.');
     expect(screen.getByLabelText('UKC · point 1').tagName).toBe('OUTPUT');
     expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Manuel' })).toHaveAttribute('aria-pressed', 'false');

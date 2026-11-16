@@ -39,16 +39,23 @@ export interface SeaOperationCopernicusStaticEstimate {
   cellVariability: { lowerMeters: number; upperMeters: number } | null;
   uncertainty: SeaOperationCopernicusUncertainty; dynamicCorrectionsApplied: false;
 }
+const unavailableReasons = ['outside-horizon', 'outside-coverage', 'land-cell', 'missing-depth', 'missing-water-level',
+  'unconfirmed-datum', 'incompatible-grid', 'incompatible-metadata', 'shallow-water', 'past-eta'] as const;
+type SeaOperationCopernicusUnavailableReason = typeof unavailableReasons[number];
 export interface SeaOperationCopernicusEstimate {
   version: 1; projectId: string; pointId: string; vesselId: string;
   transit?: SeaOperationTransitRequestContext;
   latitude: number; longitude: number; etaUtc: string; draftMeters: number; fetchedAt: string;
   status: 'available' | 'unavailable'; message: string;
+  reasonCode?: SeaOperationCopernicusUnavailableReason;
+  cellPosition?: { latitude: number; longitude: number };
   source: SeaOperationCopernicusSource | null; cell: SeaOperationCopernicusCell | null;
   waterLevel: SeaOperationCopernicusWaterLevel | null; estimate: SeaOperationCopernicusStaticEstimate | null;
 }
 export interface SeaOperationCopernicusProviderResult {
   status: 'available' | 'unavailable'; message: string;
+  reasonCode?: SeaOperationCopernicusUnavailableReason;
+  cellPosition?: { latitude: number; longitude: number };
   source: SeaOperationCopernicusSource | null; cell: SeaOperationCopernicusCell | null;
   waterLevel: SeaOperationCopernicusWaterLevel | null;
 }
@@ -63,6 +70,8 @@ const position = (value: Record<string, unknown>): value is Record<string, unkno
 const utc = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)
   && Number(value.slice(0, 4)) >= 1000 && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 19) === value.slice(0, 19);
 const near = (a: number, b: number) => Math.abs(a - b) <= 1e-8;
+const isUnavailableReason = (value: unknown): value is SeaOperationCopernicusUnavailableReason =>
+  unavailableReasons.some(reason => reason === value);
 
 export function validateSeaOperationCopernicusInput(value: unknown): SeaOperationCopernicusInput {
   const point = validateSeaOperationWeatherInput(value), input = value as Record<string, unknown>;
@@ -141,7 +150,10 @@ export function calculateSeaOperationCopernicusEstimate(inputValue: SeaOperation
     ...(input.transit === undefined ? {} : { transit: { ...input.transit } }),
     latitude: input.latitude, longitude: input.longitude, etaUtc: seaOperationEtaUtc(input.eta), draftMeters: input.draftMeters, fetchedAt,
     status: 'unavailable', message: '', source, cell, waterLevel, estimate: null };
-  if (provider.status !== 'available') return { ...result, message: text(provider.message) ? provider.message : 'Données Copernicus indisponibles à cette position et cette ETA.' };
+  if (provider.status !== 'available') return { ...result,
+    ...(isUnavailableReason(provider.reasonCode) ? { reasonCode: provider.reasonCode } : {}),
+    ...(object(provider.cellPosition) && position(provider.cellPosition) ? { cellPosition: provider.cellPosition } : {}),
+    message: text(provider.message) ? provider.message : 'Données Copernicus indisponibles à cette position et cette ETA.' };
   if (!source || !cell || !waterLevel) return { ...result, message: 'Les données du modèle Copernicus sont incomplètes ou incompatibles.' };
   if (!contains(cell.bounds, input)) return { ...result, message: 'La maille du modèle ne couvre pas ce waypoint.' };
   if (Date.parse(fetchedAt) > Date.parse(result.etaUtc)) return { ...result, message: 'L’ETA est passée : une nouvelle analyse ne remplace pas la prévision conservée.' };
@@ -161,8 +173,10 @@ export function isSeaOperationCopernicusEstimate(value: unknown): value is SeaOp
     || !(value.source === null || isSeaOperationCopernicusSource(value.source))
     || !(value.cell === null || isSeaOperationCopernicusCell(value.cell))
     || !(value.waterLevel === null || isSeaOperationCopernicusWaterLevel(value.waterLevel))) return false;
-  if (value.status === 'unavailable') return value.estimate === null;
-  if (value.status !== 'available' || !value.source || !value.cell || !value.waterLevel || !object(value.estimate)
+  if (value.status === 'unavailable') return value.estimate === null && (value.reasonCode === undefined || isUnavailableReason(value.reasonCode))
+    && (value.cellPosition === undefined || object(value.cellPosition) && position(value.cellPosition));
+  if (value.status !== 'available' || value.reasonCode !== undefined || value.cellPosition !== undefined
+    || !value.source || !value.cell || !value.waterLevel || !object(value.estimate)
     || Date.parse(value.fetchedAt) > Date.parse(value.etaUtc)
     || !contains(value.cell.bounds, value)) return false;
   const expected = calculate(value.etaUtc, value.draftMeters, value.source, value.cell, value.waterLevel);
