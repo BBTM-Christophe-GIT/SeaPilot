@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isAuditDate, type AuditFindingStatus } from '../internalAudits/internalAuditModel';
 import { mapAuditSite } from '../internalAudits/internalAuditQueries';
-import { documentaryFindingIssues, type DocumentaryAudit, type DocumentaryAuditData, type DocumentaryAuditKind, type DocumentaryFinding, type DocumentaryFindingEvent } from './documentaryAuditModel';
+import { documentaryFindingIssues, normalizeDocumentaryClientName, type DocumentaryAudit, type DocumentaryAuditData, type DocumentaryAuditKind, type DocumentaryFinding, type DocumentaryFindingEvent } from './documentaryAuditModel';
 import { discardDocumentaryUploads, documentaryFileReferences, hydrateDocumentaryFiles, mapDocumentaryFiles, uploadDocumentaryFiles } from './documentaryAuditFiles';
 
 type Row = Record<string, unknown>;
@@ -10,7 +10,7 @@ const nullable = (x: unknown) => x == null ? null : String(x);
 const numberOrNull = (x: unknown) => x == null ? null : Number(x);
 const rows = (x: unknown): Row[] => Array.isArray(x) ? x : [];
 export function mapDocumentaryAudit(row: Row): DocumentaryAudit {
-  return { id: text(row.id), companyId: Number(row.company_id), kind: row.kind as DocumentaryAuditKind, siteId: text(row.site_id), year: Number(row.year), title: text(row.title), plannedOn: nullable(row.planned_on), auditedOn: nullable(row.audited_on), auditorName: text(row.auditor_name), files: mapDocumentaryFiles(row.files), createdAt: text(row.created_at), updatedAt: text(row.updated_at) };
+  return { id: text(row.id), companyId: Number(row.company_id), kind: row.kind as DocumentaryAuditKind, siteId: text(row.site_id), year: Number(row.year), title: text(row.title), clientName: nullable(row.client_name), plannedOn: nullable(row.planned_on), auditedOn: nullable(row.audited_on), auditorName: text(row.auditor_name), files: mapDocumentaryFiles(row.files), createdAt: text(row.created_at), updatedAt: text(row.updated_at) };
 }
 export function mapDocumentaryFinding(row: Row): DocumentaryFinding {
   return { id: text(row.id), companyId: Number(row.company_id), auditId: text(row.audit_id), reference: text(row.reference), category: row.category as DocumentaryFinding['category'], description: text(row.description), assigneePersonId: numberOrNull(row.assignee_person_id), assigneeRole: row.assignee_role == null ? null : row.assignee_role as DocumentaryFinding['assigneeRole'], assigneeVesselId: numberOrNull(row.assignee_vessel_id), assigneeLabel: text(row.assignee_label), openedOn: text(row.opened_on), dueOn: nullable(row.due_on), treatmentDelayValue: numberOrNull(row.treatment_delay_value), treatmentDelayUnit: row.treatment_delay_unit == null ? null : row.treatment_delay_unit as DocumentaryFinding['treatmentDelayUnit'], status: row.status as DocumentaryFinding['status'], treatment: text(row.treatment), resolvedAt: nullable(row.resolved_at), closedAt: nullable(row.closed_at), files: mapDocumentaryFiles(row.files) };
@@ -34,9 +34,10 @@ export async function fetchDocumentaryAuditData(client: SupabaseClient, kind: Do
 export async function saveDocumentaryAudit(client: SupabaseClient, audit: DocumentaryAudit, files: File[] = []): Promise<DocumentaryAudit> {
   if (!Number.isInteger(audit.year) || audit.year < 1900 || audit.year > 9998 || !audit.siteId) throw new Error('Sélectionnez un navire et une année valide.');
   if (audit.plannedOn !== null && !isAuditDate(audit.plannedOn)) throw new Error('Renseignez une date prévue valide ou laissez-la vide.');
+  const clientName = audit.kind === 'client' ? normalizeDocumentaryClientName(audit.clientName) : null;
   const uploaded = await uploadDocumentaryFiles(client, { companyId: audit.companyId, auditId: audit.id, recordId: audit.id, kind: 'audit' }, files);
   try {
-    const saved = mapDocumentaryAudit(await rpc(client, 'documentary_audit_save', { p_payload: { ...audit, files: documentaryFileReferences([...audit.files, ...uploaded]) } }));
+    const saved = mapDocumentaryAudit(await rpc(client, 'documentary_audit_save', { p_payload: { ...audit, clientName, files: documentaryFileReferences([...audit.files, ...uploaded]) } }));
     await hydrateDocumentaryFiles(client, saved.files); return saved;
   } catch (error) {
     if (!await discardDocumentaryUploads(client, uploaded)) throw new Error('L’enregistrement n’a pas pu être confirmé. Des fichiers sont conservés : rechargez le dossier avant de réessayer.', { cause: error });

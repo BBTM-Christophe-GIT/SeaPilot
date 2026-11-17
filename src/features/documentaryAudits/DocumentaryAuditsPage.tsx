@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertCircle, CheckCircle2, Download, FilePlus2, FileText, FolderOpen, Pencil, Plus, Ship, Upload, X } from 'lucide-react';
+import { AlertCircle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FilePlus2, FileText, FolderOpen, Pencil, Plus, Ship, Upload, X } from 'lucide-react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
 import { auditDueOnFromDuration, todayAuditParis, type AuditAssigneeRole, type AuditDeadlineUnit, type AuditFindingStatus } from '../internalAudits/internalAuditModel';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { DOCUMENTARY_AUDIT_LABELS, DOCUMENTARY_FINDING_LABELS, DOCUMENTARY_STATUS_LABELS, defaultDocumentaryDuration, documentaryFindingIssues, documentaryFindingOverdue, type AuditAttachment, type DocumentaryAudit, type DocumentaryAuditData, type DocumentaryAuditKind, type DocumentaryFinding, type DocumentaryFindingCategory, type DocumentaryFindingEvent } from './documentaryAuditModel';
+import { DOCUMENTARY_AUDIT_LABELS, DOCUMENTARY_FINDING_LABELS, DOCUMENTARY_STATUS_LABELS, defaultDocumentaryDuration, documentaryFindingIssues, documentaryFindingOverdue, normalizeDocumentaryClientName, type AuditAttachment, type DocumentaryAudit, type DocumentaryAuditData, type DocumentaryAuditKind, type DocumentaryFinding, type DocumentaryFindingCategory, type DocumentaryFindingEvent } from './documentaryAuditModel';
 import { DOCUMENTARY_AUDIT_FILE_ACCEPT, documentaryFileMime, downloadDocumentaryFile, validateDocumentaryFiles } from './documentaryAuditFiles';
 import { addDocumentaryTreatment, fetchDocumentaryAuditData, saveDocumentaryAudit, saveDocumentaryFinding } from './documentaryAuditQueries';
 import { createDocumentaryAuditPreviewData } from './documentaryAuditPreview';
@@ -60,7 +60,7 @@ function FileList({ files, onDownload, busy }: { files: readonly AuditAttachment
   </article>)}</div>;
 }
 
-interface FindingForm { existing: DocumentaryFinding | null; category: DocumentaryFindingCategory; reference: string; description: string; target: string; openedOn: string; delayEnabled: boolean; amount: string; unit: AuditDeadlineUnit }
+interface FindingForm { auditId: string; existing: DocumentaryFinding | null; category: DocumentaryFindingCategory; reference: string; description: string; target: string; openedOn: string; delayEnabled: boolean; amount: string; unit: AuditDeadlineUnit }
 
 export function DocumentaryAuditsPage({ kind }: { kind: DocumentaryAuditKind }) {
   const context = useOutletContext<AppShellOutletContext>();
@@ -69,12 +69,14 @@ export function DocumentaryAuditsPage({ kind }: { kind: DocumentaryAuditKind }) 
 
 function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; context: AppShellOutletContext }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const currentYear = Number(todayAuditParis().slice(0, 4));
   const [data, setData] = useState<DocumentaryAuditData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [selectedYear, setYear] = useState(Number(todayAuditParis().slice(0, 4)));
+  const [selectedYear, setYear] = useState(currentYear);
+  const [collapsedClientAuditId, setCollapsedClientAuditId] = useState<string | null>(null);
   const [siteId, setSiteId] = useState('');
   const [tab, setTab] = useState<'documents' | 'findings'>('documents');
   const [filter, setFilter] = useState('all');
@@ -104,22 +106,69 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   const linkedAudit = requestedAuditId ? scopedAudits.find((item) => item.id === requestedAuditId) : undefined;
   const year = linkedAudit?.year ?? selectedYear;
   const site = vessels.find((vessel) => vessel.id === (linkedAudit?.siteId || siteId)) || vessels[0];
-  const audit = hasAuditLink ? linkedAudit : scopedAudits.find((item) => item.siteId === site?.id && item.year === year);
+  const clientAudit = kind === 'client';
+  const auditsByVessel = new Map<string, DocumentaryAudit[]>();
+  for (const item of scopedAudits) {
+    if (!clientAudit && item.year !== year) continue;
+    const folders = auditsByVessel.get(item.siteId) ?? [];
+    folders.push(item);
+    auditsByVessel.set(item.siteId, folders);
+  }
+  const auditsByYear = new Map<number, DocumentaryAudit[]>();
+  for (const item of (site && auditsByVessel.get(site.id)) || []) {
+    const folders = auditsByYear.get(item.year) ?? [];
+    folders.push(item);
+    auditsByYear.set(item.year, folders);
+  }
+  const siteAudits = auditsByYear.get(year) || [];
+  if (clientAudit) siteAudits.sort((a, b) => (a.clientName || a.title).localeCompare(b.clientName || b.title, 'fr') || a.id.localeCompare(b.id));
+  const clientTreeYears = [...new Set([currentYear, ...auditsByYear.keys()])].sort((a, b) => b - a);
+  const audit = hasAuditLink ? linkedAudit : siteAudits[0];
   const auditFindings = data?.findings.filter((item) => item.auditId === audit?.id) || [];
   const displayedFindings = auditFindings.filter((item) => filter === 'all' || (filter === 'pending' ? item.status !== 'closed' : item.category === filter));
   const canManage = Boolean(data?.permissions.canManage);
-  const years = [...new Set([year, ...scopedAudits.map((item) => item.year), ...Array.from({ length: 9 }, (_, i) => Number(todayAuditParis().slice(0, 4)) - 3 + i)])].sort((a, b) => b - a);
+  const years = [...new Set([year, ...scopedAudits.map((item) => item.year), ...Array.from({ length: 9 }, (_, i) => currentYear - 3 + i)])].sort((a, b) => b - a);
+  const existingAudit = scopedAudits.find((item) => item.id === auditEditor?.id);
+  const auditEditorSite = vessels.find((item) => item.id === auditEditor?.siteId);
+  const editorClientName = normalizeDocumentaryClientName(auditEditor?.clientName);
+  const newClientAudit = clientAudit && !existingAudit;
+  const requireClientName = clientAudit && (newClientAudit || Boolean(existingAudit?.clientName));
+  const defaultClientTitle = auditEditor && editorClientName
+    ? `Audit ${editorClientName} · ${auditEditorSite?.name} · ${auditEditor.year}`.slice(0, 200)
+    : '';
+  const findingAudit = scopedAudits.find((item) => item.id === findingForm?.auditId);
   const openedOn = findingForm?.openedOn || todayAuditParis();
   const duration = findingForm?.delayEnabled && findingForm.category !== 'remark' ? { amount: Number(findingForm.amount), unit: findingForm.unit } : null;
   const dueOn = auditDueOnFromDuration(openedOn, duration);
 
   function changeSelection(nextYear: number, nextSiteId: string) {
+    if (clientAudit && nextYear === year && nextSiteId === site?.id) return;
     setYear(nextYear); setSiteId(nextSiteId); setFilter('all');
+    setCollapsedClientAuditId(null);
     if (hasAuditLink) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('audit');
       setSearchParams(nextParams, { replace: true });
     }
+  }
+  function changeVessel(nextSiteId: string) {
+    const preserveYear = !clientAudit || auditsByVessel.get(nextSiteId)?.some((item) => item.year === year);
+    changeSelection(preserveYear ? year : currentYear, nextSiteId);
+  }
+  function toggleClientYear(nextYear: number) {
+    if (!site) return;
+    if (nextYear !== year) {
+      changeSelection(nextYear, site.id);
+    } else if (audit) {
+      setCollapsedClientAuditId((collapsed) => collapsed === audit.id ? null : audit.id);
+    }
+  }
+  function selectClientAudit(id: string) {
+    setFilter('all');
+    setCollapsedClientAuditId(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('audit', id);
+    setSearchParams(nextParams, { replace: true });
   }
 
   async function refreshAfterSave(success: string) {
@@ -136,16 +185,27 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   function startAuditEditor(existing?: DocumentaryAudit) {
     if (!data || !site || !canManage) return;
     setError(''); setMessage('');
-    setAuditEditor(existing ? { ...existing } : { id: crypto.randomUUID(), companyId: data.companyId, kind, siteId: site.id, year, title: `${DOCUMENTARY_AUDIT_LABELS[kind]} · ${site.name} · ${year}`, plannedOn: null, auditedOn: null, auditorName: context.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '', files: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    setAuditEditor(existing ? { ...existing } : { id: crypto.randomUUID(), companyId: data.companyId, kind, siteId: site.id, year, title: clientAudit ? '' : `${DOCUMENTARY_AUDIT_LABELS[kind]} · ${site.name} · ${year}`, clientName: null, plannedOn: null, auditedOn: null, auditorName: context.currentPerson ? `${context.currentPerson.firstName} ${context.currentPerson.lastName}`.trim() : '', files: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   }
   async function submitAudit(event: FormEvent) {
     event.preventDefault();
-    if (!auditEditor || !canManage || !auditEditor.title.trim()) return;
+    if (!auditEditor || !canManage) return;
+    if (requireClientName && !editorClientName) { setError('Renseignez le nom du client.'); return; }
+    const title = auditEditor.title.trim() || (newClientAudit ? defaultClientTitle : '');
+    if (!title) { setError('Renseignez le titre du dossier.'); return; }
     await perform(async () => {
-      const payload = { ...auditEditor, title: auditEditor.title.trim(), auditorName: auditEditor.auditorName.trim(), updatedAt: new Date().toISOString() };
+      const payload = { ...auditEditor, title, clientName: clientAudit ? editorClientName : null, auditorName: auditEditor.auditorName.trim(), updatedAt: new Date().toISOString() };
+      if (context.previewMode && editorClientName && scopedAudits.some((item) => item.id !== payload.id
+        && item.siteId === payload.siteId && item.year === payload.year && item.clientName?.toLowerCase() === editorClientName.toLowerCase())) {
+        throw new Error('Un audit existe déjà pour ce client, ce navire et cette année.');
+      }
       const saved = context.previewMode ? payload : await saveDocumentaryAudit(context.client, payload);
       setData((current) => current && { ...current, audits: [...current.audits.filter((item) => item.id !== saved.id), saved] });
       setAuditEditor(null);
+      if (newClientAudit) {
+        selectClientAudit(saved.id);
+        setTab('documents');
+      }
       await refreshAfterSave('Dossier enregistré.');
     });
   }
@@ -164,7 +224,7 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
     if (!audit || !canManage || existing?.status === 'closed') return;
     const defaults = defaultDocumentaryDuration(existing?.category || 'finding');
     setError(''); setMessage(''); setFiles([]);
-    setFindingForm({ existing: existing || null, category: existing?.category || 'finding', reference: existing?.reference || '', description: existing?.description || '', target: existing ? existing.assigneePersonId ? `person:${existing.assigneePersonId}` : `role:${existing.assigneeRole}:${existing.assigneeVesselId}` : '', openedOn: existing?.openedOn || todayAuditParis(), delayEnabled: existing ? existing.treatmentDelayValue !== null : Boolean(defaults), amount: String(existing?.treatmentDelayValue || defaults?.amount || 1), unit: existing?.treatmentDelayUnit || defaults?.unit || 'weeks' });
+    setFindingForm({ auditId: audit.id, existing: existing || null, category: existing?.category || 'finding', reference: existing?.reference || '', description: existing?.description || '', target: existing ? existing.assigneePersonId ? `person:${existing.assigneePersonId}` : `role:${existing.assigneeRole}:${existing.assigneeVesselId}` : '', openedOn: existing?.openedOn || todayAuditParis(), delayEnabled: existing ? existing.treatmentDelayValue !== null : Boolean(defaults), amount: String(existing?.treatmentDelayValue || defaults?.amount || 1), unit: existing?.treatmentDelayUnit || defaults?.unit || 'weeks' });
   }
   function changeCategory(category: DocumentaryFindingCategory) {
     const defaults = defaultDocumentaryDuration(category);
@@ -172,13 +232,13 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   }
   async function submitFinding(event: FormEvent) {
     event.preventDefault();
-    if (!findingForm || !audit || !data || !canManage || findingForm.existing?.status === 'closed' || filesValidating) return;
+    if (!findingForm || !findingAudit || !data || !canManage || findingForm.existing?.status === 'closed' || filesValidating) return;
     const [targetType, targetValue, targetVessel] = findingForm.target.split(':');
     const person = data.people.find((item) => item.id === Number(targetValue));
     const targetSite = vessels.find((item) => item.vesselId === Number(targetVessel));
     const role = targetType === 'role' ? targetValue as AuditAssigneeRole : null;
     const existing = findingForm.existing;
-    const payload: DocumentaryFinding = { id: existing?.id || crypto.randomUUID(), companyId: data.companyId, auditId: audit.id, reference: findingForm.reference.trim(), category: findingForm.category, description: findingForm.description.trim(), assigneePersonId: targetType === 'person' ? Number(targetValue) : null, assigneeRole: role, assigneeVesselId: targetType === 'role' ? Number(targetVessel) : null, assigneeLabel: targetType === 'person' ? person?.name || '' : role && targetSite ? `${roleLabels[role]} ${targetSite.name}` : '', openedOn, dueOn, treatmentDelayValue: duration?.amount ?? null, treatmentDelayUnit: duration?.unit ?? null, status: existing?.status || 'open', treatment: existing?.treatment || '', resolvedAt: existing?.resolvedAt || null, closedAt: existing?.closedAt || null, files: existing?.files || [] };
+    const payload: DocumentaryFinding = { id: existing?.id || crypto.randomUUID(), companyId: data.companyId, auditId: findingAudit.id, reference: findingForm.reference.trim(), category: findingForm.category, description: findingForm.description.trim(), assigneePersonId: targetType === 'person' ? Number(targetValue) : null, assigneeRole: role, assigneeVesselId: targetType === 'role' ? Number(targetVessel) : null, assigneeLabel: targetType === 'person' ? person?.name || '' : role && targetSite ? `${roleLabels[role]} ${targetSite.name}` : '', openedOn, dueOn, treatmentDelayValue: duration?.amount ?? null, treatmentDelayUnit: duration?.unit ?? null, status: existing?.status || 'open', treatment: existing?.treatment || '', resolvedAt: existing?.resolvedAt || null, closedAt: existing?.closedAt || null, files: existing?.files || [] };
     const issues = documentaryFindingIssues(payload);
     if (issues.length) { setError(issues.join(' ')); return; }
     await perform(async () => {
@@ -246,19 +306,52 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
   </div>;
 
   return <div className="documentary-audits-page">
-    <header className="da-header"><div><p className="da-eyebrow">Audits</p><h1>{DOCUMENTARY_AUDIT_LABELS[kind]}</h1><p>Documents et suivi des écarts, par navire et par année.</p></div><label className="da-year">Année<select aria-label="Année des audits" value={year} disabled={busy} onChange={(event) => changeSelection(Number(event.target.value), site?.id || '')}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></header>
+    <header className="da-header"><div><p className="da-eyebrow">Audits</p><h1>{DOCUMENTARY_AUDIT_LABELS[kind]}</h1><p>{clientAudit ? 'Documents et suivi des écarts, par navire, année et client.' : 'Documents et suivi des écarts, par navire et par année.'}</p></div>{!clientAudit && <label className="da-year">Année<select aria-label="Année des audits" value={year} disabled={busy} onChange={(event) => changeSelection(Number(event.target.value), site?.id || '')}>{years.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>}</header>
     {error && !auditEditor && !uploadAudit && !findingForm && !treatmentFinding && <p className="da-alert is-error" role="alert"><AlertCircle size={16} />{error}</p>}
     {message && <p className="da-alert is-success" role="status"><CheckCircle2 size={16} />{message}</p>}
-    {loading ? <p className="da-loading" role="status">Chargement des dossiers d’audit…</p> : !vessels.length ? <section className="da-empty"><Ship size={35} /><h2>Aucun navire disponible</h2><p>Les dossiers apparaîtront ici pour les navires auxquels vous avez accès.</p></section> : <div className="da-workspace">
+    {loading ? <p className="da-loading" role="status">Chargement des dossiers d’audit…</p> : !vessels.length ? <section className="da-empty"><Ship size={35} /><h2>Aucun navire disponible</h2><p>Les dossiers apparaîtront ici pour les navires auxquels vous avez accès.</p></section> : <div className={clientAudit ? 'da-workspace da-workspace--clients' : 'da-workspace'}>
       <aside className="da-vessels" aria-label="Navires"><header><h2>Navires</h2><span>{vessels.length}</span></header><div className="da-vessel-list">{vessels.map((vessel) => {
-        const folder = scopedAudits.find((item) => item.siteId === vessel.id && item.year === year);
+        const folders = auditsByVessel.get(vessel.id) || [];
+        const folder = folders[0];
+        const summary = !folder ? 'Dossier à créer' : clientAudit
+          ? `${folders.length} audit${folders.length > 1 ? 's' : ''}`
+          : `${folder.files.length} document${folder.files.length > 1 ? 's' : ''} · ${data?.findings.filter((finding) => finding.auditId === folder.id).length || 0} écart(s)`;
         const image = fleetIllustration(vessel);
-        return <button type="button" className="da-vessel-button" key={vessel.id} aria-pressed={vessel.id === site?.id} disabled={busy} onClick={() => changeSelection(year, vessel.id)}><span className="da-vessel-image">{image ? <img src={image} alt="" /> : <Ship size={21} />}</span><span><strong>{vessel.name}</strong><small>{folder ? `${folder.files.length} document${folder.files.length > 1 ? 's' : ''} · ${data?.findings.filter((finding) => finding.auditId === folder.id).length || 0} écart(s)` : 'Dossier à créer'}</small></span></button>;
+        return <button type="button" className="da-vessel-button" key={vessel.id} aria-pressed={vessel.id === site?.id} disabled={busy} onClick={() => changeVessel(vessel.id)}><span className="da-vessel-image">{image ? <img src={image} alt="" /> : <Ship size={21} />}</span><span><strong>{vessel.name}</strong><small>{summary}</small></span></button>;
       })}</div></aside>
-      <section className="da-detail">{audit ? <>
+      {clientAudit && <aside className="da-client-tree" aria-label="Dossiers d’audit">
+        <header>
+          <h2>Dossiers d’audit</h2>
+          {canManage && <button type="button" className="sp-button sp-button--primary" disabled={busy} onClick={() => startAuditEditor()}><Plus size={16} />Nouvel audit client</button>}
+        </header>
+        <ul className="da-client-years">
+          {clientTreeYears.map((branchYear) => {
+            const folders = auditsByYear.get(branchYear) || [];
+            const expanded = branchYear === year && collapsedClientAuditId !== audit?.id;
+            const BranchIcon = folders.length ? expanded ? ChevronDown : ChevronRight : CalendarDays;
+            return <li key={branchYear}>
+              <button type="button" className="da-client-node da-client-year" aria-expanded={folders.length ? expanded : undefined} aria-current={!folders.length && branchYear === year ? 'true' : undefined} disabled={busy} onClick={() => toggleClientYear(branchYear)}>
+                <BranchIcon aria-hidden="true" size={16} />
+                {branchYear}
+                <span aria-hidden="true">{folders.length}</span>
+              </button>
+              {expanded && folders.length > 0 && <ul className="da-client-folders">
+                {folders.map((item) => <li key={item.id}>
+                  <button type="button" className="da-client-node" aria-current={item.id === audit?.id ? 'true' : undefined} disabled={busy} onClick={() => selectClientAudit(item.id)}>
+                    <FileText aria-hidden="true" size={15} />
+                    {item.clientName || item.title}
+                  </button>
+                </li>)}
+              </ul>}
+            </li>;
+          })}
+        </ul>
+      </aside>}
+      <section className="da-detail">
+        {audit ? <>
         <header className="da-audit-header"><div><p className="da-audit-label">{site?.name} · {year}</p><h2>{audit.title}</h2><p className="da-audit-dates"><span>Date prévue : <strong>{audit.plannedOn ? dateLabel(audit.plannedOn) : 'Non planifié'}</strong></span><span>Réalisé le : {dateLabel(audit.auditedOn)}</span><span>Auditeur : {audit.auditorName || 'Non renseigné'}</span></p></div><div className="da-header-actions">{canManage && <button type="button" className="is-secondary da-icon-button" aria-label="Modifier le dossier" title="Modifier le dossier" disabled={busy} onClick={() => startAuditEditor(audit)}><Pencil size={16} /></button>}<button type="button" className="is-secondary" disabled={busy} onClick={() => exportReport()}><Download size={15} />Exporter le rapport PDF</button></div></header>
         <nav className="da-tabs" aria-label="Contenu du dossier"><button type="button" aria-current={tab === 'documents' ? 'page' : undefined} onClick={() => setTab('documents')}>Documents <span>{audit.files.length}</span></button><button type="button" aria-current={tab === 'findings' ? 'page' : undefined} onClick={() => setTab('findings')}>Écarts <span>{auditFindings.length}</span></button></nav>
-        {tab === 'documents' ? <section className="da-section"><div className="da-section-toolbar"><p>Les documents réunis dans ce dossier constituent l’audit.</p>{canManage && <button type="button" disabled={busy} onClick={() => { setError(''); setFiles([]); setUploadAudit(audit); }}><FilePlus2 size={16} />Ajouter des documents</button>}</div>{audit.files.length ? <FileList files={audit.files} busy={busy} onDownload={download} /> : <div className="da-empty"><FolderOpen size={31} /><h3>Aucun document pour cet audit</h3><p>Ajoutez le rapport et ses pièces complémentaires dans ce dossier annuel.</p></div>}</section> : <section className="da-section"><div className="da-section-toolbar"><label><span className="da-sr-only">Filtrer les écarts</span><select aria-label="Filtrer les écarts" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">Tous les écarts</option><option value="pending">Non clôturés</option>{categories.map((category) => <option key={category} value={category}>{DOCUMENTARY_FINDING_LABELS[category]}</option>)}</select></label>{canManage && <button type="button" disabled={busy} onClick={() => startFinding()}><Plus size={16} />Créer un écart</button>}</div>
+        {tab === 'documents' ? <section className="da-section"><div className="da-section-toolbar"><p>Les documents réunis dans ce dossier constituent l’audit.</p>{canManage && <button type="button" disabled={busy} onClick={() => { setError(''); setFiles([]); setUploadAudit(audit); }}><FilePlus2 size={16} />Ajouter des documents</button>}</div>{audit.files.length ? <FileList files={audit.files} busy={busy} onDownload={download} /> : <div className="da-empty"><FolderOpen size={31} /><h3>Aucun document pour cet audit</h3><p>Ajoutez le rapport et ses pièces complémentaires dans ce dossier.</p></div>}</section> : <section className="da-section"><div className="da-section-toolbar"><label><span className="da-sr-only">Filtrer les écarts</span><select aria-label="Filtrer les écarts" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">Tous les écarts</option><option value="pending">Non clôturés</option>{categories.map((category) => <option key={category} value={category}>{DOCUMENTARY_FINDING_LABELS[category]}</option>)}</select></label>{canManage && <button type="button" disabled={busy} onClick={() => startFinding()}><Plus size={16} />Créer un écart</button>}</div>
           {displayedFindings.length ? <div className="da-finding-list">{displayedFindings.map((finding) => {
             const history = (data?.events.filter((event) => event.findingId === finding.id) || []).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
             const overdue = documentaryFindingOverdue(finding);
@@ -270,18 +363,26 @@ function DocumentaryWorkspace({ kind, context }: { kind: DocumentaryAuditKind; c
             </article>;
           })}</div> : <div className="da-empty"><CheckCircle2 size={31} /><h3>{auditFindings.length ? 'Aucun écart pour ce filtre' : 'Aucun écart enregistré'}</h3><p>Les constats, responsables et traitements de cet audit seront réunis ici.</p></div>}
         </section>}
-      </> : <section className="da-empty"><FolderOpen size={38} /><h2>{site?.name} · {year}</h2><h3>Aucun dossier d’audit pour cette année</h3><p>{canManage ? 'Créez le dossier, puis ajoutez les documents et les éventuels écarts de cet audit.' : 'Le dossier sera disponible dès sa création par un gestionnaire.'}</p>{canManage && <button type="button" disabled={busy} onClick={() => startAuditEditor()}><Plus size={16} />Créer le dossier</button>}</section>}</section>
+      </> : <section className="da-empty"><FolderOpen size={38} /><h2>{site?.name} · {year}</h2><h3>Aucun dossier d’audit pour cette année</h3><p>{canManage ? 'Créez le dossier, puis ajoutez les documents et les éventuels écarts de cet audit.' : 'Le dossier sera disponible dès sa création par un gestionnaire.'}</p>{canManage && !clientAudit && <button type="button" disabled={busy} onClick={() => startAuditEditor()}><Plus size={16} />Créer le dossier</button>}</section>}</section>
     </div>}
-    {auditEditor && <AppDialog title={data?.audits.some((item) => item.id === auditEditor.id) ? 'Modifier le dossier d’audit' : 'Créer le dossier d’audit'} description={`${DOCUMENTARY_AUDIT_LABELS[kind]} · ${vessels.find((item) => item.id === auditEditor.siteId)?.name} · ${auditEditor.year}`} isBusy={busy} onClose={() => setAuditEditor(null)} onSubmit={submitAudit} footer={dialogFooter(() => setAuditEditor(null), 'Enregistrer le dossier')}>
+    {auditEditor && <AppDialog title={existingAudit ? 'Modifier le dossier d’audit' : 'Créer le dossier d’audit'} description={newClientAudit ? `Audit Client · ${auditEditorSite?.name}` : `${DOCUMENTARY_AUDIT_LABELS[kind]} · ${auditEditorSite?.name} · ${auditEditor.year}`} isBusy={busy} onClose={() => setAuditEditor(null)} onSubmit={submitAudit} footer={dialogFooter(() => setAuditEditor(null), 'Enregistrer le dossier')}>
       {dialogError}<div className="da-form-grid">
-        <label className="da-full">Titre du dossier<input value={auditEditor.title} required maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, title: event.target.value })} /></label>
+        {newClientAudit && <label>Année du dossier
+          <select value={auditEditor.year} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, year: Number(event.target.value) })}>
+            {years.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>}
+        {clientAudit && <label className={newClientAudit ? undefined : 'da-full'}>{requireClientName ? 'Client' : 'Client (facultatif)'}
+          <input value={auditEditor.clientName || ''} required={requireClientName} maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, clientName: event.target.value })} />
+        </label>}
+        <label className="da-full">Titre du dossier<input value={auditEditor.title} required={!newClientAudit} placeholder={newClientAudit ? defaultClientTitle : undefined} maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, title: event.target.value })} /></label>
         <label>Date prévue (facultative)<input type="date" value={auditEditor.plannedOn || ''} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, plannedOn: event.target.value || null })} /></label>
         <label>Date de l’audit<input type="date" value={auditEditor.auditedOn || ''} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditedOn: event.target.value || null })} /></label>
         <label className="da-full">Auditeur<input value={auditEditor.auditorName} maxLength={200} disabled={busy} onChange={(event) => setAuditEditor({ ...auditEditor, auditorName: event.target.value })} /></label>
-      </div><p className="da-form-help">Le navire, l’année et le type d’audit identifient ce dossier. Les documents s’ajoutent une fois le dossier créé. La date prévue inscrit l’audit dans le planning global ; laissez-la vide pour ne pas le planifier.</p>
+      </div><p className="da-form-help">{clientAudit ? 'Un dossier par client pour ce navire et cette année.' : 'Le navire, l’année et le type d’audit identifient ce dossier.'} Les documents s’ajoutent une fois le dossier créé. Renseignez la date prévue pour afficher l’audit dans le planning global.</p>
     </AppDialog>}
     {uploadAudit && <AppDialog title="Ajouter des documents au dossier" description={uploadAudit.title} isBusy={busy || filesValidating} onClose={() => { setUploadAudit(null); setFiles([]); }} onSubmit={submitDocuments} footer={dialogFooter(() => { setUploadAudit(null); setFiles([]); }, 'Ajouter les documents', !files.length)}>{dialogError}<FilePicker files={files} onChange={setFiles} onError={setError} onValidatingChange={setFilesValidating} busy={busy} label="Documents de l’audit" /></AppDialog>}
-    {findingForm && <AppDialog title={findingForm.existing ? 'Modifier le constat' : 'Créer un écart'} description={audit?.title} size="lg" isBusy={busy || filesValidating} onClose={() => { setFindingForm(null); setFiles([]); }} onSubmit={submitFinding} footer={dialogFooter(() => { setFindingForm(null); setFiles([]); }, 'Enregistrer l’écart')}>
+    {findingForm && findingAudit && <AppDialog title={findingForm.existing ? 'Modifier le constat' : 'Créer un écart'} description={findingAudit.title} size="lg" isBusy={busy || filesValidating} onClose={() => { setFindingForm(null); setFiles([]); }} onSubmit={submitFinding} footer={dialogFooter(() => { setFindingForm(null); setFiles([]); }, 'Enregistrer l’écart')}>
       {dialogError}<div className="da-form-grid"><label>Catégorie<select value={findingForm.category} disabled={busy} onChange={(event) => changeCategory(event.target.value as DocumentaryFindingCategory)}>{categories.map((category) => <option key={category} value={category}>{DOCUMENTARY_FINDING_LABELS[category]}</option>)}</select></label><label>Référence (facultative)<input value={findingForm.reference} maxLength={120} disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, reference: event.target.value })} /></label><label className="da-full">Description du constat<textarea value={findingForm.description} rows={3} maxLength={10000} required disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, description: event.target.value })} /></label><label className="da-full">Responsable de traitement<select required value={findingForm.target} disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, target: event.target.value })}><option value="">Choisir une personne ou une fonction</option><optgroup label="Personnes">{data?.people.map((person) => <option key={person.id} value={`person:${person.id}`}>{person.name}{person.functionLabel ? ` · ${person.functionLabel}` : ''}</option>)}</optgroup>{vessels.filter((vessel) => vessel.vesselId).map((vessel) => <optgroup label={vessel.name} key={vessel.id}>{(Object.keys(roleLabels) as AuditAssigneeRole[]).map((role) => <option key={role} value={`role:${role}:${vessel.vesselId}`}>{roleLabels[role]} {vessel.name}</option>)}</optgroup>)}</select></label>
         {findingForm.category === 'finding' && <label className="da-full da-delay-toggle"><input type="checkbox" checked={findingForm.delayEnabled} disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, delayEnabled: event.target.checked })} />Prévoir un délai de traitement (facultatif)</label>}
         {findingForm.delayEnabled && findingForm.category !== 'remark' && <><label>Délai de traitement<input type="number" min={1} max={3650} step={1} required value={findingForm.amount} disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, amount: event.target.value })} /></label><label>Unité du délai<select value={findingForm.unit} disabled={busy} onChange={(event) => setFindingForm({ ...findingForm, unit: event.target.value as AuditDeadlineUnit })}><option value="days">Jour(s)</option><option value="weeks">Semaine(s)</option><option value="months">Mois</option></select></label></>}

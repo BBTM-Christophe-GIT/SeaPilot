@@ -6,7 +6,7 @@ export type DocumentaryFindingCategory = 'finding' | 'major' | 'minor' | 'remark
 export interface AuditAttachment { id: string; fileName: string; storagePath: string; mimeType: string; sizeBytes: number; url: string }
 export interface DocumentaryAudit {
   id: string; companyId: number; kind: DocumentaryAuditKind; siteId: string; year: number;
-  title: string; plannedOn: string | null; auditedOn: string | null; auditorName: string; files: AuditAttachment[];
+  title: string; clientName: string | null; plannedOn: string | null; auditedOn: string | null; auditorName: string; files: AuditAttachment[];
   createdAt: string; updatedAt: string;
 }
 export interface DocumentaryFinding {
@@ -24,6 +24,9 @@ export interface DocumentaryAuditData {
 export const DOCUMENTARY_AUDIT_LABELS: Record<DocumentaryAuditKind, string> = { ovid: 'OVID', ecmid: 'eCMID', external_ism: 'Audit ISM Externe', client: 'Audit Client' };
 export const DOCUMENTARY_FINDING_LABELS: Record<DocumentaryFindingCategory, string> = { finding: 'Findings', major: 'Non Conformité Majeure', minor: 'Non Conformité Mineure', remark: 'Remarque' };
 export const DOCUMENTARY_STATUS_LABELS: Record<AuditFindingStatus, string> = { open: 'Ouvert', in_progress: 'En traitement', resolved: 'Traité, à vérifier', closed: 'Clôturé' };
+export function normalizeDocumentaryClientName(name: string | null | undefined): string | null {
+  return name?.trim().replace(/\s+/g, ' ') || null;
+}
 export function defaultDocumentaryDuration(category: DocumentaryFindingCategory): { amount: number; unit: AuditDeadlineUnit } | null {
   return category === 'major' ? { amount: 1, unit: 'weeks' } : category === 'minor' ? { amount: 1, unit: 'months' } : null;
 }

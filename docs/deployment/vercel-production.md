@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.105.0` organise **Audit Client** par navire, année et client.
+Chaque dossier conserve ses documents, écarts et rapports. Appliquer
+`20261117144215_documentary_audit_multiple_clients.sql` avant le déploiement du
+frontend. Voir [Audits documentaires](./documentary-audits.md#déploiement-et-recette).
+
 La version `3.102.2` affiche les réponses partagées du collaborateur et celles
 du management dans un même questionnaire, avec une couleur par auteur.
 Voir [Entretien Professionnel et d’Evaluation](../annual-professional-evaluation.md#workflow).

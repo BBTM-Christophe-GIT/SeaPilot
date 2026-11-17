@@ -8,7 +8,7 @@ import { buildDocumentaryAuditReport, documentaryReportData, type DocumentaryAud
 
 const site: AuditSite = { id: '12', companyId: 7, name: 'LE ROZEL', kind: 'vessel', vesselId: 12, anniversaryOn: null };
 const attachment = (id: string, mimeType = 'application/pdf'): AuditAttachment => ({ id, fileName: `${id}.${mimeType.startsWith('image/') ? 'png' : mimeType === 'text/csv' ? 'csv' : 'pdf'}`, storagePath: `7/audit/${id}`, sizeBytes: 123, mimeType, url: 'https://temporary-signed-url-never-embedded' });
-const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: site.id, kind: 'ovid', year: 2026, title: 'Audit de démonstration - contrôle documentaire', plannedOn: null, auditedOn: '2026-10-01', auditorName: 'Auditeur de contrôle', files: [attachment('Dossier')], createdAt: '', updatedAt: '' };
+const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: site.id, kind: 'ovid', year: 2026, title: 'Audit de démonstration - contrôle documentaire', clientName: null, plannedOn: null, auditedOn: '2026-10-01', auditorName: 'Auditeur de contrôle', files: [attachment('Dossier')], createdAt: '', updatedAt: '' };
 const finding: DocumentaryFinding = { id: 'finding', companyId: 7, auditId: audit.id, reference: 'F-01', category: 'major', description: 'TRACE_FINDING Consignes à compléter.', assigneePersonId: 42, assigneeRole: null, assigneeVesselId: null, assigneeLabel: 'Responsable désigné', openedOn: '2026-10-01', dueOn: '2026-10-08', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', status: 'closed', treatment: 'TRACE_CLOSURE', resolvedAt: '2026-10-03T10:00:00Z', closedAt: '2026-10-04T10:00:00Z', files: [attachment('Constat', 'image/png')] };
 const event: DocumentaryFindingEvent = { id: 'event', findingId: finding.id, actorId: 'user', actorName: 'Auteur du traitement', createdAt: '2026-10-04T10:00:00Z', status: 'closed', treatment: 'TRACE_CLOSURE Mesure vérifiée.', files: [attachment('Cloture', 'image/png'), attachment('Controle', 'text/csv')] };
 const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC', 'base64'));
@@ -34,6 +34,13 @@ function input(changes: Partial<DocumentaryAuditReportInput> = {}): DocumentaryA
   return { audit, site, findings: [finding], events: [event], generatedAt: new Date('2026-10-01T10:00:00Z'), ...changes };
 }
 describe('complete documentary audit PDF export', () => {
+  it('identifies the client in the PDF and its filename', async () => {
+    const clientAudit: DocumentaryAudit = { ...audit, kind: 'client', clientName: 'Entreprise Kersail', files: [] };
+    const report = await buildDocumentaryAuditReport(input({ audit: clientAudit, findings: [], events: [] }));
+    const document = await PDFDocument.load(await report.blob.arrayBuffer());
+    expect(document.getTitle()).toBe('Audit Client - Entreprise Kersail - LE ROZEL - 2026');
+    expect(report.filename).toBe('audit-client-LE-ROZEL-2026-Entreprise-Kersail.pdf');
+  });
   it('rejects an unrelated dossier or a missing selected finding', () => {
     expect(() => documentaryReportData(input({ site: { ...site, companyId: 8 } }))).toThrow('navire');
     expect(() => documentaryReportData(input({ findingId: 'other' }))).toThrow('n’appartient');
