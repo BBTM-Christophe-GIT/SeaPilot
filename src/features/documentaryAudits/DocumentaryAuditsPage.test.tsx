@@ -104,6 +104,95 @@ describe('DocumentaryAuditsPage', () => {
     expect(await screen.findByRole('button', { name: 'Télécharger rapport.pdf' })).toBeInTheDocument();
   });
 
+  it('creates another client audit for the same vessel and year and keeps each dossier scoped by ID', async () => {
+    fixture = createDocumentaryAuditPreviewData('client');
+    const firstAudit = { ...fixture.audits[0], clientName: null, title: 'Audit historique GOURY' };
+    fixture.audits = [firstAudit];
+    const firstFinding = fixture.findings[0];
+    const user = userEvent.setup();
+    mount('client', ['armement'], false, '/modules/clientAudits');
+
+    await screen.findByRole('heading', { name: firstAudit.title });
+    const tree = within(screen.getByRole('complementary', { name: 'Dossiers d’audit' }));
+    expect(tree.getByRole('button', { name: String(firstAudit.year) })).toHaveAttribute('aria-expanded', 'true');
+    await user.click(tree.getByRole('button', { name: 'Nouvel audit client' }));
+    const dialog = screen.getByRole('dialog');
+    const client = within(dialog).getByRole('textbox', { name: 'Client' });
+    expect(client).toBeRequired();
+    expect(within(dialog).getByRole('combobox', { name: 'Année du dossier' })).toHaveValue(String(firstAudit.year));
+    await user.type(client, 'Client Atlantique');
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le dossier' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    const secondAudit = fixture.audits.find((audit) => audit.clientName === 'Client Atlantique')!;
+    expect(secondAudit).toMatchObject({ siteId: firstAudit.siteId, year: firstAudit.year, kind: 'client', files: [] });
+    expect(secondAudit.id).not.toBe(firstAudit.id);
+    await waitFor(() => expect(tree.getByRole('button', { name: 'Client Atlantique' })).toHaveAttribute('aria-current', 'true'));
+    expect(screen.getByLabelText('Adresse actuelle')).toHaveTextContent(`audit=${secondAudit.id}`);
+    expect(screen.queryByRole('button', { name: `Télécharger ${firstAudit.files[0].fileName}` })).not.toBeInTheDocument();
+
+    const secondDialog = await openNewFinding(user);
+    await user.type(within(secondDialog).getByLabelText('Description du constat'), 'Constat propre au client Atlantique.');
+    await user.selectOptions(within(secondDialog).getByLabelText('Responsable de traitement'), 'person:9301');
+    await user.click(within(secondDialog).getByRole('button', { name: 'Enregistrer l’écart' }));
+    await screen.findByRole('article', { name: 'Constat propre au client Atlantique.' });
+    expect(screen.queryByText(firstFinding.description)).not.toBeInTheDocument();
+    const secondFinding = fixture.findings.find((finding) => finding.auditId === secondAudit.id);
+    expect(secondFinding).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'Exporter le rapport PDF' }));
+    await waitFor(() => expect(report.download).toHaveBeenCalledOnce());
+    expect(report.download.mock.calls[0][0]).toMatchObject({ audit: secondAudit, findings: [secondFinding] });
+
+    await user.click(tree.getByRole('button', { name: firstAudit.title }));
+    await screen.findByRole('heading', { name: firstAudit.title });
+    await openFindings(user);
+    expect(screen.getByText(firstFinding.description)).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Constat propre au client Atlantique.' })).not.toBeInTheDocument();
+    expect(fixture.audits.find((audit) => audit.id === firstAudit.id)).toEqual(firstAudit);
+  });
+
+  it('opens the exact client audit linked from planning when several share the same vessel and year', async () => {
+    fixture = createDocumentaryAuditPreviewData('client');
+    const priorAudit = fixture.audits[0];
+    const linkedAudit = { ...priorAudit, id: '00000000-0000-4000-8000-000000000103', title: 'Audit lié du client Manche', clientName: 'Client Manche', files: [] };
+    fixture.audits.push(linkedAudit);
+    fixture.permissions = { canManage: false, treatableFindingIds: [] };
+    mount('client', ['capitaine'], false, `/modules/clientAudits?audit=${linkedAudit.id}&source=planning`);
+    await screen.findByRole('heading', { name: linkedAudit.title });
+    const tree = within(screen.getByRole('complementary', { name: 'Dossiers d’audit' }));
+    expect(tree.getByRole('button', { name: 'Client Manche' })).toHaveAttribute('aria-current');
+    expect(tree.getByRole('button', { name: String(linkedAudit.year) })).toHaveAttribute('aria-expanded', 'true');
+    expect(tree.queryByRole('button', { name: 'Nouvel audit client' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Télécharger ${priorAudit.files[0].fileName}` })).not.toBeInTheDocument();
+  });
+
+  it('navigates year branches and adds a dossier to a new year from the audit tree', async () => {
+    fixture = createDocumentaryAuditPreviewData('client');
+    const [current, previous] = fixture.audits;
+    const user = userEvent.setup();
+    mount('client', ['armement'], false, '/modules/clientAudits');
+    await screen.findByRole('heading', { name: current.title });
+    const tree = within(screen.getByRole('complementary', { name: 'Dossiers d’audit' }));
+
+    await user.click(tree.getByRole('button', { name: String(previous.year) }));
+    const yearButton = tree.getByRole('button', { name: String(previous.year) });
+    expect(yearButton).toHaveAttribute('aria-expanded', 'true');
+    await user.click(tree.getByRole('button', { name: previous.clientName! }));
+    await screen.findByRole('heading', { name: previous.title });
+
+    await user.click(tree.getByRole('button', { name: 'Nouvel audit client' }));
+    const dialog = within(screen.getByRole('dialog'));
+    const yearField = dialog.getByRole('combobox', { name: 'Année du dossier' });
+    expect(yearField).toHaveValue(String(previous.year));
+    await user.selectOptions(yearField, String(current.year + 1));
+    await user.type(dialog.getByRole('textbox', { name: 'Client' }), 'Client Bretagne');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer le dossier' }));
+    await waitFor(() => expect(tree.getByRole('button', { name: 'Client Bretagne' })).toHaveAttribute('aria-current'));
+    expect(tree.getByRole('button', { name: String(current.year + 1) })).toHaveAttribute('aria-expanded', 'true');
+    expect(queries.saveDocumentaryAudit.mock.calls[0][1]).toMatchObject({ year: current.year + 1, siteId: current.siteId });
+  });
+
   it('creates an unplanned dossier when the optional planned date is empty', async () => {
     const user = userEvent.setup(); mount();
     await screen.findByRole('button', { name: 'Ajouter des documents' });

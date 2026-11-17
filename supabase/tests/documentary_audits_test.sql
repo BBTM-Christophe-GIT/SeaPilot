@@ -56,8 +56,16 @@ create temporary table documentary_payloads(name text primary key,payload jsonb)
 grant select,update on documentary_payloads to authenticated;
 insert into documentary_payloads
 select 'audit-'||fixture.n,jsonb_build_object('id',('9d100000-0000-0000-0000-'||lpad(fixture.n,12,'0'))::uuid,'companyId',vessel.company_id,
- 'kind',fixture.kind,'siteId',vessel.id::text,'year',2026,'title','Documentary test '||fixture.kind,'auditedOn','2026-10-01','auditorName','External auditor','files','[]'::jsonb)
-from(values('1','ovid'),('2','ecmid'),('3','external_ism'),('4','client')) fixture(n,kind) cross join public.vessels vessel where vessel.name='DOCUMENTARY VESSEL';
+ 'kind',fixture.kind,'siteId',vessel.id::text,'year',2026,'title','Documentary test '||fixture.kind,
+ 'clientName',fixture.client_name,'auditedOn','2026-10-01','auditorName','External auditor','files','[]'::jsonb)
+from(values('1','ovid',null),('2','ecmid',null),('3','external_ism',null),('4','client','  Client   Atlantique  '),
+ ('5','client','Client Manche'),('6','client',null)) fixture(n,kind,client_name)
+cross join public.vessels vessel where vessel.name='DOCUMENTARY VESSEL';
+-- Reproduce a dossier created before client names existed.
+insert into public.documentary_audits(id,company_id,kind,site_id,vessel_id,year,title)
+select (payload->>'id')::uuid,(payload->>'companyId')::bigint,'client',
+ (payload->>'siteId')::bigint,(payload->>'siteId')::bigint,(payload->>'year')::integer,'Legacy client audit'
+from documentary_payloads where name='audit-6';
 insert into documentary_payloads
 select 'finding-'||fixture.n,jsonb_build_object('id',('9d200000-0000-0000-0000-'||lpad(fixture.n,12,'0'))::uuid,'companyId',vessel.company_id,
  'auditId','9d100000-0000-0000-0000-000000000001','reference','REF '||fixture.n,'category',fixture.category,'description','Documentary finding '||fixture.n,
@@ -95,8 +103,25 @@ select ok(not exists(select 1 from jsonb_array_elements(public.documentary_audit
 select throws_ok($$select public.documentary_audits_overview('invalid')$$,'22023',null,'unknown audit kind is rejected');
 select throws_ok($$select public.documentary_audit_upload_scope('9d100000-0000-0000-0000-000000000001',null,'audit')$$,'42501',null,'dossier must exist before files can be uploaded');
 select lives_ok($$select public.documentary_audit_save(payload) from documentary_payloads where name like 'audit-%'$$,'all four audit kinds share the dossier workflow');
-select is((select count(*)::integer from public.documentary_audits where id::text like '9d100000-%'),4,'the fixture creates four tested documentary kinds in the same vessel and year');
+select is((select count(*)::integer from public.documentary_audits where id::text like '9d100000-%'),6,'all four kinds and multiple client dossiers coexist in the same vessel and year');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"id":"9d100000-0000-0000-0000-000000000009"}'::jsonb)$$,'23505',null,'duplicate company/type/year/vessel dossier is rejected');
+select is((select client_name from public.documentary_audits where id='9d100000-0000-0000-0000-000000000004'),'Client Atlantique','server normalizes client-name whitespace');
+select is(jsonb_array_length(public.documentary_audits_overview('client')->'audits'),3,'both named dossiers and the legacy dossier are returned');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-4')||
+ '{"id":"9d100000-0000-0000-0000-000000000009","clientName":"  CLIENT\tATLANTIQUE "}'::jsonb)$$,
+ '23505','Un audit existe déjà pour ce client, ce navire et cette année.','same client cannot be added twice with alternate casing or whitespace');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-5')||
+ '{"clientName":"Client Atlantique"}'::jsonb)$$,'23505',null,'renaming cannot collide with another client dossier');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-6')||
+ '{"id":"9d100000-0000-0000-0000-000000000009"}'::jsonb)$$,'22023',null,'new client dossier requires a name');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-4')||
+ '{"clientName":"  "}'::jsonb)$$,'22023',null,'a saved client name cannot be erased');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||
+ '{"clientName":"Client Manche"}'::jsonb)$$,'22023',null,'client names are scoped to client dossiers');
+select is(public.documentary_audit_save((select payload from documentary_payloads where name='audit-4')-'clientName')->>'client_name',
+ 'Client Atlantique','omitting the client name preserves the existing name');
+select is(public.documentary_audit_save((select payload from documentary_payloads where name='audit-6'))->>'client_name',
+ null::text,'legacy dossier remains editable without inventing a client name');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"year":2027}'::jsonb)$$,'22023',null,'saved dossier campaign year cannot be reassigned');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||'{"kind":"client"}'::jsonb)$$,'22023',null,'saved dossier audit type cannot be reassigned');
 select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-1')||jsonb_build_object('siteId',(select id from public.vessels where name='DOCUMENTARY SECOND')::text))$$,'22023',null,'saved dossier vessel cannot be reassigned');
@@ -156,8 +181,10 @@ select lives_ok($$select public.documentary_audit_add_treatment('9d200000-0000-0
 select set_config('request.jwt.claim.sub','9d000000-0000-0000-0000-000000000002',true);
 select is((public.documentary_audits_overview('ovid')->'permissions'->>'canManage')::boolean,false,'real captain is a treatment handler, not an audit manager');
 select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'audits'),1,'assigned captain sees the relevant parent dossier');
-select is((select count(*)::integer from public.documentary_audits),4,'table RLS permits all documentary kinds on the authorized ship');
+select is((select count(*)::integer from public.documentary_audits),6,'table RLS permits all documentary kinds on the authorized ship');
 select is(jsonb_array_length(public.documentary_audits_overview('ecmid')->'audits'),1,'eCMID overview includes the authorized ship dossier');
+select is(jsonb_array_length(public.documentary_audits_overview('client')->'audits'),3,'confirmed captain reads all client dossiers on the authorized ship');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-5'))$$,'42501',null,'confirmed captain cannot edit a client dossier');
 select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'people'),0,'handler overview does not expose the company personnel directory');
 select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'captain may consult the chief-engineer ship finding');
 select ok(not (public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds' ? '9d200000-0000-0000-0000-000000000004'),'captain consultation gives no chief-engineer treatment capability');
@@ -179,6 +206,8 @@ select is((select actor_id from public.documentary_audit_events where finding_id
 select throws_ok($$select public.documentary_audit_add_treatment('9d200000-0000-0000-0000-000000000001','in_progress','','[]'::jsonb)$$,'22023',null,'empty treatment without evidence is rejected');
 
 select set_config('request.jwt.claim.sub','9d000000-0000-0000-0000-000000000003',true);
+select is(jsonb_array_length(public.documentary_audits_overview('client')->'audits'),3,'confirmed Marin reads all client dossiers on the authorized ship');
+select throws_ok($$select public.documentary_audit_save((select payload from documentary_payloads where name='audit-5'))$$,'42501',null,'confirmed Marin cannot edit a client dossier');
 select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000001'),'confirmed crew Marin may consult the captain ship finding');
 select ok(not (public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds' ? '9d200000-0000-0000-0000-000000000001'),'Marin consultation gives no captain treatment capability');
 select ok(exists(select 1 from public.documentary_audit_findings where id='9d200000-0000-0000-0000-000000000004'),'ordinary Matelot may consult the chief-engineer ship finding');
