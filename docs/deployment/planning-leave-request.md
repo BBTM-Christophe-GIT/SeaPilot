@@ -19,13 +19,14 @@ une section repliée. Une fin à minuit correspond au lendemain du dernier jour
 inclus ; les heures inexistantes lors d'un changement d'heure sont refusées.
 L'envoi de la demande est suspendu tant que le calendrier est ouvert.
 
-Seuls Christophe MINASSIAN et Sophie HAMEL utilisent les compteurs annuels Congés
-et RTT. Pour toute autre personne, **Solde de Congés/Repos** affiche la valeur de la
-vue Équipages au jour de saisie, même si la demande porte sur une période future.
-Le calcul du Planning reste inchangé et les droits annuels ne sont pas applicables
-aux marins. Le détail et la migration requise sont décrits dans
-[planning-rtt-counters.md](./planning-rtt-counters.md). Le formulaire de traitement
-P1.2 conserve ses champs de dates habituels.
+Le personnel au rôle RH **Sédentaire** utilise un compteur annuel de congés en
+jours ouvrables, du 1er juin au 31 mai. La demande affiche les jours ouvrables
+jusqu’à la veille de la reprise prévue. Les détenteurs du compteur RTT dédié
+conservent leur carte RTT. Pour les profils avec solde Équipages,
+**Solde de Congés/Repos** affiche cette valeur au jour de saisie, même si la
+demande porte sur une période future. Le détail et la migration requise sont
+décrits dans [planning-rtt-counters.md](./planning-rtt-counters.md#congés-payés-du-personnel-sédentaire).
+Le formulaire de traitement P1.2 conserve ses champs de dates habituels.
 
 La fiche RH du profil connecté est présélectionnée, même si elle arrive après
 l'ouverture ou ne figure pas dans les personnes du planning affiché. Les managers

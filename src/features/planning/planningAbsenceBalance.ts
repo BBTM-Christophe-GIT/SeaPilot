@@ -19,9 +19,33 @@ export interface PlanningLeaveRightsPeriodDraft {
   leaveEntitlement: number;
   rttEntitlement: number;
 }
+export interface PlanningSedentaryLeavePeriodDraft {
+  personId: number;
+  startsOn: string;
+  debitFrom: string;
+  openingBalance: number;
+  openingAccrued: number;
+  daysPerWeek: number;
+  normalDays: number;
+  normalWeeks: number;
+  normalMonths: number;
+  illnessDays: number;
+  illnessWeeks: number;
+  illnessMonths: number;
+  workingWeekdays: number[];
+  workedHolidays: string[];
+}
+type SedentaryLeaveInputs = Pick<PlanningSedentaryLeavePeriodDraft, 'daysPerWeek'
+  | 'normalDays' | 'normalWeeks' | 'normalMonths' | 'illnessDays' | 'illnessWeeks' | 'illnessMonths'>;
+export interface PlanningSedentaryLeavePeriod extends Partial<SedentaryLeaveInputs>, Omit<PlanningSedentaryLeavePeriodDraft, keyof SedentaryLeaveInputs | 'personId'> {
+  id: number;
+  endsOn: string;
+  acquiredDays: number;
+}
 export interface PlanningAbsenceBalanceContext {
   kind: 'leave_rtt' | 'crew';
   requestBalanceKind?: 'leave_rtt' | 'crew';
+  sedentaryLeave?: PlanningSedentaryLeavePeriod[] | null;
   person: PlanningPerson;
   counterPeriods: PlanningLeaveCounterPeriod[];
   absences: PlanningAbsenceRecord[];
@@ -37,6 +61,8 @@ export interface PlanningCounterRequest {
 export interface PlanningLeaveCounterSummary {
   counterType: PlanningLeaveCounterType;
   period: PlanningLeaveCounterPeriod | null;
+  unit?: 'ouvrables';
+  acquiredDays?: number;
   range: PlanningDateRange;
   approvedDays: number;
   pendingDays: number;
@@ -109,12 +135,23 @@ export function getPlanningLeaveRightsRange(anchor: string): PlanningDateRange {
   return { start: `${year}-06-01`, end: `${year + 1}-05-31` };
 }
 
+export const DEFAULT_SEDENTARY_WORKING_WEEKDAYS = [1, 2, 3, 4, 5];
+
 export function buildPlanningLeaveCounterSummaries(context: PlanningAbsenceBalanceContext, request: PlanningCounterRequest, today: string): PlanningLeaveCounterSummary[] {
+  const legacyMode = context.requestBalanceKind ?? context.kind;
+  if (context.sedentaryLeave) {
+    const rtt = legacyMode === 'leave_rtt' ? buildLegacyPlanningLeaveCounterSummaries(context, request, today, ['rtt']) : [];
+    return [...buildSedentaryLeaveSummaries(context, context.sedentaryLeave, request, today), ...rtt];
+  }
+  return buildLegacyPlanningLeaveCounterSummaries(context, request, today, ['leave', 'rtt']);
+}
+
+function buildLegacyPlanningLeaveCounterSummaries(context: PlanningAbsenceBalanceContext, request: PlanningCounterRequest, today: string, counterTypes: PlanningLeaveCounterType[]): PlanningLeaveCounterSummary[] {
   const instants = requestInstants(request);
   const anchor = instants ? request.startsAt.slice(0, 10) : today;
   const requestDates = instants ? planningWorkingAbsenceDates(instants.startsAt, instants.endsAt) : null;
   const summaries: PlanningLeaveCounterSummary[] = [];
-  for (const counterType of ['leave', 'rtt'] as const) {
+  for (const counterType of counterTypes) {
     const periods = context.counterPeriods.filter((period) => period.counterType === counterType);
     const requestEnd = instants ? planningDateFromTimestamp(new Date(Date.parse(instants.endsAt) - 1).toISOString()) : anchor;
     const relevant = periods.filter((period) => request.absenceType === counterType && instants
@@ -144,6 +181,124 @@ export function buildPlanningLeaveCounterSummaries(context: PlanningAbsenceBalan
     }
   }
   return summaries;
+}
+
+function sedentaryLeaveCalendar(periods: PlanningSedentaryLeavePeriod[]) {
+  const holidays = new Map<number, ReadonlySet<string>>();
+  const workedHolidays = new Set(periods.flatMap((period) => period.workedHolidays));
+  const weekday = (date: string) => parsePlanningDate(date).getUTCDay();
+  const isChargeable = (date: string) => {
+    if (weekday(date) === 0) return false;
+    const year = Number(date.slice(0, 4));
+    if (!holidays.has(year)) holidays.set(year, planningFrenchPublicHolidays(year));
+    return !holidays.get(year)?.has(date) || workedHolidays.has(date);
+  };
+  return {
+    isChargeable,
+    isWorkday(date: string) {
+      const period = periods.find(({ startsOn, endsOn }) => startsOn <= date && date <= endsOn);
+      return isChargeable(date) && (period?.workingWeekdays ?? DEFAULT_SEDENTARY_WORKING_WEEKDAYS).includes(weekday(date));
+    },
+  };
+}
+
+function sedentaryLeaveDates(startsAt: string, endsAt: string, calendar: ReturnType<typeof sedentaryLeaveCalendar>): string[] {
+  const start = planningDateFromTimestamp(startsAt);
+  const end = planningDateFromTimestamp(new Date(Date.parse(endsAt) - 1).toISOString());
+  let first = start;
+  while (first <= end && !calendar.isWorkday(first)) first = addPlanningDays(first, 1);
+  if (first > end) return [];
+  let resumption = addPlanningDays(end, 1);
+  while (resumption <= '2100-12-31' && !calendar.isWorkday(resumption)) resumption = addPlanningDays(resumption, 1);
+  const dates: string[] = [];
+  for (let date = first; date < resumption; date = addPlanningDays(date, 1)) {
+    if (calendar.isChargeable(date)) dates.push(date);
+  }
+  return dates;
+}
+
+function buildSedentaryLeaveSummaries(context: PlanningAbsenceBalanceContext, periods: PlanningSedentaryLeavePeriod[], request: PlanningCounterRequest, today: string): PlanningLeaveCounterSummary[] {
+  const instants = requestInstants(request);
+  const anchor = instants ? request.startsAt.slice(0, 10) : today;
+  const calendar = sedentaryLeaveCalendar(periods);
+  // Extend to the next scheduled working day before splitting dates by cycle.
+  const requested = request.absenceType === 'leave' && instants ? sedentaryLeaveDates(instants.startsAt, instants.endsAt, calendar) : null;
+  const ranges = new Map<string, PlanningDateRange>();
+  for (const date of requested?.length ? requested : [anchor]) {
+    const range = getPlanningLeaveRightsRange(date);
+    ranges.set(range.start, range);
+  }
+  const approved = new Set<string>();
+  const pending = new Set<string>();
+  for (const absence of context.absences) {
+    if (absence.absenceType !== 'leave' || absence.id === request.absenceId || !['approved', 'requested'].includes(absence.status)) continue;
+    const dates = sedentaryLeaveDates(absence.startsAt, absence.endsAt, calendar);
+    const target = absence.status === 'approved' ? approved : pending;
+    dates.forEach((date) => target.add(date));
+  }
+  const covered = (date: string) => periods.some(({ debitFrom, endsOn }) => debitFrom <= date && date <= endsOn);
+  const uncoveredRequestDays = requested?.filter((date) => !covered(date)).length ?? 0;
+  const roundBalance = (value: number) => Math.round(value * 100) / 100;
+  return [...ranges.values()].map((range) => {
+    const configured = periods.find(({ startsOn }) => startsOn === range.start);
+    const inRange = (date: string) => range.start <= date && date <= range.end;
+    const inBalance = (date: string) => inRange(date) && (!configured || date >= configured.debitFrom);
+    const acquiredDays = configured ? Math.max(configured.openingAccrued, configured.acquiredDays) : undefined;
+    const entitlement = configured && acquiredDays !== undefined
+      ? roundBalance(configured.openingBalance + acquiredDays - configured.openingAccrued) : null;
+    const approvedDays = [...approved].filter(inBalance).length;
+    const pendingDays = [...pending].filter((date) => inBalance(date) && !approved.has(date)).length;
+    const requestDays = requested ? requested.filter(inRange).length : null;
+    const newDays = requested ? requested.filter((date) => inBalance(date) && !approved.has(date)).length : null;
+    const remaining = entitlement === null ? null : roundBalance(entitlement - approvedDays);
+    return {
+      counterType: 'leave', unit: 'ouvrables', range, acquiredDays,
+      period: configured && entitlement !== null ? {
+        id: configured.id, counterType: 'leave', startsOn: range.start, endsOn: range.end, entitlement,
+      } : null,
+      approvedDays, pendingDays, remaining, requestDays, newRequestDays: newDays,
+      projectedRemaining: remaining !== null && newDays !== null ? roundBalance(remaining - newDays) : null,
+      uncoveredRequestDays,
+    };
+  });
+}
+
+export function calculatePlanningSedentaryLeaveAccrued(inputs: SedentaryLeaveInputs): number {
+  const rights = (normalMonths: number, illnessMonths: number) => 2.5 * normalMonths + Math.min(24, 2 * illnessMonths);
+  const workDaysPerMonth = 4 * inputs.daysPerWeek;
+  const total = Math.max(
+    rights(inputs.normalMonths, inputs.illnessMonths),
+    rights(inputs.normalWeeks / 4, inputs.illnessWeeks / 4),
+    rights(inputs.normalDays / workDaysPerMonth, inputs.illnessDays / workDaysPerMonth),
+  );
+  return Math.max(0, Math.ceil(Math.min(30, total) - 1e-9));
+}
+
+export function validatePlanningSedentaryLeavePeriod(draft: PlanningSedentaryLeavePeriodDraft): PlanningSedentaryLeavePeriodDraft {
+  const range = getPlanningLeaveRightsRange(draft.startsOn);
+  const between = (value: number, min: number, max: number) => Number.isFinite(value) && min <= value && value <= max;
+  const withinPrecision = (value: number, multiplier: number) => Math.abs(value * multiplier - Math.round(value * multiplier)) < 1e-6;
+  if (!Number.isSafeInteger(draft.personId) || draft.personId <= 0 || draft.startsOn !== range.start
+    || range.start < '1900-06-01' || range.end > '2100-05-31' || !isPlanningDate(draft.debitFrom)
+    || draft.debitFrom < range.start || draft.debitFrom > range.end
+    || !between(draft.openingBalance, -99999.99, 99999.99) || !between(draft.openingAccrued, 0, 30)
+    || !between(draft.daysPerWeek, 0.5, 6)
+    || ![draft.openingBalance, draft.openingAccrued, draft.daysPerWeek].every((value) => withinPrecision(value, 100))
+    || ![draft.normalDays, draft.illnessDays].every((value) => between(value, 0, 366))
+    || ![draft.normalWeeks, draft.illnessWeeks].every((value) => between(value, 0, 53))
+    || ![draft.normalMonths, draft.illnessMonths].every((value) => between(value, 0, 12))
+    || ![draft.normalDays, draft.illnessDays, draft.normalWeeks, draft.illnessWeeks, draft.normalMonths, draft.illnessMonths]
+      .every((value) => withinPrecision(value, 10_000))
+    || draft.normalDays + draft.illnessDays > 366 || draft.normalWeeks + draft.illnessWeeks > 53
+    || draft.normalMonths + draft.illnessMonths > 12
+    || !draft.workingWeekdays.length || new Set(draft.workingWeekdays).size !== draft.workingWeekdays.length
+    || !draft.workingWeekdays.every((value) => Number.isInteger(value) && between(value, 1, 6))
+    || draft.workedHolidays.length > 366
+    || !draft.workedHolidays.every((date) => isPlanningDate(date) && date >= range.start && date <= range.end
+      && planningFrenchPublicHolidays(Number(date.slice(0, 4))).has(date))) {
+    throw new Error('Vérifiez la période, le solde d’ouverture, les jours de travail et les équivalences issus de la paie.');
+  }
+  return draft;
 }
 
 export function getPlanningRequestCrewBalance(context: PlanningAbsenceBalanceContext, today: string): PlanningCrewBalanceDay {

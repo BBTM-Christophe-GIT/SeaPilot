@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlanningLeaveCounterSummaries, getPlanningLeaveRightsRange, getPlanningRequestCrewBalance, planningFrenchPublicHolidays, planningWorkingAbsenceDates, validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, type PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
+import { buildPlanningLeaveCounterSummaries, calculatePlanningSedentaryLeaveAccrued, getPlanningLeaveRightsRange, getPlanningRequestCrewBalance, planningFrenchPublicHolidays, planningWorkingAbsenceDates, validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, type PlanningAbsenceBalanceContext, type PlanningSedentaryLeavePeriod } from './planningAbsenceBalance';
 import { planningLocalDateTimeToUtc } from './planningDates';
 import type { PlanningAbsenceRecord } from './planningP12';
 
@@ -91,4 +91,64 @@ describe('June through May combined rights', () => {
     expect(() => validatePlanningLeaveRightsPeriod({ ...draft, leaveEntitlement: -1 })).toThrow();
   });
   it.each([{ startsOn: '2026-01-01', endsOn: '2026-12-31' }, { startsOn: '2026-06-02' }, { endsOn: '2027-06-01' }, { endsOn: '2028-05-31' }])('rejects nonannual bounds %j', (override) => expect(() => validatePlanningLeaveRightsPeriod({ ...draft, ...override })).toThrow('1er juin'));
+});
+
+describe('payroll-backed sedentary leave', () => {
+  const opening: PlanningSedentaryLeavePeriod = { id: 3, startsOn: '2026-06-01', endsOn: '2027-05-31', debitFrom: '2026-08-01',
+    openingBalance: 10, openingAccrued: 5, acquiredDays: 13, workingWeekdays: [1, 2, 3, 4, 5], workedHolidays: [] };
+  const context: PlanningAbsenceBalanceContext = { ...base, kind: 'crew', sedentaryLeave: [opening] };
+  const day = (date: string) => ({ ...request, startsAt: `${date}T08:00`, endsAt: `${date}T18:00` });
+
+  it('credits the most favorable equivalent once and caps the base at 30', () => {
+    const payroll = { daysPerWeek: 5, normalDays: 100, normalWeeks: 18, normalMonths: 4, illnessDays: 0, illnessWeeks: 0, illnessMonths: 0 };
+    expect(calculatePlanningSedentaryLeaveAccrued(payroll)).toBe(13);
+    expect(calculatePlanningSedentaryLeaveAccrued({ ...payroll, normalDays: 58, normalWeeks: 13, normalMonths: 2 })).toBe(9);
+    expect(calculatePlanningSedentaryLeaveAccrued({ ...payroll, normalDays: 220, normalWeeks: 46, normalMonths: 12 })).toBe(30);
+    expect(calculatePlanningSedentaryLeaveAccrued({ ...payroll, normalDays: 60, normalWeeks: 12, normalMonths: 3, illnessDays: 20, illnessWeeks: 4, illnessMonths: 1 })).toBe(10);
+    expect(calculatePlanningSedentaryLeaveAccrued({ ...payroll, normalDays: 0, normalWeeks: 0, normalMonths: 0, illnessDays: 260, illnessWeeks: 52, illnessMonths: 12 })).toBe(24);
+  });
+
+  it('charges Friday and Saturday with Monday resumption and excludes a closed holiday', () => {
+    expect(buildPlanningLeaveCounterSummaries(context, day('2026-10-23'), '2026-10-01')).toMatchObject([
+      { counterType: 'leave', unit: 'ouvrables', acquiredDays: 13, remaining: 18, requestDays: 2, projectedRemaining: 16 },
+    ]);
+    expect(buildPlanningLeaveCounterSummaries(context, day('2026-08-14'), '2026-08-01')[0]).toMatchObject({ requestDays: 1 });
+    const workedHoliday = { ...context, sedentaryLeave: [{ ...opening, workedHolidays: ['2026-08-15'] }] };
+    expect(buildPlanningLeaveCounterSummaries(workedHoliday, day('2026-08-14'), '2026-08-01')[0]).toMatchObject({ requestDays: 2 });
+    expect(buildPlanningLeaveCounterSummaries(context, day('2026-08-22'), '2026-08-01')[0]).toMatchObject({ requestDays: 0 });
+  });
+
+  it('uses the configured weekday of resumption and leaves the RTT count in working days', () => {
+    const shorterWeek = { ...context, kind: 'leave_rtt' as const, sedentaryLeave: [{ ...opening, workingWeekdays: [1, 2, 3, 4] }] };
+    expect(buildPlanningLeaveCounterSummaries(shorterWeek, day('2026-10-22'), '2026-10-01')[0]).toMatchObject({ requestDays: 3 });
+    expect(buildPlanningLeaveCounterSummaries(shorterWeek, { ...day('2026-10-23'), absenceType: 'rtt' }, '2026-10-01')[1]).toMatchObject({ requestDays: 1, remaining: 10 });
+  });
+
+  it('protects the verified opening balance before payroll duration inputs catch up', () => {
+    const snapshot = { ...context, sedentaryLeave: [{ ...opening, acquiredDays: 0 }] };
+    expect(buildPlanningLeaveCounterSummaries(snapshot, day('2026-10-23'), '2026-10-01')[0])
+      .toMatchObject({ acquiredDays: 5, remaining: 10, projectedRemaining: 8 });
+  });
+
+  it('deducts approved dates once after opening, with pending dates counted separately', () => {
+    const absences = [
+      absence(1, '2026-07-24T08:00', '2026-07-24T18:00'),
+      absence(2, '2026-10-23T08:00', '2026-10-23T18:00'),
+      absence(3, '2026-10-23T09:00', '2026-10-23T17:00', 'requested'),
+      absence(4, '2026-10-30T08:00', '2026-10-30T18:00', 'requested'),
+    ];
+    const withAbsences = { ...context, absences };
+    expect(buildPlanningLeaveCounterSummaries(withAbsences, day('2026-11-06'), '2026-10-01')[0])
+      .toMatchObject({ approvedDays: 2, pendingDays: 2, remaining: 16, projectedRemaining: 14 });
+    expect(buildPlanningLeaveCounterSummaries(withAbsences, { ...day('2026-10-23'), absenceId: 2 }, '2026-10-01')[0])
+      .toMatchObject({ approvedDays: 0, pendingDays: 4, projectedRemaining: 16 });
+  });
+
+  it('splits a Friday and its appended Saturday into separate acquisition years', () => {
+    const transition = { ...context, sedentaryLeave: [{ ...opening, startsOn: '2029-06-01', endsOn: '2030-05-31', debitFrom: '2029-06-01' }] };
+    expect(buildPlanningLeaveCounterSummaries(transition, day('2030-05-31'), '2030-05-31')).toMatchObject([
+      { range: { start: '2029-06-01' }, requestDays: 1, projectedRemaining: 17, uncoveredRequestDays: 1 },
+      { range: { start: '2030-06-01' }, requestDays: 1, projectedRemaining: null },
+    ]);
+  });
 });
