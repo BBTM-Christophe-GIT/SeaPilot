@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 METADATA_ROOT = "https://s3.waw3-1.cloudferro.com/mdl-metadata/metadata/"
 QUARTER_SECONDS = 900
 MAX_METADATA_BYTES = 262_144
+GRID_TOLERANCE_DEGREES = 0.00001
 
 MODELS = {
     "NWS": {
@@ -41,19 +42,36 @@ MESSAGES = {
     "outsideCoverage": "Ce waypoint se situe hors de la couverture des modèles NWS et IBI.",
     "outsideHorizon": "L’ETA se situe hors des échéances disponibles des modèles Copernicus.",
     "updating": "Les données Copernicus sont en cours de mise à jour pour cette ETA.",
-    "incompatibleMetadata": "Les références, unités ou mailles Copernicus ne permettent pas un calcul cohérent.",
-    "maskedCell": "La cellule du waypoint est masquée ou sans donnée marine ; aucune cellule voisine n’est substituée.",
-    "shallowWater": "Calcul indicatif indisponible : profondeur de modèle inférieure ou égale à 10 m, incompatible avec l’usage petits fonds.",
-    "missingTime": "Les deux échéances encadrant l’ETA ne sont pas disponibles dans la même cellule.",
+    "incompatibleMetadata": "Les métadonnées ou unités du produit Copernicus sont incompatibles avec le calcul UKC.",
+    "unconfirmedDatum": "Le référentiel vertical commun à la profondeur et au niveau d’eau Copernicus ne peut pas être confirmé.",
+    "incompatibleGrid": "La profondeur et le niveau d’eau Copernicus ne partagent pas une maille confirmée couvrant le waypoint.",
+    "maskedCell": "La maille du waypoint est terrestre ou masquée par le modèle.",
+    "missingDepth": "La profondeur du modèle est absente ou invalide dans la maille du waypoint.",
+    "shallowWater": "La profondeur du modèle est inférieure ou égale à 10 m dans la maille du waypoint.",
+    "missingWaterLevel": "Le niveau d’eau du modèle est absent ou invalide dans la maille du waypoint à l’ETA.",
+    "missingTime": "Les échéances nécessaires au niveau d’eau à l’ETA manquent dans la maille du waypoint.",
     "upstreamUnavailable": "Les données Copernicus sont momentanément indisponibles. Réessayez ultérieurement.",
+}
+
+UNAVAILABLE_REASONS = {
+    "outsideCoverage": "outside-coverage",
+    "outsideHorizon": "outside-horizon",
+    "incompatibleMetadata": "incompatible-metadata",
+    "unconfirmedDatum": "unconfirmed-datum",
+    "incompatibleGrid": "incompatible-grid",
+    "maskedCell": "land-cell",
+    "missingDepth": "missing-depth",
+    "shallowWater": "shallow-water",
+    "missingWaterLevel": "missing-water-level",
+    "missingTime": "missing-water-level",
 }
 
 
 class CopernicusProviderError(Exception):
     """Fixed public error; never contains an upstream exception or credentials."""
 
-    def __init__(self, code: str):
-        self.code = code
+    def __init__(self, code: str, *, cell=None, cell_position=None):
+        self.code, self.cell, self.cell_position = code, cell, cell_position
         super().__init__(MESSAGES[code])
 
 
@@ -92,9 +110,10 @@ def _source(name):
     }
 
 
-def _unavailable(code, name=None):
+def _unavailable(code, name=None, cell=None, cell_position=None):
     return {"status": "unavailable", "code": code, "message": MESSAGES[code],
-            "source": _source(name) if name else None, "cell": None, "waterLevel": None}
+            "source": _source(name) if name and code != "unconfirmedDatum" else None,
+            "cell": cell, "waterLevel": None, **({"cellPosition": cell_position} if cell_position else {})}
 
 
 def _metadata_id(model, bathy):
@@ -123,26 +142,31 @@ def _qualify_metadata(metadata, model, bathy, eta):
         if props.get("admp_in_preparation") or props.get("admp_retired_date"):
             raise ValueError()
         variables = props["cube:variables"]
-        variable = variables["deptho" if bathy else "zos"]
+        variable = variables.get("deptho" if bathy else "zos")
+        if variable is None:
+            raise CopernicusProviderError("missingDepth" if bathy else "missingWaterLevel")
         expected = "sea_floor_depth_below_geoid" if bathy else "sea_surface_height_above_geoid"
-        if variable["standardName"] != expected:
-            raise ValueError()
+        if variable.get("standardName") != expected:
+            raise CopernicusProviderError("unconfirmedDatum")
         # NWS static deptho omits its units attribute; its PUM explicitly defines metres.
         if variable.get("unit") != "m" and not (bathy and model is MODELS["NWS"] and variable.get("unit") is None):
             raise ValueError()
         dimensions = props["cube:dimensions"]
-        for axis, expected_step in (("longitude", model["step"][0]), ("latitude", model["step"][1])):
-            step = dimensions[axis]["step"]
-            extent = dimensions[axis]["extent"]
-            if not _finite(step) or abs(step - expected_step) > 0.00001 or len(extent) != 2 or not all(map(_finite, extent)):
-                raise ValueError()
+        west, south, east, north = model["extent"]
+        for axis, expected_step, expected_extent in (
+            ("longitude", model["step"][0], (west, east)), ("latitude", model["step"][1], (south, north)),
+        ):
+            grid = dimensions[axis]
+            step, extent = grid.get("step"), grid.get("extent")
+            if (grid.get("reference_system") != 4326
+                or not _finite(step) or abs(step - expected_step) > GRID_TOLERANCE_DEGREES
+                or not isinstance(extent, list) or len(extent) != 2 or not all(map(_finite, extent))
+                or any(abs(a - b) > GRID_TOLERANCE_DEGREES for a, b in zip(extent, expected_extent))):
+                raise CopernicusProviderError("incompatibleGrid")
         if bathy:
             if variables["mask"]["standardName"] != "sea_binary_mask":
                 raise ValueError()
             return dimensions
-        updating = props.get("admp_updating_start_date")
-        if updating and eta >= _utc(updating):
-            raise CopernicusProviderError("updating")
         temporal = dimensions["time"]
         if temporal.get("step") not in ("PT900S", "PT15M"):
             raise ValueError()
@@ -151,6 +175,12 @@ def _qualify_metadata(metadata, model, bathy, eta):
             start = max(start, _utc(props["admp_valid_start_date"]))
         if not start <= eta <= end:
             raise CopernicusProviderError("outsideHorizon")
+        before, after = _bracketing_times(eta)
+        if not start <= before <= after <= end:
+            raise CopernicusProviderError("outsideHorizon")
+        updating = props.get("admp_updating_start_date")
+        if updating and after >= _utc(updating):
+            raise CopernicusProviderError("updating")
         return dimensions
     except CopernicusProviderError as error:
         if error.code == "invalidInput":
@@ -183,17 +213,36 @@ def _axis(dataset, name):
             raise ValueError()
         return values
     except (KeyError, TypeError, ValueError, OverflowError):
-        raise CopernicusProviderError("incompatibleMetadata") from None
+        raise CopernicusProviderError("incompatibleGrid") from None
 
 
-def _locate(values, target):
+def _locate(values, target, grid):
+    start, end = grid["extent"]
+    step = grid["step"]
+    for value in values:
+        center = start + round((value - start) / step) * step
+        if abs(value - center) > GRID_TOLERANCE_DEGREES or not start - GRID_TOLERANCE_DEGREES <= value <= end + GRID_TOLERANCE_DEGREES:
+            raise CopernicusProviderError("incompatibleGrid")
+    if any(abs(b - a - step) > GRID_TOLERANCE_DEGREES for a, b in zip(values, values[1:])):
+        raise CopernicusProviderError("incompatibleGrid")
     index = min(range(len(values)), key=lambda item: abs(values[item] - target))
-    before = values[index - 1] if index else 2 * values[0] - values[1]
-    after = values[index + 1] if index + 1 < len(values) else 2 * values[-1] - values[-2]
-    lower, upper = (before + values[index]) / 2, (values[index] + after) / 2
+    center = values[index]
+    # Only the boundary of the published grid can define a model cell edge without an adjacent center.
+    if (index == 0 and abs(center - start) > GRID_TOLERANCE_DEGREES
+        or index == len(values) - 1 and abs(center - end) > GRID_TOLERANCE_DEGREES):
+        raise CopernicusProviderError("incompatibleGrid")
+    before = values[index - 1] if index else center - step
+    after = values[index + 1] if index + 1 < len(values) else center + step
+    lower, upper = (before + center) / 2, (center + after) / 2
     if target < lower or target > upper:
-        raise CopernicusProviderError("incompatibleMetadata")
-    return index, values[index], lower, upper
+        raise CopernicusProviderError("incompatibleGrid")
+    return index, center, lower, upper
+
+
+def _bracketing_times(eta):
+    seconds = eta.timestamp()
+    before = datetime.fromtimestamp(math.floor(seconds / QUARTER_SECONDS) * QUARTER_SECONDS, timezone.utc)
+    return before, before if eta == before else before + timedelta(seconds=QUARTER_SECONDS)
 
 
 def _times(dataset):
@@ -218,11 +267,14 @@ def _times(dataset):
         raise CopernicusProviderError("incompatibleMetadata") from None
 
 
-def _numeric(variable, indexers):
+def _numeric(variable, indexers, missing_code):
     try:
-        value = float(variable.isel(indexers).load(scheduler="synchronous").values.item())
+        raw = variable.isel(indexers).load(scheduler="synchronous").values.item()
+        if raw is None:
+            raise CopernicusProviderError(missing_code)
+        value = float(raw)
         if not math.isfinite(value):
-            raise CopernicusProviderError("maskedCell")
+            raise CopernicusProviderError(missing_code)
         return value
     except CopernicusProviderError:
         raise
@@ -233,7 +285,12 @@ def _numeric(variable, indexers):
 def _variable(dataset, name, standard_name, required_dims, allow_missing_units=False):
     try:
         variable = dataset[name]
-        if variable.attrs.get("standard_name") != standard_name or set(variable.dims) != set(required_dims):
+    except KeyError:
+        raise CopernicusProviderError("missingDepth" if name == "deptho" else "missingWaterLevel") from None
+    try:
+        if variable.attrs.get("standard_name") != standard_name:
+            raise CopernicusProviderError("unconfirmedDatum")
+        if set(variable.dims) != set(required_dims):
             raise ValueError()
         units = variable.attrs.get("units")
         if units != "m" and not (allow_missing_units and units is None):
@@ -243,16 +300,14 @@ def _variable(dataset, name, standard_name, required_dims, allow_missing_units=F
         raise CopernicusProviderError("incompatibleMetadata") from None
 
 
-def _extract(name, latitude, longitude, eta, username, password, opener):
+def _extract(name, latitude, longitude, eta, username, password, opener, grid):
     model = MODELS[name]
-    seconds = eta.timestamp()
-    before = datetime.fromtimestamp(math.floor(seconds / QUARTER_SECONDS) * QUARTER_SECONDS, timezone.utc)
-    after = before if eta == before else before + timedelta(seconds=QUARTER_SECONDS)
+    before, after = _bracketing_times(eta)
+    # A waypoint at a cell edge can be 1.5 grid steps from the farther adjacent center.
+    longitude_radius, latitude_radius = (step * 1.51 for step in model["step"])
     common = {"dataset_version": model["version"], "username": username, "password": password,
-              "minimum_longitude": longitude - model["step"][0] * 1.01,
-              "maximum_longitude": longitude + model["step"][0] * 1.01,
-              "minimum_latitude": latitude - model["step"][1] * 1.01,
-              "maximum_latitude": latitude + model["step"][1] * 1.01,
+              "minimum_longitude": longitude - longitude_radius, "maximum_longitude": longitude + longitude_radius,
+              "minimum_latitude": latitude - latitude_radius, "maximum_latitude": latitude + latitude_radius,
               "coordinates_selection_method": "outside", "raise_if_updating": True}
     sea = bathy = None
     try:
@@ -262,18 +317,11 @@ def _extract(name, latitude, longitude, eta, username, password, opener):
                        service="static-arco", **common)
         sea_lat, sea_lon = _axis(sea, "latitude"), _axis(sea, "longitude")
         bathy_lat, bathy_lon = _axis(bathy, "latitude"), _axis(bathy, "longitude")
-        if len(sea_lat) != len(bathy_lat) or len(sea_lon) != len(bathy_lon) or any(abs(a-b) > 1e-7 for a, b in zip(sea_lat + sea_lon, bathy_lat + bathy_lon)):
-            raise CopernicusProviderError("incompatibleMetadata")
-        lat_index, cell_lat, south, north = _locate(sea_lat, latitude)
-        lon_index, cell_lon, west, east = _locate(sea_lon, longitude)
-        for values, expected_step in ((sea_lat, model["step"][1]), (sea_lon, model["step"][0])):
-            if any(abs((b-a) - expected_step) > 0.00001 for a, b in zip(values, values[1:])):
-                raise CopernicusProviderError("incompatibleMetadata")
-        times = _times(sea)
-        if before not in times or after not in times:
-            raise CopernicusProviderError("missingTime")
-        deptho = _variable(bathy, "deptho", "sea_floor_depth_below_geoid", ["latitude", "longitude"], name == "NWS")
-        zos = _variable(sea, "zos", "sea_surface_height_above_geoid", ["time", "latitude", "longitude"])
+        if sea_lat != bathy_lat or sea_lon != bathy_lon:
+            raise CopernicusProviderError("incompatibleGrid")
+        lat_index, cell_lat, south, north = _locate(sea_lat, latitude, grid["latitude"])
+        lon_index, cell_lon, west, east = _locate(sea_lon, longitude, grid["longitude"])
+        cell_position = {"latitude": cell_lat, "longitude": cell_lon}
         xy = {"latitude": lat_index, "longitude": lon_index}
         mask = bathy["mask"]
         if mask.attrs.get("standard_name") != "sea_binary_mask":
@@ -287,22 +335,38 @@ def _extract(name, latitude, longitude, eta, username, password, opener):
             if not 1 <= len(levels) <= 100 or not all(map(math.isfinite, levels)):
                 raise CopernicusProviderError("incompatibleMetadata")
             mask_index[dim] = min(range(len(levels)), key=lambda item: abs(levels[item]))
-        if _numeric(mask, mask_index) != 1:
-            raise CopernicusProviderError("maskedCell")
-        depth = _numeric(deptho, xy)
-        if depth <= 0 or depth > 12_000:
-            raise CopernicusProviderError("maskedCell")
-        if depth <= 10:
-            raise CopernicusProviderError("shallowWater")
-        height_before = _numeric(zos, {**xy, "time": times.index(before)})
-        height_after = height_before if before == after else _numeric(zos, {**xy, "time": times.index(after)})
-        if abs(height_before) > 100 or abs(height_after) > 100:
-            raise CopernicusProviderError("incompatibleMetadata")
+        try:
+            if _numeric(mask, mask_index, "maskedCell") != 1:
+                raise CopernicusProviderError("maskedCell")
+            deptho = _variable(bathy, "deptho", "sea_floor_depth_below_geoid", ["latitude", "longitude"], name == "NWS")
+            depth = _numeric(deptho, xy, "missingDepth")
+            if depth <= 0 or depth > 12_000:
+                raise CopernicusProviderError("missingDepth")
+        except CopernicusProviderError as error:
+            if error.code in ("maskedCell", "missingDepth"):
+                raise CopernicusProviderError(error.code, cell_position=cell_position) from None
+            raise
         resolution = max((north-south) * 111_195.08, (east-west) * 111_195.08 * math.cos(math.radians(cell_lat)))
+        cell = {**cell_position, "bounds": {"west": west, "east": east, "south": south, "north": north},
+                "resolutionMeters": resolution, "depthMeters": depth, "depthMinMeters": None, "depthMaxMeters": None}
+        if depth <= 10:
+            raise CopernicusProviderError("shallowWater", cell=cell)
+        try:
+            zos = _variable(sea, "zos", "sea_surface_height_above_geoid", ["time", "latitude", "longitude"])
+            times = _times(sea)
+            if before not in times or after not in times:
+                raise CopernicusProviderError("missingTime")
+            height_before = _numeric(zos, {**xy, "time": times.index(before)}, "missingWaterLevel")
+            height_after = height_before if before == after else _numeric(
+                zos, {**xy, "time": times.index(after)}, "missingWaterLevel")
+            if abs(height_before) > 100 or abs(height_after) > 100:
+                raise CopernicusProviderError("missingWaterLevel")
+        except CopernicusProviderError as error:
+            if error.code in ("missingTime", "missingWaterLevel"):
+                raise CopernicusProviderError(error.code, cell=cell) from None
+            raise
         return {"status": "available", "message": "Estimation statique issue d’un modèle ; incertitude totale non quantifiée.",
-                "source": _source(name), "cell": {"latitude": cell_lat, "longitude": cell_lon,
-                    "bounds": {"west": west, "east": east, "south": south, "north": north},
-                    "resolutionMeters": resolution, "depthMeters": depth, "depthMinMeters": None, "depthMaxMeters": None},
+                "source": _source(name), "cell": cell,
                 "waterLevel": {"timeBeforeUtc": _iso(before), "timeAfterUtc": _iso(after),
                     "heightBeforeMeters": height_before, "heightAfterMeters": height_after}}
     finally:
@@ -331,7 +395,7 @@ def fetch_copernicus_point(latitude: float, longitude: float, eta_utc: str, user
         return _unavailable(error.code)
     opener = _opener or _sdk_opener
     metadata_loader = _metadata_loader or _load_metadata
-    last_code = "outsideCoverage"
+    last_outside_horizon = None
     candidates = ("NWS", "IBI") if model_preference == "automatic" else (model_preference,)
     for name in candidates:
         model = MODELS[name]
@@ -343,14 +407,14 @@ def fetch_copernicus_point(latitude: float, longitude: float, eta_utc: str, user
             bathy_dims = _qualify_metadata(metadata_loader(model, True), model, True, eta)
             for axis in ("latitude", "longitude"):
                 if sea_dims[axis] != bathy_dims[axis]:
-                    raise CopernicusProviderError("incompatibleMetadata")
-            return _extract(name, latitude, longitude, eta, username, password, opener)
+                    raise CopernicusProviderError("incompatibleGrid")
+            return _extract(name, latitude, longitude, eta, username, password, opener, sea_dims)
         except CopernicusProviderError as error:
             if error.code == "outsideHorizon" and model_preference == "automatic":
-                last_code = error.code
+                last_outside_horizon = name
                 continue
-            return _unavailable(error.code, name)
+            return _unavailable(error.code, name, error.cell, error.cell_position)
         except Exception:
             # No exception repr: SDK errors may include account/configuration details.
             return _unavailable("upstreamUnavailable", name)
-    return _unavailable(last_code)
+    return _unavailable("outsideHorizon", last_outside_horizon) if last_outside_horizon else _unavailable("outsideCoverage")

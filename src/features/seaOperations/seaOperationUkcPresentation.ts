@@ -1,6 +1,9 @@
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
+import { seaDistanceToRouteNm, seaWaypointPosition } from './seaOperationNavigation';
 import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, waypointUkcSnapshot } from './seaOperationWaypointSnapshots';
+import { isVesselDraftMeters } from './seaOperationUkc';
+import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 
 const metres = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const distance = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -10,6 +13,16 @@ const uncertaintyLabels = {
   bathymetryVertical: 'profondeur', waterLevel: 'niveau d’eau', draft: 'tirant d’eau',
   positionEffect: 'position dans la maille', temporalInterpolation: 'interpolation temporelle',
 } as const;
+const unavailableLabel = 'UKC indisponible';
+
+export function seaOperationUkcPrerequisite(payload: SeaOperationPayload | undefined, point: SeaOperationWaypoint): string | undefined {
+  if (!seaWaypointPosition(point)) return 'Coordonnées du waypoint absentes ou invalides.';
+  try { seaOperationEtaUtc(point.eta); } catch (error) { return (error as Error).message; }
+  if (!payload) return undefined;
+  if (!isVesselDraftMeters(payload.vessel.draftMeters)) return 'Renseignez le tirant d’eau dans Navires.';
+  if (!payload.planning?.projectId && !payload.transit) return 'Sélectionnez un projet du planning ou renseignez le Transit.';
+  return undefined;
+}
 
 /** Read only the recorded capture matching every input; never fetch data during presentation. */
 export function seaOperationUkcPresentation(payload: SeaOperationPayload | undefined, point: SeaOperationWaypoint) {
@@ -19,33 +32,43 @@ export function seaOperationUkcPresentation(payload: SeaOperationPayload | undef
   const capture = reference ? waypointUkcSnapshot(point, reference) : undefined;
   const fallbackMeters = reference ? seaOperationUkcFallback(point, reference) : undefined;
   const fallback = fallbackMeters !== undefined;
-  const available = capture?.status === 'available' && capture.estimate && capture.source && capture.cell && capture.waterLevel;
-  const formatted = available ? `${metres.format(capture.estimate!.ukcMeters)} m` : fallback ? `${metres.format(fallbackMeters)} m` : rawValue;
-  const caption = !automatic ? '' : available ? 'Estimation statique indicative · incertitude totale non quantifiée.'
-    : fallback ? 'UKC automatique indisponible · profondeur théorique de repli.' : 'UKC automatique indisponible pour cette position et cette ETA.';
+  const { source, cell, waterLevel, estimate } = capture ?? {};
+  const available = capture?.status === 'available' && estimate && source && cell && waterLevel;
+  const formatted = available ? `${metres.format(estimate!.ukcMeters)} m` : fallback ? `${metres.format(fallbackMeters)} m` : rawValue;
+  const unavailableReason = capture?.status === 'unavailable' ? capture.message
+    : seaOperationUkcPrerequisite(payload, point) ?? 'Aucune estimation enregistrée pour cette position et cette ETA.';
+  const caption = !automatic ? '' : available ? 'Indicative · Incertitude non quantifiée' : `${unavailableLabel} · ${unavailableReason}`;
   const details: string[] = [];
-  if (available) {
-    const { source, cell, waterLevel, estimate } = capture;
+  if (available && capture) {
     details.push(
       `UKC statique indicative : ${metres.format(estimate!.ukcMeters)} m à l’ETA du ${utc(capture.etaUtc)}.`,
       `Calcul : profondeur ${metres.format(cell!.depthMeters)} m + niveau d’eau ${metres.format(estimate!.waterLevelMeters)} m − tirant d’eau du navire conservé ${metres.format(capture.draftMeters)} m.`,
-      `Copernicus Marine Service ${source!.model} · produit ${source!.productId} · version ${source!.datasetVersion}. Profondeur et niveau d’eau partagent le géoïde du modèle ; aucun zéro LAT n’est appliqué.`,
-      `Maille de ${distance.format(cell!.resolutionMeters)} m, centre ${formatSeaPosition(cell!)}. Limites : ${formatSeaLatitude(cell!.bounds.south)} à ${formatSeaLatitude(cell!.bounds.north)} ; ${formatSeaLongitude(cell!.bounds.west)} à ${formatSeaLongitude(cell!.bounds.east)}.`,
-      `Niveaux encadrant l’ETA : ${metres.format(waterLevel!.heightBeforeMeters)} m le ${utc(waterLevel!.timeBeforeUtc)} ; ${metres.format(waterLevel!.heightAfterMeters)} m le ${utc(waterLevel!.timeAfterUtc)}.`,
-      `Jeux de données : profondeur ${source!.bathymetryDatasetId} ; niveau d’eau ${source!.seaLevelDatasetId}.`,
-      `Données consultées le ${utc(capture.fetchedAt)}. ${source!.referenceTimeUtc ? `Réseau du modèle : ${utc(source!.referenceTimeUtc)}.` : 'Heure du réseau du modèle non fournie par la source.'}`,
-      `Incertitude totale non quantifiée : composantes non documentées pour ${estimate!.uncertainty.missingComponents.map(id => uncertaintyLabels[id]).join(', ')}. Aucun intervalle de confiance n’est attribué.`,
-      'Squat, mouvements du navire et autres corrections dynamiques non appliqués. Comparaison indicative, sans décision GO automatique.',
-      'Generated using E.U. Copernicus Marine Service Information.',
     );
-    if (estimate!.cellVariability) details.push(`Dispersion locale des profondeurs : UKC entre ${metres.format(estimate!.cellVariability.lowerMeters)} et ${metres.format(estimate!.cellVariability.upperMeters)} m. Cette dispersion n’est pas une incertitude de mesure.`);
   } else if (automatic) {
-    if (fallback) {
-      details.push(`Profondeur théorique de repli : ${formatted} (tirant d’eau du navire + 5 m). UKC indisponible. Valeur non vérifiée, sans usage pour la navigation.`);
-      if (capture?.message) details.push(capture.message);
-    } else details.push(capture?.message || caption);
+    details.push(caption);
+    if (fallback) details.push(`Profondeur théorique de repli de ${formatted} (tirant d’eau du navire + 5 m), réservée à la validation de la fiche.`);
   }
-  const sourceUrls = available ? [capture.source!.sourceUrl, `https://doi.org/${capture.source!.model === 'NWS' ? '10.48670/moi-00054' : '10.48670/moi-00027'}`] : [];
+  if (source) {
+    details.push(`Copernicus Marine Service ${source.model} · produit ${source.productId} · version ${source.datasetVersion}.`,
+      `Jeux de données de profondeur ${source.bathymetryDatasetId} et de niveau d’eau ${source.seaLevelDatasetId}.`);
+    if (available) details.push('Référentiel vertical commun de la profondeur et du niveau d’eau : géoïde du modèle.');
+    details.push(source.referenceTimeUtc ? `Cycle du modèle du ${utc(source.referenceTimeUtc)}.` : 'Heure du réseau du modèle non fournie par la source.');
+  }
+  const cellPosition = cell ?? capture?.cellPosition;
+  if (cellPosition && capture) {
+    const distanceMeters = seaDistanceToRouteNm(cellPosition, [capture]) * 1852;
+    details.push(`${cell ? `Maille de ${distance.format(cell.resolutionMeters)} m` : 'Maille examinée'}, centre ${formatSeaPosition(cellPosition)}, à ${distance.format(distanceMeters)} m du waypoint.`);
+    if (cell) details.push(`Limites de la maille de ${formatSeaLatitude(cell.bounds.south)} à ${formatSeaLatitude(cell.bounds.north)} et de ${formatSeaLongitude(cell.bounds.west)} à ${formatSeaLongitude(cell.bounds.east)}.`);
+  }
+  if (waterLevel) details.push(`Niveaux d’eau du modèle : ${metres.format(waterLevel.heightBeforeMeters)} m le ${utc(waterLevel.timeBeforeUtc)} et ${metres.format(waterLevel.heightAfterMeters)} m le ${utc(waterLevel.timeAfterUtc)}.`);
+  if (capture) details.push(`Données consultées le ${utc(capture.fetchedAt)}.`);
+  if (available && estimate) {
+    details.push(`Incertitude non quantifiée. Composantes non documentées pour ${estimate.uncertainty.missingComponents.map(id => uncertaintyLabels[id]).join(', ')}.`,
+      'Estimation statique sans correction de squat ou de mouvement du navire.');
+    if (estimate.cellVariability) details.push(`Dispersion locale des profondeurs : UKC entre ${metres.format(estimate.cellVariability.lowerMeters)} et ${metres.format(estimate.cellVariability.upperMeters)} m.`);
+  }
+  if (source && (cell || waterLevel)) details.push('Generated using E.U. Copernicus Marine Service Information.');
+  const sourceUrls = source ? [source.sourceUrl, `https://doi.org/${source.model === 'NWS' ? '10.48670/moi-00054' : '10.48670/moi-00027'}`] : [];
   return { rawValue, automatic, approximate: Boolean(available), fallback, label: available ? 'Indicative' : fallback ? 'Profondeur de repli' : 'Automatique',
     displayValue: available ? `≈ ${formatted}` : formatted, pdfValue: available ? `~ ${formatted}` : formatted, caption, details,
     sourceFootnote: [...details, ...sourceUrls].join('\n'), sourceUrls, capture };

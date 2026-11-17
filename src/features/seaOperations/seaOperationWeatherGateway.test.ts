@@ -12,9 +12,9 @@ function fixture(options: { configured?: boolean; user?: string | null; denied?:
   const backend = vi.fn(() => ({ user: vi.fn().mockResolvedValue(options.user === undefined ? 'actual-user' : options.user), authorize }));
   const fetcher = vi.fn(async (url) => {
     const marine = String(url).includes('/marine?');
-    const variables = marine ? ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction'] : ['wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m'];
-    return Response.json({ utc_offset_seconds: 0, hourly: { time: [hour], ...Object.fromEntries(variables.map((key) => [key, [2]])) },
-      hourly_units: Object.fromEntries(variables.map((key, index) => [key, (marine ? ['m', 's', '°'] : ['kn', 'kn', '°'])[index]])) });
+    const variables = marine ? ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction', 'wave_height', 'wave_period', 'wave_direction'] : ['wind_speed_10m', 'wind_direction_10m'];
+    return Response.json({ latitude: point.latitude, longitude: point.longitude, utc_offset_seconds: 0, hourly: { time: [hour], ...Object.fromEntries(variables.map((key) => [key, [2]])) },
+      hourly_units: Object.fromEntries(variables.map((key, index) => [key, (marine ? ['m', 's', '°', 'm', 's', '°'] : ['kn', '°'])[index]])) });
   }) as typeof fetch;
   const handler = createSeaOperationWeatherGateway({ getEnv: (name) => name === 'SEA_OPERATION_WEATHER_PROVIDER' ? 'open-meteo' : name === 'OPEN_METEO_API_KEY' && options.configured !== false ? 'server-secret' : undefined, backend, fetcher, now: () => now });
   return { handler, authorize, backend, fetcher };

@@ -59,6 +59,21 @@ explicitement des valeurs nulles.
 ni une incertitude de mesure ni un intervalle de confiance à 95 %. Il ne faut
 pas inventer une incertitude totale à partir de cette seule variable.
 Les métadonnées indiquent que le MNT n’est pas destiné à la navigation.
+La notice exclut aussi tout usage lié à la sécurité en mer. SeaPilot réserve
+cette grille LAT à la comparaison documentaire des sources en Manche et en
+Atlantique. [Documentation des services EMODnet](https://github.com/EMODnet/Web-Service-Documentation)
+· [Métadonnées de la grille](https://erddap.emodnet.eu/erddap/info/bathymetry_dtm_2024/index.html).
+
+Vérification du 16 novembre 2026 à coordonnées identiques dans les deux produits.
+
+| Waypoint | Profondeur moyenne EMODnet LAT | Profondeur du modèle NWS au géoïde |
+| --- | --- | --- |
+| Au large, 49,2° N / 5,1° O | 101,25 m | 104,74 m |
+| Littoral, 49,994327° N / 0,95218° E | 20,66 m | 28,57 m |
+| Terrestre, 48,85° N / 2,35° E | Absente | Maille rejetée par le masque NWS |
+
+Les grilles, leurs résolutions et leurs références verticales diffèrent.
+Les écarts observés ne permettent pas d’établir une conversion verticale.
 
 ### SHOM HOMONIM
 

@@ -19,8 +19,8 @@ ETA = "2026-10-26T10:07:00Z"
 def metadata(model, bathy):
     west, south, east, north = model["extent"]
     dimensions = {
-        "latitude": {"step": model["step"][1], "extent": [south, north]},
-        "longitude": {"step": model["step"][0], "extent": [west, east]},
+        "latitude": {"step": model["step"][1], "extent": [south, north], "reference_system": 4326},
+        "longitude": {"step": model["step"][0], "extent": [west, east], "reference_system": 4326},
     }
     variables = {"deptho" if bathy else "zos": {
         "standardName": "sea_floor_depth_below_geoid" if bathy else "sea_surface_height_above_geoid",
@@ -217,6 +217,20 @@ class CopernicusProviderTests(unittest.TestCase):
         self.assertTrue(all(call["dataset_version"] == "202411" for call in transport.calls))
         self.assertTrue(all("_ibi_" in call["dataset_id"] for call in transport.calls))
 
+    def test_offshore_and_coastal_points_use_their_containing_cells(self):
+        for latitude, longitude, depth in [(49.2, -5.1, 104.7377548), (49.994327, .95218, 28.5661049)]:
+            with self.subTest(latitude=latitude, longitude=longitude):
+                transport = Transport(latitude, longitude)
+                transport.change_dataset = lambda data, bathy: setattr(data, "depth", depth)
+                result = transport.run()
+                self.assertEqual(result["status"], "available")
+                self.assertEqual(result["cell"]["depthMeters"], depth)
+                bounds = result["cell"]["bounds"]
+                self.assertLessEqual(bounds["south"], latitude)
+                self.assertLessEqual(latitude, bounds["north"])
+                self.assertLessEqual(bounds["west"], longitude)
+                self.assertLessEqual(longitude, bounds["east"])
+
     def test_nws_horizon_can_fall_back_to_ibi_before_any_nws_data_read(self):
         transport = Transport()
         def narrow(data, model, bathy):
@@ -229,7 +243,9 @@ class CopernicusProviderTests(unittest.TestCase):
         self.assertTrue(all("_ibi_" in call["dataset_id"] for call in transport.calls))
 
     def test_no_nws_shallow_or_masked_cell_fallback_to_ibi(self):
-        for depth, mask, expected in [(10, 1, "shallowWater"), (9, 1, "shallowWater"), (25, 0, "maskedCell"), (float("nan"), 1, "maskedCell")]:
+        for depth, mask, expected in [
+            (10, 1, "shallowWater"), (9, 1, "shallowWater"), (21.2, 0, "maskedCell"), (float("nan"), 1, "missingDepth"),
+        ]:
             with self.subTest(depth=depth, mask=mask):
                 transport = Transport()
                 def change(data, bathy):
@@ -238,6 +254,11 @@ class CopernicusProviderTests(unittest.TestCase):
                 result = transport.run()
                 self.assertEqual(result["code"], expected)
                 self.assertEqual(result["source"]["model"], "NWS")
+                if expected == "shallowWater":
+                    self.assertEqual(result["cell"]["depthMeters"], depth)
+                else:
+                    self.assertIsNone(result["cell"])
+                    self.assertEqual(set(result["cellPosition"]), {"latitude", "longitude"})
                 self.assertTrue(all("_nws_" in call["dataset_id"] for call in transport.calls))
                 self.assertTrue(all(item.closed for item in transport.datasets))
                 self.assertEqual(sum(name == "zos" for dataset in transport.datasets for name, _, _ in dataset.loads), 0)
@@ -249,11 +270,23 @@ class CopernicusProviderTests(unittest.TestCase):
 
     def test_two_models_outside_horizon_or_coverage_load_no_data(self):
         transport = Transport()
-        self.assertEqual(transport.run("2027-01-01T12:00:00Z")["code"], "outsideHorizon")
+        result = transport.run("2027-01-01T12:00:00Z")
+        self.assertEqual(result["code"], "outsideHorizon")
+        self.assertEqual(result["source"]["model"], "IBI")
         self.assertEqual(transport.calls, [])
         transport = Transport(0, 0)
         self.assertEqual(transport.run()["code"], "outsideCoverage")
         self.assertEqual(transport.metadata_calls, [])
+
+    def test_final_published_quarter_is_available_but_one_minute_later_is_outside_horizon(self):
+        transport = Transport()
+        def limit(data, model, bathy):
+            if not bathy:
+                data["properties"]["cube:dimensions"]["time"]["extent"][1] = "2026-10-26T10:15:00Z"
+        transport.change_metadata = limit
+        self.assertEqual(transport.run("2026-10-26T10:15:00Z")["status"], "available")
+        self.assertEqual(transport.run("2026-10-26T10:16:00Z")["code"], "outsideHorizon")
+        self.assertEqual(len(transport.calls), 2)
 
     def test_missing_credentials_do_not_import_sdk_or_make_requests(self):
         for user, password in [(None, "test"), ("user", ""), (" ", "test")]:
@@ -271,18 +304,25 @@ class CopernicusProviderTests(unittest.TestCase):
             self.assertEqual(transport.metadata_calls, [])
 
     def test_metadata_version_units_or_vertical_reference_mismatch_stops_without_fallback(self):
-        for mutation in [lambda data: data.update(id="other_version"),
-                         lambda data: data["properties"]["cube:variables"]["zos"].update(standardName="sea_surface_height_above_sea_level"),
-                         lambda data: data["properties"]["cube:variables"]["zos"].update(unit="cm"),
-                         lambda data: data["properties"].update(admp_retired_date="2026-01-01T00:00:00Z")]:
+        for mutation, expected in [
+            (lambda data: data.update(id="other_version"), "incompatibleMetadata"),
+            (lambda data: data["properties"]["cube:variables"]["zos"].update(
+                standardName="sea_surface_height_above_sea_level"), "unconfirmedDatum"),
+            (lambda data: data["properties"]["cube:variables"]["zos"].update(unit="cm"), "incompatibleMetadata"),
+            (lambda data: data["properties"].update(admp_retired_date="2026-01-01T00:00:00Z"), "incompatibleMetadata"),
+            (lambda data: data["properties"]["cube:dimensions"]["latitude"].update(reference_system=3857), "incompatibleGrid"),
+        ]:
             transport = Transport()
             def change(data, model, bathy):
                 if not bathy:
                     mutation(data)
             transport.change_metadata = change
             result = transport.run()
-            self.assertEqual(result["code"], "incompatibleMetadata")
-            self.assertEqual(result["source"]["model"], "NWS")
+            self.assertEqual(result["code"], expected)
+            if expected == "unconfirmedDatum":
+                self.assertIsNone(result["source"])
+            else:
+                self.assertEqual(result["source"]["model"], "NWS")
             self.assertEqual(transport.calls, [])
 
     def test_updating_dataset_is_not_silently_replaced_by_ibi(self):
@@ -301,29 +341,69 @@ class CopernicusProviderTests(unittest.TestCase):
         self.assertEqual(transport.calls, [])
 
     def test_sdk_mismatched_grid_or_cf_metadata_is_rejected_and_closed(self):
-        for mutation in [lambda data: data.coords["longitude"].values.value.__setitem__(1, .001),
-                         lambda data: data.variables["deptho"].attrs.update(standard_name="depth_below_LAT")]:
+        for mutation, expected in [
+            (lambda data: data.coords["longitude"].values.value.__setitem__(1, .001), "incompatibleGrid"),
+            (lambda data: data.variables["deptho"].attrs.update(standard_name="depth_below_LAT"), "unconfirmedDatum"),
+        ]:
             transport = Transport()
             def change(data, bathy):
                 if bathy:
                     mutation(data)
             transport.change_dataset = change
             result = transport.run()
-            self.assertEqual(result["code"], "incompatibleMetadata")
+            self.assertEqual(result["code"], expected)
             self.assertTrue(all(item.closed for item in transport.datasets))
+
+    def test_identical_shifted_or_clipped_grids_do_not_define_a_containing_cell(self):
+        for change_axis in (lambda values: [value + .001 for value in values], lambda values: values[1:]):
+            transport = Transport(49.994327, .95218)
+            def change(data, bathy):
+                longitude = data.coords["longitude"].values
+                longitude.value = change_axis(longitude.value)
+            transport.change_dataset = change
+            self.assertEqual(transport.run()["code"], "incompatibleGrid")
+            self.assertEqual(sum(len(data.loads) for data in transport.datasets), 0)
+
+    def test_extract_requests_both_adjacent_centers_unless_at_the_published_grid_edge(self):
+        model = MODELS["NWS"]
+        west, south, east, north = model["extent"]
+        dx, dy = model["step"]
+
+        def clip_to_request(data, bathy):
+            for axis, bounds in (("longitude", (west, east)), ("latitude", (south, north))):
+                low = max(bounds[0], data.kwargs[f"minimum_{axis}"])
+                high = min(bounds[1], data.kwargs[f"maximum_{axis}"])
+                coords = data.coords[axis].values
+                coords.value = [value for value in coords.value if low <= value <= high]
+
+        for latitude, longitude in [(south + 300.49 * dy, west + 400.49 * dx), (south, west)]:
+            with self.subTest(latitude=latitude, longitude=longitude):
+                transport = Transport(latitude, longitude)
+                transport.change_dataset = clip_to_request
+                result = transport.run()
+                self.assertEqual(result["status"], "available")
+                bounds = result["cell"]["bounds"]
+                self.assertLessEqual(bounds["south"], latitude)
+                self.assertLessEqual(latitude, bounds["north"])
+                self.assertLessEqual(bounds["west"], longitude)
+                self.assertLessEqual(longitude, bounds["east"])
 
     def test_missing_bracketing_time_or_masked_water_level_never_extrapolates(self):
         transport = Transport()
         transport.change_dataset = lambda data, bathy: setattr(data.coords["time"].values, "value", ["2026-10-26T10:00:00Z"])
-        self.assertEqual(transport.run()["code"], "missingTime")
+        result = transport.run()
+        self.assertEqual(result["code"], "missingTime")
+        self.assertEqual(result["cell"]["depthMeters"], 25)
         transport = Transport()
         transport.change_dataset = lambda data, bathy: setattr(data, "heights", [1, float("nan")])
-        self.assertEqual(transport.run()["code"], "maskedCell")
+        result = transport.run()
+        self.assertEqual(result["code"], "missingWaterLevel")
+        self.assertEqual(result["cell"]["depthMeters"], 25)
 
     def test_oversized_coordinate_extract_is_rejected_before_loading(self):
         transport = Transport()
         transport.change_dataset = lambda data, bathy: setattr(data.coords["latitude"].values, "value", [49+i*.01 for i in range(1000)])
-        self.assertEqual(transport.run()["code"], "incompatibleMetadata")
+        self.assertEqual(transport.run()["code"], "incompatibleGrid")
         self.assertEqual(sum(len(data.loads) for data in transport.datasets), 0)
 
     def test_sdk_exception_is_sanitized_with_no_credentials_or_upstream_url(self):

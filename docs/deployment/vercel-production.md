@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.107.0` actualise les prévisions et le calcul UKC du Passage Plan.
+Appliquer `20261116150758_sea_operation_waypoint_provenance.sql` avant le
+frontend. Voir [le calcul UKC avec Copernicus](./sea-operation-copernicus-ukc.md)
+et [l’historique météo](./sea-operation-weather-history.md).
+
 La version `3.106.0` ajoute le compteur de congés payés en jours ouvrables du
 personnel sédentaire. Appliquer `20261117134324_planning_sedentary_leave.sql`
 avant le frontend. Le nouveau décompte commence après saisie des soldes

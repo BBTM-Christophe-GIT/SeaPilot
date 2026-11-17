@@ -2,13 +2,15 @@ import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { formatSeaPosition } from './seaOperationCoordinates';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
-import { isSeaOperationWeatherObservation, type ObservationResult } from './seaOperationWeatherObservationsModel';
+import { isSeaOperationWeatherObservation, type ObservationResult, type SeaOperationObservationSource } from './seaOperationWeatherObservationsModel';
 
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
 const utc = new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' });
 const number = (value: number | null) => value === null ? 'indisponible' : decimal.format(value);
 const metric = (value: number | null, unit: string) => value === null ? 'indisponible' : `${number(value)}${unit}`;
 export const observationTime = (value: string) => `${utc.format(new Date(value))} UTC`;
+export const weatherUncertaintyLabel = 'Incertitude non quantifiée';
+export const observationProduct = (source: SeaOperationObservationSource) => source.provider === 'Météo-France' ? 'Archives annuelles des observations bouées' : 'UK Marine Observations';
 
 /** An annex must never be shown against a different point, position or ETA. */
 export function waypointWeatherObservation(point: SeaOperationWaypoint, observations?: readonly ObservationResult[]): ObservationResult | undefined {
@@ -45,7 +47,8 @@ export function observationFootnote(observation: ObservationResult | undefined):
   const components = [observation.wind, observation.waves].filter((value) => value !== null);
   return [
     `Annexe mise à jour le ${observationTime(observation.recordedAt)}. Stations à 50 km maximum, heure observée à 30 min maximum de l’ETA.`,
-    ...components.map((part) => `${part.source.provider} · ${part.station.name} (${part.station.id}) · ${formatSeaPosition(part.station)} · ${part.station.distanceKm.toFixed(1)} km · ${observationTime(part.observedAt)} · qualité ${part.source.quality === 'good' ? 'bonne' : 'non renseignée'}\n${part.source.sourceUrl}\n${part.source.license} · ${part.source.licenseUrl}`),
+    ...components.map((part) => `${part.source.provider} · ${part.station.name} (${part.station.id}) · ${formatSeaPosition(part.station)} · ${number(part.station.distanceKm)} km · ${observationTime(part.observedAt)} · qualité ${part.source.quality === 'good' ? 'bonne' : 'non renseignée'}\n${observationProduct(part.source)} · ${part.source.sourceUrl}\n${part.source.license} · ${part.source.licenseUrl}`),
+    weatherUncertaintyLabel,
     'Valeurs présentées en mètres, secondes, degrés et nœuds ; sélection de la station et de l’heure proches de l’ETA. Les mesures ne modifient pas la décision signée.',
   ].join('\n');
 }

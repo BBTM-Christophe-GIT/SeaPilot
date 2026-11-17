@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { fetchSeaOperationWaypointWeather, type SeaOperationWaypointWeather } from './seaOperationWeatherQueries';
-import { isSeaOperationTransitRequestContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
+import { hasSeaOperationForecast, isSeaOperationTransitRequestContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext } from './seaOperationWeatherModel';
 import { preservedWaypointWeather, waypointWeatherSnapshot, type SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
 import { SeaOperationWeatherObservationCard } from './SeaOperationWeatherObservationCard';
 import { weatherRequestKey, type WeatherRequestStatus } from './seaOperationWeatherStatus';
-import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
+import { forecastModelDetails, forecastSourceLinks, forecastTotalSeaText, waypointWeatherAtValidation, weatherPeriod } from './seaOperationWeatherPresentation';
+import { weatherUncertaintyLabel } from './seaOperationWeatherHistory';
 import { formatSeaPosition } from './seaOperationCoordinates';
 import './seaOperationNavigation.css';
 
@@ -25,7 +26,7 @@ interface Props {
 type PointResult = { weather?: SeaOperationWaypointWeather; error?: string; loading?: boolean };
 const number = (value: number | null, digits = 1) => value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }).format(value);
 const utc = (value: string) => new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-const collectionHelp = 'Hs de la houle seule, hors mer du vent. Sans donnée marine à la maille du waypoint, la maille marine disponible la plus proche est recherchée à 10 km maximum, à la même échéance. Sa position et sa distance sont affichées. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine. Une consultation en direct ne modifie jamais une fiche signée.';
+const collectionHelp = 'La houle et la mer totale figurent séparément quand le modèle les fournit. En Météo-France, une maille marine voisine peut être utilisée à la même échéance dans un rayon de 10 km. Les dates hors horizon ou sans donnée proche restent indisponibles. Les prévisions disponibles sont conservées à l’enregistrement du brouillon et à la validation du Capitaine.';
 
 /** Forecasts are contextual assistance, never an automatic safety answer or a signed-form mutation. */
 export function SeaOperationWeatherPanel({ client, projectId, transit, waypoints, preview = false, active = true, readOnly = false, compact = false, validatedAt, observations, onWeatherLoaded, onStatusChange }: Props) {
@@ -60,7 +61,7 @@ export function SeaOperationWeatherPanel({ client, projectId, transit, waypoints
       try { seaOperationEtaUtc(point.eta); } catch (error) { results[key] = { error: (error as Error).message }; return null; }
       const stored = currentWaypoints.current[index];
       const weather = stored?.id === point.id ? waypointWeatherSnapshot(stored) : undefined;
-      if (weather) { results[key] = { weather }; if (!refreshing && (weather.wind || weather.waves)) return null; }
+      if (weather) { results[key] = { weather }; if (!refreshing && hasSeaOperationForecast(weather)) return null; }
       results[key] = { ...results[key], loading: true };
       return { key, point: { ...reference, pointId: point.id, ...position, eta: point.eta }, context: { ...reference, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } };
     }).filter((entry) => entry !== null);
@@ -105,7 +106,7 @@ export function SeaOperationWeatherPanel({ client, projectId, transit, waypoints
     <p className="so-help">ETA saisies à l’heure de Paris. Prévisions horaires : l’heure du modèle est affichée en UTC, au plus près de l’ETA (30 min maximum). {readOnly ? 'Les prévisions enregistrées sont conservées avec la décision signée.' : 'Les conditions météo restent à valider par le Capitaine.'}</p>
     {readOnly && validatedAt && Number.isFinite(Date.parse(validatedAt)) && <p className="so-help">Décision du Capitaine validée le {utc(validatedAt)} UTC.</p>}
     {!hasContext ? <p>Sélectionnez le projet du planning ou le navire et la date du Transit pour consulter la météo.</p> : !waypoints.length ? <p>Ajoutez un point avec ses coordonnées et sa date / heure d’arrivée.</p> : !compact && <ul className="so-weather-points">{waypoints.map((point, index) => {
-      const result = current?.results[`${index}:${point.id}`] ?? { weather: waypointWeatherSnapshot(point) };
+      const result = current?.results[`${index}:${point.id}`] ?? { weather: waypointWeatherAtValidation(point, validatedAt) };
       const weather = result?.weather;
       return <li className="so-weather-point" key={`${index}:${point.id}`}>
         <h4>Point {point.number || index + 1}</h4>
@@ -113,10 +114,13 @@ export function SeaOperationWeatherPanel({ client, projectId, transit, waypoints
         {!weather ? !result?.error && <p role="status">{readOnly ? 'Prévisions météo non enregistrées pour cette position et cette ETA lors de la validation.' : 'Préparation de la prévision…'}</p> : <>
           <p className="so-help">ETA : {utc(weather.etaUtc)} UTC · {formatSeaPosition(point)}</p>
           <div className="so-weather-cards"><div className="so-weather-card"><strong>Vent moyen à 10 m</strong>{weather.wind ? <><span>{number(weather.wind.speedKnots)} nd · de {number(weather.wind.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.wind.time)} UTC</small></> : <span>{weather.windMessage || 'Prévision de vent indisponible à cette ETA.'}</span>}</div>
-            <div className="so-weather-card"><strong>Houle significative (Hs)</strong>{weather.waves ? <><span>Hs {number(weather.waves.heightMeters, 2)} m · Période moyenne : {number(weather.waves.periodSeconds)} s</span><span>Provenance : {number(weather.waves.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.waves.time)} UTC</small></> : <span>{weather.wavesMessage || 'Prévision de houle indisponible à cette ETA.'}</span>}</div></div>
-          <small className="so-weather-retrieved">Source : <a href={weather.sourceUrl} target="_blank" rel="noopener noreferrer">{weather.attribution}</a>{weather.attribution === 'Open-Meteo' ? ' / DWD' : ''}{weather.model ? ` · ${weather.model.name} · réseau du ${utc(weather.model.referenceTime)} UTC · maille ${formatSeaPosition(weather.model)}` : ''}</small>
+            <div className="so-weather-card"><strong>Houle significative (Hs)</strong>{weather.waves ? <><span>Hs {number(weather.waves.heightMeters, 2)} m · {weatherPeriod(weather.waves.periodKind ?? 'mean').label} {number(weather.waves.periodSeconds)} s</span><span>Provenance : {number(weather.waves.directionDegrees, 0)}°</span><small>Heure modèle : {utc(weather.waves.time)} UTC</small></> : <span>{weather.wavesMessage || 'Prévision de houle indisponible à cette ETA.'}</span>}</div>
+            {weather.seaState && <div className="so-weather-card">{forecastTotalSeaText(weather).map(detail => <span key={detail}>{detail}</span>)}<small>Heure modèle : {utc(weather.seaState.time)} UTC</small></div>}
+          </div>
+          {forecastSourceLinks(weather).map(source => <small key={source.url} className="so-weather-retrieved"><a href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a></small>)}
           <small className="so-weather-retrieved">Consultée le {utc(weather.fetchedAt)} UTC</small>
-          {weather.model && <small className="so-weather-retrieved">{seaOperationWeatherLocation(weather)}</small>}
+          {forecastModelDetails(weather).map(detail => <small className="so-weather-retrieved" key={detail}>{detail}</small>)}
+          {hasSeaOperationForecast(weather) && <small className="so-weather-retrieved">{weatherUncertaintyLabel}</small>}
         </>}
         {readOnly && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
       </li>;

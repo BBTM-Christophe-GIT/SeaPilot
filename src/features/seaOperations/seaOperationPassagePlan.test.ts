@@ -31,9 +31,9 @@ describe('recorded Passage Plan presentation', () => {
   it('keeps a missing automatic capture unavailable instead of presenting the manual value', () => {
     const point = { ...recordedPoint(), ukcMode: 'automatic' as const, ukc: 'MANUAL-OLD' };
     const row = passagePlanCellData(point);
-    expect(row.ukc).toBe('Indisponible');
+    expect(row.ukc).toBe('UKC indisponible');
     expect(row.ukcPresentation.rawValue).toBe('');
-    expect(row.ukcFootnote).toContain('UKC automatique indisponible');
+    expect(row.ukcFootnote).toContain('UKC indisponible');
     expect(row.ukcFootnote).not.toContain('MANUAL-OLD');
   });
   it('keeps each waypoint’s VHF, wind and Hs together with their recorded times and sources, without gusts', () => {
@@ -42,9 +42,9 @@ describe('recorded Passage Plan presentation', () => {
     expect(row.vhf).toContain('Cherbourg · Capitainerie · Ch 12');
     expect(row.vhf).toContain('Tél. +33 2 33 20 41 25');
     expect(row.weather).toContain('Vent moyen 10 m : 12 nd · de 270°');
-    expect(row.weather).toContain('Houle Hs : 0,60 m\nPériode : 6 s\nProvenance houle : 220°');
+    expect(row.weather).toContain('Houle Hs : 0,60 m\nPériode moyenne : 6 s\nProvenance houle : 220°');
     expect(row.weather).not.toContain('23/10/2026 10:00 UTC');
-    expect(row.weatherFootnote).toContain('modèle houle : 23/10/2026 10:00 UTC');
+    expect(row.weatherFootnote).toContain('Échéance houle 23/10/2026 10:00 UTC');
     expect(row.weather).not.toMatch(/rafale|37/i);
     expect(row.weatherFootnote).toContain('Météo-France · consultée le 22/10/2026 12:00 UTC');
     expect(row.weatherFootnote).toContain('réseau du 22/10/2026 06:00 UTC');
@@ -103,7 +103,7 @@ describe('recorded Passage Plan presentation', () => {
     expect(row.observedWeather).toContain('Vent mesuré à 3 m : 22 nd');
     expect(row.seaState).toMatchObject({ code: 'comfortable', label: 'Confortable' });
     expect(row.weather).not.toMatch(/rafales|37 nd|Rude|Hors matrice/i);
-    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49° 36.000′ N — 001° 36.000′ W · 5.8 km · 23/10/2026 10:15 UTC');
+    expect(row.weatherFootnote).toContain('Bouée Manche (62001) · 49° 36.000′ N — 001° 36.000′ W · 5,8 km · 23/10/2026 10:15 UTC');
     expect(row.weatherFootnote).toContain(SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(row.weatherFootnote).toContain(`Licence Ouverte 2.0 · ${SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL}`);
     expect({ point, observation }).toEqual(original);

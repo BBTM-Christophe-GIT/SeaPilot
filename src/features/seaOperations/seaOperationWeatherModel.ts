@@ -10,23 +10,59 @@ export interface SeaOperationWeatherInput {
   eta: string;
 }
 
+export interface SeaOperationForecastGrid {
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
+}
+
+interface SeaOperationWaveForecast<Component extends 'swell' | 'total'> {
+  time: string;
+  heightMeters: number | null;
+  periodSeconds: number | null;
+  directionDegrees: number | null;
+  component: Component;
+  periodKind?: 'mean' | 'peak';
+  grid?: SeaOperationForecastGrid;
+}
+
 export interface SeaOperationWaypointWeather {
   pointId: string;
   latitude: number;
   longitude: number;
   etaUtc: string;
   fetchedAt: string;
-  wind: { time: string; speedKnots: number | null; gustKnots: number | null; directionDegrees: number | null } | null;
-  /** Significant swell height, not the combined wind-wave and swell sea state. */
-  waves: { time: string; heightMeters: number | null; periodSeconds: number | null; directionDegrees: number | null; component: 'swell' } | null;
+  wind: { time: string; speedKnots: number | null; gustKnots: number | null; directionDegrees: number | null; grid?: SeaOperationForecastGrid } | null;
+  /** Swell remains the component used for the vessel's weather matrix. */
+  waves: SeaOperationWaveForecast<'swell'> | null;
+  seaState?: SeaOperationWaveForecast<'total'>;
   windMessage: string;
   wavesMessage: string;
   attribution: 'Open-Meteo' | 'Météo-France';
   sourceUrl: string;
-  model?: { name: string; referenceTime: string; latitude: number; longitude: number };
+  model?: { name: string; referenceTime: string; latitude: number; longitude: number; product?: string; validTime?: string;
+    distanceKm?: number; selection?: 'nearest' | 'marine-fallback' };
 }
 
 export const SEA_METEO_FRANCE_SOURCE_URL = 'https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg';
+export const SEA_OPERATION_MARINE_SEARCH_KM = 10;
+
+export function hasSeaOperationForecast(weather?: SeaOperationWaypointWeather | null): boolean {
+  return Boolean(weather?.wind || weather?.waves || weather?.seaState);
+}
+
+function isGridCoordinates(value: unknown): value is Record<string, unknown> & Pick<SeaOperationForecastGrid, 'latitude' | 'longitude'> {
+  if (!value || typeof value !== 'object') return false;
+  const { latitude, longitude } = value as Record<string, unknown>;
+  return typeof latitude === 'number' && Math.abs(latitude) <= 90 && typeof longitude === 'number' && Math.abs(longitude) <= 180;
+}
+
+export function seaOperationForecastGrid(point: Pick<SeaOperationForecastGrid, 'latitude' | 'longitude'>, latitude: number, longitude: number): SeaOperationForecastGrid {
+  const radians = Math.PI / 180;
+  const angle = Math.sin((latitude - point.latitude) * radians / 2) ** 2
+    + Math.cos(point.latitude * radians) * Math.cos(latitude * radians) * Math.sin((longitude - point.longitude) * radians / 2) ** 2;
+  return { latitude, longitude, distanceKm: 6371.0088 * 2 * Math.asin(Math.sqrt(Math.min(1, angle))) };
+}
 
 /** The explicit business day and real vessel replace a project ID for a Transit request. */
 export function isSeaOperationTransitRequestContext(value: unknown): value is SeaOperationTransitRequestContext {
@@ -45,28 +81,33 @@ export function isSeaOperationWaypointWeather(value: unknown): value is SeaOpera
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
   const timestamp = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(value) && Number.isFinite(Date.parse(value));
-  const component = (value: unknown, fields: string[]) => {
-    if (value === null) return true;
+  const distance = (value: unknown, max: number) => typeof value === 'number' && value >= 0 && value <= max;
+  const component = (value: unknown, fields: string[], maximumGridDistanceKm: number) => {
     if (!value || typeof value !== 'object') return false;
     const row = value as Record<string, unknown>;
     return timestamp(row.time) && fields.every((field) => row[field] === null || typeof row[field] === 'number' && Number.isFinite(row[field]) && row[field] >= 0)
-      && (row.directionDegrees === null || (row.directionDegrees as number) <= 360);
+      && (row.directionDegrees === null || (row.directionDegrees as number) <= 360)
+      && (row.grid === undefined || isGridCoordinates(row.grid) && distance(row.grid.distanceKm, maximumGridDistanceKm));
   };
+  const wave = (value: unknown, kind: 'swell' | 'total') => {
+    if (!component(value, ['heightMeters', 'periodSeconds', 'directionDegrees'], SEA_OPERATION_MARINE_SEARCH_KM)) return false;
+    const row = value as Record<string, unknown>;
+    return row.component === kind && (row.periodKind === undefined || row.periodKind === 'mean' || row.periodKind === 'peak');
+  };
+  const model = record.model as Record<string, unknown> | undefined;
   return typeof record.pointId === 'string' && typeof record.latitude === 'number' && Number.isFinite(record.latitude)
     && typeof record.longitude === 'number' && Number.isFinite(record.longitude) && timestamp(record.etaUtc) && timestamp(record.fetchedAt)
-    && component(record.wind, ['speedKnots', 'gustKnots', 'directionDegrees'])
-    && component(record.waves, ['heightMeters', 'periodSeconds', 'directionDegrees'])
-    && (record.waves === null || (record.waves as Record<string, unknown>).component === 'swell')
+    && (record.wind === null || component(record.wind, ['speedKnots', 'gustKnots', 'directionDegrees'], 20_016))
+    && (record.waves === null || wave(record.waves, 'swell'))
+    && (record.seaState === undefined || wave(record.seaState, 'total'))
     && typeof record.windMessage === 'string' && typeof record.wavesMessage === 'string'
     && (record.attribution === 'Open-Meteo' && record.sourceUrl === 'https://open-meteo.com/en/docs/marine-weather-api'
       || record.attribution === 'Météo-France' && record.sourceUrl === SEA_METEO_FRANCE_SOURCE_URL)
-    && (record.model === undefined || Boolean(record.model && typeof record.model === 'object'
-      && typeof (record.model as Record<string, unknown>).name === 'string'
-      && timestamp((record.model as Record<string, unknown>).referenceTime)
-      && typeof (record.model as Record<string, unknown>).latitude === 'number'
-      && Math.abs((record.model as Record<string, unknown>).latitude as number) <= 90
-      && typeof (record.model as Record<string, unknown>).longitude === 'number'
-      && Math.abs((record.model as Record<string, unknown>).longitude as number) <= 180));
+    && (model === undefined || isGridCoordinates(model) && typeof model.name === 'string' && timestamp(model.referenceTime)
+      && (model.product === undefined || typeof model.product === 'string' && model.product.length >= 1 && model.product.length <= 120)
+      && (model.validTime === undefined || timestamp(model.validTime))
+      && (model.distanceKm === undefined || distance(model.distanceKm, SEA_OPERATION_MARINE_SEARCH_KM))
+      && (model.selection === undefined || model.selection === 'nearest' || model.selection === 'marine-fallback'));
 }
 
 const paris = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23',
@@ -113,7 +154,10 @@ export function validateSeaOperationWeatherInput(value: unknown): SeaOperationWe
 }
 
 type WeatherKind = 'wind' | 'waves';
-const VARIABLES = { wind: ['wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m'], waves: ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction'] } as const;
+const VARIABLES = {
+  wind: ['wind_speed_10m', 'wind_direction_10m'],
+  waves: ['swell_wave_height', 'swell_wave_period', 'swell_wave_direction', 'wave_height', 'wave_period', 'wave_direction'],
+} as const;
 export function seaOperationWeatherProviderUrl(kind: WeatherKind, input: SeaOperationWeatherInput, key?: string): URL {
   const host = kind === 'wind' ? 'api.open-meteo.com' : 'marine-api.open-meteo.com';
   const url = new URL(`https://${key ? `customer-${host}` : host}/v1/${kind === 'wind' ? 'forecast' : 'marine'}`);
@@ -123,15 +167,17 @@ export function seaOperationWeatherProviderUrl(kind: WeatherKind, input: SeaOper
   return url;
 }
 
-/** No interpolation: show the nearest available model hour and keep its actual timestamp. */
-function hourlyValues(value: unknown, kind: WeatherKind, target: number): { time: string; values: (number | null)[] } | null {
+interface ForecastHour { time: string; values: (number | null)[]; grid: SeaOperationForecastGrid }
+
+/** Use the closest model hour without interpolating and retain its actual time and grid centre. */
+function hourlyValues(value: unknown, kind: WeatherKind, target: number, point: SeaOperationWeatherInput): ForecastHour | null {
   const body = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const hourly = body.hourly as Record<string, unknown> | undefined;
   const units = body.hourly_units as Record<string, unknown> | undefined;
-  if (body.utc_offset_seconds !== 0 || !hourly || !units || !Array.isArray(hourly.time) || hourly.time.length > 400
+  if (!isGridCoordinates(body) || body.utc_offset_seconds !== 0 || !hourly || !units || !Array.isArray(hourly.time) || hourly.time.length > 400
     || !hourly.time.every((time) => typeof time === 'number' && Number.isFinite(time))) throw new Error('Invalid forecast time axis');
   const variables = VARIABLES[kind];
-  const expectedUnits = kind === 'wind' ? ['kn', 'kn', '°'] : ['m', 's', '°'];
+  const expectedUnits = kind === 'wind' ? ['kn', '°'] : ['m', 's', '°', 'm', 's', '°'];
   if (variables.some((variable, index) => units[variable] !== expectedUnits[index] || !Array.isArray(hourly[variable])
     || hourly[variable].length !== (hourly.time as unknown[]).length)) throw new Error('Invalid forecast units or arrays');
   let nearest = -1;
@@ -144,10 +190,17 @@ function hourlyValues(value: unknown, kind: WeatherKind, target: number): { time
   const values = variables.map((variable, index) => {
     const number = (hourly[variable] as unknown[])[nearest];
     if (number === null) return null;
-    if (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || index === 2 && number > 360) throw new Error('Invalid forecast value');
+    if (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || expectedUnits[index] === '°' && number > 360) throw new Error('Invalid forecast value');
     return number;
   });
-  return values.every((value) => value === null) ? null : { time: new Date(hourly.time[nearest] * 1000).toISOString(), values };
+  return values.every((value) => value === null) ? null : { time: new Date(hourly.time[nearest] * 1000).toISOString(), values,
+    grid: seaOperationForecastGrid(point, body.latitude, body.longitude) };
+}
+
+function openMeteoWave<Component extends 'swell' | 'total'>(hour: ForecastHour, component: Component, offset: number): SeaOperationWaveForecast<Component> | undefined {
+  const [heightMeters, periodSeconds, directionDegrees] = hour.values.slice(offset, offset + 3);
+  if (heightMeters === null && periodSeconds === null && directionDegrees === null) return undefined;
+  return { time: hour.time, grid: hour.grid, heightMeters, periodSeconds, directionDegrees, component, periodKind: 'mean' };
 }
 
 export async function loadSeaOperationForecast(input: SeaOperationWeatherInput, options: {
@@ -174,7 +227,7 @@ export async function loadSeaOperationForecast(input: SeaOperationWeatherInput, 
       signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
     });
     if (!response.ok) throw new Error('Forecast unavailable');
-    return hourlyValues(await response.json(), kind, target);
+    return hourlyValues(await response.json(), kind, target, input);
   }));
   options.signal?.throwIfAborted();
   if (values.every((value) => value.status === 'rejected')) throw new Error('Le service de prévision météo est indisponible. Réessayez.');
@@ -183,12 +236,18 @@ export async function loadSeaOperationForecast(input: SeaOperationWeatherInput, 
   if (values[0].status === 'rejected') result.windMessage = 'Les prévisions de vent sont temporairement indisponibles.';
   if (values[1].status === 'rejected') result.wavesMessage = 'Les prévisions de houle sont temporairement indisponibles.';
   if (wind) {
-    result.wind = { time: wind.time, speedKnots: wind.values[0], gustKnots: wind.values[1], directionDegrees: wind.values[2] };
+    result.wind = { time: wind.time, grid: wind.grid, speedKnots: wind.values[0], gustKnots: null, directionDegrees: wind.values[1] };
     result.windMessage = '';
   }
   if (waves) {
-    result.waves = { time: waves.time, heightMeters: waves.values[0], periodSeconds: waves.values[1], directionDegrees: waves.values[2], component: 'swell' };
-    result.wavesMessage = '';
+    if (waves.grid.distanceKm > SEA_OPERATION_MARINE_SEARCH_KM) {
+      result.wavesMessage = 'La maille de prévision des vagues est à plus de 10 km du waypoint.';
+      return result;
+    }
+    result.waves = openMeteoWave(waves, 'swell', 0) ?? null;
+    const seaState = openMeteoWave(waves, 'total', 3);
+    if (seaState) result.seaState = seaState;
+    if (result.waves) result.wavesMessage = '';
   }
   return result;
 }

@@ -1,7 +1,7 @@
 import type { SeaOperationPayload, SeaOperationWaypoint, SeaOperationWaypointRadio } from './seaOperationModel';
 import { seaWaypointPosition } from './seaOperationNavigation';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
-import { isSeaOperationTransitRequestContext, isSeaOperationWaypointWeather, sameSeaOperationTransitContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
+import { hasSeaOperationForecast, isSeaOperationTransitRequestContext, isSeaOperationWaypointWeather, sameSeaOperationTransitContext, seaOperationEtaUtc, type SeaOperationTransitRequestContext, type SeaOperationWaypointWeather } from './seaOperationWeatherModel';
 import { isSeaOperationCopernicusEstimate, type SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { isVesselDraftMeters } from './seaOperationUkc';
 
@@ -41,7 +41,9 @@ export function waypointWeatherSnapshot(point: SeaOperationWaypoint): SeaOperati
   if (!isSeaOperationWaypointWeather(weather) || weather.pointId !== point.id || !text(weather.pointId)
     || !text(weather.windMessage) || !text(weather.wavesMessage) || !timestamp(weather.etaUtc) || !timestamp(weather.fetchedAt)
     || (weather.wind && !timestamp(weather.wind.time)) || (weather.waves && !timestamp(weather.waves.time))
-    || (weather.model && (!text(weather.model.name) || !timestamp(weather.model.referenceTime)))) return undefined;
+    || (weather.seaState && !timestamp(weather.seaState.time))
+    || (weather.model && (!text(weather.model.name) || !timestamp(weather.model.referenceTime)
+      || (weather.model.validTime !== undefined && !timestamp(weather.model.validTime))))) return undefined;
   const position = seaWaypointPosition(point);
   if (!position || !sameCoordinate(position.latitude, weather.latitude) || !sameCoordinate(position.longitude, weather.longitude)) return undefined;
   try { if (Date.parse(weather.etaUtc) !== Date.parse(seaOperationEtaUtc(point.eta))) return undefined; } catch { return undefined; }
@@ -54,7 +56,7 @@ export function preservedWaypointWeather(point: SeaOperationWaypoint, incoming: 
   if (!candidate) return undefined;
   const stored = waypointWeatherSnapshot(point);
   if (stored && Date.parse(candidate.fetchedAt) < Date.parse(stored.fetchedAt)) return stored;
-  return !candidate.wind && !candidate.waves && stored && (stored.wind || stored.waves) ? stored : candidate;
+  return stored && !hasSeaOperationForecast(candidate) && hasSeaOperationForecast(stored) ? stored : candidate;
 }
 
 /** Radio contacts are an indicative directory capture, never a VTS/SAR boundary. */
@@ -192,7 +194,8 @@ export function retainSeaOperationUkc(payload: SeaOperationPayload, incoming: Se
     if (!candidate) return point;
     const existing = waypointUkcSnapshot(point, reference);
     if (existing && (Date.parse(existing.fetchedAt) > Date.parse(candidate.fetchedAt)
-      || existing.status === 'available' && candidate.status !== 'available')) return point;
+      || candidate.reasonCode === 'past-eta'
+      || candidate.status === 'unavailable' && !candidate.reasonCode && (existing.status === 'available' || existing.reasonCode))) return point;
     if (JSON.stringify(existing) === JSON.stringify(candidate)) return point;
     changed = true;
     const next = { ...point, ukcForecast: structuredClone(candidate) };

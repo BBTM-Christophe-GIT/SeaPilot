@@ -8,6 +8,14 @@ const distance = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maxi
 export function seaOperationWeatherLocation(forecast: SeaOperationWaypointWeather): string {
   const model = forecast.model;
   if (!model) return '';
-  const distanceKm = seaDistanceToRouteNm(model, [{ latitude: forecast.latitude, longitude: forecast.longitude }]) * 1.852;
-  return `Point météo : ${formatSeaPosition(model)} · à ${distance.format(distanceKm)} km du waypoint. Prévision de maille, position approchée.`;
+  const distanceKm = model.distanceKm ?? seaDistanceToRouteNm(model, [{ latitude: forecast.latitude, longitude: forecast.longitude }]) * 1.852;
+  const selection = model.selection === 'marine-fallback' ? 'Maille marine voisine.' : 'Prévision de maille, position approchée.';
+  return `Point météo : ${formatSeaPosition(model)} · à ${distance.format(distanceKm)} km du waypoint. ${selection}`;
+}
+
+export function seaOperationWeatherGridLocations(forecast: SeaOperationWaypointWeather): string[] {
+  if (forecast.model) return [seaOperationWeatherLocation(forecast)];
+  const components = [{ label: 'Vent', grid: forecast.wind?.grid }, { label: 'Houle', grid: forecast.waves?.grid },
+    { label: 'Mer totale', grid: forecast.seaState?.grid }];
+  return components.flatMap(({ label, grid }) => grid ? [`Maille ${label.toLowerCase()} · ${formatSeaPosition(grid)} · à ${distance.format(grid.distanceKm)} km du waypoint.`] : []);
 }

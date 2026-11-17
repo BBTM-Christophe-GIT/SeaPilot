@@ -249,7 +249,7 @@ describe('Opération en Mer printable content', () => {
     expect(rows[2].children[1]).toHaveTextContent('Waypoint A-3');
     expect(rows[0].children[4].querySelector('.so-ukc-pill')).toHaveTextContent('2,5 m');
     const unavailable = rows[2].children[4];
-    expect(unavailable.querySelector('.so-print-ukc-value')).toHaveTextContent('Indisponible');
+    expect(unavailable.querySelector('.so-print-ukc-value')).toHaveTextContent('UKC indisponible');
     expect([...unavailable.querySelectorAll('.so-print-ukc-note span')].map(span => span.textContent)).toEqual(['Automatique', 'Annexe UKC']);
     expect(record).toEqual(original);
   });
@@ -272,7 +272,7 @@ describe('Opération en Mer printable content', () => {
     expect(cell.querySelector('.so-ukc-pill')).toHaveClass('is-success');
     expect(cell.textContent).toContain('≈ 19,62 m');
     expect(container.textContent).toContain('Annexe UKC');
-    expect(container.textContent).toContain('Incertitude totale non quantifiée');
+    expect(container.textContent).toContain('Incertitude non quantifiée');
     expect(container.textContent).toContain('version 202511');
     expect(container.textContent).toContain('49° 39.000′ N — 001° 37.200′ W');
     expect(container.querySelector('a[href="https://doi.org/10.48670/moi-00054"]')).not.toBeNull();
@@ -280,7 +280,7 @@ describe('Opération en Mer printable content', () => {
     expect(record).toEqual(original);
     draft.vessel.draftMeters = 3;
     rerender(<SeaOperationPrint record={record} />);
-    expect(cell.textContent).toContain('Indisponible');
+    expect(cell.textContent).toContain('UKC indisponible');
     expect(cell.querySelector('.so-ukc-pill')).toBeNull();
     expect(container.textContent).not.toContain('MANUAL-OLD');
   });

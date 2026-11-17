@@ -34,7 +34,9 @@ describe('retained UKC presentation', () => {
     expect(result.sourceFootnote).toContain('profondeur 20,00 m + niveau d’eau 1,62 m − tirant d’eau du navire conservé 2,00 m');
     expect(result.sourceFootnote).toContain('49° 39.000′ N — 001° 37.200′ W');
     expect(result.sourceFootnote).toContain('version 202511');
-    expect(result.sourceFootnote).toContain('Incertitude totale non quantifiée');
+    expect(result.sourceFootnote).toContain('Incertitude non quantifiée');
+    expect(result.sourceFootnote).toContain('géoïde du modèle');
+    expect(result.sourceFootnote).toContain('à 0 m du waypoint');
     expect(result.sourceFootnote).toContain('Heure du réseau du modèle non fournie');
     expect(result.sourceFootnote).toContain('Generated using E.U. Copernicus Marine Service Information.');
     expect(result.sourceFootnote).not.toMatch(/±|95\s*%/);

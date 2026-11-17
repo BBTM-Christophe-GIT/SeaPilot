@@ -571,21 +571,21 @@ attendu, sans redirection ; les tailles sont plafonnées à 2 Mo pour le catalog
 et 20 Mo par fichier. Le WASM reste exclusivement dans la fonction serveur.
 
 Les champs `WIND` / `DWI` fournissent le vent moyen à 10 m en nœuds et degrés de
-provenance. **Houle significative (Hs)** reprend `SHS` / `MPS` / `MDS` : hauteur
-en mètres, période en secondes et provenance en degrés de la houle totale,
-distincte de la mer totale `SWH` et de la mer du vent. Les rafales ne sont pas
-affichées. Le réseau, l’heure prévue réelle et la maille du modèle sont visibles.
-La maille la plus proche est utilisée pour tous les champs. Si elle n’a aucune
-hauteur ni période de houle exploitable, le serveur recherche la maille marine
-disponible la plus proche dans un rayon de **10 km**. Les composantes proviennent
-toutes de cette même maille, du même réseau et de la même échéance. La position
+provenance. La houle utilise `SHS` / `MPS` / `MDS` (GRIB2 `10/0/8`, `10/0/9`,
+`10/0/7`). La mer totale utilise `10/0/3`, `10/0/15` et `10/0/14` pour la Hs,
+la période moyenne et la direction moyenne. Le type de période est affiché
+et la matrice du navire continue d’utiliser la houle. Les rafales sont omises.
+Le produit, le cycle, l’heure prévue réelle et la maille sont visibles.
+Si la maille la plus proche ne contient aucune valeur de vague exploitable,
+le serveur cherche une maille marine à **10 km** maximum. Les composantes MFWAM
+proviennent toutes de la même maille, du même réseau et de la même échéance. La position
 réelle et la distance au waypoint sont affichées dans la saisie, l’aperçu et le
 PDF ; cette position du modèle ne modifie pas les coordonnées du waypoint.
 Sans maille marine dans ce rayon, les valeurs restent indisponibles.
 
 Le domaine couvre 38–53° N et 8° O–12° E, dont la Manche, l’Atlantique français
 et le sud de l’Angleterre. L’horizon dépend des fichiers effectivement publiés
-(48 h depuis le réseau dans le catalogue contrôlé le 22 octobre 2026), sans
+(48 h depuis le cycle de 06:00 UTC dans le catalogue du 16 novembre 2026), sans
 extrapolation. Une ETA hors horizon indique les premières et dernières heures
 disponibles en UTC ; une échéance absente à l’intérieur de cette plage est
 distinguée d’un horizon dépassé. L’ETA est convertie d’Europe/Paris vers UTC. L’écart à l’heure du
@@ -594,7 +594,9 @@ donnée absente n’est jamais assimilée à zéro. Ces prévisions ne valident 
 contrôle GO / NO GO. Les réponses reçues pour le projet, le compte, les coordonnées
 et l’ETA encore sélectionnés peuvent être conservées dans le brouillon. Elles
 incluent les heures du modèle en UTC, le réseau, la maille, la source et l’heure
-de consultation. La sauvegarde du brouillon attend la récupération des
+de consultation. La fiche et le PDF indiquent « Incertitude non quantifiée »
+quand la source ne fournit pas d’incertitude ponctuelle justifiée. La
+sauvegarde du brouillon attend la récupération des
 prévisions manquantes ; la signature actualise les prévisions futures avant
 de conserver cette copie. Une erreur réseau conserve les valeurs déjà reçues.
 Les snapshots vides sont retentés à la réouverture ou à l’actualisation. Une

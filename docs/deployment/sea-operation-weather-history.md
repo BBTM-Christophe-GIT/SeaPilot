@@ -5,6 +5,38 @@ date de consultation et l'heure de signature. Une mesure collectée après le
 passage appartient à une annexe distincte : elle ne remplace jamais la prévision,
 la décision, le JSON signé, sa version, sa signature ou ses dates d'audit.
 
+## Prévision au waypoint
+
+L’ETA saisie en heure de Paris est convertie en UTC. Météo-France fournit le
+vent à 10 m, sans rafales, et deux composantes distinctes dans le jeu MFWAM
+0,025° SP1. La houle totale utilise `SHS`, `MPS` et `MDS`. La mer totale
+utilise `SWH`, `MWP` et `MWD` pour Hs, la période moyenne et la direction.
+Le champ `PP1D` correspond à la période de pic et les évaluations du navire
+continuent d’utiliser la composante houle. Chaque valeur disponible conserve
+le cycle et l’échéance du fichier, les coordonnées de la maille et sa distance
+au waypoint. Une maille marine de remplacement est identifiée et limitée à
+10 km en distance géodésique. Les champs absents restent vides.
+[Jeu officiel Météo-France](https://www.data.gouv.fr/datasets/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg) ·
+[Paramètres et conditionnement GRIB2](https://static.data.gouv.fr/resources/paquets-de-modele-de-vagues-mfwam-resolution-0-025deg/20240228-161850/description-paquets-modele-mfwam.pdf)
+
+Le catalogue MFWAM détermine l’horizon effectivement publié. SeaPilot retient
+le cycle disponible le plus récent proposant une échéance à 30 minutes ou
+moins de l’ETA. Dans un même cycle, l’échéance la plus proche prévaut, avec
+l’heure la plus ancienne en cas d’égalité. L’heure et le cycle doivent
+correspondre aux métadonnées du GRIB. La fiche et le PDF indiquent
+« Incertitude non quantifiée » en l’absence d’incertitude locale documentée.
+
+Le fournisseur Open-Meteo déjà configurable expose aussi la houle et la mer
+totale. Les mailles de ses deux API sont conservées séparément pour le vent et
+les vagues. Une maille marine au-delà de 10 km est refusée. Le produit sous-jacent
+et le cycle restent inconnus lorsque l’API ne les communique pas.
+[API marine Open-Meteo](https://open-meteo.com/en/docs/marine-weather-api)
+
+La recette du 16 novembre 2026 sur le cycle MFWAM de 06:00 UTC a confirmé la
+maille exacte au large (49,4° N, 5° O), le repli côtier à 5,72 km près de Brest,
+l’absence de données marines à Paris et l’horizon publié au 18 novembre à
+06:00 UTC pour ce cycle.
+
 ## Migration et configuration
 
 - Migration : `20261023125817_sea_operation_weather_observations.sql`.

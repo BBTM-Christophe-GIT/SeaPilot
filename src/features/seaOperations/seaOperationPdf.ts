@@ -8,8 +8,8 @@ import { DIVING_MEDICAL_KIT, SEA_OPERATION_CHECKS, SEA_OPERATION_SECTIONS, SEA_O
 import type { SeaOperationAnswer, SeaOperationCheck, SeaOperationPayload } from './seaOperationModel';
 import { SEA_RADIO_VERIFIED_ON, seaOperationRadioContacts } from './seaOperationRadio';
 import { passagePlanCellData } from './seaOperationPassagePlan';
-import { waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
-import { seaOperationWeatherLocation } from './seaOperationWeatherLocation';
+import { seaOperationWeatherGridLocations } from './seaOperationWeatherLocation';
+import { forecastTotalSeaText, forecastWindUnavailableMessage, weatherPeriod } from './seaOperationWeatherPresentation';
 import { buildSeaOperationRouteMap } from './seaOperationRouteMapGeometry';
 import { assessSeaOperationUkc, isVesselDraftMeters, type SeaOperationUkcLevel } from './seaOperationUkc';
 import { seaOperationWaypointDescription } from './seaOperationWaypointDescription';
@@ -371,14 +371,15 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const assessment = assessSeaOperationUkc(row.ukcPresentation.rawValue, form.vessel.draftMeters);
       if (!assessment && !row.ukcPresentation.automatic) return undefined;
       document.setFont('helvetica', 'bold'); document.setFontSize(7.5);
-      const label = clean(row.ukcPresentation.automatic ? row.ukcPresentation.pdfValue || 'Indisponible' : assessment!.formattedValue);
+      const label = clean(row.ukcPresentation.automatic ? row.ukcPresentation.approximate ? row.ukcPresentation.pdfValue : 'UKC indisponible' : assessment!.formattedValue);
       const warning = Boolean(assessment && assessment.level !== 'success');
       const maxTextWidth = ukcColumnWidth - 12;
       const inline = document.getTextWidth(label) + (warning ? 8 : 0) <= maxTextWidth;
       const number = assessment ? label.slice(0, -2) : label;
       const lines = inline ? [label] : document.getTextWidth(number) <= maxTextWidth ? [number, 'm'] : document.splitTextToSize(label, maxTextWidth) as string[];
       const valueHeight = 8 + lines.length * 9 + (warning && !inline ? 9 : 0);
-      const notes = row.ukcPresentation.automatic ? [row.ukcPresentation.label, 'Annexe UKC'] : [];
+      const notes = row.ukcPresentation.automatic ? row.ukcPresentation.fallback
+        ? [row.ukcPresentation.label, row.ukcPresentation.pdfValue, 'Annexe UKC'] : [row.ukcPresentation.label, 'Annexe UKC'] : [];
       return { assessment, warning, inline, lines, notes, valueHeight, height: valueHeight + (notes.length ? 7 + notes.length * 8 : 0) };
     });
     const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -386,17 +387,17 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     const integer = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
     const metric = (amount: number | null | undefined, unit: string, formatter = decimal) => amount === null || amount === undefined ? '—' : `${formatter.format(amount)} ${unit}`;
     const weatherColumnWidth = 200;
-    const weatherCards = form.waypoints.map((point, index) => {
-      const forecast = waypointWeatherSnapshot(point);
-      const row = passageRows[index];
+    const weatherCards = passageRows.map((row) => {
+      const forecast = row.forecast;
       document.setFont('helvetica', 'bold'); document.setFontSize(8);
       const indicatorLines = row.hasSeaStateIndicator ? document.splitTextToSize(clean(row.seaState.label), weatherColumnWidth - 34) as string[] : [];
       const indicatorHeight = indicatorLines.length ? indicatorLines.length * 10 + 16 : 0;
       document.setFont('helvetica', 'normal'); document.setFontSize(7.5);
       const message = forecast ? forecast.waves ? '' : forecast.wavesMessage || 'Prévision de houle indisponible.' : 'Prévisions météo non enregistrées pour cette position et cette ETA.';
       const messageLines = message ? document.splitTextToSize(clean(message), weatherColumnWidth - 26) as string[] : [];
+      const totalSeaLines = forecast?.seaState ? document.splitTextToSize(clean(forecastTotalSeaText(forecast).join('\n')), weatherColumnWidth - 26) as string[] : [];
       const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
-        : document.splitTextToSize(clean(forecast?.windMessage || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
+        : document.splitTextToSize(clean(forecastWindUnavailableMessage(forecast) || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
       const observed = row.observation;
       const observationSummary = !signed ? '' : observed?.status === 'recorded' ? [
         'MESURES APRÈS LE PASSAGE',
@@ -406,10 +407,11 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       ].join('\n') : row.observedWeather;
       const observedLines = observationSummary ? document.splitTextToSize(clean(observationSummary), weatherColumnWidth - 26) as string[] : [];
       const validationLines = signed && record.signedAt ? document.splitTextToSize(clean(`Prévision conservée à la validation du ${new Date(record.signedAt).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`), weatherColumnWidth - 26) as string[] : [];
-      const locationLines = forecast?.model ? document.splitTextToSize(clean(seaOperationWeatherLocation(forecast)), weatherColumnWidth - 26) as string[] : [];
-      return { forecast, messageLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines, locationLines,
+      const locationLines = forecast ? document.splitTextToSize(clean(seaOperationWeatherGridLocations(forecast).join('\n')), weatherColumnWidth - 26).filter(Boolean) as string[] : [];
+      return { forecast, messageLines, totalSeaLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines, locationLines,
         height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10)
-          + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 + locationLines.length * 8 };
+          + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 + locationLines.length * 8
+          + (totalSeaLines.length ? totalSeaLines.length * 9 + 6 : 0) };
     });
     if (passageRows.length) {
       document.setFont('helvetica', 'normal'); document.setFontSize(8.5);
@@ -524,7 +526,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           if (forecast) {
             const metricColumn = (cell.cell.width - 24) / 2;
             document.setFont('helvetica', 'normal'); document.setFontSize(7); document.setTextColor(87, 104, 117);
-            document.text('Houle Hs', x, top); document.text('Période moyenne', x + metricColumn, top);
+            document.text('Houle Hs', x, top); document.text(weatherPeriod(forecast.waves ? forecast.waves.periodKind ?? 'mean' : undefined).label, x + metricColumn, top);
             document.setFont('helvetica', 'bold'); document.setFontSize(13); document.setTextColor(24, 44, 62);
             document.text(metric(forecast.waves?.heightMeters, 'm', height), x, top + 17);
             document.text(metric(forecast.waves?.periodSeconds, 's'), x + metricColumn, top + 17); top += 33;
@@ -534,6 +536,10 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           if (card.messageLines.length) {
             document.setFont('helvetica', 'normal'); document.setFontSize(7.5); document.setTextColor(70, 80, 95);
             document.text(card.messageLines, x, top, { lineHeightFactor: 1.3 }); top += card.messageLines.length * 10 + 4;
+          }
+          if (card.totalSeaLines.length) {
+            document.setFont('helvetica', 'normal'); document.setFontSize(7.5); document.setTextColor(55, 71, 84);
+            document.text(card.totalSeaLines, x, top, { lineHeightFactor: 1.2 }); top += card.totalSeaLines.length * 9 + 6;
           }
           if (forecast) {
             document.setFillColor(237, 246, 251);

@@ -86,6 +86,20 @@ describe('retained Copernicus UKC assistance', () => {
     expect(effectiveSeaOperationUkc(stored, { ...stored.waypoints[0], eta: '2026-10-23T13:00' })).toBe('');
   });
 
+  it('replaces a future calculation on a confirmed rejection and preserves the reason through a temporary failure', () => {
+    const { draft, forecast, request } = ukcFixture();
+    const stored = retainSeaOperationUkc(draft, forecast, request);
+    const rejected = { ...forecast, status: 'unavailable' as const, reasonCode: 'land-cell' as const,
+      estimate: null, cell: null, waterLevel: null, cellPosition: { latitude: 49.65, longitude: -1.62 },
+      fetchedAt: '2026-10-23T08:00:00Z', message: 'Maille terrestre.' };
+    const refreshed = retainSeaOperationUkc(stored, rejected, request);
+    expect(refreshed.waypoints[0].ukcForecast).toEqual(rejected);
+    expect(effectiveSeaOperationUkc(refreshed, refreshed.waypoints[0])).toBe('');
+    expect(refreshed.waypoints[0].ukc).toBe('2.3');
+    expect(retainSeaOperationUkc(refreshed, { ...rejected, reasonCode: undefined, cellPosition: undefined,
+      fetchedAt: '2026-10-23T09:00:00Z', message: 'Service indisponible.' }, request)).toBe(refreshed);
+  });
+
   it('drops a calculation after position or ETA changes and uses manual mode only after an explicit manual edit', () => {
     const { draft, forecast, request } = ukcFixture();
     const stored = retainSeaOperationUkc(draft, forecast, request);
@@ -228,6 +242,18 @@ describe('recorded waypoint assistance', () => {
     const edited = { ...captured, waypoints: [updateSeaOperationWaypoint(captured.waypoints[0], { eta: '2026-10-23T13:00' })] };
     expect(retainSeaOperationWeather(edited, unavailable, context)).toBe(edited);
     expect(edited.waypoints[0]).not.toHaveProperty('weather');
+  });
+  it('keeps a total sea forecast through an unavailable refresh and preserves its model provenance', () => {
+    const totalOnly: SeaOperationWaypointWeather = { ...weather, wind: null, waves: null,
+      seaState: { time: weather.etaUtc, component: 'total', periodKind: 'mean', heightMeters: 1.2, periodSeconds: 7, directionDegrees: 220 },
+      model: { name: 'MFWAM', product: 'MFWAM 0,025° · SP1', referenceTime: weather.fetchedAt, validTime: weather.etaUtc,
+        latitude: 49.65, longitude: -1.62, distanceKm: 0, selection: 'nearest' } };
+    const captured = retainSeaOperationWeather(payload(), totalOnly, context);
+    expect(waypointWeatherSnapshot(captured.waypoints[0])).toEqual(totalOnly);
+    const unavailable = { ...weather, fetchedAt: '2026-10-23T12:00:00Z', wind: null, waves: null };
+    expect(retainSeaOperationWeather(captured, unavailable, context)).toBe(captured);
+    const malformed = { ...totalOnly, model: { ...totalOnly.model!, validTime: '2026-02-30T12:00:00Z' } };
+    expect(waypointWeatherSnapshot({ ...point, weather: malformed })).toBeUndefined();
   });
   it('invalidates forecast on ETA edit and both captures on coordinate edit', () => {
     const captured = captureSeaOperationRadios(retainSeaOperationWeather(payload(), weather, context)).waypoints[0];

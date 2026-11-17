@@ -4,6 +4,7 @@ import { seaWaypointPosition } from './seaOperationNavigation';
 import { isSeaOperationTransitRequestContext, seaOperationEtaUtc } from './seaOperationWeatherModel';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { fetchSeaOperationWaypointUkc } from './seaOperationUkcQueries';
+import { calculateSeaOperationCopernicusEstimate, validateSeaOperationCopernicusInput } from './seaOperationCopernicusModel';
 import { retainSeaOperationUkc, seaOperationUkcReference, waypointUkcSnapshot, type SeaOperationUkcReference } from './seaOperationWaypointSnapshots';
 
 export interface SeaOperationUkcRequestStatus { loading: boolean; error?: string }
@@ -13,7 +14,7 @@ export function ukcRequestKey(reference: SeaOperationUkcReference, point: SeaOpe
     point.id, point.latitude, point.longitude, point.eta, point.ukcMode || 'manual']);
 }
 
-/** Incomplete drafts remain saveable; only compatible available captures can complete a GO. */
+/** Save compatible estimates and the reason when an automatic estimate is unavailable. */
 export async function captureSeaOperationValidationUkc(client: SupabaseClient, payload: SeaOperationPayload,
   options: { signal?: AbortSignal; now?: number; missingOnly?: boolean; preview?: boolean;
     onError?: (point: SeaOperationWaypoint, error: string) => void } = {}): Promise<SeaOperationPayload> {
@@ -24,22 +25,41 @@ export async function captureSeaOperationValidationUkc(client: SupabaseClient, p
   const request = { projectId: projectId ?? '', ...(transit === undefined ? {} : { transit }) };
   const now = options.now ?? Date.now();
   const pending = payload.waypoints.flatMap(point => {
-    if (point.ukcMode !== 'automatic' || options.missingOnly && waypointUkcSnapshot(point, reference)?.status === 'available') return [];
+    if (point.ukcMode !== 'automatic') return [];
+    const stored = waypointUkcSnapshot(point, reference);
+    if (options.missingOnly && stored?.status === 'available') return [];
     const position = seaWaypointPosition(point); if (!position) return [];
-    try { if (Date.parse(seaOperationEtaUtc(point.eta)) <= now) return []; } catch { return []; }
-    return [{ point, input: { ...request, vesselId, draftMeters, pointId: point.id, ...position, eta: point.eta },
-      context: { ...request, vesselId, draftMeters, pointId: point.id, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
+    try {
+      const identity = { ...request, vesselId, draftMeters, pointId: point.id };
+      const input = validateSeaOperationCopernicusInput({ ...identity, ...position, eta: point.eta });
+      const pastEta = Date.parse(seaOperationEtaUtc(point.eta)) <= now;
+      if (pastEta && stored) return [];
+      return [{ point, pastEta, input, context: { ...identity, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
+    } catch { return []; }
   });
   let captured = payload, next = 0;
   const worker = async () => {
     while (next < pending.length) {
       options.signal?.throwIfAborted(); const entry = pending[next++];
+      if (entry.pastEta) {
+        const unavailable = calculateSeaOperationCopernicusEstimate(entry.input, {
+          status: 'unavailable', reasonCode: 'past-eta', message: 'L’ETA est passée et aucune estimation n’a été enregistrée.',
+          source: null, cell: null, waterLevel: null,
+        }, new Date(now).toISOString());
+        captured = retainSeaOperationUkc(captured, unavailable, entry.context);
+        continue;
+      }
       try {
         const forecast = await fetchSeaOperationWaypointUkc(client, entry.input, { signal: options.signal });
         options.signal?.throwIfAborted(); captured = retainSeaOperationUkc(captured, forecast, entry.context);
       } catch (error) {
         options.signal?.throwIfAborted();
-        options.onError?.(entry.point, error instanceof Error ? error.message : 'Le calcul UKC est indisponible. Réessayez.');
+        const message = error instanceof Error ? error.message : 'Le calcul UKC est indisponible. Réessayez.';
+        options.onError?.(entry.point, message);
+        const unavailable = calculateSeaOperationCopernicusEstimate(entry.input, {
+          status: 'unavailable', message, source: null, cell: null, waterLevel: null,
+        }, new Date(options.now ?? Date.now()).toISOString());
+        captured = retainSeaOperationUkc(captured, unavailable, entry.context);
       }
     }
   };

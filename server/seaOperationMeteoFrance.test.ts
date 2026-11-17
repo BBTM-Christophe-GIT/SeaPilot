@@ -17,7 +17,8 @@ function resource(hour = 1, run = RUN) {
 function decoded() {
   return { referenceTime: '2026-10-22T12:00:00.000Z', validTime: '2026-10-22T13:00:00.000Z', latitude: 48.35, longitude: -4.525,
     windSpeedMps: 6.830078125, windDirectionDegrees: 203.2440185546875,
-    heightMeters: 0.22821044921875, periodSeconds: 8.188232421875, swellDirectionDegrees: 236.431640625 };
+    heightMeters: 0.22821044921875, periodSeconds: 8.188232421875, swellDirectionDegrees: 236.431640625,
+    totalHeightMeters: null, totalPeriodSeconds: null, totalDirectionDegrees: null };
 }
 function grib() { const bytes = new Uint8Array(32); bytes.set([71, 82, 73, 66]); return bytes; }
 function fixture(resources: unknown[] = [resource()]) {
@@ -28,6 +29,7 @@ beforeEach(() => { vi.resetAllMocks(); decode.mockResolvedValue(decoded()); });
 describe('public Météo-France MFWAM provider', () => {
   it('uses the official public catalogue, same-cell swell and wind, and actual model provenance', async () => {
     const fetcher = fixture();
+    decode.mockResolvedValue({ ...decoded(), totalHeightMeters: 0.74, totalPeriodSeconds: 6.5, totalDirectionDegrees: 223 });
     const result = await loadMeteoFranceForecast(point, { fetcher, now: NOW });
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[0][0]).toBe(CATALOGUE);
@@ -37,8 +39,10 @@ describe('public Météo-France MFWAM provider', () => {
     expect(result.wind?.speedKnots).toBeCloseTo(13.2766, 3);
     expect(result.wind?.gustKnots).toBeNull();
     expect(result.windMessage).toBe('');
-    expect(result.waves).toMatchObject({ heightMeters: decoded().heightMeters, periodSeconds: decoded().periodSeconds, directionDegrees: decoded().swellDirectionDegrees, component: 'swell' });
-    expect(result).toMatchObject({ attribution: 'Météo-France', model: { referenceTime: decoded().referenceTime, latitude: 48.35, longitude: -4.525 } });
+    expect(result.waves).toMatchObject({ heightMeters: decoded().heightMeters, periodSeconds: decoded().periodSeconds, directionDegrees: decoded().swellDirectionDegrees, component: 'swell', periodKind: 'mean' });
+    expect(result.seaState).toEqual({ time: decoded().validTime, heightMeters: 0.74, periodSeconds: 6.5, directionDegrees: 223, component: 'total', periodKind: 'mean' });
+    expect(result).toMatchObject({ attribution: 'Météo-France', model: { referenceTime: decoded().referenceTime, latitude: 48.35, longitude: -4.525,
+      product: 'MFWAM 0,025° · SP1', selection: 'nearest', distanceKm: expect.closeTo(1.172, 2) } });
   });
 
   it('chooses the latest available run and its closest hour rather than metadata row order', async () => {
@@ -151,6 +155,7 @@ describe('public Météo-France MFWAM provider', () => {
     const result = await loadMeteoFranceForecast(point, { fetcher: fixture(), now: NOW });
     expect(result.wind).toBeNull(); expect(result.waves).toBeNull();
     expect(result.wavesMessage).toContain('terrestre');
+    expect(result.model?.validTime).toBe(decoded().validTime);
     expect(decode).toHaveBeenCalledTimes(1);
   });
 
@@ -158,7 +163,8 @@ describe('public Météo-France MFWAM provider', () => {
     decode.mockResolvedValue({ ...decoded(), latitude: point.latitude + 0.05, longitude: point.longitude, marineFallback: true });
     const result = await loadMeteoFranceForecast(point, { fetcher: fixture(), now: NOW });
     expect(result).toMatchObject({ latitude: point.latitude, longitude: point.longitude,
-      model: { latitude: point.latitude + 0.05, longitude: point.longitude, referenceTime: decoded().referenceTime } });
+      model: { latitude: point.latitude + 0.05, longitude: point.longitude, referenceTime: decoded().referenceTime,
+        selection: 'marine-fallback', distanceKm: expect.closeTo(5.56, 2) } });
     expect(result.waves?.heightMeters).toBe(decoded().heightMeters);
     expect(result).not.toHaveProperty('marineFallback');
   });
@@ -188,6 +194,7 @@ describe('public Météo-France MFWAM provider', () => {
   it.each([
     ['wrong run', { referenceTime: '2026-10-22T06:00:00Z' }],
     ['wrong valid time', { validTime: '2026-10-22T14:00:00Z' }],
+    ['different valid time within ETA tolerance', { validTime: '2026-10-22T13:15:00Z' }],
     ['invalid valid time', { validTime: 'invalid' }],
     ['distant latitude', { latitude: 48.3 }],
     ['distant longitude', { longitude: -4.6 }],
