@@ -137,7 +137,12 @@ describe('Manuel d’utilisation', () => {
     renderManual({ route: `/manual/${moduleKey}` });
     const article = await screen.findByRole('article');
     expect(within(article).getByRole('heading', { name: label, level: 2 })).toBeInTheDocument();
-    expect(article).toHaveTextContent('année et le navire');
+    if (moduleKey === 'clientAudits') {
+      expect(article).toHaveTextContent('dépliez l’année et choisissez le dossier du client');
+      expect(article).toHaveTextContent('Nouvel audit client');
+    } else {
+      expect(article).toHaveTextContent('année et le navire');
+    }
     expect(article).toHaveTextContent('Findings');
     expect(article).toHaveTextContent('un seul écart');
     expect(article).toHaveTextContent('fonction réellement exercée');

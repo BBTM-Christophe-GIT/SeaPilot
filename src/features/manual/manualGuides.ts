@@ -7,12 +7,17 @@ export interface ManualGuide {
   reminders: string[];
 }
 
-function documentaryAuditGuide(label: string): ManualGuide {
+function documentaryAuditGuide(label: string, multipleClients = false): ManualGuide {
+  const selection = multipleClients
+    ? 'Dans Audits, ouvrez Audit Client et choisissez le navire. Dans l’arborescence, dépliez l’année et choisissez le dossier du client. Pour ajouter un client, sélectionnez l’année, cliquez sur Nouvel audit client et renseignez son nom. Chaque dossier contient les documents et les écarts du client sélectionné.'
+    : `Dans Audits, ouvrez ${label}, puis choisissez l’année et le navire. Les responsables créent un dossier annuel par navire et par type d’audit. Le titre, la date de l’audit et l’auditeur peuvent être précisés.`;
   return {
-    purpose: `Conserver le dossier annuel ${label} de chaque navire et suivre les écarts avec leurs preuves.`,
+    purpose: multipleClients
+      ? 'Conserver les audits de chaque client par navire et par année et suivre les écarts avec leurs preuves.'
+      : `Conserver le dossier annuel ${label} de chaque navire et suivre les écarts avec leurs preuves.`,
     access: 'Administration, Direction et Armement créent les dossiers et affectent les écarts. Marin et Capitaine accèdent aux dossiers contenant les écarts qui leur sont affectés, à titre personnel ou par une fonction réellement exercée sur un embarquement confirmé et en cours. Ils peuvent documenter leur traitement ; le responsable habilité vérifie et clôture.',
     steps: [
-      { title: 'Choisir le dossier annuel', detail: `Dans Audits, ouvrez ${label}, puis choisissez l’année et le navire. Les quatre audits documentaires utilisent la même interface. Les responsables créent un dossier annuel par navire et par type d’audit ; le titre, la date de l’audit et l’auditeur peuvent être précisés.` },
+      { title: 'Choisir le dossier annuel', detail: selection },
       { title: 'Constituer le dossier', detail: 'Dans Documents, ajoutez un ou plusieurs fichiers : PDF, Word, Excel, PowerPoint, texte, CSV ou photos. Les fichiers enregistrés sont conservés. Vous pouvez ajouter une nouvelle version en complément et télécharger les pièces autorisées.' },
       { title: 'Émettre et affecter les écarts', detail: 'Dans Écarts, ajoutez un constat de type Findings, Non Conformité Majeure, Non Conformité Mineure ou Remarque. Désignez une personne ou une fonction sur un navire. Une majeure propose une semaine, une mineure un mois ; une remarque n’a pas de délai et sa clôture reste facultative. Un Findings peut recevoir un délai facultatif. Joignez les photos ou documents du constat.' },
       { title: 'Documenter le traitement', detail: 'Ouvrez Suivre le traitement pour décrire l’action et joindre des photos ou fichiers. Le responsable affecté peut proposer Traité, à vérifier ; le gestionnaire valide ensuite la clôture. Les auteurs, dates, notes et pièces restent dans l’historique. Une remarque peut être clôturée directement par un gestionnaire. Réouvrez un écart clôturé pour le modifier.' },
@@ -115,7 +120,7 @@ export const MANUAL_GUIDES: Partial<Record<ModuleKey, ManualGuide>> = {
     ],
     reminders: ['La date anniversaire annuelle reste la référence de la fenêtre, même si la date planifiée change.', 'Modifier une grille de référence ne remplace pas les questions et les réponses déjà copiées dans un audit.', 'Un barème personnalisé remplace les 3 points initiaux de la ligne concernée. Si toutes les questions sont N/A, aucun pourcentage de conformité n’est calculé.', 'Un écart doit toujours avoir un responsable de traitement. Vérifiez les non conformités en retard dans Synthèse ; les remarques n’ont aucune échéance.', 'La finalisation fige la grille ; elle ne clôture pas automatiquement les écarts.'],
   },
-  clientAudits: documentaryAuditGuide('Audit Client'),
+  clientAudits: documentaryAuditGuide('Audit Client', true),
   lsa: {
     purpose: 'Retrouver les équipements de sauvetage et leurs documents dans le Registre LSA.',
     access: 'Administration, Direction, Armement, Capitaine et Marin peuvent ajouter, mettre à jour, modifier et supprimer les fiches de leurs navires autorisés. Les actions sont désactivées sur les navires historiques accessibles uniquement en consultation.',

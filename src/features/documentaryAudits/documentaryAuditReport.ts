@@ -20,8 +20,11 @@ export function documentaryReportData(input: DocumentaryAuditReportInput) {
     ]),
   ];
   const slug = input.site.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-');
+  const clientName = input.audit.clientName;
+  const clientSlug = clientName?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  const client = clientName ? `-${clientSlug || input.audit.id}` : '';
   const reference = input.findingId ? `-ecart-${(findings[0].reference || findings[0].id).replace(/[^a-zA-Z0-9]+/g, '-')}` : '';
-  return { entries, files, filename: `audit-${input.audit.kind}-${slug}-${input.audit.year}${reference}.pdf` };
+  return { entries, files, filename: `audit-${input.audit.kind}-${slug}-${input.audit.year}${client}${reference}.pdf` };
 }
 async function loadFile(input: DocumentaryAuditReportInput, file: AuditAttachment): Promise<Blob> {
   if (input.loadFile) return input.loadFile(file);
@@ -53,7 +56,8 @@ export async function buildDocumentaryAuditReport(input: DocumentaryAuditReportI
   const pdf = new jsPDF({ format: 'a4', unit: 'mm', compress: true });
   const kindLabel = DOCUMENTARY_AUDIT_LABELS[input.audit.kind]; const margin = 15; let cursor = 48;
   const ink: [number, number, number] = [20, 55, 75];
-  pdf.setProperties({ title: `${kindLabel} - ${input.site.name} - ${input.audit.year}`, author: input.audit.auditorName || 'SeaPilot' });
+  const documentTitle = [kindLabel, input.audit.clientName, input.site.name, input.audit.year].filter(Boolean).join(' - ');
+  pdf.setProperties({ title: documentTitle, author: input.audit.auditorName || 'SeaPilot' });
   function header() {
     pdf.setFillColor(...ink); pdf.rect(0, 0, 210, 29, 'F'); pdf.setTextColor(255, 255, 255); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16);
     pdf.text(clean(`${kindLabel} - ${input.site.name}`), margin, 13); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
@@ -89,6 +93,7 @@ export async function buildDocumentaryAuditReport(input: DocumentaryAuditReportI
     }
   }
   if (input.audit.title) paragraph(input.audit.title, true);
+  if (input.audit.clientName) paragraph(`Client · ${input.audit.clientName}`);
   paragraph(`Date de l’audit : ${input.audit.auditedOn ? formatAuditDate(input.audit.auditedOn) : 'Non renseignée'} · Auditeur : ${input.audit.auditorName || 'Non renseigné'}`);
   if (!input.findingId) {
     await evidence(input.audit.files, 'Documents constituant l’audit');
@@ -129,7 +134,7 @@ export async function buildDocumentaryAuditReport(input: DocumentaryAuditReportI
       const pages = await report.copyPages(original, original.getPageIndices()); pages.forEach((page) => report.addPage(page));
     }
   }
-  report.setTitle(`${kindLabel} - ${input.site.name} - ${input.audit.year}`); report.setAuthor(input.audit.auditorName || 'SeaPilot'); report.setCreationDate(generated); report.setModificationDate(generated);
+  report.setTitle(documentTitle); report.setAuthor(input.audit.auditorName || 'SeaPilot'); report.setCreationDate(generated); report.setModificationDate(generated);
   const bytes = await report.save();
   return { blob: new Blob([bytes.slice().buffer], { type: 'application/pdf' }), filename: data.filename, pageCount: report.getPageCount() };
 }
