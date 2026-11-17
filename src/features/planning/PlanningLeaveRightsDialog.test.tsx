@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlanningLeaveRightsDialog } from './PlanningLeaveRightsDialog';
 import type { PlanningAbsenceBalanceContext } from './planningAbsenceBalance';
-import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod, savePlanningSedentaryLeavePeriod } from './planningAbsenceBalanceQueries';
 import type { PlanningPerson } from './planningQueries';
 
 vi.mock('./planningAbsenceBalanceQueries', () => ({
   fetchPlanningAbsenceBalanceContext: vi.fn(),
   savePlanningLeaveCounterPeriod: vi.fn(),
   savePlanningLeaveRightsPeriod: vi.fn(),
+  savePlanningSedentaryLeavePeriod: vi.fn(),
 }));
 
 const client = {} as SupabaseClient;
@@ -127,6 +128,45 @@ describe('annual leave rights management window', () => {
     await waitFor(() => expect(savePlanningLeaveCounterPeriod).toHaveBeenNthCalledWith(2, client, { personId: christophe.id, counterType: 'rtt', startsOn: '2026-01-01', endsOn: '2026-12-31', entitlement: 9.5 }));
     expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
     expect(input.onClose).not.toHaveBeenCalled();
+  });
+
+  it('initializes a sedentary period from payroll and edits legacy RTT independently', async () => {
+    const sedentary = { ...context(), sedentaryLeave: [] };
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(sedentary);
+    const user = userEvent.setup();
+    render(<PlanningLeaveRightsDialog {...props(sedentary)} />);
+    expect(screen.getByLabelText('Début de période')).toHaveValue('2026-06-01');
+    expect(screen.getByLabelText('Fin de période')).toHaveValue('2027-05-31');
+    expect(screen.getByLabelText('Solde d’ouverture')).toHaveValue('');
+    expect(screen.queryByLabelText('Total Congés (jours)')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Première journée à décompter'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('Solde d’ouverture'), { target: { value: '-1,5' } });
+    fireEvent.change(screen.getByLabelText('Acquis à l’ouverture'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Jours au taux plein'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('Semaines au taux plein'), { target: { value: '16' } });
+    fireEvent.change(screen.getByLabelText('Mois au taux plein'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Jours fériés habituellement travaillés'), { target: { value: '2026-08-15\n2026-11-11' } });
+    await user.click(screen.getByRole('checkbox', { name: 'Mercredi' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les droits Congés' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Droits enregistrés');
+    expect(savePlanningSedentaryLeavePeriod).toHaveBeenCalledExactlyOnceWith(client, {
+      personId: christophe.id, startsOn: '2026-06-01', debitFrom: '2026-07-01', openingBalance: -1.5, openingAccrued: 3,
+      daysPerWeek: 5, workingWeekdays: [1, 2, 4, 5], normalDays: 80, normalWeeks: 16, normalMonths: 4,
+      illnessDays: 0, illnessWeeks: 0, illnessMonths: 0, workedHolidays: ['2026-08-15', '2026-11-11'],
+    });
+    expect(savePlanningLeaveRightsPeriod).not.toHaveBeenCalled();
+    expect(savePlanningLeaveCounterPeriod).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByLabelText('Compteur à gérer'), 'rtt');
+    expect(screen.queryByLabelText('Solde d’ouverture')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Total RTT (jours)')).toHaveValue('8');
+    fireEvent.change(screen.getByLabelText('Total RTT (jours)'), { target: { value: '9,5' } });
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les droits RTT' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Droits enregistrés');
+    expect(savePlanningLeaveCounterPeriod).toHaveBeenCalledExactlyOnceWith(client, {
+      personId: christophe.id, counterType: 'rtt', startsOn: '2026-06-01', endsOn: '2027-05-31', entitlement: 9.5,
+    });
+    expect(savePlanningSedentaryLeavePeriod).toHaveBeenCalledOnce();
   });
 
   it.each(['-1', '2,555', 'abc'])('preserves invalid total %s and makes no rights write', async (amount) => {

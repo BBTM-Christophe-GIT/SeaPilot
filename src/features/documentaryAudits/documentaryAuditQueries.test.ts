@@ -6,7 +6,7 @@ import { defaultDocumentaryDuration, documentaryFindingIssues, documentaryFindin
 import { discardDocumentaryUploads, documentaryFileMime, documentaryFileReferences, hydrateDocumentaryFiles, uploadDocumentaryFiles, validateDocumentaryFiles } from './documentaryAuditFiles';
 import { addDocumentaryTreatment, fetchDocumentaryAuditData, mapDocumentaryAudit, saveDocumentaryAudit, saveDocumentaryFinding } from './documentaryAuditQueries';
 
-const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: '12', kind: 'ovid', year: 2026, title: 'OVID 2026', plannedOn: null, auditedOn: null, auditorName: '', files: [], createdAt: '', updatedAt: '' };
+const audit: DocumentaryAudit = { id: 'audit', companyId: 7, siteId: '12', kind: 'ovid', year: 2026, title: 'OVID 2026', clientName: null, plannedOn: null, auditedOn: null, auditorName: '', files: [], createdAt: '', updatedAt: '' };
 const finding: DocumentaryFinding = { id: 'finding', companyId: 7, auditId: audit.id, reference: 'F1', category: 'major', description: 'Contrôle requis', assigneePersonId: 42, assigneeRole: null, assigneeVesselId: null, assigneeLabel: 'Responsable', openedOn: '2026-10-01', dueOn: '2026-10-08', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', status: 'open', treatment: '', resolvedAt: null, closedAt: null, files: [] };
 const pdf = () => new File(['%PDF-1.7\n'], 'audit.pdf', { type: 'application/pdf' });
 function mockClient() {
@@ -64,6 +64,18 @@ describe('documentary file storage', () => {
   });
 });
 describe('documentary RPC contracts', () => {
+  it('maps legacy client audits and sends the client name independently of the dossier title', async () => {
+    const mock = mockClient();
+    const row = { id: audit.id, company_id: 7, kind: 'client', site_id: 12, year: 2026, title: 'Suivi contractuel', client_name: 'Client Atlantique' };
+    mock.rpc.mockResolvedValue({ data: row, error: null });
+    expect(mapDocumentaryAudit({ ...row, client_name: undefined }).clientName).toBeNull();
+    const saved = await saveDocumentaryAudit(mock.client, { ...audit, kind: 'client', title: row.title, clientName: ' Client Atlantique ' });
+    expect(saved).toMatchObject({ clientName: 'Client Atlantique', title: row.title });
+    expect(mock.rpc).toHaveBeenCalledWith('documentary_audit_save', expect.objectContaining({
+      p_payload: expect.objectContaining({ title: row.title, clientName: 'Client Atlantique' }),
+    }));
+  });
+
   it('maps planned and actual dates independently and treats legacy planned fields as absent', () => {
     const row = { id: 'audit', company_id: 7, kind: 'ovid', site_id: 12, year: 2026, title: 'OVID', planned_on: '2026-10-05', audited_on: '2026-10-09' };
     expect(mapDocumentaryAudit(row)).toMatchObject({ plannedOn: '2026-10-05', auditedOn: '2026-10-09', siteId: '12' });

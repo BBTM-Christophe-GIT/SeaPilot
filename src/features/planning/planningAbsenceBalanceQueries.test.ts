@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod } from './planningAbsenceBalanceQueries';
+import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveCounterPeriod, savePlanningLeaveRightsPeriod, savePlanningSedentaryLeavePeriod } from './planningAbsenceBalanceQueries';
 import { getPlanningRequestCrewBalance } from './planningAbsenceBalance';
 import { buildPlanningCrewBalanceDays } from './planningCrewBalance';
 import { EMPTY_PLANNING_OVERVIEW } from './usePlanningOverview';
@@ -71,4 +71,32 @@ describe('combined annual rights save query', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
   it.each([['23P01', 'chevauche'], ['42501', 'ne peut pas modifier'], ['22023', '1er juin'], ['network', 'Réessayez']])('reports %s without claiming successful enrollment', async (code, message) => await expect(savePlanningLeaveRightsPeriod(rpcClient(null, { code }).client, annual)).rejects.toThrow(message));
+});
+
+describe('sedentary payroll rights', () => {
+  it('maps a private-input-free read and distinguishes an eligible uninitialized period from a legacy balance', async () => {
+    const row = { id: 8, starts_on: '2026-06-01', ends_on: '2027-05-31', debit_from: '2026-09-01', opening_balance: '-2',
+      opening_accrued: 6, acquired_days: 13, worked_holidays: ['2026-08-15'], working_weekdays: [1, 2, 3, 4, 5] };
+    const read = async (sedentary_leave: unknown) => fetchPlanningAbsenceBalanceContext(rpcClient({ ...raw, sedentary_leave }).client, 15);
+    expect((await read([row])).sedentaryLeave).toMatchObject([
+      { id: 8, openingBalance: -2, openingAccrued: 6, acquiredDays: 13, workedHolidays: ['2026-08-15'], workingWeekdays: [1, 2, 3, 4, 5] },
+    ]);
+    expect((await read([])).sedentaryLeave).toEqual([]);
+    expect((await read(null)).sedentaryLeave).toBeNull();
+  });
+
+  it('sends the verified input as a single write for the annual period', async () => {
+    const { client, rpc } = rpcClient(8);
+    const value = { personId: 15, startsOn: '2026-06-01', debitFrom: '2026-09-01', openingBalance: -2, openingAccrued: 6,
+      daysPerWeek: 5, normalDays: 100, normalWeeks: 18, normalMonths: 4, illnessDays: 0, illnessWeeks: 0, illnessMonths: 0,
+      workedHolidays: ['2026-08-15'], workingWeekdays: [1, 2, 3, 4, 5] };
+    await savePlanningSedentaryLeavePeriod(client, value);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('save_planning_sedentary_leave_period', {
+      p_person_id: 15, p_starts_on: '2026-06-01', p_debit_from: '2026-09-01', p_opening_balance: -2, p_opening_accrued: 6,
+      p_days_per_week: 5, p_normal_days: 100, p_normal_weeks: 18, p_normal_months: 4, p_illness_days: 0, p_illness_weeks: 0,
+      p_illness_months: 0, p_worked_holidays: ['2026-08-15'], p_working_weekdays: [1, 2, 3, 4, 5],
+    });
+    await expect(savePlanningSedentaryLeavePeriod(client, { ...value, debitFrom: '2027-06-01' })).rejects.toThrow();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
 });

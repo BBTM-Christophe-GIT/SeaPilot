@@ -27,7 +27,7 @@ function previewPerson(
   firstName: string,
   lastName: string,
   functionLabel: string,
-  options: { departedOn?: string; active?: boolean; contractType?: string } = {},
+  options: { departedOn?: string; active?: boolean; contractType?: string; roleLabel?: string } = {},
 ): PlanningPerson {
   return {
     id,
@@ -35,7 +35,7 @@ function previewPerson(
     lastName,
     functionLabel,
     gradeLabel: functionLabel,
-    roleLabel: 'Marin',
+    roleLabel: options.roleLabel ?? 'Marin',
     sailorNumber: `20${String(id).padStart(6, '0')}`,
     contractType: options.contractType || 'CDI',
     hiredOn: '2024-01-01',
@@ -59,8 +59,8 @@ export function createPlanningPreviewOverview(anchorDate: string): PlanningOverv
     previewPerson(108, 'Nicolas', 'BOUVILLE', 'Matelot polyvalent'),
     previewPerson(109, 'Adrien', 'BOIS', 'Capitaine'),
     previewPerson(110, 'Matthieu', 'DURAND', "Maître d'Equipage"),
-    previewPerson(111, 'Sophie', 'HAMEL', 'Directrice Administrative et Financière'),
-    previewPerson(112, 'Christophe', 'MINASSIAN', 'Directeur QHSE / Chef de Projet'),
+    previewPerson(111, 'Sophie', 'HAMEL', 'Directrice Administrative et Financière', { roleLabel: 'Sédentaire' }),
+    previewPerson(112, 'Christophe', 'MINASSIAN', 'Directeur QHSE / Chef de Projet', { roleLabel: 'Sédentaire' }),
     previewPerson(113, 'Alain', 'ANCIEN', 'Stagiaire', { active: false }),
     previewPerson(114, 'Camille', 'FUTURE', 'Président', { departedOn: '2099-12-31', active: false }),
     previewPerson(115, 'Étienne', 'PASSÉ', 'Matelot', { departedOn: '2000-01-01', active: false }),

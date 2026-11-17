@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
 import { isPlanningDate, todayPlanningDate } from '../planning/planningDates';
-import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalance';
+import { calculatePlanningSedentaryLeaveAccrued, getPlanningLeaveRightsRange, validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, validatePlanningSedentaryLeavePeriod } from '../planning/planningAbsenceBalance';
 import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
 import { normalizeQhsePolicyAxisIconKey, resolveQhsePolicyAxisIcon } from '../qhsePolicy/qhsePolicyIcons';
@@ -1243,6 +1243,7 @@ const PREVIEW_ROWS: Record<string, unknown[]> = {
   planning_absences: [],
   planning_leave_counter_people: [{ person_id: 111, request_balance_kind: 'leave_rtt' }, { person_id: 112, request_balance_kind: 'leave_rtt' }],
   planning_leave_counter_periods: [],
+  planning_sedentary_leave_periods: [],
   planning_crew_balance_checkpoints: [],
   planning_conflict_cases: [],
   planning_conflict_case_history: [],
@@ -2474,13 +2475,55 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     });
     return createPreviewQuery({ data: annual ? null : savedId, error: null });
   }
+  if (functionName === 'save_planning_sedentary_leave_period') {
+    const personId = Number(args.p_person_id);
+    const planningPerson = createPlanningPreviewOverview(todayPlanningDate()).people.find((person) => person.id === personId);
+    const role = planningPerson?.roleLabel ?? previewRows('people').find((person) => Number(person.id) === personId)?.role_label;
+    if (role !== 'Sédentaire') return createPreviewQuery({
+      data: null, error: { code: '42501', message: 'Les droits en jours ouvrables sont réservés au personnel sédentaire.' },
+    });
+    const readNumber = (value: unknown) => typeof value === 'number' ? value : NaN;
+    const startsOn = String(args.p_starts_on ?? '');
+    const debitFrom = String(args.p_debit_from ?? '');
+    const openingBalance = readNumber(args.p_opening_balance);
+    const openingAccrued = readNumber(args.p_opening_accrued);
+    const daysPerWeek = readNumber(args.p_days_per_week);
+    const normalDays = readNumber(args.p_normal_days);
+    const normalWeeks = readNumber(args.p_normal_weeks);
+    const normalMonths = readNumber(args.p_normal_months);
+    const illnessDays = readNumber(args.p_illness_days);
+    const illnessWeeks = readNumber(args.p_illness_weeks);
+    const illnessMonths = readNumber(args.p_illness_months);
+    const workingWeekdays = Array.isArray(args.p_working_weekdays) ? args.p_working_weekdays.map(readNumber) : [];
+    const workedHolidays = Array.isArray(args.p_worked_holidays) ? args.p_worked_holidays.map(String) : [];
+    try {
+      const draft = validatePlanningSedentaryLeavePeriod({
+        personId, startsOn, debitFrom, openingBalance, openingAccrued, daysPerWeek, normalDays, normalWeeks,
+        normalMonths, illnessDays, illnessWeeks, illnessMonths, workingWeekdays, workedHolidays,
+      });
+      const periods = previewRows('planning_sedentary_leave_periods');
+      const existing = periods.find((period) => period.person_id === personId && period.starts_on === startsOn);
+      const id = Number(existing?.id) || nextPreviewId('planning_sedentary_leave_periods', 0);
+      const row = {
+        id, person_id: personId, starts_on: startsOn, ends_on: getPlanningLeaveRightsRange(startsOn).end, debit_from: debitFrom,
+        opening_balance: openingBalance, opening_accrued: openingAccrued, days_per_week: daysPerWeek,
+        normal_days: normalDays, normal_weeks: normalWeeks, normal_months: normalMonths,
+        illness_days: illnessDays, illness_weeks: illnessWeeks, illness_months: illnessMonths,
+        working_weekdays: workingWeekdays, worked_holidays: workedHolidays, acquired_days: calculatePlanningSedentaryLeaveAccrued(draft),
+      };
+      if (existing) Object.assign(existing, row); else periods.push(row);
+      return createPreviewQuery({ data: id, error: null });
+    } catch (error) {
+      return createPreviewQuery({ data: null, error: { code: '22023', message: error instanceof Error ? error.message : 'Droits invalides.' } });
+    }
+  }
   const qhsePolicyResult = previewQhsePolicyRpc(functionName, args);
   if (qhsePolicyResult) return createPreviewQuery(qhsePolicyResult);
   if (functionName === 'get_planning_absence_balance_context') {
     const today = todayPlanningDate();
     const overview = createPlanningPreviewOverview(today);
     const planningPerson = overview.people.find((person) => person.id === Number(args.p_person_id));
-    const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
+    const person = planningPerson ? { id: planningPerson.id, first_name: planningPerson.firstName, last_name: planningPerson.lastName, hired_on: planningPerson.hiredOn, departed_on: planningPerson.departedOn, active: planningPerson.active, role_label: planningPerson.roleLabel } : previewRows('people').find((row) => Number(row.id) === Number(args.p_person_id));
     if (!person) return createPreviewQuery({ data: null, error: { message: 'Personne de démonstration introuvable.' } });
     const enrollment = previewRows('planning_leave_counter_people').find((row) => Number(row.person_id) === Number(person.id));
     const requestKind = enrollment?.request_balance_kind === 'leave_rtt' ? 'leave_rtt' : 'crew';
@@ -2496,6 +2539,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       kind: enrollment ? 'leave_rtt' : 'crew', request_balance_kind: requestKind,
       person: { id: person.id, first_name: person.first_name, last_name: person.last_name, hired_on: person.hired_on, departed_on: person.departed_on, active: person.active },
       counter_periods: structuredClone(previewRows('planning_leave_counter_periods').filter((row) => Number(row.person_id) === Number(person.id))),
+      sedentary_leave: person.role_label === 'Sédentaire'
+        ? structuredClone(previewRows('planning_sedentary_leave_periods').filter((row) => Number(row.person_id) === Number(person.id)))
+        : null,
       absences: structuredClone(previewRows('planning_absences').filter((row) => Number(row.person_id) === Number(person.id)).map(({ id, absence_type, starts_at, ends_at, status, updated_at }) => ({ id, absence_type, starts_at, ends_at, status, updated_at }))),
       crew_checkpoints: structuredClone(checkpoints.map(({ person_id, as_of, balance }) => ({ person_id, as_of, balance }))),
       crew_sources: { assignments, periods, days },

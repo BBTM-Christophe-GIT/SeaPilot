@@ -1,5 +1,58 @@
 # Planning — demandes, soldes Congés/RTT et périodes de droits
 
+## Congés payés du personnel sédentaire
+
+La fiche RH ouvre le compteur **Congés en jours ouvrables** lorsque le champ **Rôle** vaut
+**Sédentaire**. Le droit de base porte sur une période du **1er juin au 31 mai**. Les RTT
+dédiés gardent leur propre compteur en jours ouvrés. Les profils Marin et Capitaine conservent
+le solde Équipages en fonction de la fiche RH et des permissions existantes.
+
+Dans **Demandes et indisponibilités → Périodes de Droits Congés**, le gestionnaire saisit les
+cumuls validés par la paie depuis le 1er juin. Pour chacune des trois méthodes, saisir le
+travail effectif et assimilé au taux plein, puis le reliquat d’arrêt maladie non professionnel
+au taux réduit. La première tranche d’un mois cumulé d’arrêt maladie relève du taux plein selon
+l’[article 7.1.1 de l’IDCC 2972](https://www.legifrance.gouv.fr/conv_coll/article/KALIARTI000035219794).
+Le calcul compare les mois, les semaines divisées par quatre et les jours divisés par quatre
+fois la base hebdomadaire collective. Il applique 2,5 jours ouvrables par mois équivalent au
+taux plein et 2 à taux réduit, avec un plafond de 24 jours pour la part au taux réduit. Le
+meilleur total est arrondi à l’entier supérieur et plafonné à 30 jours de base. L’acquisition
+se met à jour à chaque enregistrement de paie. Le solde d’ouverture peut inclure des droits
+reportés ou d’entreprise validés par la paie.
+
+Saisir le solde validé **juste avant la première journée à décompter** et la part des droits
+du cycle déjà comprise dans ce solde. SeaPilot crédite la progression du cumul au-delà
+des droits déjà repris et déduit les congés validés à partir de cette date. Les anciennes
+périodes restent enregistrées avec leurs unités d’origine. Pour un cycle encore sans données
+de paie, SeaPilot indique un nouveau solde à initialiser et affiche le nombre de jours demandé.
+Si un compteur dédié existait, son solde en jours ouvrés reste visible dans l’historique.
+Au changement de cycle, établir le solde d’ouverture à partir des droits encore utilisables
+validés par la paie.
+
+Le décompte part du premier jour normalement travaillé et s’arrête à la veille de la reprise
+prévue. Il inclut les samedis et exclut les dimanches et les jours fériés nationaux chômés.
+Le gestionnaire indique les jours normalement travaillés et les dates fériées travaillées
+faisant exception. Pour un rythme du lundi au vendredi, un vendredi posé compte deux jours
+si le samedi est ouvrable. Un samedi férié chômé ramène le débit à un jour. Les dates de la
+demande restent celles de l’absence. Les jours calculés sont regroupés par cycle, y compris si
+le samedi suit un vendredi 31 mai. Les demandes en attente alimentent la projection.
+Le calendrier s’applique aux congés depuis la date d’ouverture. Si le rythme change en cours
+de cycle, mettre à jour le calendrier avec un solde de paie à la date du changement.
+
+### Mise en service
+
+Appliquer `20261117134324_planning_sedentary_leave.sql` avant de publier le frontend en
+production. L’évolution de la RPC ajoute les périodes sédentaires au contexte existant.
+Les gestionnaires habilités accèdent aux données de paie du dossier. La consultation
+individuelle reçoit les données nécessaires au solde. Préparer les soldes d’ouverture réels
+avant la mise à disposition du nouveau compteur. Aucun recalcul des soldes historiques
+ni provisionnement de données de paie n’est effectué par la migration.
+
+Le test `supabase/tests/planning_sedentary_leave_test.sql` vérifie le calcul, les accès par
+profil et l’isolation des sociétés. Les tests du Planning couvrent la reprise du lundi,
+le samedi férié chômé, le changement de cycle et la reprise du solde de paie.
+
+## Compteurs historiques Congés et RTT
+
 Le type **RTT** rejoint les demandes d’absences. Il suit les mêmes règles de demande, de validation, de conflit et d’annulation que les congés. Le déplacement d’une absence approuvée reste réservé à l’Admin et concerne désormais les congés et les RTT. Les décisions RTT créent les notifications personnelles « RTT acceptés » ou « RTT refusés », avec les règles de destinataire et de déduplication existantes.
 
 Christophe MINASSIAN et Sophie HAMEL disposent chacun de deux compteurs indépendants : **Congés** et **RTT**. La migration retrouve une seule fois leurs deux dossiers inscrits dans la société BBTM par nom complet normalisé, puis conserve ce choix par identifiant de personne. Un changement de nom ne le modifie pas ; un homonyme ne l’acquiert pas. Aucun identifiant n’est codé en dur, aucun droit ni solde initial fictif n’est créé. Les autres collaborateurs utilisent exclusivement le calcul existant du Planning, vue Équipages, sans saisie de droits annuels Congés/RTT.

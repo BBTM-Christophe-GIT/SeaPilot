@@ -70,6 +70,13 @@ from public.vessels where name='GOURY' and company_id=(select id from public.com
 insert into public.documentary_audits(id,company_id,kind,site_id,vessel_id,year,title,planned_on)
 select '9e400000-0000-0000-0000-000000000006',company_id,'ovid',id,id,extract(year from current_date)::integer,'Foreign planned audit',current_date+1
 from public.vessels where name='FOREIGN VESSEL';
+insert into public.documentary_audits(id,company_id,kind,site_id,vessel_id,year,title,planned_on,client_name)
+select fixture.id::uuid,company_id,'client',vessel.id,vessel.id,extract(year from current_date)::integer,
+ 'Audit '||fixture.client_name,current_date+1,fixture.client_name
+from public.vessels vessel cross join (values
+ ('9e400000-0000-0000-0000-000000000007','Client Atlantique'),
+ ('9e400000-0000-0000-0000-000000000008','Client Manche')
+) fixture(id,client_name) where vessel.name='GOURY' and company_id=(select id from public.companies where code='audit-planning-main');
 insert into public.documentary_audit_findings(id,company_id,audit_id,category,description,assignee_person_id,assignee_label)
 select '9e500000-0000-0000-0000-000000000001',person.company_id,'9e400000-0000-0000-0000-000000000001','finding','Private finding content',person.id,'Actual captain'
 from public.people person where person.user_id='9e000000-0000-0000-0000-000000000002';
@@ -82,7 +89,10 @@ from public.documentary_audits where id='9e400000-0000-0000-0000-000000000001';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000001',true);
-select is(jsonb_array_length(public.planning_audits_overview()),12,'real Armement sees eight internal sites and four planned documentary audit types');
+select is(jsonb_array_length(public.planning_audits_overview()),14,'real Armement sees eight internal sites and all six planned documentary dossiers');
+select is((select count(distinct audit->>'id')::integer from jsonb_array_elements(public.planning_audits_overview()) audit
+ where audit->>'kind'='client' and audit->>'plannedOn'=(current_date+1)::text and audit->>'siteName'='GOURY'),
+ 2,'client audits planned for the same vessel and day keep distinct Planning links');
 select is((select count(*)::integer from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='internal_ism'),8,'shore and vessel internal sites all appear for company Planning readers');
 select is((select count(*)::integer from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'vesselId' is null),2,'two shore sites have no invented vessel association');
 select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'id'='9e400000-0000-0000-0000-000000000005'),'actual date alone does not invent a planning event');
@@ -101,27 +111,27 @@ select is((select planned_on from public.documentary_audits where id='9e400000-0
 select lives_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)-'plannedOn')$$,'legacy client payload without plannedOn retains the current planned date');
 select is((select planned_on from public.documentary_audits where id='9e400000-0000-0000-0000-000000000001'),current_date+3,'omission cannot clear an existing schedule');
 select lives_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||'{"plannedOn":null}'::jsonb)$$,'explicit null clears the planned date');
-select is(jsonb_array_length(public.planning_audits_overview()),11,'unscheduled documentary audit disappears from Planning');
+select is(jsonb_array_length(public.planning_audits_overview()),13,'unscheduled documentary audit disappears from Planning');
 select throws_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||'{"plannedOn":"2026-02-30"}'::jsonb)$$,'22023',null,'impossible calendar dates are rejected by the server');
 select throws_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||'{"plannedOn":"2026-10-01T10:00:00Z"}'::jsonb)$$,'22023',null,'planning field accepts date-only values');
 select throws_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||'{"plannedOn":true}'::jsonb)$$,'22023',null,'tampered nonstring planned date is rejected');
 select lives_ok($$select public.documentary_audit_save((select payload from audit_planning_payload))$$,'manager restores the test schedule');
 
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000002',true);
-select is(jsonb_array_length(public.planning_audits_overview()),5,'real Capitaine reads two assigned internal dates and three documentary dates within assignment bounds');
+select is(jsonb_array_length(public.planning_audits_overview()),7,'real Capitaine reads two assigned internal dates and five documentary dates within assignment bounds');
 select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'vesselId' is null),'Capitaine receives no company-only shore metadata');
-select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='client'),'Capitaine does not receive dates outside the actual assignment period');
+select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'id'='9e400000-0000-0000-0000-000000000004'),'Capitaine does not receive dates outside the actual assignment period');
 select is((select audit->>'canOpen' from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='ovid'),'true','personally assigned Capitaine may open the one authorized documentary dossier');
 select is((select audit->>'canOpen' from jsonb_array_elements(public.planning_audits_overview()) audit where audit->>'kind'='ecmid'),'true','confirmed vessel window permits consultation of eCMID content');
 select is((select count(*)::integer from public.internal_audits),2,'Capitaine reads the two internal ship audits within the vessel window');
-select is((select count(*)::integer from public.documentary_audits),5,'Capitaine reads historical and current documentary dossiers on the authorized ship');
+select is((select count(*)::integer from public.documentary_audits),7,'Capitaine reads historical and current documentary dossiers on the authorized ship');
 select throws_ok($$select public.documentary_audit_save((select payload from audit_planning_payload)||jsonb_build_object('plannedOn',(current_date+5)::text))$$,'42501',null,'Capitaine cannot reschedule an audit through Planning visibility');
 
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000003',true);
-select is(jsonb_array_length(public.planning_audits_overview()),5,'real Marin receives assigned-vessel Planning metadata from actual crew embarkations');
+select is(jsonb_array_length(public.planning_audits_overview()),7,'real Marin receives assigned-vessel Planning metadata from actual crew embarkations');
 select ok(not exists(select 1 from jsonb_array_elements(public.planning_audits_overview()) audit where not (audit->>'canOpen')::boolean),'Marin may consult ship audits within the confirmed vessel window');
 select is((select count(*)::integer from public.documentary_audit_findings),1,'Marin consults the authorized ship finding assigned to the captain');
-select is((select count(*)::integer from public.documentary_audits),5,'Marin consults authorized historical and current documentary dossiers');
+select is((select count(*)::integer from public.documentary_audits),7,'Marin consults authorized historical and current documentary dossiers');
 select is(jsonb_array_length(public.documentary_audits_overview('ovid')->'permissions'->'treatableFindingIds'),0,'vessel consultation does not make Marin responsible for the captain finding');
 select set_config('request.jwt.claim.sub','9e000000-0000-0000-0000-000000000004',true);
 select is(jsonb_array_length(public.planning_audits_overview()),0,'unassigned real Marin has no live audit Planning rows');
