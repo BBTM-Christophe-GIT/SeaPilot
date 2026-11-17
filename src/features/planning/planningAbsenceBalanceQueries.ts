@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { planningDateFromTimestamp } from './planningDates';
-import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterPeriodDraft, type PlanningLeaveRightsPeriodDraft } from './planningAbsenceBalance';
+import { validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, validatePlanningSedentaryLeavePeriod, type PlanningAbsenceBalanceContext, type PlanningLeaveCounterPeriodDraft, type PlanningLeaveRightsPeriodDraft, type PlanningSedentaryLeavePeriod, type PlanningSedentaryLeavePeriodDraft } from './planningAbsenceBalance';
 import type { PlanningAbsenceRecord, PlanningAbsenceType } from './planningP12';
 import { mapPlanningAssignmentOverviewRows, mapPlanningDayRows, mapPlanningPeriodRows } from './planningQueries';
 
@@ -30,6 +30,19 @@ function absence(value: unknown, personId: number): PlanningAbsenceRecord {
     status: row.status as PlanningAbsenceRecord['status'], updatedAt: text(row.updated_at), reason: '', requestedBy: '', reviewedBy: '', reviewedAt: '', reviewComment: '', createdAt: '' };
 }
 
+function sedentaryPeriod(value: unknown): PlanningSedentaryLeavePeriod {
+  const row = object(value);
+  const optionalNumber = (value: unknown) => value === undefined ? undefined : number(value);
+  return {
+    id: number(row.id), startsOn: text(row.starts_on), endsOn: text(row.ends_on), debitFrom: text(row.debit_from),
+    openingBalance: number(row.opening_balance), openingAccrued: number(row.opening_accrued), acquiredDays: number(row.acquired_days),
+    daysPerWeek: optionalNumber(row.days_per_week), normalDays: optionalNumber(row.normal_days), normalWeeks: optionalNumber(row.normal_weeks),
+    normalMonths: optionalNumber(row.normal_months), illnessDays: optionalNumber(row.illness_days), illnessWeeks: optionalNumber(row.illness_weeks),
+    illnessMonths: optionalNumber(row.illness_months), workedHolidays: rows(row.worked_holidays).map(text),
+    workingWeekdays: rows(row.working_weekdays).map(number),
+  };
+}
+
 export async function fetchPlanningAbsenceBalanceContext(client: SupabaseClient, personId: number): Promise<PlanningAbsenceBalanceContext> {
   if (!Number.isSafeInteger(personId) || personId <= 0) throw new Error('Choisissez une personne pour afficher son solde.');
   const { data, error } = await client.rpc('get_planning_absence_balance_context', { p_person_id: personId });
@@ -43,6 +56,7 @@ export async function fetchPlanningAbsenceBalanceContext(client: SupabaseClient,
   return {
     kind: result.kind as PlanningAbsenceBalanceContext['kind'],
     requestBalanceKind: requestBalanceKind as PlanningAbsenceBalanceContext['requestBalanceKind'],
+    sedentaryLeave: result.sedentary_leave == null ? null : rows(result.sedentary_leave).map(sedentaryPeriod),
     person: { id: personId, firstName: text(person.first_name), lastName: text(person.last_name), hiredOn: text(person.hired_on), departedOn: text(person.departed_on), active: person.active === true,
       functionLabel: '', gradeLabel: '', roleLabel: '', contractType: '' },
     counterPeriods: rows(result.counter_periods).map((item) => {
@@ -79,4 +93,18 @@ export async function savePlanningLeaveRightsPeriod(client: SupabaseClient, draf
     : error.code === '42501' ? 'Votre profil ne peut pas modifier ces droits.'
       : error.code === '22023' ? 'Renseignez les droits Congés et RTT du 1er juin au 31 mai de l’année suivante.'
         : 'Les droits n’ont pas été enregistrés. Réessayez.', { cause: error });
+}
+
+export async function savePlanningSedentaryLeavePeriod(client: SupabaseClient, draft: PlanningSedentaryLeavePeriodDraft): Promise<void> {
+  const value = validatePlanningSedentaryLeavePeriod(draft);
+  const { error } = await client.rpc('save_planning_sedentary_leave_period', {
+    p_person_id: value.personId, p_starts_on: value.startsOn, p_debit_from: value.debitFrom,
+    p_opening_balance: value.openingBalance, p_opening_accrued: value.openingAccrued, p_days_per_week: value.daysPerWeek,
+    p_normal_days: value.normalDays, p_normal_weeks: value.normalWeeks, p_normal_months: value.normalMonths,
+    p_illness_days: value.illnessDays, p_illness_weeks: value.illnessWeeks, p_illness_months: value.illnessMonths,
+    p_worked_holidays: value.workedHolidays, p_working_weekdays: value.workingWeekdays,
+  });
+  if (error) throw new Error(error.code === '42501' ? 'Votre profil ne peut pas modifier ces droits.'
+    : ['22023', '23514'].includes(error.code) ? 'Vérifiez la période, le solde d’ouverture et les données de paie.'
+      : 'Les droits n’ont pas été enregistrés. Réessayez.', { cause: error });
 }

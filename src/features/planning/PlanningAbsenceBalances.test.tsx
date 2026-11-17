@@ -20,6 +20,7 @@ vi.mock('./planningAbsenceBalanceQueries', () => ({
   fetchPlanningAbsenceBalanceContext: vi.fn(),
   savePlanningLeaveCounterPeriod: vi.fn(),
   savePlanningLeaveRightsPeriod: vi.fn(),
+  savePlanningSedentaryLeavePeriod: vi.fn(),
 }));
 
 const NOW = '2026-10-01T10:00:00.000Z';
@@ -141,6 +142,31 @@ describe('absence balances in the request form', () => {
     render(<PlanningAbsenceBalances {...props({ personId: null })} />);
     expect(screen.queryByRole('region', { name: 'Soldes et droits' })).not.toBeInTheDocument();
     expect(fetchPlanningAbsenceBalanceContext).not.toHaveBeenCalled();
+  });
+
+  it.each([['2026-10-02', 2], ['2026-08-14', 1]] as const)('shows the sedentary Friday %s debit in opening days', async (friday, debit) => {
+    const person = { ...crew, roleLabel: 'Sédentaire' };
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue({ ...crewContext(person), sedentaryLeave: [{
+      id: 7, startsOn: '2026-06-01', endsOn: '2027-05-31', debitFrom: '2026-07-01', openingBalance: 9,
+      openingAccrued: 3, acquiredDays: 10, workedHolidays: [], workingWeekdays: [1, 2, 3, 4, 5],
+    }] });
+    render(<PlanningAbsenceBalances {...props({ personId: person.id, startsAt: `${friday}T08:00`, endsAt: `${friday}T18:00` })} />);
+    const leave = await screen.findByLabelText('Compteur Congés');
+    expect(within(leave).getByRole('heading', { name: 'Congés en jours ouvrables' })).toBeVisible();
+    expect(metricNumber(leave, 'Droits acquis')).toBe(10);
+    expect(metricNumber(leave, 'Cette demande')).toBe(debit);
+    expect(metricNumber(leave, 'Après validation')).toBe(16 - debit);
+    expect(screen.queryByLabelText('Compteur RTT')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Solde de Congés/Repos' })).not.toBeInTheDocument();
+  });
+
+  it('retains a legacy working-day balance until payroll initializes the sedentary period', async () => {
+    vi.mocked(fetchPlanningAbsenceBalanceContext).mockResolvedValue(staffContext({ ...christophe, roleLabel: 'Sédentaire' }, { sedentaryLeave: [] }));
+    render(<PlanningAbsenceBalances {...props()} />);
+    const legacy = await screen.findByRole('complementary', { name: 'Solde historique des congés' });
+    expect(legacy).toHaveTextContent('20 j ouvrés');
+    expect(metricValue(card('Congés'), 'Après validation')).toHaveTextContent('À initialiser');
+    expect(card('RTT')).toBeVisible();
   });
 
   it.each([christophe, sophie])('shows independent working-day Congés and RTT counters for $firstName $lastName', async (person) => {
