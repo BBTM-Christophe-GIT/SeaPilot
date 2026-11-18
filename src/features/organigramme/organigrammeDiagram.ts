@@ -1,8 +1,11 @@
 import type { OrgMember, OrgSection } from './organigrammeModel';
 
-export interface OrgBox { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; x: number; y: number; width: number; height: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
+export interface OrgBounds { x: number; y: number; width: number; height: number }
+export interface OrgCrewCard { personId: number; name: string; watchId: number }
+export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
+export interface OrgWatchArea extends OrgBounds { watchId: number }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
-export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[] }
+export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[]; watches?: OrgWatchArea[] }
 export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
 export const orgBoxTextColor = (box: OrgBox, bold: boolean) => box.tone === 'navy' || box.tone === 'leader' ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
 
@@ -42,6 +45,7 @@ function categoryCardMetrics(members: OrgMember[], office = false): CardMetrics 
 function memberCard(person: OrgMember, x: number, y: number, metrics: CardMetrics, office = false): OrgBox {
   return { x, y, width: 248, height: metrics.height, lines: memberLines(person, metrics.portraitSize, office),
     tone: office && person.rank === '1' ? 'leader' : office && person.rank === 'support' ? 'support' : 'white',
+    ...(person.watchId === undefined ? {} : { crew: { personId: person.id, name: person.name, watchId: person.watchId } }),
     ...(person.photoUrl ? { image: person.photoUrl, mediaKind: 'portrait' as const, portraitSize: metrics.portraitSize } : {}),
   };
 }
@@ -59,7 +63,7 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
     const headingWidth = Math.min(sectionWidth, 440);
     const headingLines = wrapOrgText(section.label, section.kind === 'vessel' ? 20 : 26).map((text) => ({ text, size: 16, bold: true }));
     const headingHeight = sharedHeadingHeight ?? Math.max(section.kind === 'vessel' ? 64 : 0, 24 + headingLines.length * 20);
-    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines, ...(section.kind === 'vessel' ? { image: section.iconDataUrl, mediaKind: 'vessel' as const } : {}) });
+    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines, ...(section.kind === 'vessel' ? { image: section.iconDataUrl, mediaKind: 'vessel' as const, vesselId: section.vesselId } : {}) });
     const middle = 24 + sectionWidth / 2;
     diagram.lines.push({ x1: middle, y1: y + headingHeight, x2: middle, y2: y + headingHeight + 16 });
     y += headingHeight + 32;
@@ -89,6 +93,10 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
     if (showColumnHeaders) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
     bottom = Math.max(bottom, cardY);
   });
+  const watchAreas = columns.flatMap((column, index) => column.watchId === undefined ? [] : [
+    { watchId: column.watchId, x: 24 + index * columnWidth, y, width: 248, height: bottom - y - 12 },
+  ]);
+  if (watchAreas.length) diagram.watches = watchAreas;
   y = bottom + 32;
   if (section.kind === 'relations') diagram.lines.forEach((line) => { line.dashed = true; });
   diagram.height = Math.max(80, y);
@@ -175,13 +183,15 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   }
   const gap = 24;
   const rowWidths = rows.map((row) => row.reduce((width, section) => width + section.width, 0) + (row.length - 1) * gap);
-  const diagram: OrgDiagram = { width: Math.max(320, ...rowWidths), height: 80, boxes: [], lines: [] };
+  const watches: OrgWatchArea[] = [];
+  const diagram: OrgDiagram = { width: Math.max(320, ...rowWidths), height: 80, boxes: [], lines: [], watches };
   let y = 0;
   rows.forEach((row, index) => {
     let x = (diagram.width - rowWidths[index]) / 2;
     row.forEach((section) => {
       diagram.boxes.push(...section.boxes.map((box) => ({ ...box, x: box.x + x, y: box.y + y })));
       diagram.lines.push(...section.lines.map((line) => ({ ...line, x1: line.x1 + x, x2: line.x2 + x, y1: line.y1 + y, y2: line.y2 + y })));
+      watches.push(...(section.watches ?? []).map((watch) => ({ ...watch, x: watch.x + x, y: watch.y + y })));
       x += section.width + gap;
     });
     y += Math.max(...row.map((section) => section.height));

@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.109.0` permet de dupliquer un organigramme sous un nouveau nom
+et de déplacer un équipier directement depuis sa carte dans le diagramme.
+Appliquer `20261118141755_organigramme_duplicate_chart.sql` avant le frontend.
+Voir [Organigrammes nommés](./organigramme.md#organigrammes-nommés).
+
 La version `3.108.0` utilise les fiches collaborateurs de référence dans
 Administration et Organigramme. Elle ajoute des organigrammes nommés et le
 déplacement par glisser-déposer entre bordées, y compris entre navires.

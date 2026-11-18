@@ -80,11 +80,22 @@ modifie le nom de l’organigramme sélectionné. L’organigramme déjà enregi
 apparaît sous **Organigramme principal**, avec sa structure et ses bordées.
 Chaque nouvel organigramme commence avec des bordées vides pour les navires actifs.
 
-Dans **Déplacer des collaborateurs**, glisser la carte d’un collaborateur sur la bordée
-de destination, dans le même navire ou dans un autre. La commande **Déplacer**
-permet la même opération au clavier ou sur un écran tactile. Le déplacement
-conserve la fonction personnalisée dans la bordée et s’applique à l’organigramme
-sélectionné. Les affectations du Planning suivent leur propre circuit d’édition.
+**Dupliquer** ouvre le formulaire de nom pour une copie de l’organigramme
+sélectionné. La copie reprend les bordées, leurs collaborateurs et leurs
+fonctions, ainsi que les responsabilités, catégories et liens de la structure.
+Elle s’ouvre après enregistrement et ses modifications sont indépendantes
+de celles de l’original. Les liens dont la cible existe dans la structure
+sont repris, y compris lorsque la date de situation la masque à l’écran.
+
+Glisser la carte d’un équipier directement sur sa bordée de destination dans
+le diagramme, sur le même navire ou sur un autre. Les destinations non visibles
+dans le diagramme restent proposées pendant le déplacement. Au clavier ou
+sur écran tactile, sélectionner la carte pour choisir sa destination dans
+l’organigramme. Le déplacement conserve la fonction à bord personnalisée
+et s’applique à l’organigramme sélectionné. Les affectations du Planning
+suivent leur propre circuit d’édition.
+Si une carte de la vue **Par fonction** regroupe plusieurs affectations,
+la vue **Par navire et bordée** permet de choisir l’affectation à déplacer.
 
 La liste du personnel et les coordonnées reprennent les fiches RH de référence.
 Les anciennes fiches rapprochées conservent leurs liens avec les opérations

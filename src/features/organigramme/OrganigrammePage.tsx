@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Maximize2, Minimize2, Network, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { Copy, Maximize2, Minimize2, Network, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, PRIMARY_ORG_CHART, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
 import { OrgChartSettings, type OrgEditor } from './OrgChartSettings';
-import { OrgChartNameDialog } from './OrgChartNameDialog';
+import { OrgChartNameDialog, type OrgChartNameAction } from './OrgChartNameDialog';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
 import { createOrgChart, fetchOrganigramme, renameOrgChart, saveOrgEmergencyDefault } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
 import { OrgStructureEditor } from './OrgStructureEditor';
 import { OrgWatchEditor } from './OrgWatchEditor';
 import { OrgWatchTransferBoard } from './OrgWatchTransferBoard';
+import { OrgDiagramCanvas } from './OrgDiagramCanvas';
 import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import './organigramme.css';
 
@@ -40,7 +41,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [download, setDownload] = useState<{ url: string; name: string; format: string } | null>(null);
   const [updatedAt, setUpdatedAt] = useState('');
   const [editor, setEditor] = useState<OrgEditor | null>(null);
-  const [nameEditor, setNameEditor] = useState<'create' | 'rename' | null>(null);
+  const [nameEditor, setNameEditor] = useState<OrgChartNameAction | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
   const [zoom, setZoom] = useState(90);
@@ -92,7 +93,8 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     setDownload(null);
   }
   async function saveChartName(name: string) {
-    const chart = nameEditor === 'create' ? await createOrgChart(client, name) : await renameOrgChart(client, chartId, name);
+    const chart = nameEditor === 'rename' ? await renameOrgChart(client, chartId, name)
+      : await createOrgChart(client, name, nameEditor === 'duplicate' ? chartId : undefined);
     setData((previous) => {
       if (!previous) return previous;
       const exists = previous.charts.some((item) => item.id === chart.id);
@@ -141,12 +143,19 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
               </div>
               <div className="org-canvas-actions">
                 <button type="button" disabled={!currentData || loading || !!error || exporting} onClick={() => setNameEditor('create')}><Plus size={16} aria-hidden="true" />Nouvel organigramme</button>
+                <button type="button" disabled={!currentData || loading || !!error || exporting} onClick={() => setNameEditor('duplicate')}><Copy size={15} aria-hidden="true" />Dupliquer</button>
                 <button type="button" disabled={!currentData || loading || !!error || exporting} onClick={() => setNameEditor('rename')}><Pencil size={15} aria-hidden="true" />Renommer</button>
                 <label><span className="org-sr-only">Zoom</span><select aria-label="Zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}><option value={0}>Ajuster</option>{[50, 70, 90, 100, 125].map((value) => <option key={value} value={value}>{value} %</option>)}</select></label>
                 <button type="button" className="org-expand" aria-label={expanded ? 'Afficher les réglages' : 'Agrandir l’organigramme'} aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
               </div>
             </div>
-            {!error && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error ? <div className="org-canvas" ref={canvasRef} tabIndex={0} aria-label="Diagramme défilant"><img src={diagramUrl} width={diagram.width * (zoom || 100) / 100} height={diagram.height * (zoom || 100) / 100} style={zoom === 0 ? { width: '100%', height: 'auto', maxWidth: '100%' } : undefined} alt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`} /></div> : null}
+            {!error && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error && (
+              <OrgDiagramCanvas
+                canvasRef={canvasRef} diagram={diagram} imageSrc={diagramUrl} zoom={zoom}
+                imageAlt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`}
+                client={client} data={currentData} disabled={loading || exporting} onSaved={refresh}
+              />
+            )}
             {exporting && <p className="org-export-status" role="status">Préparation de l’export…</p>}
           </section>
           {photoErrors > 0 && <p className="org-notice" role="status">{photoErrors} photo(s) indisponible(s). Actualisez pour réessayer ou décochez « Inclure les photos dans les exports ».</p>}
@@ -162,7 +171,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
       await saveOrgEmergencyDefault(client, ids);
       setData((previous) => previous ? { ...previous, emergencyDefaultIds: ids } : previous);
     }} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
-    {nameEditor && <OrgChartNameDialog initialName={nameEditor === 'rename' ? currentChart?.name : undefined} onClose={() => setNameEditor(null)} onSave={saveChartName} />}
+    {nameEditor && currentChart && <OrgChartNameDialog action={nameEditor} chartName={currentChart.name} onClose={() => setNameEditor(null)} onSave={saveChartName} />}
     {editor && currentData && <AppDialog {...EDITOR_LABELS[editor]} key={chartId} variant="drawer" onClose={() => setEditor(null)}>
       {editor === 'watches' && <OrgWatchEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} disabled={loading || !!error} />}
       {editor === 'transfer' && <OrgWatchTransferBoard client={client} data={currentData} onSaved={refresh} disabled={loading || !!error} />}

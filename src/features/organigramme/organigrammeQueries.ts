@@ -14,11 +14,15 @@ export async function fetchOrganigramme(client: SupabaseClient, asOf: string, ch
   return { ...snapshot, vessels, people };
 }
 
-export async function createOrgChart(client: SupabaseClient, name: string): Promise<OrgChart> {
+export async function createOrgChart(client: SupabaseClient, name: string, sourceChartId?: number): Promise<OrgChart> {
   const trimmedName = name.trim();
-  const { data, error } = await client.rpc('create_organigramme_chart', { p_name: trimmedName });
+  const { data, error } = sourceChartId === undefined
+    ? await client.rpc('create_organigramme_chart', { p_name: trimmedName })
+    : await client.rpc('duplicate_organigramme_chart', { p_chart_id: sourceChartId, p_name: trimmedName });
   if (error?.code === '23505') throw new Error('Un organigramme porte déjà ce nom.');
-  if (error || !Number.isSafeInteger(Number(data)) || Number(data) <= 0) throw new Error('Impossible de créer cet organigramme.', { cause: error });
+  if (error || !Number.isSafeInteger(Number(data)) || Number(data) <= 0) {
+    throw new Error(sourceChartId === undefined ? 'Impossible de créer cet organigramme.' : 'Impossible de dupliquer cet organigramme.', { cause: error });
+  }
   return { id: Number(data), name: trimmedName };
 }
 

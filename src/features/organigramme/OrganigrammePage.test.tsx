@@ -55,6 +55,41 @@ describe('OrganigrammePage', () => {
     await waitFor(() => expect(diagram()).toContain('GOURY'));
   });
 
+  it('duplicates the selected chart under a new name and opens the copy', async () => {
+    const source = { id: 17, name: 'Équipe hiver' };
+    let charts = [...ORG_DEMO.charts, source];
+    const rpc = setup(['direction'], vi.fn().mockImplementation(async (functionName, args) => {
+      if (functionName === 'duplicate_organigramme_chart') {
+        if (charts.some((chart) => chart.name === args.p_name)) return { data: null, error: { code: '23505' } };
+        charts = [...charts, { id: 18, name: args.p_name }];
+        return { data: 18, error: null };
+      }
+      return { data: { ...ORG_DEMO, chartId: args.p_chart_id, charts }, error: null };
+    }));
+    await screen.findByRole('img');
+    const selected = screen.getByRole('combobox', { name: 'Organigramme à afficher' });
+    await act(async () => { fireEvent.change(selected, { target: { value: '17' } }); });
+    fireEvent.click(screen.getByRole('button', { name: 'Dupliquer' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Dupliquer l’organigramme' }));
+    const input = dialog.getByLabelText('Nom de l’organigramme');
+    const submit = dialog.getByRole('button', { name: 'Dupliquer' });
+    expect(dialog.getByText(/Équipe hiver/)).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Équipe hiver' } });
+    await act(async () => { fireEvent.click(submit); });
+    expect(dialog.getByRole('alert')).toHaveTextContent('Un organigramme porte déjà ce nom.');
+    expect(selected).toHaveValue('17');
+
+    fireEvent.change(input, { target: { value: ' Équipe printemps ' } });
+    await act(async () => { fireEvent.click(submit); });
+    expect(rpc).toHaveBeenCalledWith('duplicate_organigramme_chart', { p_chart_id: 17, p_name: 'Équipe printemps' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(selected).toHaveValue('18');
+    expect(within(selected).getByRole('option', { name: 'Équipe hiver' })).toBeInTheDocument();
+    expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v3', expect.objectContaining({ p_chart_id: 18 }));
+  });
+
   it('previews selectable export fields and retains choices between presentations, documents and refreshes', async () => {
     const rpc = setup(); await screen.findByRole('img');
     const svg = () => decodeURIComponent(screen.getByRole('img').getAttribute('src')!);
