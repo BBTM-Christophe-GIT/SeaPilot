@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BriefcaseBusiness, Check, RotateCcw } from 'lucide-react';
+import { BriefcaseBusiness, Check, RotateCcw, UserRoundMinus } from 'lucide-react';
 import { AppContextMenu, AppContextMenuItem, type AppContextMenuPosition } from '../../components/AppContextMenu';
 import { AppDialog } from '../../components/AppDialog';
 import { ORG_CARD_COLORS, type OrgCardColor } from './organigrammeCardColors';
@@ -12,9 +12,10 @@ interface MenuProps {
   onClose: () => void;
   onSelectColor: (color: OrgCardColor | null) => void;
   onEditFunction: () => void;
+  assignmentRemoval?: { label: string; onSelect: () => void };
 }
 
-export function OrgPersonCardMenu({ name, color, position, onClose, onSelectColor, onEditFunction }: MenuProps) {
+export function OrgPersonCardMenu({ name, color, position, onClose, onSelectColor, onEditFunction, assignmentRemoval }: MenuProps) {
   return createPortal(<div onKeyDown={(event) => {
     if (event.key === 'Tab') onClose();
   }}>
@@ -22,6 +23,9 @@ export function OrgPersonCardMenu({ name, color, position, onClose, onSelectColo
       <AppContextMenuItem onSelect={onEditFunction}>
         <BriefcaseBusiness size={16} aria-hidden="true" />Fonction temporaire…
       </AppContextMenuItem>
+      {assignmentRemoval && <AppContextMenuItem onSelect={assignmentRemoval.onSelect}>
+        <UserRoundMinus size={16} aria-hidden="true" />{assignmentRemoval.label}
+      </AppContextMenuItem>}
       <div className="app-context-menu__label" aria-hidden="true">Couleur de la carte</div>
       <AppContextMenuItem onSelect={() => onSelectColor(null)}>
         <RotateCcw size={16} aria-hidden="true" />Couleur par défaut

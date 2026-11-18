@@ -189,7 +189,7 @@ describe('OrgDiagramCanvas', () => {
   it('provides a touch path to the menu and resets a custom color', async () => {
     const { onSaved, rpc } = setup({}, { ...chart, cardColors: { 2: 'green' } });
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer Élodie MARTIN' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Couleur et fonction' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Actions de la carte' }));
     const menu = screen.getByRole('menu', { name: 'Couleur et fonction de Élodie MARTIN' });
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Couleur par défaut' }));
 
@@ -234,5 +234,60 @@ describe('OrgDiagramCanvas', () => {
     expect(rpc).toHaveBeenCalledExactlyOnceWith('save_organigramme_card_setting', {
       p_chart_id: 12, p_person_id: 2, p_field: 'temporary_function', p_value: null,
     });
+  });
+
+  it('returns a crew card to Sans affectation even when this is the only watch', async () => {
+    const { onSaved, rpc } = setup({}, {
+      ...chart, vessels: chart.vessels.slice(0, 1), watches: chart.watches?.filter((watch) => watch.id === 1),
+      memberships: chart.memberships.filter((row) => row.vesselId === 1 && row.watchGroup === 'Bordée 1'),
+    });
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Couleur et fonction de Élodie MARTIN' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remettre sans affectation' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('remove_organigramme_watch_member', { p_chart_id: 12, p_person_id: 2, p_watch_id: 1 });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Élodie MARTIN quitte GOURY · Bordée 1.');
+    expect(screen.getByRole('status')).toHaveFocus();
+  });
+
+  it('removes only the exact watch chosen through the touch menu and keeps other assignments', async () => {
+    const duplicate = { ...chart.memberships.find((row) => row.personId === 2)!, vesselId: 2, watchGroup: 'Bordée 2' };
+    const save = vi.fn().mockResolvedValueOnce({ error: { message: 'Indisponible' } }).mockResolvedValue({ error: null });
+    const { onSaved, rpc } = setup({ vesselIds: [1] }, { ...chart, memberships: [...chart.memberships, duplicate] }, save);
+    fireEvent.click(screen.getByRole('button', { name: 'Déplacer Élodie MARTIN' }));
+    const touchMenu = screen.getByRole('button', { name: 'Actions de la carte' });
+    fireEvent.click(touchMenu);
+    expect(screen.queryByRole('menuitem', { name: 'Remettre sans affectation' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Retirer de cette bordée' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de retirer ce collaborateur de sa bordée.');
+    expect(onSaved).not.toHaveBeenCalled();
+    fireEvent.click(touchMenu);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Retirer de cette bordée' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenLastCalledWith('remove_organigramme_watch_member', { p_chart_id: 12, p_person_id: 2, p_watch_id: 1 });
+    expect(screen.queryByRole('combobox', { name: 'Bordée de destination' })).not.toBeInTheDocument();
+  });
+
+  it('labels removal from a sedentary collaborator’s watch without promising a Sans affectation card', () => {
+    setup({}, { ...chart, people: chart.people.map((person) => person.id === 2 ? { ...person, population: 'sedentary' } : person) });
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Déplacer Élodie MARTIN' }));
+    expect(screen.getByRole('menuitem', { name: 'Retirer de cette bordée' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Remettre sans affectation' })).not.toBeInTheDocument();
+  });
+
+  it('omits assignment removal for unassigned, aggregate and historical cards', () => {
+    const duplicate = { ...chart.memberships.find((row) => row.personId === 2)!, vesselId: 2, watchGroup: 'Bordée 2' };
+    const { container, rpc } = setup({ view: 'functions' }, { ...chart, memberships: [...chart.memberships, duplicate] });
+    for (const card of ['Déplacer Chloé GARCIA', 'Couleur et fonction de Élodie MARTIN']) {
+      fireEvent.contextMenu(within(container).getByRole('button', { name: card }));
+      const menu = screen.getByRole('menu');
+      expect(within(menu).queryByRole('menuitem', { name: /Remettre sans affectation|Retirer de cette bordée/ })).not.toBeInTheDocument();
+      fireEvent.keyDown(menu, { key: 'Escape' });
+    }
+    expect(rpc).not.toHaveBeenCalled();
+    const historical = setup({}, { ...chart, asOf: '2000-01-01' });
+    expect(within(historical.container).queryByRole('button', { name: /Élodie MARTIN/ })).not.toBeInTheDocument();
   });
 });

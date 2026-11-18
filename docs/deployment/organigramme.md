@@ -101,6 +101,13 @@ collaborateur à une bordée. Avec la souris, maintenez le clic gauche sur le
 fond du diagramme et faites-le glisser pour parcourir la vue. Le texte des
 cartes reste lisible au survol.
 
+Sur une carte affectée à une bordée, le clic droit propose **Remettre sans
+affectation** dans la version sélectionnée. Le collaborateur rejoint **Sans
+affectation** quand cette section est affichée et qu’il ne lui reste aucune
+bordée dans cette version. Pour un collaborateur sédentaire ou encore
+affecté à une autre bordée, le menu propose **Retirer de cette bordée**.
+Sur mobile, ouvrez le menu via **Actions de la carte**.
+
 Le clic droit sur la carte d’un collaborateur permet de choisir une teinte
 pastel ou une **Fonction temporaire**. Les deux réglages sont propres à la
 version sélectionnée et repris dans ses exports. Une copie reprend les couleurs.

@@ -2659,6 +2659,22 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     orgChart.memberships = [...orgChart.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
     return createPreviewQuery({ data: id, error: null });
   }
+  if (functionName === 'remove_organigramme_watch_member') {
+    const personId = Number(args.p_person_id);
+    const watch = orgChart?.watches?.find((item) => item.id === Number(args.p_watch_id));
+    if (!orgChart || !watch || !orgChart.people.some((person) => person.id === personId)) {
+      return createPreviewQuery({ data: null, error: { message: 'Bordée ou collaborateur indisponible.' } });
+    }
+    const memberships = orgChart.memberships.filter((row) => !(
+      row.source === 'manual' && row.personId === personId &&
+      row.vesselId === watch.vesselId && row.watchGroup === watch.name
+    ));
+    if (memberships.length !== orgChart.memberships.length) {
+      orgChart.memberships = memberships;
+      watch.revision = (watch.revision ?? 1) + 1;
+    }
+    return createPreviewQuery({ data: null, error: null });
+  }
   if (functionName === 'move_organigramme_watch_member') {
     const watches = orgChart?.watches ?? [];
     const personId = Number(args.p_person_id);
