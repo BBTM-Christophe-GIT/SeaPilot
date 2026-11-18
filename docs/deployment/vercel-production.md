@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.111.0` ajoute **Remettre sans affectation** au menu contextuel
+des cartes de l’organigramme. Appliquer
+`20261118152222_organigramme_remove_watch_member.sql` avant le frontend.
+Voir [Organigrammes nommés](./organigramme.md#organigrammes-nommés).
+
 La version `3.110.0` permet d’affecter les collaborateurs depuis leurs cartes
 **Sans affectation** et représente les liaisons de l’Armement et du DPA dans
 l’organigramme. Le fond du diagramme se déplace au clic gauche et les cartes

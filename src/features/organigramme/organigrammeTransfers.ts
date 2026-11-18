@@ -70,3 +70,14 @@ export async function moveOrgWatchMember(
     throw new Error('Impossible ' + operation + ' ce collaborateur. Actualisez l’organigramme puis réessayez.', { cause: error });
   }
 }
+
+export async function removeOrgWatchMember(
+  client: SupabaseClient, chartId: number, personId: number, watchId: number,
+): Promise<void> {
+  const { error } = await client.rpc('remove_organigramme_watch_member', {
+    p_chart_id: chartId,
+    p_person_id: personId,
+    p_watch_id: watchId,
+  });
+  if (error) throw new Error('Impossible de retirer ce collaborateur de sa bordée. Actualisez l’organigramme puis réessayez.', { cause: error });
+}

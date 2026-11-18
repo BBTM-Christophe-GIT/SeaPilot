@@ -7,7 +7,7 @@ import type { OrgCardColor } from './organigrammeCardColors';
 import type { OrgBounds, OrgBox, OrgCrewCard, OrgDiagram } from './organigrammeDiagram';
 import { orgLocalDate, type OrgData } from './organigrammeModel';
 import { saveOrgCardColor, saveOrgTemporaryFunction } from './organigrammeQueries';
-import { moveOrgWatchMember, orgCanReceiveMember, orgDestinationLabel, orgTransferFleet, type OrgWatchDestination } from './organigrammeTransfers';
+import { moveOrgWatchMember, orgCanReceiveMember, orgDestinationLabel, orgTransferFleet, removeOrgWatchMember, type OrgWatchDestination } from './organigrammeTransfers';
 import { useOrgCanvasPan } from './useOrgCanvasPan';
 import './orgDiagramCanvas.css';
 
@@ -48,9 +48,9 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
   const [dragging, setDragging] = useState<OrgCrewCard | null>(null);
   const [selection, setSelection] = useState<{ member: OrgCrewCard; vesselId?: number } | null>(null);
   const [destinationKey, setDestinationKey] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [watchAction, setWatchAction] = useState<'move' | 'remove' | null>(null);
   const [savingColor, setSavingColor] = useState(false);
-  const [cardMenu, setCardMenu] = useState<{ person: CardPerson; position: AppContextMenuPosition } | null>(null);
+  const [cardMenu, setCardMenu] = useState<{ person: CardPerson; watchId?: number | null; position: AppContextMenuPosition } | null>(null);
   const [temporaryEditor, setTemporaryEditor] = useState<CardPerson | null>(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -62,7 +62,14 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
   const focusResult = useRef(false);
   const current = data.asOf === orgLocalDate();
   const editable = current && destinations.length > 0;
-  const locked = disabled || busy || savingColor;
+  const locked = disabled || watchAction !== null || savingColor;
+  const menuWatch = cardMenu?.watchId == null ? undefined : byWatch.get(cardMenu.watchId);
+  const menuPerson = cardMenu?.person;
+  const assignment = current && !locked && menuPerson && menuWatch?.watchId != null && menuWatch.memberIds.has(menuPerson.id)
+    ? { person: menuPerson, watch: menuWatch, watchId: menuWatch.watchId } : null;
+  const leavesUnassigned = assignment &&
+    !data.people.some((person) => person.id === assignment.person.id && person.population === 'sedentary') &&
+    !destinations.some((watch) => watch.watchId !== assignment.watchId && watch.memberIds.has(assignment.person.id));
   const cards = useMemo(() => current ? diagram.boxes.flatMap((box) => {
     const crew = box.crew;
     const member = crew && destinations.some((item) => orgCanReceiveMember(item, crew.personId, crew.watchId)) ? crew : undefined;
@@ -86,11 +93,31 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
     cardActionTrigger.current?.focus({ preventScroll: true });
   }, []);
 
-  function openCardMenu(person: CardPerson, trigger: HTMLButtonElement, position?: AppContextMenuPosition) {
+  function openCardMenu(person: CardPerson, trigger: HTMLButtonElement, watchId?: number | null, position?: AppContextMenuPosition) {
     if (locked || dragging) return;
     cardActionTrigger.current = trigger;
     const bounds = trigger.getBoundingClientRect();
-    setCardMenu({ person, position: position ?? { x: bounds.left, y: bounds.bottom } });
+    setCardMenu({ person, watchId, position: position ?? { x: bounds.left, y: bounds.bottom } });
+  }
+
+  async function removeAssignment() {
+    if (!assignment) return;
+    const { person, watch, watchId } = assignment;
+    closeCardMenu();
+    setWatchAction('remove');
+    setError('');
+    setStatus('');
+    try {
+      await removeOrgWatchMember(client, data.chartId, person.id, watchId);
+      setSelection((open) => open?.member.personId === person.id && open.member.watchId === watchId ? null : open);
+      setStatus(person.name + ' quitte ' + orgDestinationLabel(watch) + '.');
+      focusResult.current = true;
+      onSaved();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Impossible de retirer ce collaborateur de la bordée.');
+    } finally {
+      setWatchAction(null);
+    }
   }
 
   async function recolor(color: OrgCardColor | null) {
@@ -147,7 +174,7 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
 
   async function move(member: OrgCrewCard, destination: OrgWatchDestination) {
     if (locked || !editable || !orgCanReceiveMember(destination, member.personId, member.watchId)) return;
-    setBusy(true);
+    setWatchAction('move');
     setStatus('');
     setError('');
     try {
@@ -159,7 +186,7 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Déplacement impossible.');
     } finally {
-      setBusy(false);
+      setWatchAction(null);
     }
   }
 
@@ -191,10 +218,13 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
   return <div className="org-diagram-workspace">
     {!!cards.length && <p className="org-diagram-help">
       {cards.some(({ member }) => member) && 'Glissez une carte vers une autre bordée ou sélectionnez-la pour choisir sa destination. '}
-      Un clic droit sur une carte permet de modifier sa couleur ou sa fonction temporaire.
+      Un clic droit ouvre les actions de la carte.
     </p>}
     {error && <p role="alert" className="org-error org-diagram-message">{error}</p>}
-    <p role="status" ref={statusRef} tabIndex={-1} className="org-diagram-message">{busy ? 'Déplacement en cours…' : savingColor ? 'Enregistrement de la couleur…' : status}</p>
+    <p role="status" ref={statusRef} tabIndex={-1} className="org-diagram-message">{
+      watchAction === 'move' ? 'Déplacement en cours…' : watchAction === 'remove' ? 'Retrait de la bordée…'
+        : savingColor ? 'Enregistrement de la couleur…' : status
+    }</p>
     <div className="org-diagram-stage">
       <div className="org-canvas" ref={canvasRef} tabIndex={0} aria-label="Diagramme défilant" {...canvasPan}>
         <div className="org-diagram-scene" style={{ width: zoom === 0 ? '100%' : diagram.width * zoom / 100 }}>
@@ -211,7 +241,7 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
               draggable={Boolean(member) && !locked} disabled={locked}
               onClick={(event) => {
                 if (!member) {
-                  if (person) openCardMenu(person, event.currentTarget);
+                  if (person) openCardMenu(person, event.currentTarget, box.crew?.watchId);
                   return;
                 }
                 sourceButton.current = event.currentTarget;
@@ -221,12 +251,12 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
               onContextMenu={(event) => {
                 if (!person || locked || dragging) return;
                 event.preventDefault();
-                openCardMenu(person, event.currentTarget, { x: event.clientX, y: event.clientY });
+                openCardMenu(person, event.currentTarget, box.crew?.watchId, { x: event.clientX, y: event.clientY });
               }}
               onKeyDown={(event) => {
                 if (!person || locked || (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10'))) return;
                 event.preventDefault();
-                openCardMenu(person, event.currentTarget);
+                openCardMenu(person, event.currentTarget, box.crew?.watchId);
               }}
               onDragStart={(event) => {
                 if (!member || locked) { event.preventDefault(); return; }
@@ -279,8 +309,8 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
         <div className="org-diagram-form-actions">
           <button type="submit" className="sp-button sp-button--primary" disabled={locked || !destinationKey}>Déplacer</button>
           <button type="button" className="sp-button sp-button--secondary" aria-haspopup="menu" disabled={locked}
-            onClick={(event) => openCardMenu({ id: selection.member.personId, name: selection.member.name }, event.currentTarget)}
-          >Couleur et fonction</button>
+            onClick={(event) => openCardMenu({ id: selection.member.personId, name: selection.member.name }, event.currentTarget, selection.member.watchId)}
+          >Actions de la carte</button>
           <button type="button" className="sp-button sp-button--secondary" disabled={locked} onClick={cancelSelection}>Annuler</button>
         </div>
       </form>}
@@ -292,6 +322,10 @@ export function OrgDiagramCanvas({ canvasRef, diagram, imageSrc, imageAlt, zoom,
       onClose={closeCardMenu}
       onSelectColor={(color) => void recolor(color)}
       onEditFunction={() => { setTemporaryEditor(cardMenu.person); closeCardMenu(); }}
+      assignmentRemoval={assignment ? {
+        label: leavesUnassigned ? 'Remettre sans affectation' : 'Retirer de cette bordée',
+        onSelect: () => void removeAssignment(),
+      } : undefined}
     />}
     {temporaryEditor && <OrgTemporaryFunctionDialog
       name={temporaryEditor.name}
