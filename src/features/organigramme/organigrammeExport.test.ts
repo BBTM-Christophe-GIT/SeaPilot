@@ -6,11 +6,49 @@ import { PDFDocument } from 'pdf-lib';
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
-import { ORG_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
-import { layoutOrganigramme } from './organigrammeDiagram';
+import { ORG_DEMO, ORG_GOVERNANCE_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
+import { layoutOrganigramme, ORG_COLORS } from './organigrammeDiagram';
+import { ORG_CARD_COLORS } from './organigrammeCardColors';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 describe('organigramme exports', () => {
+  it('renders the governance links, accent and pastel customization in PDF and SVG', async () => {
+    const data = { ...ORG_GOVERNANCE_DEMO, cardColors: { 1: 'blue' } as const, temporaryFunctions: { 2: 'Chef de quart invité' } };
+    const sections = buildOrganigramme(data, options);
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    const bytes = new Uint8Array(await (await buildOrgPdf(sections, true, data.asOf, 'vessels', logo)).arrayBuffer());
+    // jsPDF may round a channel when it serializes a hex color as two decimal fractions.
+    const nearColor = (actual: string, expected: string) => [1, 3, 5].every((i) =>
+      Math.abs(Number.parseInt(actual.slice(i, i + 2), 16) - Number.parseInt(expected.slice(i, i + 2), 16)) <= 2);
+    const task = getDocument({ data: bytes });
+    try {
+      const page = await (await task.promise).getPage(1);
+      const ops = await page.getOperatorList();
+      let stroke = '';
+      let dashed = false;
+      const styles: Array<{ stroke: string; dashed: boolean }> = [];
+      const fills: string[] = [];
+      ops.fnArray.forEach((op, index) => {
+        const args = ops.argsArray[index];
+        if (op === OPS.setStrokeRGBColor) stroke = args[0];
+        if (op === OPS.setFillRGBColor) fills.push(args[0]);
+        if (op === OPS.setDash) dashed = args[0].length > 0;
+        if (op === OPS.constructPath && args[0] === OPS.stroke) styles.push({ stroke, dashed });
+      });
+      expect(styles.some((style) => style.dashed && nearColor(style.stroke, ORG_COLORS.navy))).toBe(true);
+      expect(styles.some((style) => style.dashed && nearColor(style.stroke, ORG_COLORS.dpaInk))).toBe(true);
+      expect(styles.some((style) => !style.dashed && nearColor(style.stroke, ORG_COLORS.dpaInk))).toBe(true);
+      for (const color of [ORG_COLORS.dpa, ORG_COLORS.dpaInk, ORG_CARD_COLORS.blue.fill]) expect(fills.some((fill) => nearColor(fill, color))).toBe(true);
+      const text = (await page.getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ');
+      expect(text).toContain('Chef de quart invité');
+      expect(text).toContain('DPA');
+    } finally { await task.destroy(); }
+    const svg = await (await buildOrgImage(sections, true, 'svg')).text();
+    expect(svg).toContain(`<tspan fill="${ORG_COLORS.dpaInk}">DPA</tspan>`);
+    expect(svg).toContain(`fill="${ORG_CARD_COLORS.blue.fill}"`);
+    expect(svg).toContain('Chef de quart invité');
+  });
+
   it('embeds portraits in PDF/SVG, omits them on request, and retains vessel illustrations', async () => {
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const image = `data:image/png;base64,${Buffer.from(logo).toString('base64')}`;

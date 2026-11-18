@@ -1,4 +1,4 @@
-import { layoutOrganigramme, ORG_COLORS, ORG_SHIP_LINES, orgBoxMedia, orgBoxTextX, orgBoxTextTop, orgImageSource, orgBoxTextColor, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, ORG_SHIP_LINES, orgBoxFill, orgBoxMedia, orgBoxTextX, orgBoxTextTop, orgImageSource, orgLineColor, orgTextRuns, organigrammeSvg, type OrgDiagram } from './organigrammeDiagram';
 import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
@@ -50,11 +50,15 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [width, height], compress: true });
   pdf.setProperties({ title: `${chartName} — ${ORGANIGRAMME_REFERENCE}`, subject: `Situation au ${asOf}`, creator: 'SeaPilot' });
   const draw = () => {
-    pdf.setLineWidth(0.35); pdf.setDrawColor(ORG_COLORS.line);
-    diagram.lines.forEach((line) => { pdf.setLineDashPattern(line.dashed ? [1.5, 1.2] : [], 0); pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale); });
+    diagram.lines.forEach((line) => {
+      pdf.setLineWidth(line.relationship ? 0.5 : 0.35);
+      pdf.setDrawColor(orgLineColor(line));
+      pdf.setLineDashPattern(line.dashed ? [1.5, 1.2] : [], 0);
+      pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale);
+    });
     pdf.setLineDashPattern([], 0);
     diagram.boxes.forEach((box) => {
-      pdf.setFillColor(ORG_COLORS[box.tone]); pdf.setDrawColor(box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]);
+      pdf.setFillColor(orgBoxFill(box)); pdf.setDrawColor(box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]);
       pdf.roundedRect(offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2, 'FD');
       const media = orgBoxMedia(box);
       const source = orgImageSource(box.image);
@@ -81,8 +85,21 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
         baseline += line.size + 5;
         pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
         pdf.setFontSize(line.size * scale * 72 / 25.4);
-        pdf.setTextColor(orgBoxTextColor(box, line.bold));
-        pdf.text(line.text, offsetX + orgBoxTextX(box) * scale, offsetY + (baseline - 5) * scale, { align: 'center' });
+        const runs = orgTextRuns(box, line);
+        const center = offsetX + orgBoxTextX(box) * scale;
+        const y = offsetY + (baseline - 5) * scale;
+        if (runs.length === 1) {
+          pdf.setTextColor(runs[0].color);
+          pdf.text(runs[0].text, center, y, { align: 'center' });
+        } else {
+          const widths = runs.map((run) => pdf.getTextWidth(run.text));
+          let x = center - widths.reduce((total, width) => total + width, 0) / 2;
+          runs.forEach((run, index) => {
+            pdf.setTextColor(run.color);
+            pdf.text(run.text, x, y);
+            x += widths[index];
+          });
+        }
       });
     });
   };

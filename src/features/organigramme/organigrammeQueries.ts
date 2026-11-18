@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { OrgCardColor } from './organigrammeCardColors';
 import { PRIMARY_ORG_CHART, type OrgCategory, type OrgChart, type OrgData, type OrgLink, type OrgSupportDraft } from './organigrammeModel';
 import { loadPeoplePortraits } from '../humanResources/portraitMedia';
 import { loadOrgVesselIcons } from './organigrammeMedia';
 
 export async function fetchOrganigramme(client: SupabaseClient, asOf: string, chartId = PRIMARY_ORG_CHART.id): Promise<OrgData> {
-  const { data, error } = await client.rpc('organigramme_snapshot_v3', { p_chart_id: chartId, p_as_of: asOf });
+  const { data, error } = await client.rpc('organigramme_snapshot_v4', { p_chart_id: chartId, p_as_of: asOf });
   if (error) throw new Error('Impossible de charger l’organigramme. Vérifiez vos droits et réessayez.', { cause: error });
   if (!data || data.chartId !== chartId || !Array.isArray(data.charts) || !data.charts.some((chart: OrgChart) => chart.id === chartId) || !Array.isArray(data.people) || !Array.isArray(data.vessels) || !Array.isArray(data.memberships) || !Array.isArray(data.support) || !Array.isArray(data.watches)) throw new Error('Les données de l’organigramme sont indisponibles.');
   const snapshot = { ...data, asOf } as OrgData;
@@ -12,6 +13,23 @@ export async function fetchOrganigramme(client: SupabaseClient, asOf: string, ch
   // Keep the HR function intact for inherited vessel roles. Office responsibilities
   // are resolved only where they are displayed, including the contact lists.
   return { ...snapshot, vessels, people };
+}
+
+async function saveOrgCardSetting(
+  client: SupabaseClient, chartId: number, personId: number, field: 'color' | 'temporary_function', value: string | null,
+) {
+  const { error } = await client.rpc('save_organigramme_card_setting', {
+    p_chart_id: chartId, p_person_id: personId, p_field: field, p_value: value,
+  });
+  if (error) throw new Error('Impossible de personnaliser cette carte. Réessayez.', { cause: error });
+}
+
+export function saveOrgCardColor(client: SupabaseClient, chartId: number, personId: number, color: OrgCardColor | null) {
+  return saveOrgCardSetting(client, chartId, personId, 'color', color);
+}
+
+export function saveOrgTemporaryFunction(client: SupabaseClient, chartId: number, personId: number, label: string | null) {
+  return saveOrgCardSetting(client, chartId, personId, 'temporary_function', label?.trim() || null);
 }
 
 export async function createOrgChart(client: SupabaseClient, name: string, sourceChartId?: number): Promise<OrgChart> {

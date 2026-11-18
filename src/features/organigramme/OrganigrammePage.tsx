@@ -46,6 +46,7 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
   const [zoom, setZoom] = useState(90);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const centeredCanvas = useRef<{ element: HTMLDivElement; chartId: number; zoom: number; view: OrgOptions['view']; vesselIds: OrgOptions['vesselIds'] } | null>(null);
   const [options, setOptions] = useState<OrgOptions>({ view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true });
   const refresh = () => setRevision((value) => value + 1);
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
@@ -70,15 +71,14 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const previous = centeredCanvas.current;
+    if (previous?.element === canvas && previous.chartId === chartId && previous.zoom === zoom &&
+        previous.view === options.view && previous.vesselIds === options.vesselIds) return;
+    centeredCanvas.current = { element: canvas, chartId, zoom, view: options.view, vesselIds: options.vesselIds };
     const head = diagram.boxes.find((box) => box.tone === 'leader');
     const center = head ? head.x + head.width / 2 : diagram.width / 2;
-    const recenter = () => { canvas.scrollLeft = zoom ? Math.max(0, center * zoom / 100 - canvas.clientWidth / 2) : 0; };
-    recenter();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(recenter);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [zoom, diagram.width, activeDocument, chartId]);
+    canvas.scrollLeft = zoom ? Math.max(0, center * zoom / 100 - canvas.clientWidth / 2) : 0;
+  }, [activeDocument, chartId, diagram, options.vesselIds, options.view, zoom]);
   const diagramUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(organigrammeSvg(diagram))}`, [diagram]);
   const count = new Set(sections.filter((section) => section.kind !== 'relations').flatMap((section) => section.columns.flatMap((column) => column.members.map((member) => member.id)))).size;
   const shownLinks = sections.filter((section) => section.kind === 'relations').reduce((total, section) => total + section.columns.length, 0);

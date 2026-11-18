@@ -96,6 +96,22 @@ et s’applique à l’organigramme sélectionné. Les affectations du Planning
 suivent leur propre circuit d’édition.
 Si une carte de la vue **Par fonction** regroupe plusieurs affectations,
 la vue **Par navire et bordée** permet de choisir l’affectation à déplacer.
+Les cartes du groupe **Sans affectation** permettent aussi d’affecter un
+collaborateur à une bordée. Avec la souris, maintenez le clic gauche sur le
+fond du diagramme et faites-le glisser pour parcourir la vue. Le texte des
+cartes reste lisible au survol.
+
+Le clic droit sur la carte d’un collaborateur permet de choisir une teinte
+pastel ou une **Fonction temporaire**. Les deux réglages sont propres à la
+version sélectionnée et repris dans ses exports. Une copie reprend les couleurs.
+Le libellé temporaire appartient à la version d’origine. La fiche RH, les
+listes de contacts et le Planning utilisent leurs libellés habituels.
+
+Dans **Par navire et bordée**, le Capitaine d’Armement est relié en pointillé
+aux navires affichés. La carte du DPA est rouge pâle par défaut et le sigle
+**DPA** s’affiche en rouge dans la fonction. Les navires affichés sont reliés
+au DPA en pointillé rouge, et le DPA au Président par un trait rouge continu.
+Les liaisons suivent les responsabilités enregistrées dans l’organigramme.
 
 La liste du personnel et les coordonnées reprennent les fiches RH de référence.
 Les anciennes fiches rapprochées conservent leurs liens avec les opérations

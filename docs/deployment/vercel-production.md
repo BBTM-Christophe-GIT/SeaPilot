@@ -1,5 +1,14 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.110.0` permet d’affecter les collaborateurs depuis leurs cartes
+**Sans affectation** et représente les liaisons de l’Armement et du DPA dans
+l’organigramme. Le fond du diagramme se déplace au clic gauche et les cartes
+restent lisibles au survol. Le clic droit personnalise la teinte et le libellé
+temporaire dans l’organigramme sélectionné. Appliquer
+`20261118144702_organigramme_unassigned_transfers.sql` puis
+`20261118145615_organigramme_card_settings.sql` avant le frontend.
+Voir [Organigrammes nommés](./organigramme.md#organigrammes-nommés).
+
 La version `3.109.0` permet de dupliquer un organigramme sous un nouveau nom
 et de déplacer un équipier directement depuis sa carte dans le diagramme.
 Appliquer `20261118141755_organigramme_duplicate_chart.sql` avant le frontend.

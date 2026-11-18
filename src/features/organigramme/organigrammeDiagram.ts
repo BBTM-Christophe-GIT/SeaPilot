@@ -1,13 +1,23 @@
-import type { OrgMember, OrgSection } from './organigrammeModel';
+import type { OrgMember, OrgOfficeRole, OrgSection } from './organigrammeModel';
+import { ORG_CARD_COLORS, type OrgCardColor } from './organigrammeCardColors';
 
 export interface OrgBounds { x: number; y: number; width: number; height: number }
-export interface OrgCrewCard { personId: number; name: string; watchId: number }
-export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support'; lines: Array<{ text: string; size: number; bold: boolean }> }
+export interface OrgCrewCard { personId: number; name: string; watchId: number | null }
+export interface OrgTextLine { text: string; size: number; bold: boolean; highlightDpa?: boolean }
+export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; officeRoles?: OrgOfficeRole[]; person?: { id: number; name: string }; cardColor?: OrgCardColor; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support' | 'dpa'; lines: OrgTextLine[] }
 export interface OrgWatchArea extends OrgBounds { watchId: number }
-export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean }
+export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean; relationship?: 'armement' | 'dpa' }
 export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[]; watches?: OrgWatchArea[] }
-export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
-export const orgBoxTextColor = (box: OrgBox, bold: boolean) => box.tone === 'navy' || box.tone === 'leader' ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
+export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', dpa: '#fbe9eb', dpaInk: '#a1263c', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
+export const orgBoxFill = (box: OrgBox) => box.cardColor ? ORG_CARD_COLORS[box.cardColor].fill : ORG_COLORS[box.tone];
+export const orgBoxTextColor = (box: OrgBox, bold: boolean) => !box.cardColor && (box.tone === 'navy' || box.tone === 'leader') ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
+export const orgLineColor = (line: OrgLine) => line.relationship === 'dpa' ? ORG_COLORS.dpaInk : line.relationship === 'armement' ? ORG_COLORS.navy : ORG_COLORS.line;
+
+export function orgTextRuns(box: OrgBox, line: OrgTextLine) {
+  const color = orgBoxTextColor(box, line.bold);
+  const parts = line.highlightDpa ? line.text.split(/(\bDPA\b)/gi) : [line.text];
+  return parts.map((text, index) => ({ text, color: index % 2 ? ORG_COLORS.dpaInk : color })).filter((part) => part.text);
+}
 
 // Conservative character budget keeps SVG, PNG and PDF text inside the same boxes.
 export function wrapOrgText(text: string, max = 27): string[] {
@@ -26,7 +36,7 @@ function memberLines(person: OrgMember, portraitSize: number, office = false): O
   const width = 248 - 24 - (person.photoUrl ? portraitSize + 12 : 0);
   return [
     { text: person.name, size: office ? 14 : 13, bold: true },
-    { text: person.functionLabel, size: 11, bold: false },
+    { text: person.functionLabel, size: 11, bold: false, highlightDpa: office && person.officeRoles?.includes('dpa') },
     { text: person.detail, size: 10, bold: false },
     { text: person.email || '', size: 10, bold: false },
     { text: person.phone || '', size: 10, bold: false },
@@ -44,7 +54,10 @@ function categoryCardMetrics(members: OrgMember[], office = false): CardMetrics 
 
 function memberCard(person: OrgMember, x: number, y: number, metrics: CardMetrics, office = false): OrgBox {
   return { x, y, width: 248, height: metrics.height, lines: memberLines(person, metrics.portraitSize, office),
-    tone: office && person.rank === '1' ? 'leader' : office && person.rank === 'support' ? 'support' : 'white',
+    tone: office && person.officeRoles?.includes('dpa') ? 'dpa' : office && person.rank === '1' ? 'leader' : office && person.rank === 'support' ? 'support' : 'white',
+    ...(office && person.officeRoles?.length ? { officeRoles: person.officeRoles } : {}),
+    ...(person.id > 0 ? { person: { id: person.id, name: person.name } } : {}),
+    ...(person.cardColor ? { cardColor: person.cardColor } : {}),
     ...(person.watchId === undefined ? {} : { crew: { personId: person.id, name: person.name, watchId: person.watchId } }),
     ...(person.photoUrl ? { image: person.photoUrl, mediaKind: 'portrait' as const, portraitSize: metrics.portraitSize } : {}),
   };
@@ -103,8 +116,10 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
   return diagram;
 }
 
+interface OfficeRails { left: number; right: number }
+
 /** Ranks form vertical tiers; Support remains on lateral branches, outside the reporting tiers. */
-function layoutOffice(section: OrgSection): OrgDiagram {
+function layoutOffice(section: OrgSection): OrgDiagram & { rails: OfficeRails } {
   const members = section.columns.flatMap((column) => column.members);
   const metrics = categoryCardMetrics(members, true);
   const supports = members.filter((person) => person.rank === 'support');
@@ -158,7 +173,71 @@ function layoutOffice(section: OrgSection): OrgDiagram {
     supportBottom = Math.max(supportBottom, cardY);
   });
   diagram.height = Math.max(y, supportBottom + 24);
-  return diagram;
+  return { ...diagram, rails: { left: sideWidth + 12, right: width - sideWidth - 12 } };
+}
+
+type Point = [x: number, y: number];
+
+function addPath(diagram: OrgDiagram, points: Point[], style: Pick<OrgLine, 'relationship' | 'dashed'>) {
+  points.slice(1).forEach(([x2, y2], index) => {
+    const [x1, y1] = points[index];
+    if (x1 !== x2 || y1 !== y2) diagram.lines.push({ x1, y1, x2, y2, ...style });
+  });
+}
+
+function pathClearsCards(points: Point[], cards: OrgBox[]) {
+  return points.slice(1).every(([x2, y2], index) => {
+    const [x1, y1] = points[index];
+    return cards.every((box) => x1 === x2
+      ? x1 <= box.x || x1 >= box.x + box.width || Math.max(y1, y2) <= box.y || Math.min(y1, y2) >= box.y + box.height
+      : y1 <= box.y || y1 >= box.y + box.height || Math.max(x1, x2) <= box.x || Math.min(x1, x2) >= box.x + box.width);
+  });
+}
+
+function connectDpaAndPresident(diagram: OrgDiagram, dpa: OrgBox, president: OrgBox, rails: OfficeRails) {
+  const abovePresident = dpa.y + dpa.height <= president.y;
+  const belowPresident = president.y + president.height <= dpa.y;
+  const dpaX = dpa.x + dpa.width * .42;
+  const presidentX = president.x + president.width * .42;
+  const dpaY = abovePresident ? dpa.y + dpa.height : dpa.y;
+  const presidentY = belowPresident ? president.y + president.height : president.y;
+  const laneY = abovePresident || belowPresident ? (dpaY + presidentY) / 2 : Math.min(dpaY, presidentY) - 12;
+  const direct: Point[] = [[dpaX, dpaY], [dpaX, laneY], [presidentX, laneY], [presidentX, presidentY]];
+  const cards = diagram.boxes.filter((box) => box !== dpa && box !== president);
+  const firstBend = dpaY + (abovePresident ? 8 : -8);
+  const lastBend = presidentY + (belowPresident ? 8 : -8);
+  const detours = [rails.left + 6, rails.right - 6].map((x): Point[] => [
+    [dpaX, dpaY], [dpaX, firstBend], [x, firstBend], [x, lastBend], [presidentX, lastBend], [presidentX, presidentY],
+  ]);
+  addPath(diagram, [direct, ...detours].find((path) => pathClearsCards(path, cards)) ?? direct, { relationship: 'dpa' });
+}
+
+function addOfficeRelationships(diagram: OrgDiagram, rails: OfficeRails) {
+  const president = diagram.boxes.find((box) => box.officeRoles?.includes('president'));
+  const dpa = diagram.boxes.find((box) => box.officeRoles?.includes('dpa'));
+  const captain = diagram.boxes.find((box) => box.officeRoles?.includes('armementCaptain'));
+  if (dpa && president && dpa !== president) connectDpaAndPresident(diagram, dpa, president, rails);
+
+  const vessels = diagram.boxes.filter((box) => box.vesselId !== undefined);
+  if (!vessels.length) return;
+  const fleetTop = vessels[0].y;
+  const fleetRoles = [
+    { box: captain, relationship: 'armement' as const, laneY: fleetTop - 46, outlet: .32, bend: 8 },
+    { box: dpa, relationship: 'dpa' as const, laneY: fleetTop - 22, outlet: .68, bend: 12 },
+  ];
+  for (const { box, relationship, laneY, outlet, bend } of fleetRoles) {
+    if (!box) continue;
+    const x = box.x + box.width * outlet;
+    const y = box.y + box.height;
+    const leftSide = x < (rails.left + rails.right) / 2;
+    const railX = (leftSide ? rails.left : rails.right) + (relationship === 'dpa' ? 4 : 0);
+    const targets = vessels.map((vessel) => ({ x: vessel.x + vessel.width * outlet, y: vessel.y }));
+    const xs = [railX, ...targets.map((target) => target.x)];
+    const style = { relationship, dashed: true };
+    addPath(diagram, [[x, y], [x, y + bend], [railX, y + bend], [railX, laneY]], style);
+    addPath(diagram, [[Math.min(...xs), laneY], [Math.max(...xs), laneY]], style);
+    targets.forEach((target) => addPath(diagram, [[target.x, laneY], [target.x, target.y]], style));
+  }
 }
 
 /** All vessels occupy one horizontal row. External advisers sit alongside the office hierarchy. */
@@ -168,27 +247,33 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   const headingHeight = Math.max(64, ...vessels.map((section) => 24 + wrapOrgText(section.label, 20).length * 20));
   const rows: OrgDiagram[][] = [];
   const office = sections.find((section) => section.kind === 'office');
+  const hierarchy = office ? layoutOffice(office) : null;
   const external = sections.find((section) => section.kind === 'external');
-  let fleetPlaced = false;
+  let fleetRow: number | undefined;
   for (const section of sections) {
-    if (section.kind === 'office') {
-      const hierarchy = layoutOffice(section);
+    if (section.kind === 'office' && hierarchy) {
       const advisers = external ? layoutSection({ ...external, columns: [{ key: 'external', label: '', members: external.columns.flatMap((column) => column.members) }] }, showVessels) : null;
       rows.push(advisers ? [advisers, hierarchy] : [hierarchy]);
     } else if (section.kind === 'external' && office) continue;
     else if (section.kind === 'vessel') {
-      if (!fleetPlaced) rows.push(vessels.map((vessel) => layoutSection(vessel, showVessels, headingHeight, fleetMetrics)));
-      fleetPlaced = true;
+      if (fleetRow === undefined) {
+        fleetRow = rows.length;
+        rows.push(vessels.map((vessel) => layoutSection(vessel, showVessels, headingHeight, fleetMetrics)));
+      }
     } else rows.push([layoutSection(section, showVessels)]);
   }
   const gap = 24;
   const rowWidths = rows.map((row) => row.reduce((width, section) => width + section.width, 0) + (row.length - 1) * gap);
   const watches: OrgWatchArea[] = [];
   const diagram: OrgDiagram = { width: Math.max(320, ...rowWidths), height: 80, boxes: [], lines: [], watches };
+  const reserveFleetConnectionSpace = showVessels && hierarchy?.boxes.some((box) => box.officeRoles?.some((role) => role === 'dpa' || role === 'armementCaptain'));
+  let officeRails: OfficeRails | undefined;
   let y = 0;
   rows.forEach((row, index) => {
+    if (index === fleetRow && reserveFleetConnectionSpace) y += 48;
     let x = (diagram.width - rowWidths[index]) / 2;
     row.forEach((section) => {
+      if (hierarchy && section === hierarchy) officeRails = { left: x + hierarchy.rails.left, right: x + hierarchy.rails.right };
       diagram.boxes.push(...section.boxes.map((box) => ({ ...box, x: box.x + x, y: box.y + y })));
       diagram.lines.push(...section.lines.map((line) => ({ ...line, x1: line.x1 + x, x2: line.x2 + x, y1: line.y1 + y, y2: line.y2 + y })));
       watches.push(...(section.watches ?? []).map((watch) => ({ ...watch, x: watch.x + x, y: watch.y + y })));
@@ -197,6 +282,7 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
     y += Math.max(...row.map((section) => section.height));
   });
   diagram.height = Math.max(80, y);
+  if (officeRails) addOfficeRelationships(diagram, officeRails);
   return diagram;
 }
 
@@ -212,7 +298,7 @@ export const orgImageSource = (source?: string) => source && /^data:image\/(png|
 export const ORG_SHIP_LINES = [[5,12,12,9],[12,9,19,12],[5,12,7,18],[19,12,17,18],[7,18,17,18],[8,10,8,5],[8,5,16,5],[16,5,16,10],[12,5,12,2],[4,21,8,20],[8,20,12,21],[12,21,16,20],[16,20,20,21]];
 const escapeXml = (text: string) => text.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
 export function organigrammeSvg(diagram: OrgDiagram): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${ORG_COLORS.line}" stroke-width="1.5"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`).join('')}${diagram.boxes.map((box) => {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${orgLineColor(line)}" stroke-width="${line.relationship ? 2 : 1.5}"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`).join('')}${diagram.boxes.map((box) => {
     let baseline = orgBoxTextTop(box);
     const media = orgBoxMedia(box);
     const source = orgImageSource(box.image);
@@ -220,9 +306,11 @@ export function organigrammeSvg(diagram: OrgDiagram): string {
     const clipId = `portrait-${box.x}-${box.y}`;
     const clip = portrait && source ? `<defs><clipPath id="${clipId}"><circle cx="${media.x + media.width / 2}" cy="${media.y + media.height / 2}" r="${media.width / 2}"/></clipPath></defs>` : '';
     const picture = source ? `${clip}<image href="${source}" x="${media.x}" y="${media.y}" width="${media.width}" height="${media.height}" preserveAspectRatio="xMidYMid ${portrait ? 'slice' : 'meet'}"${portrait ? ` clip-path="url(#${clipId})"` : ''}/>` : box.mediaKind === 'vessel' ? `<g transform="translate(${media.x + 14} ${media.y + 3}) scale(1.5)" stroke="white" stroke-width="1.5" fill="none">${ORG_SHIP_LINES.map(([x1,y1,x2,y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')}</g>` : '';
-    return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${ORG_COLORS[box.tone]}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${picture}${box.lines.map((line) => {
+    return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${orgBoxFill(box)}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${picture}${box.lines.map((line) => {
       baseline += line.size + 5;
-      return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${orgBoxTextColor(box, line.bold)}">${escapeXml(line.text)}</text>`;
+      const color = orgBoxTextColor(box, line.bold);
+      const text = orgTextRuns(box, line).map((run) => run.color === color ? escapeXml(run.text) : `<tspan fill="${run.color}">${escapeXml(run.text)}</tspan>`).join('');
+      return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${color}">${text}</text>`;
     }).join('')}`;
   }).join('')}</svg>`;
 }
