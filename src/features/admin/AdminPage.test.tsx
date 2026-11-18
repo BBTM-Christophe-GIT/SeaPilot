@@ -73,7 +73,7 @@ function createAdminClient(options: { profiles?: unknown[]; sources?: unknown[];
         return createNavigationPermissionsQuery();
       }
 
-      if (table === 'people') {
+      if (table === 'admin_people_directory') {
         return createPeopleQuery(options.people);
       }
 
@@ -147,7 +147,7 @@ describe('AdminPage', () => {
 
   it('does not show an unfiltered account list when HR data cannot load', async () => {
     const base = createAdminClient();
-    const client = { from: (table: string) => table === 'people'
+    const client = { from: (table: string) => table === 'admin_people_directory'
       ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: new Error('Denied') }) }) }) }
       : base.from(table) };
     renderAdminPage(client);
@@ -229,7 +229,7 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
-        if (table === 'people') {
+        if (table === 'admin_people_directory') {
           return {
             select: vi.fn().mockReturnValue({
               order: () => ({ range: async () => ({ data: [], error: null }) }),
@@ -255,7 +255,7 @@ describe('AdminPage', () => {
           };
         }
 
-        if (table === 'people') return createPeopleQuery();
+        if (table === 'admin_people_directory') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -388,7 +388,7 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
-        if (table === 'people') return createPeopleQuery();
+        if (table === 'admin_people_directory') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -435,7 +435,7 @@ describe('AdminPage', () => {
           return createNavigationPermissionsQuery();
         }
 
-        if (table === 'people') return createPeopleQuery();
+        if (table === 'admin_people_directory') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };
@@ -468,7 +468,7 @@ describe('AdminPage', () => {
           return { ...createNavigationPermissionsQuery(), upsert };
         }
 
-        if (table === 'people') return createPeopleQuery();
+        if (table === 'admin_people_directory') return createPeopleQuery();
         throw new Error(`Unexpected table ${table}`);
       }),
     };

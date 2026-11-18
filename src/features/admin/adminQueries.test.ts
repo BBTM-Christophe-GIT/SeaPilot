@@ -43,7 +43,7 @@ describe('administrator invitations', () => {
 
     await expect(fetchAdminInviteCandidates({ from } as never)).resolves.toEqual([]);
 
-    expect(from).toHaveBeenCalledWith('people');
+    expect(from).toHaveBeenCalledWith('admin_people_directory');
     expect(eqActive).toHaveBeenCalledWith('active', true);
     expect(isUnlinked).toHaveBeenCalledWith('user_id', null);
     expect(orderByLastName).toHaveBeenCalledWith('last_name', { ascending: true });

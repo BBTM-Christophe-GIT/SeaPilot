@@ -107,8 +107,10 @@
 .org-canvas-panel, .org-inspector { border: 1px solid #e0e7ec; border-radius: 12px; background: #fff; box-shadow: 0 3px 16px #12364b05; }
 .org-canvas-toolbar { min-height: 68px; padding: 12px 18px; gap: 10px; }
 .org-canvas-toolbar .org-canvas-title { display: grid; gap: 4px; }
-.org-canvas-title strong { color: #12364b; font-size: 14px; }
+.org-canvas-title { min-width: 0; max-width: 100%; }
+.org-canvas-title select { max-width: min(100%, 290px); font-weight: 700; text-overflow: ellipsis; }
 .org-canvas-title span { font-size: 11px; }
+.org-chart-name-field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
 .org-canvas-toolbar .org-canvas-actions { gap: 8px; }
 .org-page .org-expand { padding: 8px; min-height: 36px; }
 .org-canvas { background-color: #fafcfd; background-image: radial-gradient(#d4e0e7 .7px, transparent .7px); }

@@ -1,0 +1,117 @@
+.org-transfer-board {
+  color: var(--sp-text);
+  font-size: .875rem;
+}
+
+.org-transfer-status:empty {
+  margin: 0;
+}
+
+.org-transfer-fleet {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--sp-space-4);
+}
+
+.org-transfer-vessel {
+  display: grid;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-3);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-canvas);
+}
+
+.org-transfer-vessel h3,
+.org-transfer-watch h4 {
+  margin: 0;
+  color: var(--sp-heading);
+  font-size: inherit;
+}
+
+.org-transfer-watch {
+  min-width: 0;
+  padding: var(--sp-space-2);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+
+.org-transfer-watch[data-drop-ready="true"] {
+  border: 1px dashed var(--sp-primary);
+}
+
+.org-transfer-watch[data-drop-active="true"] {
+  border-style: solid;
+  background: var(--sp-primary-soft);
+  outline: 2px solid var(--sp-focus);
+}
+
+.org-transfer-watch ul {
+  margin: var(--sp-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.org-transfer-watch li + li {
+  margin-top: var(--sp-space-1);
+}
+
+.org-transfer-watch p {
+  margin: var(--sp-space-2) 0 0;
+  color: var(--sp-muted);
+}
+
+.org-page .org-transfer-member {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: start;
+}
+
+.org-transfer-member[draggable="true"] {
+  cursor: grab;
+}
+
+.org-transfer-member[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.org-transfer-member svg {
+  flex-shrink: 0;
+}
+
+.org-transfer-member span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.org-transfer-member small {
+  display: block;
+  color: var(--sp-muted);
+  font-weight: normal;
+}
+
+.org-transfer-form,
+.org-transfer-form label {
+  display: grid;
+  gap: var(--sp-space-2);
+}
+
+.org-transfer-form {
+  margin-top: var(--sp-space-2);
+  padding: var(--sp-space-2);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-canvas);
+}
+
+.org-page .org-transfer-form select {
+  min-height: var(--sp-control-height);
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .org-transfer-fleet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

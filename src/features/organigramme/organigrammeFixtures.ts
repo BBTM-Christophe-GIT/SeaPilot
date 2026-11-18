@@ -1,7 +1,9 @@
-import type { OrgData } from './organigrammeModel';
+import { PRIMARY_ORG_CHART, type OrgData } from './organigrammeModel';
 
 // Entirely fictional fixture shared by the public preview and UI tests.
 export const ORG_DEMO: OrgData = {
+  chartId: PRIMARY_ORG_CHART.id,
+  charts: [PRIMARY_ORG_CHART],
   asOf: '2026-09-26',
   people: [
     { id: 1, name: 'Camille DUMONT', functionLabel: 'Président', population: 'sedentary' },
@@ -18,7 +20,12 @@ export const ORG_DEMO: OrgData = {
     { id: 12, name: 'Louise FAURE', functionLabel: 'Directrice Administrative et Financière', population: 'sedentary' },
   ].map((person) => ({ ...person, email: `personne.${person.id}@example.invalid`, phone: `00 00 00 00 ${String(person.id).padStart(2, '0')}` })),
   vessels: [{ id: 1, name: 'GOURY', lengthOverall: 30.62 }, { id: 2, name: 'LE ROZEL', lengthOverall: 19.2 }],
-  watches: [{ id: 1, vesselId: 1, name: 'Bordée 1' }, { id: 2, vesselId: 1, name: 'Bordée 2' }, { id: 3, vesselId: 2, name: 'Bordée 1' }, { id: 4, vesselId: 2, name: 'Bordée 2' }],
+  watches: [
+    { id: 1, vesselId: 1, name: 'Bordée 1', revision: 1 },
+    { id: 2, vesselId: 1, name: 'Bordée 2', revision: 1 },
+    { id: 3, vesselId: 2, name: 'Bordée 1', revision: 1 },
+    { id: 4, vesselId: 2, name: 'Bordée 2', revision: 1 },
+  ],
   memberships: [
     { personId: 2, vesselId: 1, watchGroup: 'Bordée 1', functionLabel: 'Capitaine', source: 'manual' },
     { personId: 3, vesselId: 1, watchGroup: 'Bordée 1', functionLabel: 'Chef Mécanicien', source: 'manual' },
@@ -51,7 +58,7 @@ export const ORG_VESSEL_FILTER_DEMO: OrgData = { ...ORG_DEMO,
     { id: 3, name: 'NAVIRE CÔTIER', lengthOverall: 25 },
     { id: 4, name: 'NAVIRE VIDE', lengthOverall: 40 },
   ],
-  watches: [...ORG_DEMO.watches!, { id: 5, vesselId: 3, name: 'Bordée 1' }, { id: 6, vesselId: 4, name: 'Bordée vide' }],
+  watches: [...ORG_DEMO.watches!, { id: 5, vesselId: 3, name: 'Bordée 1', revision: 1 }, { id: 6, vesselId: 4, name: 'Bordée vide', revision: 1 }],
   memberships: [...ORG_DEMO.memberships,
     { personId: 10, vesselId: 3, watchGroup: 'Bordée 1', functionLabel: '', source: 'manual' },
     { personId: 999, vesselId: 4, watchGroup: 'Bordée vide', functionLabel: '', source: 'manual' },

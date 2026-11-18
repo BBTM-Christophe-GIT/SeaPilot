@@ -150,7 +150,7 @@ for (const profile of profiles) {
       await navigation.getByRole('link', { name: 'Daily Progress Report', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Daily Progress Report', exact: true })).toBeVisible();
 
-      for (const forbidden of ['admin', 'projects', 'disciplinary']) {
+      for (const forbidden of ['admin', 'projects', 'disciplinary', 'organigramme']) {
         await page.goto(`/modules/${forbidden}`);
         await expect(page.getByText('Acces refuse pour ce module.', { exact: true })).toBeVisible();
       }

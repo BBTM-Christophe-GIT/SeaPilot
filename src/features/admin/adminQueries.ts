@@ -149,7 +149,7 @@ export async function fetchSharePointImportSources(client: SupabaseClient): Prom
 
 export async function fetchAdminInviteCandidates(client: SupabaseClient): Promise<AdminInviteCandidate[]> {
   const { data, error } = await client
-    .from('people')
+    .from('admin_people_directory')
     .select('id, first_name, last_name, email, function_label')
     .eq('active', true)
     .is('user_id', null)
