@@ -1,7 +1,9 @@
-import { Download, Eye, FileDown, Image, Network, Settings2, Ship, Users } from 'lucide-react';
+import { ArrowRightLeft, Download, Eye, FileDown, Image, Network, Settings2, Ship, Users } from 'lucide-react';
 import { OrgExportFields } from './OrgExportFields';
 import { orgCategoryLabel, orgPopulatedVessels, type OrgData, type OrgOptions } from './organigrammeModel';
 import { fleetIllustration } from '../fleet/fleetDisplay';
+
+export type OrgEditor = 'watches' | 'transfer' | 'structure';
 
 interface Props {
   data: OrgData | null;
@@ -15,7 +17,7 @@ interface Props {
   onImageFormatChange: (format: 'png' | 'svg') => void;
   onExportImage: () => void;
   onExportPdf: () => void;
-  onEdit: (editor: 'watches' | 'structure') => void;
+  onEdit: (editor: OrgEditor) => void;
 }
 
 export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, disabled, canExport, imageFormat, onImageFormatChange, onExportImage, onExportPdf, onEdit }: Props) {
@@ -47,8 +49,9 @@ export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, 
       <h3><Eye size={16} aria-hidden="true" />Affichage</h3>
       <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds !== null} onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}</label>)}</div>
       <div className="org-editor-actions">
-        <button type="button" className="org-accent" disabled={!data} onClick={() => onEdit('watches')}><Users size={16} aria-hidden="true" />Composer les bordées</button>
-        <button type="button" disabled={!data} onClick={() => onEdit('structure')}><Settings2 size={16} aria-hidden="true" />Modifier la structure</button>
+        <button type="button" className="org-accent" disabled={!data || disabled} onClick={() => onEdit('watches')}><Users size={16} aria-hidden="true" />Composer les bordées</button>
+        <button type="button" disabled={!data || disabled} onClick={() => onEdit('transfer')}><ArrowRightLeft size={16} aria-hidden="true" />Déplacer des collaborateurs</button>
+        <button type="button" disabled={!data || disabled} onClick={() => onEdit('structure')}><Settings2 size={16} aria-hidden="true" />Modifier la structure</button>
       </div>
     </section>
     <section className="org-inspector-section" aria-label="Exports">

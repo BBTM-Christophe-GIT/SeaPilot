@@ -63,7 +63,8 @@ describe('organigramme exports', () => {
   });
   it('exports the selected populated ships in both PDF and SVG, without empty or excluded ships', async () => {
     const sections = buildOrganigramme(ORG_VESSEL_FILTER_DEMO, { ...options, vesselIds: [2, 4, 1] });
-    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')));
+    const chartName = 'Équipages hiver';
+    const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', new Uint8Array(await readFile('public/bbtm-report-logo.png')), chartName);
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const task = getDocument({ data: bytes.slice() });
     try {
@@ -71,6 +72,7 @@ describe('organigramme exports', () => {
       expect(pdf.numPages).toBe(1);
       const content = await (await pdf.getPage(1)).getTextContent();
       const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+      expect(text).toContain(chartName);
       const svg = await (await buildOrgImage(sections, true, 'svg')).text();
       for (const exported of [text, svg]) {
         expect(exported).toContain('GOURY'); expect(exported).toContain('LE ROZEL');

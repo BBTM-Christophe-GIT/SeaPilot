@@ -1,5 +1,16 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.108.0` utilise les fiches collaborateurs de référence dans
+Administration et Organigramme. Elle ajoute des organigrammes nommés et le
+déplacement par glisser-déposer entre bordées, y compris entre navires.
+Appliquer les migrations suivantes avant le frontend, dans cet ordre.
+
+- `20261118074520_canonical_people_directories.sql`
+- `20261118074600_organigramme_named_charts.sql`
+- `20261118074634_organigramme_watch_transfers.sql`
+
+Voir [les organigrammes et la composition des bordées](./organigramme.md#organigrammes-nommés).
+
 La version `3.107.0` actualise les prévisions et le calcul UKC du Passage Plan.
 Appliquer `20261116150758_sea_operation_waypoint_provenance.sql` avant le
 frontend. Voir [le calcul UKC avec Copernicus](./sea-operation-copernicus-ukc.md)

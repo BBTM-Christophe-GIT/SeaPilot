@@ -11,7 +11,7 @@ de couverture et à la gestion des comptes. Les anciens comptes restent disponib
 dans les vues Anciens/Tous avec leur bouton Supprimer et sa confirmation habituelle.
 Changer de filtre ne modifie ni les comptes, ni les fiches RH.
 
-Le référentiel `people` est lu avec les règles RLS existantes de l'entreprise,
+La vue `admin_people_directory` lit le référentiel RH avec les règles RLS de l’entreprise,
 par pages de 500, avec les dates `hired_on` et `departed_on`, sans exclure les anciens.
 La date du jour est calculée dans le fuseau Europe/Paris. Une date de départ passée
 ou égale à aujourd'hui classe la personne parmi les anciens, même si `active = true`.
@@ -32,8 +32,7 @@ les comptes pour éviter un affichage temporaire non filtré ou trompeur en cas 
 La liste est relue après création de compte. Après suppression, la ligne du compte
 disparaît, son lien RH est retiré localement comme en base et la fiche RH reste visible.
 
-Aucune migration, modification des autorisations, création de compte ou invitation
-automatique n'est nécessaire. L'accès au menu reste réservé aux administrateurs.
+L’accès au menu et à la vue des collaborateurs est réservé aux administrateurs.
 Les opérations sur les rôles, invitations et suppressions restent dans le tableau
 des comptes existants.
 
@@ -44,7 +43,21 @@ filtre commun aux comptes, annulation puis confirmation de suppression, conserva
 de la fiche RH et absence de liste non filtrée en cas d'erreur. Vérification visuelle du menu
 avec les données isolées de préversion sur ordinateur et mobile.
 
-Retour arrière : revenir au commit précédent du frontend ; aucune donnée n'est modifiée.
+## Identités RH de référence
+
+Appliquer `20261118074520_canonical_people_directories.sql` avant de déployer le
+client. La couverture et les invitations s’appuient sur la même vue, qui écarte
+les doublons confirmés. La table privée `people_directory_aliases` relie chaque
+ancienne fiche à sa référence RH dans la même société. Une fiche historique garde
+son identifiant pour les références Planning, DPR et HSE. Les affectations et
+responsabilités enregistrées dans l’organigramme suivent l’identité RH de référence.
+
+Le compte SeaPilot, le matricule et le numéro marin sont uniques. Deux personnes
+homonymes gardent chacune leur fiche. Un doublon issu d’une variante orthographique
+sans identifiant commun doit être vérifié avant d’ajouter un rapprochement.
+
+Le test `supabase/tests/people_directory_aliases_test.sql` couvre les droits, la
+conservation des fiches historiques et les identifiants uniques par entreprise.
 
 ## Champ technique `people.active`
 

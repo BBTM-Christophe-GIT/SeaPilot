@@ -89,7 +89,7 @@ export async function fetchAdminCollaborators(client: SupabaseClient): Promise<A
   const pageSize = 500;
 
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await client.from('people')
+    const { data, error } = await client.from('admin_people_directory')
       .select('id, user_id, first_name, last_name, email, function_label, active, hired_on, departed_on')
       .order('id', { ascending: true })
       .range(offset, offset + pageSize - 1);

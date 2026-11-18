@@ -3,6 +3,8 @@ import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResou
 
 export const ORGANIGRAMME_REFERENCE = 'REP 03-B';
 export const ORGANIGRAMME_SOURCE = '87-Organigramme.pdf';
+export const PRIMARY_ORG_CHART = { id: 0, name: 'Organigramme principal' };
+export interface OrgChart { id: number; name: string }
 export type OrganigrammeView = 'vessels' | 'functions';
 export const ORG_VIEW_LABELS: Record<OrganigrammeView, string> = { vessels: 'Par navire et bordée', functions: 'Par fonction' };
 export type OrgRank = '' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'support';
@@ -16,10 +18,10 @@ export const orgCategoryLabel = (data: Pick<OrgData, 'categoryLabels'>, key: Org
 export interface OrgPerson { photoPath?: string; photoUrl?: string; photoUnavailable?: boolean; id: number; name: string; firstName?: string; lastName?: string; functionLabel: string; population: string; email?: string | null; phone?: string | null }
 export interface OrgVessel { iconUrl?: string; iconDataUrl?: string; id: number; name: string; lengthOverall: string | number | null }
 export interface OrgMembership { personId: number; vesselId: number; watchGroup: string; functionLabel: string; source: 'manual' | 'board' | 'assignment' | 'period' | 'day' }
-export interface OrgWatch { id: number; vesselId: number; name: string }
+export interface OrgWatch { id: number; vesselId: number; name: string; revision?: number }
 export interface OrgSupport { id: number; personId: number | null; name: string; functionLabel: string; category: 'office' | 'external'; position: number; rank?: OrgRank | null }
 export type OrgSupportDraft = Omit<OrgSupport, 'id'> & { id?: number };
-export interface OrgData { people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null; personnelExcludedIds?: number[] }
+export interface OrgData { chartId: number; charts: OrgChart[]; people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null; personnelExcludedIds?: number[] }
 export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null }
 export interface OrgColumn { key: string; label: string; members: OrgMember[]; vesselId?: number }
 export interface OrgSection { iconDataUrl?: string; key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[] }

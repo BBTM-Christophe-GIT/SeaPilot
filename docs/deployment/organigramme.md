@@ -72,7 +72,28 @@ et compteurs fictifs du concept graphique ne constituent pas une source métier.
 
 ## Données et actualisation
 
-La RPC `organigramme_snapshot_v2` renvoie les noms, fonctions, emails, téléphones,
+### Organigrammes nommés
+
+Le sélecteur **Organigramme** permet de retrouver chaque organigramme par son
+nom. **Nouvel organigramme** crée une composition indépendante. **Renommer**
+modifie le nom de l’organigramme sélectionné. L’organigramme déjà enregistré
+apparaît sous **Organigramme principal**, avec sa structure et ses bordées.
+Chaque nouvel organigramme commence avec des bordées vides pour les navires actifs.
+
+Dans **Déplacer des collaborateurs**, glisser la carte d’un collaborateur sur la bordée
+de destination, dans le même navire ou dans un autre. La commande **Déplacer**
+permet la même opération au clavier ou sur un écran tactile. Le déplacement
+conserve la fonction personnalisée dans la bordée et s’applique à l’organigramme
+sélectionné. Les affectations du Planning suivent leur propre circuit d’édition.
+
+La liste du personnel et les coordonnées reprennent les fiches RH de référence.
+Les anciennes fiches rapprochées conservent leurs liens avec les opérations
+historiques. La liste d’urgence par défaut reste partagée à l’échelle de la
+société.
+
+### Composition et droits
+
+L’instantané de l’organigramme renvoie les noms, fonctions, emails, téléphones,
 navires, bordées et responsabilités de la société active. Elle utilise les droits de
 l'appelant (SECURITY INVOKER), vérifie le profil, l'appartenance à la société et
 la permission du module. Les coordonnées proviennent de `people.email` et
@@ -92,8 +113,8 @@ renommage ou décochage. Les doublons historiques sont conservés, sans suppress
 silencieuse ; il n’y a pas de nouvelle contrainte d’unicité en base.
 
 Les tables `organigramme_watches` et `organigramme_watch_members` conservent ces
-compositions par société ; la RPC `save_organigramme_watch` les remplace atomiquement
-après contrôle des personnes et du navire. RLS et RPC imposent les mêmes droits
+compositions par organigramme et par société. L’enregistrement et le déplacement
+sont atomiques. RLS et RPC imposent les mêmes droits
 Administrateur/Direction et refusent les données d'une autre société. La suppression
 d'une bordée supprime uniquement ses membres dans l'organigramme.
 
@@ -103,8 +124,8 @@ Les personnes sorties et les navires sortis sont exclus. Un marin peut figurer
 dans plusieurs bordées ; la vue par fonction regroupe ces indications sur une carte
 par marin et fonction. Les marins sans bordée apparaissent dans Sans affectation,
 regroupés par fonction pour éviter une colonne excessivement longue avant composition.
-L'ancienne RPC `organigramme_snapshot` reste disponible pour les clients déjà
-ouverts avant la livraison ; le nouveau client utilise exclusivement la v2.
+Les anciennes versions de l’instantané restent disponibles pour les clients
+déjà ouverts avant la livraison.
 
 Actualisation à l'ouverture, toutes les 60 secondes lorsque la page est visible,
 au retour sur la fenêtre et via Actualiser. Les exports sont désactivés pendant le
@@ -269,7 +290,7 @@ Les coordonnées se modifient dans RH / Brevets.
 Une fiche qui doit être conservée pour le suivi opérationnel peut être exclue
 de la **Liste du personnel** et de sa partie dans les exports PDF et Excel.
 La configuration est gérée en base par société et par identifiant de fiche.
-Elle est transmise par `organigramme_snapshot_v2` dans `personnelExcludedIds`.
+Elle est transmise dans `personnelExcludedIds` par l’instantané.
 
 Les sélections sont conservées entre les vues et pendant les actualisations tant
 que le module reste ouvert. Les réglages de contenu restent temporaires.

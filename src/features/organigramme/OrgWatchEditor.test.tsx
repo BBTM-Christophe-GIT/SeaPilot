@@ -37,7 +37,7 @@ describe('OrgWatchEditor', () => {
     fireEvent.change(screen.getByLabelText('Rechercher dans les effectifs'), { target: { value: 'Chloé' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la bordée' }));
     await waitFor(() => expect(saved).toHaveBeenCalled());
-    expect(rpc).toHaveBeenCalledWith('save_organigramme_watch', { p_id: null, p_vessel_id: 1, p_name: 'Renfort', p_members: [{ personId: 10, functionLabel: '' }, { personId: 11, functionLabel: 'Chef Mécanicien' }] });
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_watch', { p_chart_id: ORG_DEMO.chartId, p_id: null, p_vessel_id: 1, p_name: 'Renfort', p_members: [{ personId: 10, functionLabel: '' }, { personId: 11, functionLabel: 'Chef Mécanicien' }] });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la bordée' }));
     await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('save_organigramme_watch', expect.objectContaining({ p_id: 9 })));
     expect(rpc.mock.calls.every(([name]) => name === 'save_organigramme_watch')).toBe(true);

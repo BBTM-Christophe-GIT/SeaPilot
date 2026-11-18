@@ -1,5 +1,5 @@
 vi.mock('./organigrammeMedia', () => ({ loadOrgVesselIcons: async (vessels: unknown[]) => vessels }));
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { OrganigrammePage } from './OrganigrammePage';
@@ -11,6 +11,50 @@ function setup(roles: RoleKey[] = ['direction'], rpc = vi.fn().mockResolvedValue
   return rpc;
 }
 describe('OrganigrammePage', () => {
+  it('creates, renames and switches independent charts', async () => {
+    let charts = ORG_DEMO.charts;
+    const rpc = setup(['direction'], vi.fn().mockImplementation(async (name, args) => {
+      if (name === 'create_organigramme_chart') {
+        if (charts.some((chart) => chart.name === args.p_name)) return { data: null, error: { code: '23505' } };
+        charts = [...charts, { id: 42, name: args.p_name }];
+        return { data: 42, error: null };
+      }
+      if (name === 'rename_organigramme_chart') {
+        charts = charts.map((chart) => chart.id === args.p_chart_id ? { ...chart, name: args.p_name } : chart);
+        return { data: null, error: null };
+      }
+      const chartId = args.p_chart_id;
+      const primary = chartId === 0;
+      return { data: { ...ORG_DEMO, chartId, charts, memberships: primary ? ORG_DEMO.memberships : [], support: primary ? ORG_DEMO.support : [] }, error: null };
+    }));
+    await screen.findByRole('img');
+    const select = screen.getByRole('combobox', { name: 'Organigramme à afficher' });
+    const diagram = () => decodeURIComponent(screen.getByRole('img').getAttribute('src')!);
+    expect(select).toHaveValue('0');
+    expect(diagram()).toContain('GOURY');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvel organigramme' }));
+    const draft = screen.getByLabelText('Nom de l’organigramme');
+    fireEvent.change(draft, { target: { value: 'Organigramme principal' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Un organigramme porte déjà ce nom.');
+    expect(draft).toHaveValue('Organigramme principal');
+    fireEvent.change(draft, { target: { value: ' Équipe hiver ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
+    await waitFor(() => expect(select).toHaveValue('42'));
+    await screen.findByRole('img');
+    expect(diagram()).not.toContain('GOURY');
+    expect(rpc).toHaveBeenCalledWith('create_organigramme_chart', { p_name: 'Équipe hiver' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Renommer' }));
+    fireEvent.change(screen.getByLabelText('Nom de l’organigramme'), { target: { value: 'Armement hiver' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
+    await screen.findByRole('option', { name: 'Armement hiver' });
+    expect(rpc).toHaveBeenCalledWith('rename_organigramme_chart', { p_chart_id: 42, p_name: 'Armement hiver' });
+    fireEvent.change(select, { target: { value: '0' } });
+    await waitFor(() => expect(diagram()).toContain('GOURY'));
+  });
+
   it('previews selectable export fields and retains choices between presentations, documents and refreshes', async () => {
     const rpc = setup(); await screen.findByRole('img');
     const svg = () => decodeURIComponent(screen.getByRole('img').getAttribute('src')!);
@@ -151,9 +195,10 @@ describe('OrganigrammePage', () => {
     }));
     await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
     fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
-    await screen.findByRole('checkbox', { name: 'Partenaires' });
-    expect(rpc).toHaveBeenCalledWith('save_organigramme_category', { p_key: 'external', p_label: 'Partenaires' });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' })); });
+    const settings = within(screen.getByRole('complementary', { name: 'Réglages de l’organigramme' }));
+    expect(settings.getByRole('checkbox', { name: 'Partenaires' })).toBeInTheDocument();
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_category', { p_chart_id: 0, p_key: 'external', p_label: 'Partenaires' });
     expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Partenaires');
   });
   it.each([
@@ -168,17 +213,16 @@ describe('OrganigrammePage', () => {
     fireEvent.change(screen.getByLabelText('Type de cible'), { target: { value: kind } });
     fireEvent.change(screen.getByLabelText('Cible du lien'), { target: { value: JSON.stringify([kind, section, key]) } });
     fireEvent.change(screen.getByLabelText('Libellé du lien (facultatif)'), { target: { value: 'Accompagnement' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter le lien' }));
-    await screen.findByRole('button', { name: /^Modifier le lien vers/ });
-    expect(rpc).toHaveBeenCalledWith('save_organigramme_link', { p_id: null, p_source: 'external', p_kind: kind, p_key: key, p_section: section, p_label: 'Accompagnement' });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ajouter le lien' })); });
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_link', { p_chart_id: 0, p_id: null, p_source: 'external', p_kind: kind, p_key: key, p_section: section, p_label: 'Accompagnement' });
     expect(decodeURIComponent(screen.getByRole('img').getAttribute('src')!)).toContain('Accompagnement');
     fireEvent.click(screen.getByRole('button', { name: /^Modifier le lien vers/ }));
     fireEvent.change(screen.getByLabelText('Libellé du lien (facultatif)'), { target: { value: 'Conseil' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le lien' }));
-    await waitFor(() => expect(rpc).toHaveBeenCalledWith('save_organigramme_link', expect.objectContaining({ p_id: 99, p_label: 'Conseil' })));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le lien' })); });
+    expect(rpc).toHaveBeenCalledWith('save_organigramme_link', expect.objectContaining({ p_id: 99, p_label: 'Conseil' }));
   });
   it('retains the draft and shows a save error without reporting success', async () => {
-    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot_v2' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
+    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot_v3' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
     await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
     fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
@@ -207,7 +251,7 @@ describe('OrganigrammePage', () => {
   it('reloads on date changes and when returning to the page', async () => {
     const rpc = setup(); await screen.findByRole('img');
     fireEvent.change(screen.getByLabelText('Date de situation'), { target: { value: '2026-08-01' } });
-    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v2', { p_as_of: '2026-08-01' }));
+    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v3', { p_chart_id: 0, p_as_of: '2026-08-01' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled());
     fireEvent(window, new Event('focus'));
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));

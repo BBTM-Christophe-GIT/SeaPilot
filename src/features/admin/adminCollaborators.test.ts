@@ -85,7 +85,7 @@ describe('administration collaborator coverage', () => {
     const from = vi.fn().mockReturnValue({ select });
     const rows = await fetchAdminCollaborators({ from } as never);
     expect(rows).toHaveLength(501);
-    expect(from).toHaveBeenCalledWith('people');
+    expect(from).toHaveBeenCalledWith('admin_people_directory');
     expect(select).toHaveBeenCalledWith(expect.stringContaining('hired_on, departed_on'));
     expect(order).toHaveBeenCalledWith('id', { ascending: true });
     expect(range.mock.calls).toEqual([[0, 499], [500, 999]]);

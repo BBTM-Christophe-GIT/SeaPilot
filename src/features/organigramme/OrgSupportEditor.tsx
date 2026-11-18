@@ -10,13 +10,13 @@ export function OrgSupportEditor({ client, data, onSaved, previewMode }: { clien
   const [error, setError] = useState('');
   async function save() {
     setSaving(true); setError('');
-    try { await saveOrgSupport(client, entry); setEntry(emptyEntry()); onSaved(); }
+    try { await saveOrgSupport(client, data.chartId, entry); setEntry(emptyEntry()); onSaved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Enregistrement impossible.'); }
     finally { setSaving(false); }
   }
   async function remove(id: number) {
     setSaving(true); setError('');
-    try { await deleteOrgSupport(client, id); if (entry.id === id) setEntry(emptyEntry()); onSaved(); }
+    try { await deleteOrgSupport(client, data.chartId, id); if (entry.id === id) setEntry(emptyEntry()); onSaved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Suppression impossible.'); }
     finally { setSaving(false); }
   }

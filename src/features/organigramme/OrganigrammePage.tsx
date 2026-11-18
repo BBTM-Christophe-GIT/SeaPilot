@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Maximize2, Minimize2, Network, RefreshCw } from 'lucide-react';
+import { Maximize2, Minimize2, Network, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
-import { OrgChartSettings } from './OrgChartSettings';
+import { buildOrganigramme, ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, PRIMARY_ORG_CHART, orgLocalDate, type OrgData, type OrgOptions } from './organigrammeModel';
+import { OrgChartSettings, type OrgEditor } from './OrgChartSettings';
+import { OrgChartNameDialog } from './OrgChartNameDialog';
 import { layoutOrganigramme, organigrammeSvg } from './organigrammeDiagram';
-import { fetchOrganigramme, saveOrgEmergencyDefault } from './organigrammeQueries';
+import { createOrgChart, fetchOrganigramme, renameOrgChart, saveOrgEmergencyDefault } from './organigrammeQueries';
 import { OrgSupportEditor } from './OrgSupportEditor';
 import { OrgStructureEditor } from './OrgStructureEditor';
 import { OrgWatchEditor } from './OrgWatchEditor';
+import { OrgWatchTransferBoard } from './OrgWatchTransferBoard';
 import { OrgPersonnelPanel } from './OrgPersonnelPanel';
 import './organigramme.css';
+
+const EDITOR_LABELS: Record<OrgEditor, { title: string; description?: string }> = {
+  watches: { title: 'Composer les bordées', description: 'Préparez les équipages de chaque navire.' },
+  transfer: { title: 'Déplacer des collaborateurs' },
+  structure: { title: 'Modifier la structure', description: 'Organisez les catégories, les responsabilités et leurs liens.' },
+};
 
 export function OrganigrammePage() {
   const context = useOutletContext<AppShellOutletContext>();
@@ -21,6 +29,7 @@ export function OrganigrammePage() {
 
 function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [asOf, setAsOf] = useState(orgLocalDate);
+  const [chartId, setChartId] = useState(PRIMARY_ORG_CHART.id);
   const [activeDocument, setDocument] = useState<'chart' | 'personnel' | 'emergency'>('chart');
   const [data, setData] = useState<OrgData | null>(null);
   const [error, setError] = useState('');
@@ -30,7 +39,8 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   const [exporting, setExporting] = useState(false);
   const [download, setDownload] = useState<{ url: string; name: string; format: string } | null>(null);
   const [updatedAt, setUpdatedAt] = useState('');
-  const [editor, setEditor] = useState<'watches' | 'structure' | null>(null);
+  const [editor, setEditor] = useState<OrgEditor | null>(null);
+  const [nameEditor, setNameEditor] = useState<'create' | 'rename' | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [imageFormat, setImageFormat] = useState<'png' | 'svg'>('png');
   const [zoom, setZoom] = useState(90);
@@ -46,13 +56,14 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
   useEffect(() => {
     let current = true;
     setLoading(true); setError('');
-    fetchOrganigramme(client, asOf).then((result) => {
+    fetchOrganigramme(client, asOf, chartId).then((result) => {
       if (current) { setData(result); setUpdatedAt(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })); }
     }).catch((reason: unknown) => { if (current) setError(reason instanceof Error ? reason.message : 'Chargement impossible.'); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [client, asOf, revision]);
-  const currentData = data?.asOf === asOf ? data : null;
+  }, [client, asOf, chartId, revision]);
+  const currentData = data?.asOf === asOf && data.chartId === chartId ? data : null;
+  const currentChart = data?.charts.find((chart) => chart.id === chartId);
   const sections = useMemo(() => currentData ? buildOrganigramme(currentData, options) : [], [currentData, options]);
   const diagram = useMemo(() => layoutOrganigramme(sections, options.showVessels), [sections, options.showVessels]);
   useEffect(() => {
@@ -66,20 +77,44 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
     const observer = new ResizeObserver(recenter);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [zoom, diagram.width, activeDocument]);
+  }, [zoom, diagram.width, activeDocument, chartId]);
   const diagramUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(organigrammeSvg(diagram))}`, [diagram]);
   const count = new Set(sections.filter((section) => section.kind !== 'relations').flatMap((section) => section.columns.flatMap((column) => column.members.map((member) => member.id)))).size;
   const shownLinks = sections.filter((section) => section.kind === 'relations').reduce((total, section) => total + section.columns.length, 0);
   const hiddenLinks = (currentData?.links?.length || 0) - shownLinks;
   const photoErrors = currentData?.people.filter((person) => person.photoUnavailable && (sections.some((section) => section.columns.some((column) => column.members.some((member) => member.id === person.id))) || (options.includeExternal && currentData.support.some((entry) => entry.category === 'external' && entry.personId === person.id)))).length || 0;
   const canExport = Boolean(currentData && sections.length && !loading && !error && !exporting && (options.showPhotos === false || !photoErrors));
+  function selectChart(id: number) {
+    setEditor(null);
+    setChartId(id);
+    setOptions((previous) => ({ ...previous, vesselIds: null }));
+    setExportError('');
+    setDownload(null);
+  }
+  async function saveChartName(name: string) {
+    const chart = nameEditor === 'create' ? await createOrgChart(client, name) : await renameOrgChart(client, chartId, name);
+    setData((previous) => {
+      if (!previous) return previous;
+      const exists = previous.charts.some((item) => item.id === chart.id);
+      const charts = exists ? previous.charts.map((item) => item.id === chart.id ? chart : item) : [...previous.charts, chart];
+      return { ...previous, charts };
+    });
+    setNameEditor(null);
+    if (chart.id !== chartId) selectChart(chart.id);
+    else {
+      setDownload(null);
+      refresh();
+    }
+  }
   async function exportChart(format: 'pdf' | 'png' | 'svg') {
     if (!canExport || !currentData) return;
     setExporting(true); setExportError('');
     try {
       const { buildOrgImage, buildOrgPdf, downloadOrgBlob } = await import('./organigrammeExport');
-      const blob = format === 'pdf' ? await buildOrgPdf(sections, options.showVessels, asOf, options.view) : await buildOrgImage(sections, options.showVessels, format);
-      const name = `BBTM_Organigramme_${asOf}_${options.view === 'vessels' ? 'navires' : 'fonctions'}${options.showVessels ? '' : '_sans-navires'}.${format}`;
+      const chartName = currentChart?.name || PRIMARY_ORG_CHART.name;
+      const blob = format === 'pdf' ? await buildOrgPdf(sections, options.showVessels, asOf, options.view, undefined, chartName) : await buildOrgImage(sections, options.showVessels, format);
+      const fileTitle = chartName.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'Organigramme';
+      const name = `BBTM_${fileTitle}_${asOf}_${options.view === 'vessels' ? 'navires' : 'fonctions'}${options.showVessels ? '' : '_sans-navires'}.${format}`;
       setDownload({ url: URL.createObjectURL(blob), name, format: format.toUpperCase() });
       downloadOrgBlob(blob, name);
     } catch (reason) { setExportError(reason instanceof Error ? reason.message : 'Export impossible.'); }
@@ -97,8 +132,21 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
       <div className={`org-workspace${expanded ? ' is-expanded' : ''}`}>
         <div className="org-chart-column">
           <section className="org-canvas-panel" aria-label="Aperçu de l’organigramme">
-            <div className="org-canvas-toolbar"><div className="org-canvas-title"><strong>Organigramme</strong><span>{loading ? 'Actualisation…' : `${count} personnes et intervenants`}</span></div><div className="org-canvas-actions"><label><span className="org-sr-only">Zoom</span><select aria-label="Zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}><option value={0}>Ajuster</option>{[50, 70, 90, 100, 125].map((value) => <option key={value} value={value}>{value} %</option>)}</select></label><button type="button" className="org-expand" aria-label={expanded ? 'Afficher les réglages' : 'Agrandir l’organigramme'} aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button></div></div>
-            {loading && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error ? <div className="org-canvas" ref={canvasRef} tabIndex={0} aria-label="Diagramme défilant"><img src={diagramUrl} width={diagram.width * (zoom || 100) / 100} height={diagram.height * (zoom || 100) / 100} style={zoom === 0 ? { width: '100%', height: 'auto', maxWidth: '100%' } : undefined} alt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`} /></div> : null}
+            <div className="org-canvas-toolbar">
+              <div className="org-canvas-title">
+                <select aria-label="Organigramme à afficher" value={chartId} disabled={!data || exporting} onChange={(event) => selectChart(Number(event.target.value))}>
+                  {(data?.charts || [PRIMARY_ORG_CHART]).map((chart) => <option key={chart.id} value={chart.id}>{chart.name}</option>)}
+                </select>
+                <span>{loading || !currentData ? 'Actualisation…' : `${count} personnes et intervenants`}</span>
+              </div>
+              <div className="org-canvas-actions">
+                <button type="button" disabled={!currentData || loading || !!error || exporting} onClick={() => setNameEditor('create')}><Plus size={16} aria-hidden="true" />Nouvel organigramme</button>
+                <button type="button" disabled={!currentData || loading || !!error || exporting} onClick={() => setNameEditor('rename')}><Pencil size={15} aria-hidden="true" />Renommer</button>
+                <label><span className="org-sr-only">Zoom</span><select aria-label="Zoom" value={zoom} onChange={(event) => setZoom(Number(event.target.value))}><option value={0}>Ajuster</option>{[50, 70, 90, 100, 125].map((value) => <option key={value} value={value}>{value} %</option>)}</select></label>
+                <button type="button" className="org-expand" aria-label={expanded ? 'Afficher les réglages' : 'Agrandir l’organigramme'} aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
+              </div>
+            </div>
+            {!error && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error ? <div className="org-canvas" ref={canvasRef} tabIndex={0} aria-label="Diagramme défilant"><img src={diagramUrl} width={diagram.width * (zoom || 100) / 100} height={diagram.height * (zoom || 100) / 100} style={zoom === 0 ? { width: '100%', height: 'auto', maxWidth: '100%' } : undefined} alt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`} /></div> : null}
             {exporting && <p className="org-export-status" role="status">Préparation de l’export…</p>}
           </section>
           {photoErrors > 0 && <p className="org-notice" role="status">{photoErrors} photo(s) indisponible(s). Actualisez pour réessayer ou décochez « Inclure les photos dans les exports ».</p>}
@@ -114,8 +162,11 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
       await saveOrgEmergencyDefault(client, ids);
       setData((previous) => previous ? { ...previous, emergencyDefaultIds: ids } : previous);
     }} /> : !error && <p role="status">Chargement des coordonnées du personnel…</p>}</div>
-    {editor && currentData && <AppDialog title={editor === 'watches' ? 'Composer les bordées' : 'Modifier la structure'} description={editor === 'watches' ? 'Préparez les équipages de chaque navire.' : 'Organisez les catégories, les responsabilités et leurs liens.'} variant="drawer" onClose={() => setEditor(null)}>
-      {editor === 'watches' ? <OrgWatchEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} disabled={loading || !!error} /> : <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
+    {nameEditor && <OrgChartNameDialog initialName={nameEditor === 'rename' ? currentChart?.name : undefined} onClose={() => setNameEditor(null)} onSave={saveChartName} />}
+    {editor && currentData && <AppDialog {...EDITOR_LABELS[editor]} key={chartId} variant="drawer" onClose={() => setEditor(null)}>
+      {editor === 'watches' && <OrgWatchEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} disabled={loading || !!error} />}
+      {editor === 'transfer' && <OrgWatchTransferBoard client={client} data={currentData} onSaved={refresh} disabled={loading || !!error} />}
+      {editor === 'structure' && <><OrgStructureEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /><OrgSupportEditor client={client} data={currentData} onSaved={refresh} previewMode={previewMode} /></>}
     </AppDialog>}
   </div>;
 }

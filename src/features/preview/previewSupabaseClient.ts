@@ -1,6 +1,6 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
 import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
-import type { OrgRank, OrgSupport } from '../organigramme/organigrammeModel';
+import { PRIMARY_ORG_CHART, type OrgChart, type OrgData, type OrgRank, type OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
@@ -58,6 +58,8 @@ function visiblePreviewRows(table: string): unknown[] {
   return visible.length === rows.length ? rows : visible;
 }
 const previewOrgData = structuredClone(ORG_HIERARCHY_DEMO);
+const previewOrgCharts: OrgChart[] = [{ ...PRIMARY_ORG_CHART }];
+const previewOrgChartData = new Map<number, OrgData>([[PRIMARY_ORG_CHART.id, previewOrgData]]);
 const PREVIEW_FAVORITES_KEY = 'seapilot:preview:project-favorites:v1';
 let previewFavoriteIds: number[] = [];
 try {
@@ -2556,7 +2558,37 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     PREVIEW_ROWS.project_favorites = next.map((project_id) => ({ project_id }));
     return createPreviewQuery({ data: Boolean(args.favorite), error: null });
   }
-  if (functionName === 'organigramme_snapshot_v2') return createPreviewQuery({ data: { ...previewOrgData, asOf: args.p_as_of }, error: null });
+  const orgChartId = Number(args.p_chart_id ?? PRIMARY_ORG_CHART.id);
+  const orgChart = previewOrgChartData.get(orgChartId);
+  if (functionName === 'organigramme_snapshot_v3' || functionName === 'organigramme_snapshot_v2') {
+    if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
+    return createPreviewQuery({ data: { ...orgChart, asOf: args.p_as_of, charts: [...previewOrgCharts], emergencyDefaultIds: previewOrgData.emergencyDefaultIds }, error: null });
+  }
+  if (functionName === 'create_organigramme_chart' || functionName === 'rename_organigramme_chart') {
+    const creating = functionName === 'create_organigramme_chart';
+    const name = String(args.p_name ?? '').trim();
+    if (!name || name.length > 100) return createPreviewQuery({ data: null, error: { message: 'Nom d’organigramme invalide.' } });
+    if (previewOrgCharts.some((chart) => (creating || chart.id !== orgChartId) && chart.name.toLowerCase() === name.toLowerCase())) {
+      return createPreviewQuery({ data: null, error: { code: '23505', message: 'Nom d’organigramme déjà utilisé.' } });
+    }
+    if (!creating) {
+      const chart = previewOrgCharts.find((entry) => entry.id === orgChartId);
+      if (!chart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
+      chart.name = name;
+      return createPreviewQuery({ data: null, error: null });
+    }
+    const id = Math.max(...previewOrgChartData.keys()) + 1;
+    previewOrgCharts.push({ id, name });
+    previewOrgChartData.set(id, {
+      ...previewOrgData,
+      chartId: id,
+      watches: previewOrgData.vessels.flatMap((vessel, index) => ['Bordée 1', 'Bordée 2'].map((watchName, offset) => ({
+        id: index * 2 + offset + 1, vesselId: vessel.id, name: watchName, revision: 1,
+      }))),
+      memberships: [], support: [], categoryLabels: {}, links: [],
+    });
+    return createPreviewQuery({ data: id, error: null });
+  }
   if (functionName === 'save_organigramme_emergency_default') {
     const ids = args.p_person_ids as number[];
     try { localStorage.setItem(PREVIEW_EMERGENCY_KEY, JSON.stringify(ids)); }
@@ -2565,19 +2597,47 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     return createPreviewQuery({ data: null, error: null });
   }
   if (functionName === 'save_organigramme_responsibility') {
-    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...previewOrgData.support.map((item) => item.id)) + 1;
+    if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...orgChart.support.map((item) => item.id)) + 1;
     const entry: OrgSupport = { id, personId: args.p_person_id ? Number(args.p_person_id) : null, name: String(args.p_name), functionLabel: String(args.p_function_label), category: args.p_category as OrgSupport['category'], position: Number(args.p_position), rank: args.p_rank as OrgRank };
-    previewOrgData.support = [...previewOrgData.support.filter((item) => item.id !== id), entry];
+    orgChart.support = [...orgChart.support.filter((item) => item.id !== id), entry];
     return createPreviewQuery({ data: id, error: null });
   }
   if (functionName === 'save_organigramme_watch') {
-    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...(previewOrgData.watches || []).map((item) => item.id)) + 1;
+    if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
+    const id = args.p_id ? Number(args.p_id) : Math.max(0, ...(orgChart.watches || []).map((item) => item.id)) + 1;
     const vesselId = Number(args.p_vessel_id); const name = String(args.p_name).trim();
-    const existing = previewOrgData.watches?.find((watch) => watch.id === id);
-    if (previewOrgData.watches?.some((watch) => watch.id !== id && watch.vesselId === vesselId && watch.name.toLowerCase() === name.toLowerCase())) return createPreviewQuery({ data: null, error: { message: 'Nom de bordée déjà utilisé.' } });
-    previewOrgData.watches = [...(previewOrgData.watches || []).filter((watch) => watch.id !== id), { id, vesselId, name }];
-    previewOrgData.memberships = [...previewOrgData.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
+    const existing = orgChart.watches?.find((watch) => watch.id === id);
+    if (args.p_revision != null && Number(args.p_revision) !== existing?.revision) return createPreviewQuery({ data: null, error: { code: '40001', message: 'Cette bordée a été modifiée.' } });
+    if (orgChart.watches?.some((watch) => watch.id !== id && watch.vesselId === vesselId && watch.name.toLowerCase() === name.toLowerCase())) return createPreviewQuery({ data: null, error: { message: 'Nom de bordée déjà utilisé.' } });
+    orgChart.watches = [...(orgChart.watches || []).filter((watch) => watch.id !== id), { id, vesselId, name, revision: (existing?.revision ?? 0) + 1 }];
+    orgChart.memberships = [...orgChart.memberships.filter((row) => !(existing && row.vesselId === existing.vesselId && row.watchGroup === existing.name)), ...(args.p_members as Array<{ personId: number; functionLabel: string }>).map((member) => ({ personId: member.personId, vesselId, watchGroup: name, functionLabel: member.functionLabel || '', source: 'manual' as const }))];
     return createPreviewQuery({ data: id, error: null });
+  }
+  if (functionName === 'move_organigramme_watch_member') {
+    const watches = orgChart?.watches ?? [];
+    const personId = Number(args.p_person_id);
+    const vesselId = Number(args.p_to_vessel_id);
+    const source = watches.find((watch) => watch.id === Number(args.p_from_watch_id));
+    const member = source && orgChart?.memberships.find((row) => row.source === 'manual' && row.personId === personId &&
+      row.vesselId === source.vesselId && row.watchGroup === source.name);
+    if (!orgChart || !source || !member || !orgChart.vessels.some((vessel) => vessel.id === vesselId)) {
+      return createPreviewQuery({ data: null, error: { message: 'Déplacement indisponible.' } });
+    }
+    const createWatch = args.p_to_watch_id === null && watches.every((watch) => watch.vesselId !== vesselId);
+    const target = createWatch
+      ? { id: Math.max(0, ...watches.map((watch) => watch.id)) + 1, vesselId, name: 'Bordée 1', revision: 1 }
+      : watches.find((watch) => watch.id === Number(args.p_to_watch_id) && watch.vesselId === vesselId);
+    if (!target || orgChart.memberships.some((row) => row !== member && row.personId === personId &&
+      row.vesselId === vesselId && row.watchGroup === target.name)) {
+      return createPreviewQuery({ data: null, error: { message: 'Bordée de destination indisponible.' } });
+    }
+    if (source.id === target.id) return createPreviewQuery({ data: null, error: null });
+    orgChart.memberships = orgChart.memberships.map((row) => row === member ? { ...row, vesselId, watchGroup: target.name } : row);
+    orgChart.watches = (createWatch ? [...watches, target] : watches).map((watch) => watch.id === source.id || watch.id === target.id
+      ? { ...watch, revision: (watch.revision ?? 1) + 1 }
+      : watch);
+    return createPreviewQuery({ data: null, error: null });
   }
   if (functionName === 'planning_save_generic_crew_row') {
     const existing = previewRows('planning_generic_crew_rows').find((row) => row.id === args.p_row_id);
@@ -3405,7 +3465,9 @@ const employmentContractPreview = createEmploymentContractPreview({ people: () =
 
 export const previewSupabaseClient = {
   resolveProcessPerformanceTaskLinks: resolvePerformancePreviewDashboardLinks,
-  from: (table: string) => employmentContractPreview.from(table) || performancePreviewTable(table) || (table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
+  from: (table: string) => employmentContractPreview.from(table) || performancePreviewTable(table) || (table === 'admin_people_directory'
+    ? createPreviewQuery({ data: visiblePreviewRows('people'), error: null })
+    : table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),

@@ -6,7 +6,7 @@ import { orgLocalDate, resolveMemberships, type OrgData, type OrgWatch } from '.
 import { deleteOrgWatch, saveOrgWatch } from './organigrammeQueries';
 
 function watchDraft(data: OrgData, vesselId: number, watch?: OrgWatch) {
-  return { id: watch?.id ?? null, vesselId, name: watch?.name || 'Bordée 1',
+  return { id: watch?.id ?? null, revision: watch?.revision, vesselId, name: watch?.name || 'Bordée 1',
     members: Object.fromEntries(data.memberships.filter((row) => row.source === 'manual' && row.vesselId === vesselId && row.watchGroup === watch?.name).map((row) => [row.personId, row.functionLabel])) as Record<number, string> };
 }
 
@@ -32,8 +32,8 @@ export function OrgWatchEditor({ client, data, onSaved, previewMode, disabled }:
     if (locked) return;
     setBusy(true); setError(''); setStatus('');
     try {
-      const id = await saveOrgWatch(client, { ...draft, members: Object.entries(draft.members).map(([personId, functionLabel]) => ({ personId: Number(personId), functionLabel })) });
-      setDraft((previous) => ({ ...previous, id }));
+      const id = await saveOrgWatch(client, data.chartId, { ...draft, members: Object.entries(draft.members).map(([personId, functionLabel]) => ({ personId: Number(personId), functionLabel })) });
+      setDraft((previous) => ({ ...previous, id, revision: (previous.revision ?? 0) + 1 }));
       setStatus('Bordée par défaut enregistrée. Sa composition est indépendante du planning.'); onSaved();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Enregistrement impossible.'); }
     finally { setBusy(false); }
@@ -41,7 +41,7 @@ export function OrgWatchEditor({ client, data, onSaved, previewMode, disabled }:
   async function remove() {
     if (locked || !draft.id) return;
     setBusy(true); setError(''); setStatus('');
-    try { await deleteOrgWatch(client, draft.id); setDraft(watchDraft(data, draft.vesselId)); setConfirmDelete(false); setStatus('Bordée supprimée.'); onSaved(); }
+    try { await deleteOrgWatch(client, data.chartId, draft.id, draft.revision); setDraft(watchDraft(data, draft.vesselId)); setConfirmDelete(false); setStatus('Bordée supprimée.'); onSaved(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Suppression impossible.'); }
     finally { setBusy(false); }
   }

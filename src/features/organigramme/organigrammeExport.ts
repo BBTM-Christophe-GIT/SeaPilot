@@ -37,7 +37,7 @@ export function orgPdfGeometry(diagram: OrgDiagram) {
   return { width, height, scale, offsetX: (width - diagram.width * scale) / 2, offsetY: 35 + (height - 55 - diagram.height * scale) / 2 };
 }
 
-export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, asOf: string, view: OrganigrammeView, logoBytes?: Uint8Array): Promise<Blob> {
+export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, asOf: string, view: OrganigrammeView, logoBytes?: Uint8Array, chartName = 'Organigramme BBTM'): Promise<Blob> {
   if (!sections.length) throw new Error('Aucun organigramme à exporter.');
   const { jsPDF } = await import('jspdf');
   if (!logoBytes) {
@@ -48,7 +48,7 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
   const diagram = layoutOrganigramme(sections, showVessels);
   const { width, height, scale, offsetX, offsetY } = orgPdfGeometry(diagram);
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [width, height], compress: true });
-  pdf.setProperties({ title: `Organigramme BBTM — ${ORGANIGRAMME_REFERENCE}`, subject: `Situation au ${asOf}`, creator: 'SeaPilot' });
+  pdf.setProperties({ title: `${chartName} — ${ORGANIGRAMME_REFERENCE}`, subject: `Situation au ${asOf}`, creator: 'SeaPilot' });
   const draw = () => {
     pdf.setLineWidth(0.35); pdf.setDrawColor(ORG_COLORS.line);
     diagram.lines.forEach((line) => { pdf.setLineDashPattern(line.dashed ? [1.5, 1.2] : [], 0); pdf.line(offsetX + line.x1 * scale, offsetY + line.y1 * scale, offsetX + line.x2 * scale, offsetY + line.y2 * scale); });
@@ -91,7 +91,8 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
   const logoScale = Math.min(29 / logo.width, 19 / logo.height);
   pdf.addImage(logoBytes!, 'PNG', 12, 8, logo.width * logoScale, logo.height * logoScale);
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(19); pdf.setTextColor(ORG_COLORS.navy);
-  pdf.text('Organigramme BBTM', 49, 17);
+  pdf.setFontSize(19 * Math.min(1, (width - 100) / pdf.getTextWidth(chartName)));
+  pdf.text(chartName, 49, 17);
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
   pdf.text(`${ORG_VIEW_LABELS[view]} · Situation au ${asOf.split('-').reverse().join('/')}`, 49, 25);
   pdf.setFontSize(9); pdf.text(ORGANIGRAMME_REFERENCE, width - 12, 16, { align: 'right' });
