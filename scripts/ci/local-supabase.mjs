@@ -118,6 +118,7 @@ const assertionTests = [
   'organigramme_access_test.sql',
   'people_directory_aliases_test.sql',
   'organigramme_named_charts_test.sql',
+  'organigramme_duplicate_chart_test.sql',
   'organigramme_watch_transfers_test.sql',
   'public_catalogue_and_import_rpc_security_test.sql',
   'pharmacy_vessel_read_scope_test.sql',

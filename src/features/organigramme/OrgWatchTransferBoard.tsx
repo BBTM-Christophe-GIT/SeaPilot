@@ -1,10 +1,9 @@
 import { useMemo, useState, type DragEvent } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { GripVertical } from 'lucide-react';
-import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { compareHrFunctionLabels } from '../humanResources/peopleQueries';
 import { orgLocalDate, resolveMemberships, type OrgData, type OrgPerson } from './organigrammeModel';
-import { moveOrgWatchMember } from './organigrammeTransfers';
+import { moveOrgWatchMember, orgCanReceiveMember, orgDestinationLabel, orgTransferFleet, orgWatchLocationKey, type OrgWatchDestination } from './organigrammeTransfers';
 import './orgWatchTransferBoard.css';
 
 interface TransferMember {
@@ -13,18 +12,9 @@ interface TransferMember {
   functionLabel: string;
 }
 
-interface WatchDestination {
-  key: string;
-  vesselId: number;
-  vesselName: string;
-  watchId: number | null;
-  watchName: string;
-  members: TransferMember[];
-}
+type WatchDestination = OrgWatchDestination & { members: TransferMember[] };
 
-const watchKey = (vesselId: number, watchName: string) => vesselId + ':' + watchName;
 const memberKey = ({ person, fromWatchId }: TransferMember) => fromWatchId + ':' + person.id;
-const destinationLabel = ({ vesselName, watchName }: WatchDestination) => vesselName + ' · ' + watchName;
 
 function transferFleet(data: OrgData) {
   const people = new Map(data.people.map((person) => [person.id, person]));
@@ -32,26 +22,20 @@ function transferFleet(data: OrgData) {
   for (const row of resolveMemberships(data)) {
     const person = people.get(row.personId);
     if (!person) continue;
-    const key = watchKey(row.vesselId, row.watchGroup);
+    const key = orgWatchLocationKey(row.vesselId, row.watchGroup);
     const members = memberships.get(key) ?? [];
     members.push({ person, functionLabel: row.functionLabel || person.functionLabel });
     memberships.set(key, members);
   }
 
-  return [...data.vessels].sort(compareFleetAssets).map((vessel) => {
-    const watches = (data.watches ?? []).filter((watch) => watch.vesselId === vessel.id)
-      .sort((a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true }));
-    const destinations: WatchDestination[] = watches.map((watch) => ({
-      key: 'watch:' + watch.id, vesselId: vessel.id, vesselName: vessel.name, watchId: watch.id, watchName: watch.name,
-      members: (memberships.get(watchKey(vessel.id, watch.name)) ?? [])
-        .map((member) => ({ ...member, fromWatchId: watch.id }))
-        .sort((a, b) => compareHrFunctionLabels(a.functionLabel, b.functionLabel) || a.person.name.localeCompare(b.person.name, 'fr')),
-    }));
-    if (!destinations.length) {
-      destinations.push({
-        key: 'vessel:' + vessel.id, vesselId: vessel.id, vesselName: vessel.name, watchId: null, watchName: 'Bordée 1', members: [],
-      });
-    }
+  return orgTransferFleet(data).map((vessel) => {
+    const destinations: WatchDestination[] = vessel.destinations.map((destination) => {
+      const { watchId } = destination;
+      const members = watchId === null ? [] : (memberships.get(orgWatchLocationKey(vessel.id, destination.watchName)) ?? [])
+        .map((member) => ({ ...member, fromWatchId: watchId }))
+        .sort((a, b) => compareHrFunctionLabels(a.functionLabel, b.functionLabel) || a.person.name.localeCompare(b.person.name, 'fr'));
+      return { ...destination, members };
+    });
     return { ...vessel, destinations };
   });
 }
@@ -77,14 +61,14 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
   }
 
   function dragOver(event: DragEvent, destination: WatchDestination) {
-    if (locked || !dragging || destination.watchId === dragging.fromWatchId) return;
+    if (locked || !dragging || !orgCanReceiveMember(destination, dragging.person.id, dragging.fromWatchId)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     if (highlighted !== destination.key) setHighlighted(destination.key);
   }
 
   async function move(member: TransferMember, destination: WatchDestination) {
-    if (locked || member.fromWatchId === destination.watchId) return;
+    if (locked || !orgCanReceiveMember(destination, member.person.id, member.fromWatchId)) return;
     endDrag();
     setBusy(true);
     setStatus('');
@@ -93,7 +77,7 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
       await moveOrgWatchMember(client, data.chartId, member.person.id, member.fromWatchId, destination.vesselId, destination.watchId);
       setSelection('');
       setDestinationKey('');
-      setStatus(member.person.name + ' rejoint ' + destinationLabel(destination) + '.');
+      setStatus(member.person.name + ' rejoint ' + orgDestinationLabel(destination) + '.');
       onSaved();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Déplacement impossible.');
@@ -114,8 +98,8 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
         {vessel.destinations.map((destination) => <section
           key={destination.key}
           className="org-transfer-watch"
-          aria-label={destinationLabel(destination)}
-          data-drop-ready={Boolean(!locked && dragging && dragging.fromWatchId !== destination.watchId)}
+          aria-label={orgDestinationLabel(destination)}
+          data-drop-ready={Boolean(!locked && dragging && orgCanReceiveMember(destination, dragging.person.id, dragging.fromWatchId))}
           data-drop-active={highlighted === destination.key}
           onDragOver={(event) => dragOver(event, destination)}
           onDragLeave={(event) => {
@@ -123,7 +107,7 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
             setHighlighted((value) => value === destination.key ? '' : value);
           }}
           onDrop={(event) => {
-            if (locked || !dragging || dragging.fromWatchId === destination.watchId) return;
+            if (locked || !dragging || !orgCanReceiveMember(destination, dragging.person.id, dragging.fromWatchId)) return;
             event.preventDefault();
             void move(dragging, destination);
           }}
@@ -133,12 +117,13 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
             {destination.members.map((member) => {
               const key = memberKey(member);
               const selected = selection === key;
+              const targets = destinations.filter((item) => orgCanReceiveMember(item, member.person.id, member.fromWatchId));
               return <li key={key}>
-                <button type="button" className="sp-button sp-button--secondary org-transfer-member" disabled={locked || destinations.length < 2}
+                <button type="button" className="sp-button sp-button--secondary org-transfer-member" disabled={locked || !targets.length}
                   aria-label={'Déplacer ' + member.person.name} aria-expanded={selected}
-                  draggable={!locked && destinations.length > 1}
+                  draggable={!locked && Boolean(targets.length)}
                   onDragStart={(event) => {
-                    if (locked || destinations.length < 2) { event.preventDefault(); return; }
+                    if (locked || !targets.length) { event.preventDefault(); return; }
                     event.dataTransfer.effectAllowed = 'move';
                     event.dataTransfer.setData('application/x-seapilot-watch-member', key);
                     setDragging(member);
@@ -157,7 +142,7 @@ export function OrgWatchTransferBoard({ client, data, onSaved, disabled }: {
                   <label>Bordée de destination
                     <select disabled={locked} value={destinationKey} onChange={(event) => setDestinationKey(event.target.value)}>
                       <option value="">Choisir une bordée</option>
-                      {destinations.filter((item) => item.watchId !== member.fromWatchId).map((item) => <option key={item.key} value={item.key}>{destinationLabel(item)}{item.watchId === null ? ' (à créer)' : ''}</option>)}
+                      {targets.map((item) => <option key={item.key} value={item.key}>{orgDestinationLabel(item)}{item.watchId === null ? ' (à créer)' : ''}</option>)}
                     </select>
                   </label>
                   <button type="submit" className="sp-button sp-button--primary" disabled={locked || !destinationKey}>Déplacer</button>

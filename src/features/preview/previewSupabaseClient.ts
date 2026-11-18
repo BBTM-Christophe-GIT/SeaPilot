@@ -2564,8 +2564,9 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
     return createPreviewQuery({ data: { ...orgChart, asOf: args.p_as_of, charts: [...previewOrgCharts], emergencyDefaultIds: previewOrgData.emergencyDefaultIds }, error: null });
   }
-  if (functionName === 'create_organigramme_chart' || functionName === 'rename_organigramme_chart') {
-    const creating = functionName === 'create_organigramme_chart';
+  if (functionName === 'create_organigramme_chart' || functionName === 'rename_organigramme_chart' || functionName === 'duplicate_organigramme_chart') {
+    const creating = functionName !== 'rename_organigramme_chart';
+    const copying = functionName === 'duplicate_organigramme_chart';
     const name = String(args.p_name ?? '').trim();
     if (!name || name.length > 100) return createPreviewQuery({ data: null, error: { message: 'Nom d’organigramme invalide.' } });
     if (previewOrgCharts.some((chart) => (creating || chart.id !== orgChartId) && chart.name.toLowerCase() === name.toLowerCase())) {
@@ -2578,6 +2579,27 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       return createPreviewQuery({ data: null, error: null });
     }
     const id = Math.max(...previewOrgChartData.keys()) + 1;
+    if (copying) {
+      if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
+      const savedCharts = [...previewOrgChartData.values()];
+      const lastWatchId = Math.max(0, ...savedCharts.flatMap((chart) => (chart.watches || []).map((watch) => watch.id)));
+      const lastSupportId = Math.max(0, ...savedCharts.flatMap((chart) => chart.support.map((entry) => entry.id)));
+      const lastLinkId = Math.max(0, ...savedCharts.flatMap((chart) => (chart.links || []).map((link) => link.id)));
+      const supportIds = new Map(orgChart.support.map((entry, index) => [String(-entry.id), lastSupportId + index + 1]));
+      const duplicate = structuredClone(orgChart);
+      duplicate.chartId = id;
+      duplicate.watches = (duplicate.watches || []).map((watch, index) => ({ ...watch, id: lastWatchId + index + 1, revision: 1 }));
+      duplicate.support = duplicate.support.map((entry, index) => ({ ...entry, id: lastSupportId + index + 1 }));
+      duplicate.links = (duplicate.links || []).flatMap((link, index) => {
+        const copiedLink = { ...link, id: lastLinkId + index + 1 };
+        if (link.targetKind !== 'person' || !link.targetKey.startsWith('-')) return [copiedLink];
+        const supportId = supportIds.get(link.targetKey);
+        return supportId === undefined ? [] : [{ ...copiedLink, targetKey: String(-supportId) }];
+      });
+      previewOrgCharts.push({ id, name });
+      previewOrgChartData.set(id, duplicate);
+      return createPreviewQuery({ data: id, error: null });
+    }
     previewOrgCharts.push({ id, name });
     previewOrgChartData.set(id, {
       ...previewOrgData,
