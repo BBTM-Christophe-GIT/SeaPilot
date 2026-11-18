@@ -122,7 +122,7 @@ describe('organigramme', () => {
   it('updates linked office names and avoids duplicating the default office record', () => {
     const sections = buildOrganigramme({ ...ORG_DEMO, support: [{ id: 4, personId: 1, name: 'Ancien nom', functionLabel: 'Président · RH', category: 'office', position: 1 }] }, options);
     const members = sections[0].columns.flatMap((column) => column.members);
-    expect(members.filter((person) => person.id === 1)).toEqual([{ id: 1, name: 'Camille DUMONT', functionLabel: 'Président · RH', detail: '' }]);
+    expect(members.filter((person) => person.id === 1)).toEqual([{ id: 1, name: 'Camille DUMONT', functionLabel: 'Président · RH', detail: '', officeRoles: ['president'] }]);
   });
   it('escapes untrusted names in SVG and wraps long words', () => {
     const sections = buildOrganigramme({ ...ORG_DEMO, people: ORG_DEMO.people.map((person) => ({ ...person, name: '<script>& "Nom"' })) }, options);

@@ -1,5 +1,6 @@
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { compareHrFunctionLabels, normalizeHrFunctionLabel } from '../humanResources/peopleQueries';
+import type { OrgCardColor } from './organigrammeCardColors';
 
 export const ORGANIGRAMME_REFERENCE = 'REP 03-B';
 export const ORGANIGRAMME_SOURCE = '87-Organigramme.pdf';
@@ -21,8 +22,9 @@ export interface OrgMembership { personId: number; vesselId: number; watchGroup:
 export interface OrgWatch { id: number; vesselId: number; name: string; revision?: number }
 export interface OrgSupport { id: number; personId: number | null; name: string; functionLabel: string; category: 'office' | 'external'; position: number; rank?: OrgRank | null }
 export type OrgSupportDraft = Omit<OrgSupport, 'id'> & { id?: number };
-export interface OrgData { chartId: number; charts: OrgChart[]; people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null; personnelExcludedIds?: number[] }
-export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null; watchId?: number }
+export interface OrgData { chartId: number; charts: OrgChart[]; people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null; personnelExcludedIds?: number[]; cardColors?: Record<number, OrgCardColor>; temporaryFunctions?: Record<number, string> }
+export type OrgOfficeRole = 'president' | 'dpa' | 'armementCaptain';
+export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null; watchId?: number | null; officeRoles?: OrgOfficeRole[]; cardColor?: OrgCardColor }
 export interface OrgColumn { key: string; label: string; members: OrgMember[]; watchId?: number }
 export interface OrgSection { iconDataUrl?: string; key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[]; vesselId?: number }
 // null selects the whole fleet; an empty array explicitly selects no vessels.
@@ -57,6 +59,17 @@ export function orgOfficeResponsibilities(data: OrgData): OrgSupportDraft[] {
   return [...configured, ...defaults].sort((a, b) => (Number(a.rank) || 99) - (Number(b.rank) || 99) || a.position - b.position || a.name.localeCompare(b.name, 'fr'));
 }
 
+function officeRoles(label: string): OrgOfficeRole[] {
+  const clauses = label.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr')
+    .split(/[·;/|,]|\s+[-–—]\s+/).map((part) => part.trim());
+  const roles: OrgOfficeRole[] = [];
+  if (clauses.some((part) => /^presidente?\b/.test(part))) roles.push('president');
+  if (clauses.some((part) => /^capitaine\s+d(?:['’ʼ]\s*|\s+)armement\b/.test(part))) roles.push('armementCaptain');
+  if (clauses.some((part) => /\bdpa\b|\bpersonne designee a terre\b/.test(part)
+    && !/\b(?:assistante?|adjointe?|suppleante?)\b/.test(part))) roles.push('dpa');
+  return roles;
+}
+
 export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSection[] {
   const people = new Map(data.people.map((person) => [person.id, person]));
   const memberships = resolveMemberships(data);
@@ -69,10 +82,27 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     ...(options.showEmails && person?.email?.trim() ? { email: person.email.trim() } : {}),
     ...(options.showPhones && person?.phone?.trim() ? { phone: person.phone.trim() } : {}),
   });
-  const member = (person: OrgPerson, role = person.functionLabel, detail = ''): OrgMember => ({ id: person.id, name: person.name, photoUrl: options.showPhotos !== false ? person.photoUrl : undefined, functionLabel: normalizeHrFunctionLabel(role || person.functionLabel) || 'Fonction non renseignée', detail, ...contacts(person) });
+  const member = (person: OrgPerson, role = person.functionLabel): OrgMember => ({ id: person.id, name: person.name,
+    photoUrl: options.showPhotos !== false ? person.photoUrl : undefined,
+    functionLabel: data.temporaryFunctions?.[person.id]?.trim() || normalizeHrFunctionLabel(role || person.functionLabel) || 'Fonction non renseignée', detail: '', ...contacts(person),
+    ...(data.cardColors?.[person.id] ? { cardColor: data.cardColors[person.id] } : {}),
+  });
   const sections: OrgSection[] = [];
   if (options.includeOffice) {
-    const members = orgOfficeResponsibilities(data).map((entry) => ({ id: entry.personId ?? -entry.id!, name: people.get(entry.personId ?? -1)?.name || entry.name, functionLabel: entry.functionLabel, detail: '', rank: entry.rank, photoUrl: options.showPhotos !== false ? people.get(entry.personId ?? -1)?.photoUrl : undefined, ...contacts(people.get(entry.personId ?? -1)) }));
+    const responsibilities = orgOfficeResponsibilities(data);
+    const candidateRoles = responsibilities.map((entry) => officeRoles(entry.functionLabel));
+    const roleCounts = new Map<OrgOfficeRole, number>();
+    candidateRoles.flat().forEach((role) => roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1));
+    const members = responsibilities.map((entry, index) => {
+      const roles = candidateRoles[index].filter((role) => roleCounts.get(role) === 1);
+      const person = people.get(entry.personId ?? -1);
+      const temporaryFunction = person ? data.temporaryFunctions?.[person.id]?.trim() : undefined;
+      return { id: entry.personId ?? -entry.id!, name: person?.name || entry.name, functionLabel: temporaryFunction || entry.functionLabel, detail: '',
+        rank: entry.rank, photoUrl: options.showPhotos !== false ? person?.photoUrl : undefined, ...contacts(person),
+        ...(roles.length ? { officeRoles: roles } : {}),
+        ...(person && data.cardColors?.[person.id] ? { cardColor: data.cardColors[person.id] } : {}),
+      };
+    });
     if (members.length) sections.push({ key: 'office', label: 'Direction & Administration', kind: 'office', columns: members.map((person) => ({ key: `office-${person.id}`, label: '', members: [person] })) });
   }
   if (options.view === 'vessels') {
@@ -95,7 +125,8 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     const byFunction = new Map<string, Map<number, OrgMember>>();
     rows.forEach((row) => {
       const person = people.get(row.personId)!;
-      const role = normalizeHrFunctionLabel(row.functionLabel || person.functionLabel) || 'Fonction non renseignée';
+      const card = member(person, row.functionLabel);
+      const role = card.functionLabel;
       const members = byFunction.get(role) || new Map<number, OrgMember>();
       const detail = [options.showVessels ? vesselById.get(row.vesselId)!.name : '', options.showWatches !== false ? row.watchGroup : ''].filter(Boolean).join(' · ');
       const previous = members.get(person.id);
@@ -103,7 +134,7 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
       const watchId = watches.get(watchKey(row.vesselId, row.watchGroup));
       // A single function card can represent several assignments. Only a specific
       // source watch can be moved; the vessel view still exposes each assignment.
-      members.set(person.id, { ...member(person, role, [...details].join(' / ')), watchId: !previous || previous.watchId === watchId ? watchId : undefined });
+      members.set(person.id, { ...card, detail: [...details].join(' / '), watchId: !previous || previous.watchId === watchId ? watchId : undefined });
       byFunction.set(role, members);
     });
     if (byFunction.size) sections.push({ key: 'functions', label: 'Équipages par fonction', kind: 'functions', columns: [...byFunction].sort(([a], [b]) => compareHrFunctionLabels(a, b)).map(([label, members]) => ({ key: label, label, members: [...members.values()].sort(compareMembers) })) });
@@ -113,7 +144,7 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     const remaining = data.people.filter((person) => person.population !== 'sedentary' && !assigned.has(person.id));
     const groups = new Map<string, OrgMember[]>();
     remaining.forEach((person) => {
-      const item = member(person);
+      const item = { ...member(person), watchId: null };
       groups.set(item.functionLabel, [...(groups.get(item.functionLabel) || []), item]);
     });
     if (remaining.length) sections.push({ key: 'unassigned', label: 'Sans affectation', kind: 'unassigned', columns: [...groups].sort(([a], [b]) => compareHrFunctionLabels(a, b)).map(([label, members]) => ({ key: label, label, members: members.sort(compareMembers) })) });

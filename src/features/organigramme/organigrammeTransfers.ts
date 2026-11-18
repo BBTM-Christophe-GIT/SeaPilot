@@ -17,8 +17,8 @@ export function orgDestinationLabel({ vesselName, watchName }: OrgWatchDestinati
   return vesselName + ' · ' + watchName;
 }
 
-export function orgCanReceiveMember(destination: OrgWatchDestination, personId: number, fromWatchId: number) {
-  return destination.watchId !== fromWatchId && !destination.memberIds.has(personId);
+export function orgCanReceiveMember(destination: OrgWatchDestination, personId: number, fromWatchId: number | null) {
+  return (fromWatchId === null || destination.watchId !== fromWatchId) && !destination.memberIds.has(personId);
 }
 
 export function orgTransferFleet(data: OrgData) {
@@ -54,7 +54,7 @@ export async function moveOrgWatchMember(
   client: SupabaseClient,
   chartId: number,
   personId: number,
-  fromWatchId: number,
+  fromWatchId: number | null,
   vesselId: number,
   toWatchId: number | null,
 ): Promise<void> {
@@ -66,6 +66,7 @@ export async function moveOrgWatchMember(
     p_to_watch_id: toWatchId,
   });
   if (error) {
-    throw new Error('Impossible de déplacer ce collaborateur. Actualisez l’organigramme puis réessayez.', { cause: error });
+    const operation = fromWatchId === null ? 'd’affecter' : 'de déplacer';
+    throw new Error('Impossible ' + operation + ' ce collaborateur. Actualisez l’organigramme puis réessayez.', { cause: error });
   }
 }

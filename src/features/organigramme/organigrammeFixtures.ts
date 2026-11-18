@@ -78,3 +78,12 @@ export const ORG_HIERARCHY_DEMO: OrgData = { ...ORG_LINKS_DEMO,
     { id: 9, personId: 15, name: 'Noé THOMAS', functionLabel: 'Stagiaire', category: 'office', position: 1, rank: '4' },
   ],
 };
+
+export const ORG_GOVERNANCE_DEMO: OrgData = {
+  ...ORG_VESSEL_FILTER_DEMO,
+  support: [
+    ...ORG_VESSEL_FILTER_DEMO.support.map((entry) => entry.id === 5
+      ? { ...entry, functionLabel: 'Directeur QHSE · Responsable des projets · DPA' } : entry),
+    { id: 99, personId: null, name: 'Responsable flotte · Démo', functionLabel: 'Capitaine d’Armement - Superintendant Technique', category: 'office', position: 2, rank: '2' },
+  ],
+};

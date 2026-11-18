@@ -87,7 +87,7 @@ describe('OrganigrammePage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(selected).toHaveValue('18');
     expect(within(selected).getByRole('option', { name: 'Équipe hiver' })).toBeInTheDocument();
-    expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v3', expect.objectContaining({ p_chart_id: 18 }));
+    expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v4', expect.objectContaining({ p_chart_id: 18 }));
   });
 
   it('previews selectable export fields and retains choices between presentations, documents and refreshes', async () => {
@@ -257,7 +257,7 @@ describe('OrganigrammePage', () => {
     expect(rpc).toHaveBeenCalledWith('save_organigramme_link', expect.objectContaining({ p_id: 99, p_label: 'Conseil' }));
   });
   it('retains the draft and shows a save error without reporting success', async () => {
-    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot_v3' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
+    setup(['direction'], vi.fn().mockImplementation(async (name) => name === 'organigramme_snapshot_v4' ? { data: ORG_DEMO, error: null } : { data: null, error: { message: 'denied' } }));
     await screen.findByRole('img'); fireEvent.click(screen.getByRole('button', { name: 'Modifier la structure' }));
     fireEvent.change(screen.getByLabelText('Nouveau nom'), { target: { value: 'Partenaires' } });
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer le nom' }));
@@ -286,7 +286,7 @@ describe('OrganigrammePage', () => {
   it('reloads on date changes and when returning to the page', async () => {
     const rpc = setup(); await screen.findByRole('img');
     fireEvent.change(screen.getByLabelText('Date de situation'), { target: { value: '2026-08-01' } });
-    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v3', { p_chart_id: 0, p_as_of: '2026-08-01' }));
+    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v4', { p_chart_id: 0, p_as_of: '2026-08-01' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Exporter le PDF' })).toBeEnabled());
     fireEvent(window, new Event('focus'));
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));

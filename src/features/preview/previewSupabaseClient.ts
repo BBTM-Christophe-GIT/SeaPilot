@@ -1,5 +1,6 @@
 import { ACTION_PLAN_FLEET_PREVIEW, ACTION_PLAN_PREVIEW_VESSELS } from './actionPlanFleetPreview';
 import { ORG_HIERARCHY_DEMO } from '../organigramme/organigrammeFixtures';
+import { ORG_CARD_COLORS, type OrgCardColor } from '../organigramme/organigrammeCardColors';
 import { PRIMARY_ORG_CHART, type OrgChart, type OrgData, type OrgRank, type OrgSupport } from '../organigramme/organigrammeModel';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
@@ -2560,9 +2561,30 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   }
   const orgChartId = Number(args.p_chart_id ?? PRIMARY_ORG_CHART.id);
   const orgChart = previewOrgChartData.get(orgChartId);
-  if (functionName === 'organigramme_snapshot_v3' || functionName === 'organigramme_snapshot_v2') {
+  if (['organigramme_snapshot_v4', 'organigramme_snapshot_v3', 'organigramme_snapshot_v2'].includes(functionName)) {
     if (!orgChart) return createPreviewQuery({ data: null, error: { message: 'Organigramme introuvable.' } });
     return createPreviewQuery({ data: { ...orgChart, asOf: args.p_as_of, charts: [...previewOrgCharts], emergencyDefaultIds: previewOrgData.emergencyDefaultIds }, error: null });
+  }
+  if (functionName === 'save_organigramme_card_setting') {
+    const personId = Number(args.p_person_id);
+    const value = String(args.p_value ?? '').trim();
+    if (!orgChart?.people.some((person) => person.id === personId)) {
+      return createPreviewQuery({ data: null, error: { message: 'Collaborateur indisponible.' } });
+    }
+    if (args.p_field === 'color' && (!value || Object.hasOwn(ORG_CARD_COLORS, value))) {
+      const colors = { ...orgChart.cardColors };
+      if (value) colors[personId] = value as OrgCardColor;
+      else delete colors[personId];
+      orgChart.cardColors = colors;
+    } else if (args.p_field === 'temporary_function' && value.length <= 300) {
+      const labels = { ...orgChart.temporaryFunctions };
+      if (value) labels[personId] = value;
+      else delete labels[personId];
+      orgChart.temporaryFunctions = labels;
+    } else {
+      return createPreviewQuery({ data: null, error: { message: 'Réglage invalide.' } });
+    }
+    return createPreviewQuery({ data: null, error: null });
   }
   if (functionName === 'create_organigramme_chart' || functionName === 'rename_organigramme_chart' || functionName === 'duplicate_organigramme_chart') {
     const creating = functionName !== 'rename_organigramme_chart';
@@ -2588,6 +2610,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       const supportIds = new Map(orgChart.support.map((entry, index) => [String(-entry.id), lastSupportId + index + 1]));
       const duplicate = structuredClone(orgChart);
       duplicate.chartId = id;
+      duplicate.temporaryFunctions = {};
       duplicate.watches = (duplicate.watches || []).map((watch, index) => ({ ...watch, id: lastWatchId + index + 1, revision: 1 }));
       duplicate.support = duplicate.support.map((entry, index) => ({ ...entry, id: lastSupportId + index + 1 }));
       duplicate.links = (duplicate.links || []).flatMap((link, index) => {
@@ -2607,7 +2630,7 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
       watches: previewOrgData.vessels.flatMap((vessel, index) => ['Bordée 1', 'Bordée 2'].map((watchName, offset) => ({
         id: index * 2 + offset + 1, vesselId: vessel.id, name: watchName, revision: 1,
       }))),
-      memberships: [], support: [], categoryLabels: {}, links: [],
+      memberships: [], support: [], categoryLabels: {}, links: [], cardColors: {}, temporaryFunctions: {},
     });
     return createPreviewQuery({ data: id, error: null });
   }
@@ -2640,23 +2663,29 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
     const watches = orgChart?.watches ?? [];
     const personId = Number(args.p_person_id);
     const vesselId = Number(args.p_to_vessel_id);
+    const assigning = args.p_from_watch_id === null;
     const source = watches.find((watch) => watch.id === Number(args.p_from_watch_id));
-    const member = source && orgChart?.memberships.find((row) => row.source === 'manual' && row.personId === personId &&
-      row.vesselId === source.vesselId && row.watchGroup === source.name);
-    if (!orgChart || !source || !member || !orgChart.vessels.some((vessel) => vessel.id === vesselId)) {
+    const person = orgChart?.people.find((item) => item.id === personId);
+    if (!orgChart || !person || (assigning ? person.population === 'sedentary' : !source) ||
+        !orgChart.vessels.some((vessel) => vessel.id === vesselId)) {
       return createPreviewQuery({ data: null, error: { message: 'Déplacement indisponible.' } });
     }
-    const createWatch = args.p_to_watch_id === null && watches.every((watch) => watch.vesselId !== vesselId);
+    const assignments = orgChart.memberships.filter((row) => row.source === 'manual' && row.personId === personId);
+    const member = source && assignments.find((row) => row.vesselId === source.vesselId && row.watchGroup === source.name);
+    const targetWatches = watches.filter((watch) => watch.vesselId === vesselId);
+    const createWatch = args.p_to_watch_id === null && !targetWatches.length;
     const target = createWatch
       ? { id: Math.max(0, ...watches.map((watch) => watch.id)) + 1, vesselId, name: 'Bordée 1', revision: 1 }
-      : watches.find((watch) => watch.id === Number(args.p_to_watch_id) && watch.vesselId === vesselId);
-    if (!target || orgChart.memberships.some((row) => row !== member && row.personId === personId &&
-      row.vesselId === vesselId && row.watchGroup === target.name)) {
+      : targetWatches.find((watch) => args.p_to_watch_id === null ? watch.name === 'Bordée 1' : watch.id === Number(args.p_to_watch_id));
+    const atTarget = target && assignments.find((row) => row.vesselId === vesselId && row.watchGroup === target.name);
+    if (atTarget && (!member || atTarget === member)) return createPreviewQuery({ data: null, error: null });
+    if (!target || atTarget || (args.p_to_watch_id === null && !createWatch) || (!member && (!assigning || assignments.length))) {
       return createPreviewQuery({ data: null, error: { message: 'Bordée de destination indisponible.' } });
     }
-    if (source.id === target.id) return createPreviewQuery({ data: null, error: null });
-    orgChart.memberships = orgChart.memberships.map((row) => row === member ? { ...row, vesselId, watchGroup: target.name } : row);
-    orgChart.watches = (createWatch ? [...watches, target] : watches).map((watch) => watch.id === source.id || watch.id === target.id
+    orgChart.memberships = member
+      ? orgChart.memberships.map((row) => row === member ? { ...row, vesselId, watchGroup: target.name } : row)
+      : [...orgChart.memberships, { personId, vesselId, watchGroup: target.name, functionLabel: '', source: 'manual' }];
+    orgChart.watches = (createWatch ? [...watches, target] : watches).map((watch) => watch.id === source?.id || watch.id === target.id
       ? { ...watch, revision: (watch.revision ?? 1) + 1 }
       : watch);
     return createPreviewQuery({ data: null, error: null });
