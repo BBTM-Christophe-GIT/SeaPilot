@@ -114,10 +114,12 @@ version sélectionnée et repris dans ses exports. Une copie reprend les couleur
 Le libellé temporaire appartient à la version d’origine. La fiche RH, les
 listes de contacts et le Planning utilisent leurs libellés habituels.
 
-Dans **Par navire et bordée**, le Capitaine d’Armement est relié en pointillé
-aux navires affichés. La carte du DPA est rouge pâle par défaut et le sigle
-**DPA** s’affiche en rouge dans la fonction. Les navires affichés sont reliés
-au DPA en pointillé rouge, et le DPA au Président par un trait rouge continu.
+Dans **Par navire et bordée**, le Capitaine d’Armement et le DPA rejoignent
+les navires affichés par deux liaisons parallèles en pointillés, chacune ancrée
+à sa carte. La légende identifie le gris comme lien hiérarchique et le rouge
+comme accès direct au Président via le DPA. La liaison du DPA au Président est
+continue. La carte affiche **Designated Person Ashore** dans un bandeau rouge
+en bas. Le diagramme et ses exports partagent ce rendu.
 Les liaisons suivent les responsabilités enregistrées dans l’organigramme.
 
 La liste du personnel et les coordonnées reprennent les fiches RH de référence.

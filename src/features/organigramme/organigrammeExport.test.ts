@@ -7,7 +7,7 @@ import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { buildOrgImage, buildOrgPdf, orgPdfGeometry } from './organigrammeExport';
 import { buildOrganigramme, type OrgOptions } from './organigrammeModel';
 import { ORG_DEMO, ORG_GOVERNANCE_DEMO, ORG_LINKS_DEMO, ORG_HIERARCHY_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
-import { layoutOrganigramme, ORG_COLORS } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, ORG_DPA_BADGE_LABEL } from './organigrammeDiagram';
 import { ORG_CARD_COLORS } from './organigrammeCardColors';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
@@ -35,16 +35,18 @@ describe('organigramme exports', () => {
         if (op === OPS.setDash) dashed = args[0].length > 0;
         if (op === OPS.constructPath && args[0] === OPS.stroke) styles.push({ stroke, dashed });
       });
-      expect(styles.some((style) => style.dashed && nearColor(style.stroke, ORG_COLORS.navy))).toBe(true);
+      expect(styles.some((style) => style.dashed && nearColor(style.stroke, ORG_COLORS.hierarchy))).toBe(true);
       expect(styles.some((style) => style.dashed && nearColor(style.stroke, ORG_COLORS.dpaInk))).toBe(true);
       expect(styles.some((style) => !style.dashed && nearColor(style.stroke, ORG_COLORS.dpaInk))).toBe(true);
       for (const color of [ORG_COLORS.dpa, ORG_COLORS.dpaInk, ORG_CARD_COLORS.blue.fill]) expect(fills.some((fill) => nearColor(fill, color))).toBe(true);
       const text = (await page.getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ');
       expect(text).toContain('Chef de quart invité');
-      expect(text).toContain('DPA');
+      expect(text).toContain(ORG_DPA_BADGE_LABEL);
+      expect(text).toContain('Lien hiérarchique');
+      expect(text).toContain('Accès direct au Président via le DPA');
     } finally { await task.destroy(); }
     const svg = await (await buildOrgImage(sections, true, 'svg')).text();
-    expect(svg).toContain(`<tspan fill="${ORG_COLORS.dpaInk}">DPA</tspan>`);
+    expect(svg).toContain(ORG_DPA_BADGE_LABEL);
     expect(svg).toContain(`fill="${ORG_CARD_COLORS.blue.fill}"`);
     expect(svg).toContain('Chef de quart invité');
   });

@@ -30,7 +30,7 @@ export function FleetVesselSheet({ client, vesselId, vesselName, onClose }: {
   const Icon = vessel?.assetKind === 'office' ? Building2 : vessel?.assetKind === 'quay' ? Anchor : Ship;
   const type = vessel?.typeLabel.trim() || vessel?.unitTypeLabel.trim();
   return <AppDialog eyebrow="Module Navire" icon={<Icon aria-hidden="true" size={22} />} onClose={onClose}
-    size="sm" title={vessel?.name || vesselName} variant="drawer">
+    size="xl" title={vessel?.name || vesselName}>
     <div aria-busy={state.status === 'loading'} className="fleet-vessel-sheet">
       {vessel ? <>
         <div className="fleet-vessel-sheet__meta">

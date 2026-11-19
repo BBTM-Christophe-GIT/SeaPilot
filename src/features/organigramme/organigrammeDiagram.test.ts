@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutOrganigramme, ORG_COLORS, orgBoxFill, orgBoxMedia, orgBoxTextColor, orgBoxTextTop, orgBoxTextX, organigrammeSvg } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_COLORS, ORG_DPA_BADGE_LABEL, orgBoxFill, orgBoxMedia, orgBoxTextColor, orgBoxTextTop, orgBoxTextX, orgDpaBadge, organigrammeSvg } from './organigrammeDiagram';
 import { buildOrganigramme, type OrgMember, type OrgOptions, type OrgSection } from './organigrammeModel';
 import { ORG_GOVERNANCE_DEMO, ORG_HIERARCHY_DEMO } from './organigrammeFixtures';
 import { ORG_CARD_COLORS } from './organigrammeCardColors';
@@ -58,26 +58,36 @@ describe('category card geometry', () => {
 describe('governance relationships and person card colors', () => {
   const options: OrgOptions = { view: 'vessels', vesselIds: [1, 3], includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
 
-  it('connects both roles to each displayed vessel at distinct dashed ports and links the DPA and president in solid red', () => {
-    const diagram = layoutOrganigramme(buildOrganigramme(ORG_GOVERNANCE_DEMO, options));
+  it.each([{ ids: [1] }, { ids: [1, 3] }])('connects both roles on distinct parallel lines with selected vessels $ids', ({ ids }) => {
+    const diagram = layoutOrganigramme(buildOrganigramme(ORG_GOVERNANCE_DEMO, { ...options, vesselIds: ids }));
     const vessels = diagram.boxes.filter((box) => box.vesselId !== undefined);
-    expect(vessels.map((box) => box.vesselId)).toEqual([1, 3]);
+    expect(vessels.map((box) => box.vesselId)).toEqual(ids);
     const dpa = diagram.boxes.find((box) => box.officeRoles?.includes('dpa'))!;
     const president = diagram.boxes.find((box) => box.officeRoles?.includes('president'))!;
     const armement = diagram.boxes.find((box) => box.officeRoles?.includes('armementCaptain'))!;
     expect(orgBoxFill(dpa)).toBe(ORG_COLORS.dpa);
+    const badge = orgDpaBadge(dpa)!;
+    expect(badge).toMatchObject({ x: dpa.x, width: dpa.width });
+    expect(badge.y + badge.height).toBe(dpa.y + dpa.height);
+    expect(dpa.lines.map((line) => line.text).join(' ')).not.toMatch(/\bDPA\b/);
     for (const ship of vessels) {
       const incoming = diagram.lines.filter((line) => line.y2 === ship.y && line.x2 > ship.x && line.x2 < ship.x + ship.width && line.dashed && line.relationship);
-      expect(incoming.map((line) => line.relationship)).toEqual(['armement', 'dpa']);
-      expect(new Set(incoming.map((line) => line.x2)).size).toBe(2);
+      expect(incoming.map((line) => line.relationship).sort()).toEqual(['armement', 'dpa']);
+      expect(Math.abs(incoming[0].x2 - incoming[1].x2)).toBe(9);
     }
+    const verticals = diagram.lines.filter((line) => line.dashed && line.x1 === line.x2);
+    expect(verticals.some((line) => line.relationship === 'armement' && verticals.some((red) =>
+      red.relationship === 'dpa' && Math.abs(line.x1 - red.x1) === 9 && Math.min(line.y2, red.y2) - Math.max(line.y1, red.y1) > 30,
+    ))).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'armement' && line.y1 === armement.y + armement.height)).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && line.dashed && line.y1 === dpa.y + dpa.height)).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && !line.dashed && line.y1 === dpa.y)).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && !line.dashed && line.y2 === president.y + president.height)).toBe(true);
     const svg = organigrammeSvg(diagram);
-    expect(svg).toContain(`<tspan fill="${ORG_COLORS.dpaInk}">DPA</tspan>`);
-    expect(svg).toContain(`stroke="${ORG_COLORS.navy}" stroke-width="2" stroke-dasharray="5 4"`);
+    expect(svg).toContain(ORG_DPA_BADGE_LABEL);
+    expect(svg).toContain('Lien hiérarchique');
+    expect(svg).toContain('Accès direct au Président via le DPA');
+    expect(svg).toContain(`stroke="${ORG_COLORS.hierarchy}" stroke-width="2" stroke-dasharray="5 4"`);
     expect(svg).toContain(`stroke="${ORG_COLORS.dpaInk}" stroke-width="2" stroke-dasharray="5 4"`);
     expect(svg).toContain(`stroke="${ORG_COLORS.dpaInk}" stroke-width="2"/>`);
   });
@@ -108,7 +118,7 @@ describe('governance relationships and person card colors', () => {
     expect(orgBoxTextColor(president, true)).toBe(ORG_COLORS.ink);
     expect(orgBoxFill(captain)).toBe(ORG_CARD_COLORS.green.fill);
     expect(orgBoxFill(dpa)).toBe(ORG_CARD_COLORS.lavender.fill);
-    expect(organigrammeSvg(diagram)).toContain(`<tspan fill="${ORG_COLORS.dpaInk}">DPA</tspan>`);
+    expect(organigrammeSvg(diagram)).toContain(ORG_DPA_BADGE_LABEL);
     expect(diagram.boxes.find((box) => box.officeRoles?.includes('armementCaptain'))?.person).toBeUndefined();
   });
 

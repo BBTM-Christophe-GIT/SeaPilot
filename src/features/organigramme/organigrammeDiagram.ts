@@ -3,20 +3,29 @@ import { ORG_CARD_COLORS, type OrgCardColor } from './organigrammeCardColors';
 
 export interface OrgBounds { x: number; y: number; width: number; height: number }
 export interface OrgCrewCard { personId: number; name: string; watchId: number | null }
-export interface OrgTextLine { text: string; size: number; bold: boolean; highlightDpa?: boolean }
-export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; officeRoles?: OrgOfficeRole[]; person?: { id: number; name: string }; cardColor?: OrgCardColor; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support' | 'dpa'; lines: OrgTextLine[] }
+export interface OrgTextLine { text: string; size: number; bold: boolean }
+export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; officeRoles?: OrgOfficeRole[]; dpaBadge?: boolean; person?: { id: number; name: string }; cardColor?: OrgCardColor; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support' | 'dpa'; lines: OrgTextLine[] }
 export interface OrgWatchArea extends OrgBounds { watchId: number }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean; relationship?: 'armement' | 'dpa' }
-export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[]; watches?: OrgWatchArea[] }
-export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', dpa: '#fbe9eb', dpaInk: '#a1263c', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
+export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[]; watches?: OrgWatchArea[]; legend?: { label: string; line: OrgLine }[] }
+export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', dpa: '#fbe9eb', dpaInk: '#a1263c', hierarchy: '#647180', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
 export const orgBoxFill = (box: OrgBox) => box.cardColor ? ORG_CARD_COLORS[box.cardColor].fill : ORG_COLORS[box.tone];
 export const orgBoxTextColor = (box: OrgBox, bold: boolean) => !box.cardColor && (box.tone === 'navy' || box.tone === 'leader') ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
-export const orgLineColor = (line: OrgLine) => line.relationship === 'dpa' ? ORG_COLORS.dpaInk : line.relationship === 'armement' ? ORG_COLORS.navy : ORG_COLORS.line;
+export const orgLineColor = (line: OrgLine) => line.relationship === 'dpa' ? ORG_COLORS.dpaInk : line.relationship === 'armement' ? ORG_COLORS.hierarchy : ORG_COLORS.line;
+export const ORG_DPA_BADGE_LABEL = 'Designated Person Ashore';
+export const ORG_DPA_BADGE_FONT_SIZE = 11;
+const DPA_BADGE_HEIGHT = 22;
+const FLEET_LINE_GAP = 9;
 
-export function orgTextRuns(box: OrgBox, line: OrgTextLine) {
-  const color = orgBoxTextColor(box, line.bold);
-  const parts = line.highlightDpa ? line.text.split(/(\bDPA\b)/gi) : [line.text];
-  return parts.map((text, index) => ({ text, color: index % 2 ? ORG_COLORS.dpaInk : color })).filter((part) => part.text);
+function hasDpaBadge(person: OrgMember, office: boolean) {
+  return office && Boolean(person.officeRoles?.includes('dpa') && person.functionLabel.trim());
+}
+
+function cardFunction(person: OrgMember, office: boolean) {
+  if (!hasDpaBadge(person, office)) return person.functionLabel;
+  return person.functionLabel
+    .replace(/(?:\s*[·;/|,]\s*|\s+[-–—]\s+)?(?:\(\s*)?\b(?:DPA|Designated Person Ashore|Personne désignée à terre)\b(?:\s*\))?/giu, '')
+    .replace(/^[\s·;/|,–—-]+|[\s·;/|,–—-]+$/g, '').replace(/\s+/g, ' ');
 }
 
 // Conservative character budget keeps SVG, PNG and PDF text inside the same boxes.
@@ -36,7 +45,7 @@ function memberLines(person: OrgMember, portraitSize: number, office = false): O
   const width = 248 - 24 - (person.photoUrl ? portraitSize + 12 : 0);
   return [
     { text: person.name, size: office ? 14 : 13, bold: true },
-    { text: person.functionLabel, size: 11, bold: false, highlightDpa: office && person.officeRoles?.includes('dpa') },
+    { text: cardFunction(person, office), size: 11, bold: false },
     { text: person.detail, size: 10, bold: false },
     { text: person.email || '', size: 10, bold: false },
     { text: person.phone || '', size: 10, bold: false },
@@ -47,7 +56,9 @@ const textHeight = (lines: OrgBox['lines']) => lines.reduce((total, line) => tot
 /** One size for every person in a category, including cards without a portrait. */
 function categoryCardMetrics(members: OrgMember[], office = false): CardMetrics {
   const hasPhotos = members.some((person) => person.photoUrl);
-  const heightFor = (size: number) => Math.max(64, hasPhotos ? size + 24 : 0, ...members.map((person) => 24 + textHeight(memberLines(person, size, office))));
+  const heightFor = (size: number) => Math.max(64, ...members.map((person) => (
+    24 + Math.max(person.photoUrl ? size : 0, textHeight(memberLines(person, size, office))) + (hasDpaBadge(person, office) ? DPA_BADGE_HEIGHT : 0)
+  )));
   const portraitSize = hasPhotos ? Math.min(80, heightFor(64) - 24) : 0;
   return { height: heightFor(portraitSize), portraitSize };
 }
@@ -56,6 +67,7 @@ function memberCard(person: OrgMember, x: number, y: number, metrics: CardMetric
   return { x, y, width: 248, height: metrics.height, lines: memberLines(person, metrics.portraitSize, office),
     tone: office && person.officeRoles?.includes('dpa') ? 'dpa' : office && person.rank === '1' ? 'leader' : office && person.rank === 'support' ? 'support' : 'white',
     ...(office && person.officeRoles?.length ? { officeRoles: person.officeRoles } : {}),
+    ...(hasDpaBadge(person, office) ? { dpaBadge: true } : {}),
     ...(person.id > 0 ? { person: { id: person.id, name: person.name } } : {}),
     ...(person.cardColor ? { cardColor: person.cardColor } : {}),
     ...(person.watchId === undefined ? {} : { crew: { personId: person.id, name: person.name, watchId: person.watchId } }),
@@ -178,10 +190,10 @@ function layoutOffice(section: OrgSection): OrgDiagram & { rails: OfficeRails } 
 
 type Point = [x: number, y: number];
 
-function addPath(diagram: OrgDiagram, points: Point[], style: Pick<OrgLine, 'relationship' | 'dashed'>) {
+function addPath(lines: OrgLine[], points: Point[], style: Pick<OrgLine, 'relationship' | 'dashed'>) {
   points.slice(1).forEach(([x2, y2], index) => {
     const [x1, y1] = points[index];
-    if (x1 !== x2 || y1 !== y2) diagram.lines.push({ x1, y1, x2, y2, ...style });
+    if (x1 !== x2 || y1 !== y2) lines.push({ x1, y1, x2, y2, ...style });
   });
 }
 
@@ -209,7 +221,7 @@ function connectDpaAndPresident(diagram: OrgDiagram, dpa: OrgBox, president: Org
   const detours = [rails.left + 6, rails.right - 6].map((x): Point[] => [
     [dpaX, dpaY], [dpaX, firstBend], [x, firstBend], [x, lastBend], [presidentX, lastBend], [presidentX, presidentY],
   ]);
-  addPath(diagram, [direct, ...detours].find((path) => pathClearsCards(path, cards)) ?? direct, { relationship: 'dpa' });
+  addPath(diagram.lines, [direct, ...detours].find((path) => pathClearsCards(path, cards)) ?? direct, { relationship: 'dpa' });
 }
 
 function addOfficeRelationships(diagram: OrgDiagram, rails: OfficeRails) {
@@ -220,24 +232,92 @@ function addOfficeRelationships(diagram: OrgDiagram, rails: OfficeRails) {
 
   const vessels = diagram.boxes.filter((box) => box.vesselId !== undefined);
   if (!vessels.length) return;
-  const fleetTop = vessels[0].y;
-  const fleetRoles = [
-    { box: captain, relationship: 'armement' as const, laneY: fleetTop - 46, outlet: .32, bend: 8 },
-    { box: dpa, relationship: 'dpa' as const, laneY: fleetTop - 22, outlet: .68, bend: 12 },
-  ];
-  for (const { box, relationship, laneY, outlet, bend } of fleetRoles) {
-    if (!box) continue;
-    const x = box.x + box.width * outlet;
-    const y = box.y + box.height;
-    const leftSide = x < (rails.left + rails.right) / 2;
-    const railX = (leftSide ? rails.left : rails.right) + (relationship === 'dpa' ? 4 : 0);
-    const targets = vessels.map((vessel) => ({ x: vessel.x + vessel.width * outlet, y: vessel.y }));
+  const fleetRoles = ([{ box: captain, relationship: 'armement' }, { box: dpa, relationship: 'dpa' }] as const)
+    .flatMap(({ box, relationship }) => box ? [{
+      x: box.x + box.width / 2 + (captain === dpa ? (relationship === 'armement' ? FLEET_LINE_GAP / 2 : -FLEET_LINE_GAP / 2) : 0),
+      y: box.y + box.height,
+      relationship,
+    }] : []).sort((a, b) => a.x - b.x);
+  if (!fleetRoles.length) return;
+
+  const routes = fleetRoles.map((role, index) => ({ ...role,
+    offset: (index - (fleetRoles.length - 1) / 2) * FLEET_LINE_GAP,
+    bendY: role.y + 10 + index * FLEET_LINE_GAP,
+    laneY: vessels[0].y - 32 + index * FLEET_LINE_GAP,
+  }));
+  const entrance = (route: typeof routes[number], center: number): Point[] => {
+    const railX = center + route.offset;
+    return [[route.x, route.y], [route.x, route.bendY], [railX, route.bendY], [railX, route.laneY]];
+  };
+  const sourceCenter = routes.reduce((sum, route) => sum + route.x, 0) / routes.length;
+  const vesselCenter = vessels[0].x + vessels[0].width / 2;
+  const preferredRail = vessels.length === 1 ? vesselCenter : sourceCenter;
+  const rail = [preferredRail, sourceCenter, rails.left, rails.right].find((x) => routes.every((route) => (
+    pathClearsCards(entrance(route, x), diagram.boxes)
+  ))) ?? preferredRail;
+  const fleetLines: OrgLine[] = [];
+
+  for (const route of routes) {
+    const { relationship, laneY, offset } = route;
+    const railX = rail + offset;
+    const targets = vessels.map((vessel) => ({ x: vessel.x + vessel.width / 2 + offset, y: vessel.y }));
     const xs = [railX, ...targets.map((target) => target.x)];
     const style = { relationship, dashed: true };
-    addPath(diagram, [[x, y], [x, y + bend], [railX, y + bend], [railX, laneY]], style);
-    addPath(diagram, [[Math.min(...xs), laneY], [Math.max(...xs), laneY]], style);
-    targets.forEach((target) => addPath(diagram, [[target.x, laneY], [target.x, target.y]], style));
+    addPath(fleetLines, entrance(route, rail), style);
+    addPath(fleetLines, [[Math.min(...xs), laneY], [Math.max(...xs), laneY]], style);
+    targets.forEach((target) => addPath(fleetLines, [[target.x, laneY], [target.x, target.y]], style));
   }
+
+  // At crossings between two branches, leave a gap in the grey line so the paths read independently.
+  const dpaLines = fleetLines.filter((line) => line.relationship === 'dpa');
+  for (const line of fleetLines) {
+    diagram.lines.push(...(line.relationship === 'armement' ? separateCrossings(line, dpaLines) : [line]));
+  }
+}
+
+function separateCrossings(line: OrgLine, dpaLines: OrgLine[]): OrgLine[] {
+  const horizontal = line.y1 === line.y2;
+  const fixed = horizontal ? line.y1 : line.x1;
+  const from = horizontal ? line.x1 : line.y1;
+  const to = horizontal ? line.x2 : line.y2;
+  const direction = Math.sign(to - from);
+  const gap = 3;
+  const crossings = [...new Set(dpaLines.flatMap((red) => {
+    if ((red.y1 === red.y2) === horizontal) return [];
+    const crossing = horizontal ? red.x1 : red.y1;
+    const ends = horizontal ? [red.y1, red.y2] : [red.x1, red.x2];
+    return crossing > Math.min(from, to) + gap && crossing < Math.max(from, to) - gap
+      && fixed >= Math.min(...ends) && fixed <= Math.max(...ends) ? [crossing] : [];
+  }))].sort((a, b) => (a - b) * direction);
+  if (!crossings.length) return [line];
+
+  const segment = (a: number, b: number) => horizontal ? { ...line, x1: a, x2: b } : { ...line, y1: a, y2: b };
+  const segments: OrgLine[] = [];
+  let start = from;
+  for (const crossing of crossings) {
+    if ((crossing - start) * direction > gap) segments.push(segment(start, crossing - direction * gap));
+    start = crossing + direction * gap;
+  }
+  segments.push(segment(start, to));
+  return segments;
+}
+
+function addRelationshipLegend(diagram: OrgDiagram) {
+  const hierarchy = diagram.lines.some((line) => line.relationship === 'armement');
+  const dpa = diagram.lines.some((line) => line.relationship === 'dpa');
+  if (!hierarchy && !dpa) return;
+
+  const inset = 28;
+  for (const box of diagram.boxes) box.y += inset;
+  for (const line of diagram.lines) { line.y1 += inset; line.y2 += inset; }
+  for (const watch of diagram.watches ?? []) watch.y += inset;
+  diagram.height += inset;
+  diagram.legend = [];
+  const item = (x: number, relationship: OrgLine['relationship'], dashed: boolean, label: string) => ({
+    label, line: { x1: x, x2: x + 28, y1: 24, y2: 24, relationship, dashed },
+  });
+  if (hierarchy) diagram.legend.push(item(24, 'armement', true, 'Lien hiérarchique'));
+  if (dpa) diagram.legend.push(item(hierarchy ? 182 : 24, 'dpa', diagram.lines.some((line) => line.relationship === 'dpa' && line.dashed), 'Accès direct au Président via le DPA'));
 }
 
 /** All vessels occupy one horizontal row. External advisers sit alongside the office hierarchy. */
@@ -283,22 +363,27 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   });
   diagram.height = Math.max(80, y);
   if (officeRails) addOfficeRelationships(diagram, officeRails);
+  addRelationshipLegend(diagram);
   return diagram;
 }
 
 export function orgBoxMedia(box: OrgBox) {
   const vessel = box.mediaKind === 'vessel';
   const size = box.portraitSize ?? 64;
-  return { x: box.x + 12, y: box.y + (box.height - (vessel ? 42 : size)) / 2, width: vessel ? 64 : size, height: vessel ? 42 : size };
+  return { x: box.x + 12, y: box.y + (orgBoxBodyHeight(box) - (vessel ? 42 : size)) / 2, width: vessel ? 64 : size, height: vessel ? 42 : size };
 }
+const orgBoxBodyHeight = (box: OrgBox) => box.height - (box.dpaBadge ? DPA_BADGE_HEIGHT : 0);
+export const orgDpaBadge = (box: OrgBox) => box.dpaBadge ? { x: box.x, y: box.y + orgBoxBodyHeight(box), width: box.width, height: DPA_BADGE_HEIGHT } : null;
 export const orgBoxTextX = (box: OrgBox) => box.x + (box.width + (box.mediaKind === 'vessel' ? 80 : box.mediaKind === 'portrait' ? (box.portraitSize ?? 64) + 12 : 0)) / 2;
-export const orgBoxTextTop = (box: OrgBox) => box.y + (box.height - textHeight(box.lines)) / 2;
+export const orgBoxTextTop = (box: OrgBox) => box.y + (orgBoxBodyHeight(box) - textHeight(box.lines)) / 2;
 export const orgImageSource = (source?: string) => source && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(source) ? source : '';
 // Shared tiny ship outline for vessels without a catalog illustration.
 export const ORG_SHIP_LINES = [[5,12,12,9],[12,9,19,12],[5,12,7,18],[19,12,17,18],[7,18,17,18],[8,10,8,5],[8,5,16,5],[16,5,16,10],[12,5,12,2],[4,21,8,20],[8,20,12,21],[12,21,16,20],[16,20,20,21]];
 const escapeXml = (text: string) => text.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
+const svgLine = (line: OrgLine) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${orgLineColor(line)}" stroke-width="${line.relationship ? 2 : 1.5}"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`;
 export function organigrammeSvg(diagram: OrgDiagram): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${diagram.lines.map((line) => `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${orgLineColor(line)}" stroke-width="${line.relationship ? 2 : 1.5}"${line.dashed ? ' stroke-dasharray="5 4"' : ''}/>`).join('')}${diagram.boxes.map((box) => {
+  const legend = (diagram.legend ?? []).map(({ line, label }) => `${svgLine(line)}<text x="${line.x2 + 8}" y="${line.y2 + 4}" font-family="Arial, sans-serif" font-size="12" fill="${ORG_COLORS.ink}">${escapeXml(label)}</text>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${diagram.width}" height="${diagram.height}" viewBox="0 0 ${diagram.width} ${diagram.height}" role="img" aria-label="Organigramme"><rect width="100%" height="100%" fill="white"/>${legend}${diagram.lines.map(svgLine).join('')}${diagram.boxes.map((box) => {
     let baseline = orgBoxTextTop(box);
     const media = orgBoxMedia(box);
     const source = orgImageSource(box.image);
@@ -306,11 +391,12 @@ export function organigrammeSvg(diagram: OrgDiagram): string {
     const clipId = `portrait-${box.x}-${box.y}`;
     const clip = portrait && source ? `<defs><clipPath id="${clipId}"><circle cx="${media.x + media.width / 2}" cy="${media.y + media.height / 2}" r="${media.width / 2}"/></clipPath></defs>` : '';
     const picture = source ? `${clip}<image href="${source}" x="${media.x}" y="${media.y}" width="${media.width}" height="${media.height}" preserveAspectRatio="xMidYMid ${portrait ? 'slice' : 'meet'}"${portrait ? ` clip-path="url(#${clipId})"` : ''}/>` : box.mediaKind === 'vessel' ? `<g transform="translate(${media.x + 14} ${media.y + 3}) scale(1.5)" stroke="white" stroke-width="1.5" fill="none">${ORG_SHIP_LINES.map(([x1,y1,x2,y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')}</g>` : '';
+    const badge = orgDpaBadge(box);
+    const badgeSvg = badge ? `<rect x="${badge.x}" y="${badge.y}" width="${badge.width}" height="${badge.height}" rx="${badge.height / 2}" fill="${ORG_COLORS.dpaInk}"/><text x="${badge.x + badge.width / 2}" y="${badge.y + badge.height / 2 + 4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${ORG_DPA_BADGE_FONT_SIZE}" font-weight="700" fill="white">${ORG_DPA_BADGE_LABEL}</text>` : '';
     return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${orgBoxFill(box)}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${picture}${box.lines.map((line) => {
       baseline += line.size + 5;
       const color = orgBoxTextColor(box, line.bold);
-      const text = orgTextRuns(box, line).map((run) => run.color === color ? escapeXml(run.text) : `<tspan fill="${run.color}">${escapeXml(run.text)}</tspan>`).join('');
-      return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${color}">${text}</text>`;
-    }).join('')}`;
+      return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${color}">${escapeXml(line.text)}</text>`;
+    }).join('')}${badgeSvg}`;
   }).join('')}</svg>`;
 }
