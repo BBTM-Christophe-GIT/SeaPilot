@@ -103,16 +103,16 @@ export function FleetFuelFields({ value, onChange, disabled, namesReady, dailyNa
   </section>;
 }
 
-export function FleetFuelDetails({ vessel }: { vessel: FleetFuelCapacity }) {
+export function FleetFuelDetails({ vessel, filledOnly = false }: { vessel: FleetFuelCapacity; filledOnly?: boolean }) {
   const capacities = vessel.fuelTankCapacitiesLiters ?? [];
   const total = fleetMainFuelCapacityLiters(vessel);
   return <section className="fleet-capacity-subsection" aria-label="Carburant">
     <h4>Carburant</h4>
     <dl className="fleet-detail-grid">
-      <div><dt>Nombre de cuves principales</dt><dd>{capacities.length || '—'}</dd></div>
-      <div><dt>{!capacities.length && total !== null ? 'Capacité historique' : 'Capacité totale des cuves principales'}</dt><dd>{formatFleetCapacityLiters(total)}</dd></div>
+      {!filledOnly || capacities.length ? <div><dt>Nombre de cuves principales</dt><dd>{capacities.length || '—'}</dd></div> : null}
+      {!filledOnly || total !== null ? <div><dt>{!capacities.length && total !== null ? 'Capacité historique' : 'Capacité totale des cuves principales'}</dt><dd>{formatFleetCapacityLiters(total)}</dd></div> : null}
       {capacities.map((capacity, index) => <div key={index}><dt>{fleetFuelTankLabel(capacities.length, index, vessel.fuelTankNames)}</dt><dd>{formatFleetCapacityLiters(capacity)}</dd></div>)}
-      <div><dt className="fleet-fuel-daily-name">{fleetDailyFuelTankLabel(vessel.dailyFuelTankName)}</dt><dd>{formatFleetCapacityLiters(vessel.dailyFuelTankCapacityLiters)}</dd></div>
+      {!filledOnly || vessel.dailyFuelTankCapacityLiters != null ? <div><dt className="fleet-fuel-daily-name">{fleetDailyFuelTankLabel(vessel.dailyFuelTankName)}</dt><dd>{formatFleetCapacityLiters(vessel.dailyFuelTankCapacityLiters)}</dd></div> : null}
     </dl>
   </section>;
 }

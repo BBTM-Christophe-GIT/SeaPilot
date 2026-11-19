@@ -255,6 +255,12 @@ export async function fetchFleetVessels(client: SupabaseClient): Promise<FleetVe
   return ((data || []) as unknown as FleetVesselRow[]).map(mapFleetVessel).sort((a, b) => Number(b.active) - Number(a.active) || compareFleetAssets(a, b));
 }
 
+export async function fetchFleetVessel(client: SupabaseClient, vesselId: number): Promise<FleetVessel | null> {
+  const { data, error } = await client.from('vessels').select(FLEET_VESSEL_SELECT).eq('id', vesselId).maybeSingle();
+  if (error) throw error;
+  return data ? mapFleetVessel(data as unknown as FleetVesselRow) : null;
+}
+
 export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVesselInput): Promise<FleetVessel> {
   const name = input.name.trim();
   if (name.length < 2) throw new Error('Le nom doit contenir au moins deux caractères.');

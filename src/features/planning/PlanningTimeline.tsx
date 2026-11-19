@@ -1,5 +1,5 @@
 import { formatPlanningCrewBalance, type PlanningCrewBalanceDays } from './planningCrewBalance';
-import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FilePenLine, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FileText, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -85,18 +85,41 @@ function cellClass(day: PlanningTimelineDay, options: { create: boolean; dragOve
 
 type ProjectTimelineItem = Pick<PlanningProjectRecord, 'id' | 'startsOn' | 'endsOn'>;
 
-function projectTitleFootprint(width: number, day: number, dayWidth: number, dayCount: number, endInset: number) {
-  const center = (day - .5) * dayWidth;
-  const left = Math.max(2, Math.min(center - width / 2, dayCount * dayWidth - width - 2 - endInset));
-  return { left, right: left + width, shift: left + width / 2 - center };
+const captionAngle = 25;
+const captionSine = Math.sin(captionAngle * Math.PI / 180);
+const captionCosine = Math.cos(captionAngle * Math.PI / 180);
+const captionInset = 6;
+
+function splitProjectTitle(title: string) {
+  const match = /^(P\d+)(?=\s|[·•:–—-]|$)[\s·•:–—-]*(.*)$/iu.exec(title.trim());
+  return { code: match?.[1] ?? '', name: match ? match[2] : title.trim() };
+}
+
+interface ProjectCaption {
+  left: number;
+  width: number;
+  height: number;
+  shift: number;
+}
+
+function projectCaption(width: number, height: number, start: number, dayWidth: number, timelineWidth: number): ProjectCaption {
+  const barLeft = (start - 1) * dayWidth;
+  const left = Math.max(captionInset, Math.min(barLeft + captionInset, timelineWidth - width * captionCosine - captionInset));
+  return { left, width, height, shift: left - barLeft };
+}
+
+function captionsOverlap(left: ProjectCaption, right: ProjectCaption): boolean {
+  const [first, second] = left.left <= right.left ? [left, right] : [right, left];
+  const separation = second.left - first.left;
+  // Check the two axes of the rotated labels, not their axis-aligned bounding boxes.
+  return separation * captionCosine < first.width + 2 && separation * captionSine < second.height + 2;
 }
 
 export function buildPlanningProjectStack(
   projects: ProjectTimelineItem[],
   days: PlanningTimelineDay[],
-  layout?: { dayWidth: number; titleWidths: ReadonlyMap<number, number>; endInset?: number },
+  captions?: ReadonlyMap<number, ProjectCaption>,
 ): { count: number; stackById: Map<number, number> } {
-  const dayWidth = layout?.dayWidth ?? 1;
   const visibleProjects = projects
     .flatMap((project) => {
       const placement = dateGridPlacement(project.startsOn, project.endsOn, days);
@@ -104,40 +127,17 @@ export function buildPlanningProjectStack(
     })
     .sort((left, right) => left.start - right.start || left.end - right.end || left.id - right.id);
   const stackById = new Map<number, number>();
-  if (!layout) {
-    const stackEnds: number[] = [];
-    for (const project of visibleProjects) {
-      const reusableStack = stackEnds.findIndex((end) => end < project.start);
-      const stack = reusableStack === -1 ? stackEnds.length : reusableStack;
-      stackEnds[stack] = project.end;
-      stackById.set(project.id, stack);
-    }
-    return { count: stackEnds.length, stackById };
-  }
-
-  const stacks: { left: number; right: number; expanded: boolean }[][] = [];
-
-  visibleProjects.forEach((project) => {
-    const width = layout.titleWidths.get(project.id);
-    const left = (project.start - 1) * dayWidth;
-    const right = project.end * dayWidth;
-    const title = width === undefined ? null : projectTitleFootprint(width, project.start, dayWidth, days.length, layout.endInset ?? 0);
-    const footprint = title
-      ? { left: Math.min(left, title.left - 4), right: Math.max(right, title.right + 4), expanded: true }
-      : { left, right, expanded: false };
-    const overlaps = (item: typeof footprint) => footprint.left < item.right && footprint.right > item.left;
-    let lastExpandedConflict = stacks.length - 1;
-    while (lastExpandedConflict >= 0 && !stacks[lastExpandedConflict].some((item) => (
-      (footprint.expanded || item.expanded) && overlaps(item)
-    ))) {
-      lastExpandedConflict -= 1;
-    }
-    const reusableStack = stacks.findIndex((items, index) => index > lastExpandedConflict && !items.some(overlaps));
+  const stacks: { end: number; captions: ProjectCaption[] }[] = [];
+  for (const project of visibleProjects) {
+    const caption = captions?.get(project.id);
+    const reusableStack = stacks.findIndex((item) => item.end < project.start
+      && (!caption || !item.captions.some((previous) => captionsOverlap(previous, caption))));
     const stack = reusableStack === -1 ? stacks.length : reusableStack;
-    if (!stacks[stack]) stacks.push([]);
-    stacks[stack].push(footprint);
+    if (!stacks[stack]) stacks.push({ end: project.end, captions: [] });
+    stacks[stack].end = project.end;
+    if (caption) stacks[stack].captions.push(caption);
     stackById.set(project.id, stack);
-  });
+  }
 
   return { count: stacks.length, stackById };
 }
@@ -235,8 +235,7 @@ function PlanningFleetTimelineRowContent({
   const [visitMovePreview, setVisitMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
   const suppressClickRef = useRef(false);
   const rowRef = useRef<HTMLDivElement>(null);
-  const [measuredTitleWidths, setMeasuredTitleWidths] = useState<ReadonlyMap<number, number>>(() => new Map());
-  const [captionEndInset, setCaptionEndInset] = useState(0);
+  const [projectCaptions, setProjectCaptions] = useState<ReadonlyMap<number, ProjectCaption>>(() => new Map());
   const watchGroup = 'Bordée 1';
   const canDropPerson = !projectsOnly && editable && !hasBoards && lane.vesselId !== null;
   const touchPersonOver = canDropPerson && touchDropTarget?.vesselId === lane.vesselId && touchDropTarget.watchGroup === watchGroup;
@@ -244,47 +243,54 @@ function PlanningFleetTimelineRowContent({
     if (resizePreview?.id === project.id) return { ...project, ...resizePreview };
     return project.endsOn ? project : { ...project, endsOn: project.startsOn };
   }), [lane.projects, resizePreview]);
-  const titleWidths = new Map<number, number>();
-  for (const project of projectItems) {
-    if (project.startsOn === project.endsOn && dateGridPlacement(project.startsOn, project.endsOn, days)) {
-      titleWidths.set(project.id, measuredTitleWidths.get(project.id) ?? Math.min(240, Math.max(dayWidth - 4, project.title.length * 7 + 26)));
-    }
-  }
-  const hasExpandedNames = titleWidths.size > 0;
-  const projectLayout = hasExpandedNames ? { dayWidth, titleWidths, endInset: captionEndInset } : undefined;
-  const projectStack = buildPlanningProjectStack(projectItems, days, projectLayout);
+  const hasExpandedNames = projectCaptions.size > 0;
+  const projectStack = buildPlanningProjectStack(projectItems, days, projectCaptions);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
     const calendar = row?.closest('.planning-calendar-scroll');
-    if (!row || !(calendar instanceof HTMLElement) || !hasExpandedNames) return;
+    if (!row) return;
     const label = row.querySelector<HTMLElement>('.planning-row-label');
-    const captions = row.querySelectorAll<HTMLElement>('.planning-mission-caption');
+    const bars = row.querySelectorAll<HTMLElement>('.planning-project-bar');
     const measure = () => {
-      const availableWidth = calendar.clientWidth - (label?.offsetWidth ?? 0);
-      if (availableWidth > 0) {
-        row.style.setProperty('--planning-mission-max-width', `${Math.max(dayWidth, availableWidth - 8)}px`);
-        // The browser can include both reserved scrollbar gutters in the final scroll position.
+      let viewportWidth = days.length * dayWidth;
+      let endInset = 0;
+      if (calendar instanceof HTMLElement && calendar.clientWidth > 0) {
+        viewportWidth = Math.max(dayWidth, calendar.clientWidth - (label?.offsetWidth ?? 0));
         const calendarStyle = getComputedStyle(calendar);
         const borderWidth = Number.parseFloat(calendarStyle.borderLeftWidth) + Number.parseFloat(calendarStyle.borderRightWidth);
-        setCaptionEndInset(Math.max(0, Math.ceil(calendar.offsetWidth - calendar.clientWidth - (borderWidth || 0))));
+        endInset = Math.max(0, Math.ceil(calendar.offsetWidth - calendar.clientWidth - (borderWidth || 0)));
       }
-      const widths = new Map<number, number>();
-      for (const caption of captions) {
-        if (caption.offsetWidth > 0) widths.set(Number(caption.dataset.projectId), caption.offsetWidth);
+      const timelineWidth = Math.max(dayWidth, days.length * dayWidth - endInset);
+      const maxWidth = Math.max(0, Math.min(252, viewportWidth - 2 * captionInset, timelineWidth - 2 * captionInset));
+      const captions = new Map<number, ProjectCaption>();
+      for (const bar of bars) {
+        const visibleTitle = bar.querySelector<HTMLElement>('.planning-project-title:not(.planning-project-title-measure)');
+        const title = bar.querySelector<HTMLElement>('.planning-project-title-measure');
+        const name = bar.querySelector<HTMLElement>('.planning-mission-caption-measure');
+        if (!title || !name || !visibleTitle?.clientWidth || title.offsetWidth <= visibleTitle.clientWidth || !maxWidth) continue;
+        const width = Math.min(name.offsetWidth, maxWidth);
+        if (width <= 0) continue;
+        captions.set(Number(bar.dataset.projectId), projectCaption(width, name.offsetHeight, Number(bar.dataset.projectStart), dayWidth, timelineWidth));
       }
-      setMeasuredTitleWidths((previous) => (
-        previous.size === widths.size && [...widths].every(([id, width]) => previous.get(id) === width) ? previous : widths
-      ));
+      setProjectCaptions((previous) => {
+        const same = previous.size === captions.size && [...captions].every(([id, caption]) => {
+          const old = previous.get(id);
+          return old?.left === caption.left && old.width === caption.width && old.height === caption.height && old.shift === caption.shift;
+        });
+        return same ? previous : captions;
+      });
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
-    observer.observe(calendar);
+    if (calendar) observer.observe(calendar);
     if (label) observer.observe(label, { box: 'border-box' });
-    captions.forEach((caption) => observer.observe(caption, { box: 'border-box' }));
+    bars.forEach((bar) => observer.observe(bar));
+    row.querySelectorAll('.planning-project-title-measure, .planning-mission-caption-measure')
+      .forEach((element) => observer.observe(element, { box: 'border-box' }));
     return () => observer.disconnect();
-  }, [dayWidth, days, hasExpandedNames, projectItems]);
+  }, [dayWidth, days, projectItems]);
   const visitTimelineItems = visits.flatMap((visit) => {
     if (visit.visitType === 'technical_stop') {
       const range = planningVesselVisitDateRange(visit);
@@ -315,7 +321,7 @@ function PlanningFleetTimelineRowContent({
         id: project.id,
         startsOn: project.id === draggingId ? movePreview.startsOn : project.startsOn,
         endsOn: project.id === draggingId ? movePreview.endsOn : project.endsOn,
-      })), days, projectLayout).stackById.get(draggingId) ?? 0
+      })), days, projectCaptions).stackById.get(draggingId) ?? 0
     : 0;
   const projectTracks = Math.max(1, projectStack.count, moveProjectStack + 1);
   const visitTracks = Math.max(maxVisitStack, visitMovePreview ? 1 : 0);
@@ -475,7 +481,7 @@ function PlanningFleetTimelineRowContent({
           {expanded ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronRight aria-hidden="true" size={16} />}
         </button>}
         <div aria-label={`Actions pour ${lane.label}`} className="planning-vessel-actions" role="group">
-          <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FilePenLine aria-hidden="true" size={14} /></button>
+          <button aria-label={`Ouvrir la fiche de ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenVessel(lane)} title="Fiche du navire" type="button"><FileText aria-hidden="true" size={14} /></button>
           {editable && projectsOnly ? <button aria-label={`Ajouter un projet à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onOpenCell(lane, referenceDate || days[0].date)} title="Ajouter un projet" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
           {editable && !projectsOnly ? <button aria-label={`Ajouter une bordée à ${lane.label}`} className="planning-tree-action" disabled={lane.vesselId === null} onClick={() => onAddBoard(lane)} title="Ajouter une bordée" type="button"><Plus aria-hidden="true" size={15} /></button> : null}
           {editable && !projectsOnly ? <button aria-label={`Ajouter une visite ou un audit à ${lane.label}`} className="planning-tree-action is-visit" disabled={lane.vesselId === null} onClick={() => onCreateVisit(lane)} title="Nouvelle Visite / Audit" type="button"><CalendarCheck2 aria-hidden="true" size={14} /></button> : null}
@@ -537,8 +543,8 @@ function PlanningFleetTimelineRowContent({
         if (!placement) return null;
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
-        const titleWidth = titleWidths.get(project.id);
-        const title = titleWidth === undefined ? null : projectTitleFootprint(titleWidth, placement.start, dayWidth, days.length, captionEndInset);
+        const { code, name } = splitProjectTitle(project.title);
+        const caption = name ? projectCaptions.get(project.id) : undefined;
         const gridPlacement = {
           gridColumn: `${placement.start + 1} / span ${placement.span}`,
           gridRow: hasExpandedNames ? stack + 1 : 1,
@@ -549,6 +555,7 @@ function PlanningFleetTimelineRowContent({
             aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
             className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             data-project-id={project.id}
+            data-project-start={placement.start}
             data-project-stack={stack}
             draggable={editable && !isPending && !preview}
             onClick={(event) => { if (suppressClickRef.current) { suppressClickRef.current = false; event.preventDefault(); return; } onSelect(`project-${project.id}`); }}
@@ -566,7 +573,7 @@ function PlanningFleetTimelineRowContent({
               event.dataTransfer.setData('application/x-seapilot-project', String(project.id));
               if (lane.vesselId) event.dataTransfer.setData('application/x-seapilot-project-vessel', String(lane.vesselId));
             }}
-            style={title ? undefined : {
+            style={caption ? undefined : {
               ...gridPlacement,
               marginTop: !hasExpandedNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
             }}
@@ -574,7 +581,13 @@ function PlanningFleetTimelineRowContent({
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
-            {title ? null : <span className="planning-project-title">{project.title}</span>}
+            <span className={`planning-project-title${caption || (code && !name) ? ' is-code' : ''}`}>
+              {caption ? code || planningFleetEventTypeLabel(project.eventType) : project.title}
+            </span>
+            {name ? <>
+              <span aria-hidden="true" className="planning-project-title planning-project-title-measure" data-text={project.title} />
+              <span aria-hidden="true" className="planning-mission-caption planning-mission-caption-measure" data-text={name} />
+            </> : null}
             <small>{planningFleetEventTypeLabel(project.eventType)}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
@@ -582,17 +595,21 @@ function PlanningFleetTimelineRowContent({
         );
         return (
           <div
-            className={title ? 'planning-project-with-caption' : 'planning-project-without-caption'}
+            className={caption ? 'planning-project-with-caption' : 'planning-project-without-caption'}
             key={project.id}
-            style={title ? gridPlacement : undefined}
+            style={caption ? gridPlacement : undefined}
           >
             {bar}
-            {title ? <span
+            {caption ? <span
               aria-hidden="true"
               className="planning-mission-caption"
-              data-project-id={project.id}
-              style={{ '--planning-mission-shift': `${title.shift}px` } as CSSProperties}
-            >{project.title}</span> : null}
+              style={{
+                '--planning-mission-shift': `${caption.shift}px`,
+                '--planning-mission-width': `${caption.width}px`,
+                '--planning-mission-depth': `${Math.ceil(caption.width * captionSine)}px`,
+                '--planning-mission-angle': `${captionAngle}deg`,
+              } as CSSProperties}
+            >{name}</span> : null}
           </div>
         );
       })}

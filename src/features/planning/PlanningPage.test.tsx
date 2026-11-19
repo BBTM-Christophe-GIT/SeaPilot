@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route, Outlet } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { PlanningPage } from './PlanningPage';
 import { daysBetween, formatPlanningDate, shiftPlanningMonths, todayPlanningDate } from './planningDates';
 import type { GenericCrewRowData } from './planningGenericCrew';
@@ -10,6 +10,24 @@ vi.mock('./planningDates', async (importOriginal) => ({
   ...await importOriginal(),
   todayPlanningDate: () => '2026-06-29',
 }));
+
+function mockPlanningLabelMeasurements() {
+  // jsdom does not lay out the calendar or measure its text.
+  const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    if (!this.classList.contains('planning-project-title')) return 0;
+    const bar = this.closest<HTMLElement>('.planning-project-bar');
+    const placement = bar?.style.gridColumn || bar?.parentElement?.style.gridColumn || '';
+    const span = Number(/span (\d+)/.exec(placement)?.[1] ?? 1);
+    const dayWidth = Number.parseFloat(bar?.closest<HTMLElement>('.planning-calendar-scroll')?.style.getPropertyValue('--planning-day-width') || '52');
+    return span * dayWidth - 6;
+  });
+  const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('planning-project-title-measure')) return (this.dataset.text?.length ?? 0) * 6 + 32;
+    if (this.classList.contains('planning-mission-caption-measure')) return (this.dataset.text?.length ?? 0) * 6;
+    return 0;
+  });
+  onTestFinished(() => { clientWidth.mockRestore(); offsetWidth.mockRestore(); });
+}
 
 const assignmentFunctionOptions = [
   'Capitaine',
@@ -862,7 +880,8 @@ describe('PlanningPage cockpit', () => {
     expect(await screen.findByText('Opération déplacée et synchronisée sur ses navires.')).toBeInTheDocument();
   });
 
-  it('shows full one-day names below their bars in the compact fleet and project calendars', async () => {
+  it('shows overflowing project names in diagonal captions in the compact fleet and project calendars', async () => {
+    mockPlanningLabelMeasurements();
     const user = userEvent.setup();
     const oneDay = {
       ...planningProjectRow,
@@ -895,23 +914,23 @@ describe('PlanningPage cockpit', () => {
     expect(screen.queryByRole('switch', { name: 'Afficher les noms' })).not.toBeInTheDocument();
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('52px');
     const oneDayTrack = oneDayBar.closest<HTMLElement>('.planning-project-with-caption')!;
-    const oneDayCaption = oneDayTrack.querySelector('.planning-mission-caption');
+    const oneDayCaption = oneDayTrack.querySelector(':scope > .planning-mission-caption');
     expect(oneDayBar.nextElementSibling).toBe(oneDayCaption);
-    expect(oneDayCaption).toHaveTextContent(oneDay.title);
+    expect(oneDayCaption).toHaveTextContent('Inspection et assistance portuaire');
     expect(oneDayCaption).toBeVisible();
-    expect(within(oneDayBar).queryByText(oneDay.title)).not.toBeInTheDocument();
+    expect(within(oneDayBar).getByText('P601')).toBeVisible();
     const multiDayBar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
     const clippedBar = screen.getByRole('button', { name: /^Transit P602 - Mission commencée hors période,/ });
     const adjacentBar = screen.getByRole('button', { name: /^Transit P603 - Inspection et assistance portuaire,/ });
     expect(multiDayBar.closest('.planning-project-with-caption')).toBeNull();
-    expect(clippedBar.closest('.planning-project-with-caption')).toBeNull();
-    expect(clippedBar.style.gridColumn).toMatch(/span 1$/);
+    expect(clippedBar.nextElementSibling).toHaveTextContent('Mission commencée hors période');
+    expect(clippedBar.parentElement?.style.gridColumn).toMatch(/span 1$/);
     const adjacentTrack = adjacentBar.closest<HTMLElement>('.planning-project-with-caption')!;
-    expect(adjacentTrack.querySelector('.planning-mission-caption')).toHaveTextContent(adjacentProject.title);
+    expect(adjacentTrack.querySelector(':scope > .planning-mission-caption')).toHaveTextContent('Inspection et assistance portuaire');
     expect(oneDayTrack.style.gridColumn).toMatch(/span 1$/);
     expect(adjacentTrack.style.gridColumn).toMatch(/span 1$/);
     expect(adjacentTrack.style.gridColumn).not.toBe(oneDayTrack.style.gridColumn);
-    expect(Number(adjacentTrack.style.gridRow)).toBeGreaterThan(Number(oneDayTrack.style.gridRow));
+    expect(adjacentTrack.style.gridRow).toBe(oneDayTrack.style.gridRow);
 
     await user.click(screen.getByRole('button', { name: 'Zoom avant' }));
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
@@ -922,10 +941,11 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('tab', { name: 'Projet' }));
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
     const projectBar = screen.getByRole('button', { name: oneDayName });
-    expect(projectBar.nextElementSibling).toHaveTextContent(oneDay.title);
+    expect(projectBar.nextElementSibling).toHaveTextContent('Inspection et assistance portuaire');
   });
 
   it.each(['marin', 'capitaine'] as const)('keeps the published project view read-only for %s', async (role) => {
+    mockPlanningLabelMeasurements();
     const user = userEvent.setup();
     const oneDay = { ...planningProjectRow, title: 'P600 - Remorquage portuaire', ends_on: planningProjectRow.starts_on };
     const { client, rpc, updateProject, deleteProject } = createClient({
@@ -939,7 +959,7 @@ describe('PlanningPage cockpit', () => {
     await user.click(screen.getByRole('tab', { name: 'Projet' }));
     const bar = screen.getByRole('button', { name: /P600 - Remorquage portuaire/ });
     expect(bar.nextElementSibling).toHaveClass('planning-mission-caption');
-    expect(bar.nextElementSibling).toHaveTextContent(oneDay.title);
+    expect(bar.nextElementSibling).toHaveTextContent('Remorquage portuaire');
     expect(bar.nextElementSibling).toBeVisible();
     expect(bar).toHaveAttribute('draggable', 'false');
     expect(bar.querySelector('.planning-resize-handle')).toBeNull();

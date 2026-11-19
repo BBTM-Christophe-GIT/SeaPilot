@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  Anchor, Archive, Building2, Edit3, FileDown, Gauge, ImagePlus, MapPin, Plus,
-  RefreshCw, RotateCcw, Ruler, Search, Ship, UsersRound, Warehouse, Waves, X,
+  Anchor, Archive, Building2, Edit3, FileDown, ImagePlus, MapPin, Plus,
+  RefreshCw, RotateCcw, Search, Ship, Warehouse, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -17,11 +17,12 @@ import type { PlanningP11Data } from '../planning/planningP11';
 import { EMPTY_PLANNING_OVERVIEW } from '../planning/usePlanningOverview';
 import { downloadFleetBrochure } from './fleetBrochure';
 import { FleetCapacityPlans } from './FleetCapacityPlans';
-import { FleetCapacitySectionDetails, FleetCapacitySectionFields } from './FleetCapacitySections';
+import { FleetCapacitySectionFields } from './FleetCapacitySections';
 import { createFleetCapacitySectionDrafts, parseFleetCapacitySections, type FleetCapacitySectionDraft } from './fleetCapacityModel';
-import { FleetFuelDetails, FleetFuelFields, type FleetFuelDraft } from './FleetFuelFields';
+import { FleetFuelFields, type FleetFuelDraft } from './FleetFuelFields';
 import { fleetFuelTankLabel, fleetMainFuelCapacityLiters, isFleetFuelTankCapacity, isFleetFuelTankName, isFleetFuelTankNames, type FleetFuelCapacity } from './fleetFuel';
 import { VesselWeatherMatrixEditor } from './VesselWeatherMatrixEditor';
+import { FleetVesselOverview } from './FleetVesselOverview';
 import {
   archiveFleetVessel, fetchFleetVessels, resolveFleetVesselPhotoUrl, restoreFleetVessel,
   saveFleetVessel, uploadFleetVesselPhoto, MAX_FLEET_DRAFT_METERS, type FleetAssetKind, type FleetVessel,
@@ -282,14 +283,10 @@ export function FleetPage({ client, roles }: FleetPageProps) {
         {selected.assetKind === 'vessel' ? <nav aria-label="Sections du navire" className="fleet-detail-tabs"><button aria-selected={detailTab === 'overview'} className={detailTab === 'overview' ? 'is-active' : ''} onClick={() => setDetailTab('overview')} role="tab" type="button">Vue d’ensemble</button><button aria-selected={detailTab === 'manning'} className={detailTab === 'manning' ? 'is-active' : ''} onClick={() => setDetailTab('manning')} role="tab" type="button">Décision d’effectif</button><button aria-selected={detailTab === 'weather'} className={detailTab === 'weather' ? 'is-active' : ''} onClick={() => setDetailTab('weather')} role="tab" type="button">Conditions météo limites</button></nav> : null}
 
         {detailTab === 'weather' && selected.assetKind === 'vessel' ? <div className="fleet-weather-matrix-panel"><VesselWeatherMatrixEditor key={selected.id} value={selected.weatherMatrix} vesselName={selected.name} /></div> : detailTab === 'manning' && selected.assetKind === 'vessel' ? <div className="fleet-manning-panel"><p className="fleet-disconnected-note">Référentiel propre à ce navire. Son contrôle dans le Planning est temporairement désactivé.</p><ManningTab client={effectiveClient} data={p11} editable={canManage} fixedVesselId={selected.id} linkToPlanning={false} onReload={async () => setP11(await fetchPlanningP11Data(effectiveClient))} overview={manningOverview} range={range} setFeedback={(message, error = false) => setFeedback({ message, error })} /></div> : <>
-          {selected.assetKind === 'vessel' ? <section className="fleet-highlight-grid"><div><Ruler size={18} /><span><small>Longueur</small><strong>{selected.lengthOverall || '—'}</strong></span></div><div><Waves size={18} /><span><small>Vitesse</small><strong>{selected.maxSpeedKnots ? `${selected.maxSpeedKnots} nd` : '—'}</strong></span></div><div><UsersRound size={18} /><span><small>Capacité</small><strong>{selected.maxPeople ?? '—'}</strong></span></div><div><Gauge size={18} /><span><small>Puissance</small><strong>{selected.mainEnginePowerKw ? `${selected.mainEnginePowerKw} kW` : '—'}</strong></span></div></section> : null}
-          <section className="fleet-detail-section"><h3>Identification</h3><dl className="fleet-detail-grid"><div><dt>Type d’actif</dt><dd>{ASSET_KINDS.find((kind) => kind.key === selected.assetKind)?.singular}</dd></div><div><dt>Type source</dt><dd>{selected.unitTypeLabel || '—'}</dd></div><div><dt>Immatriculation</dt><dd>{selected.registrationNumber || '—'}</dd></div><div><dt>Numéro IMO</dt><dd>{selected.imoNumber || '—'}</dd></div><div><dt>Port</dt><dd>{selected.registrationPort || '—'}</dd></div><div><dt>Indicatif</dt><dd>{selected.callSign || '—'}</dd></div><div><dt>MMSI</dt><dd>{selected.mmsi || '—'}</dd></div><div><dt>Pavillon</dt><dd>{selected.flagState || '—'}</dd></div></dl></section>
-          {selected.assetKind === 'vessel' ? <><section className="fleet-detail-section"><h3>Caractéristiques</h3><dl className="fleet-detail-grid"><div><dt>Année de construction</dt><dd>{selected.builtYear ?? '—'}</dd></div><div><dt>Classification</dt><dd>{selected.classificationLabel || '—'}</dd></div><div><dt>Navigation</dt><dd>{selected.navigationCategory || '—'}</dd></div><div><dt>Jauge brute</dt><dd>{selected.grossTonnage ? `${selected.grossTonnage} UMS` : '—'}</dd></div><div><dt>Largeur hors tout</dt><dd>{selected.beamOverallM ? `${selected.beamOverallM} m` : '—'}</dd></div><div><dt>Tirant d’eau</dt><dd>{selected.draftMeters != null ? `${selected.draftMeters} m` : '—'}</dd></div><div><dt>Port en lourd</dt><dd>{selected.deadweightTonnes ? `${selected.deadweightTonnes} t` : '—'}</dd></div><div><dt>Effectif minimal</dt><dd>{selected.safeManning ?? (selected.crewMembers || '—')}</dd></div><div><dt>Dotation médicale</dt><dd>{selected.medicalDotation || '—'}</dd></div></dl></section><section className="fleet-detail-section"><h3>Propulsion & exploitation</h3><dl className="fleet-detail-grid"><div><dt>Moteur principal</dt><dd>{selected.mainEngine || '—'}</dd></div><div><dt>Groupes électrogènes</dt><dd>{selected.gensets || '—'}</dd></div><div><dt>Traction</dt><dd>{selected.bollardPullTonnes ? `${selected.bollardPullTonnes} t` : '—'}</dd></div><div className="is-wide"><dt>Autonomie</dt><dd>{selected.rangeDescription || '—'}</dd></div><div className="is-wide"><dt>Équipements de pont</dt><dd>{selected.deckEquipment || '—'}</dd></div><div className="is-wide"><dt>Assureur RC (P&amp;I)</dt><dd>{selected.liabilityInsurer || '—'}</dd></div><div className="is-wide"><dt>Navigation & communications</dt><dd>{selected.electronicsCommunications || '—'}</dd></div></dl></section><section className="fleet-detail-section" aria-label="Capacités">
-            <h3>Capacités</h3>
-            <FleetFuelDetails vessel={selected} />
-            <FleetCapacitySectionDetails sections={selected.capacitySections ?? []} />
-            <FleetCapacityPlans key={selected.id} client={effectiveClient} vessel={selected} canManage={canManage} />
-          </section></> : null}
+          <FleetVesselOverview
+            vessel={selected}
+            plans={selected.assetKind === 'vessel' ? <FleetCapacityPlans key={selected.id} client={effectiveClient} vessel={selected} canManage={canManage} /> : null}
+          />
           <section className="fleet-detail-section is-source"><h3>Source BBTM - Flotte</h3><dl className="fleet-detail-grid"><div><dt>Élément SharePoint</dt><dd>{selected.sharePointItemId || '—'}</dd></div><div><dt>Version source</dt><dd>{selected.sourceEtag || '—'}</dd></div><div><dt>Libellé actif source</dt><dd>{selected.sourceActiveLabel || '—'}</dd></div><div><dt>Sortie de flotte source</dt><dd>{displayDate(selected.sourceFleetExitAt)}</dd></div><div className="is-wide"><dt>Identifiant source</dt><dd>{selected.sourceGuid || '—'}</dd></div><div className="is-wide"><dt>Dernière modification source</dt><dd>{displayDate(selected.sourceModifiedAt)}</dd></div></dl></section>
         </>}
       </> : <div className="fleet-empty-detail"><MapPin size={28} /><p>Sélectionnez un élément.</p></div>}</article>
