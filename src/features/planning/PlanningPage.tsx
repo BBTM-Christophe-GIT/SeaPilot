@@ -1,5 +1,6 @@
 import { downloadPlanningDocumentSignature, planningPreviewSignature } from './planningDocumentSignature';
 import { compareFleetNames } from '../fleet/fleetDisplay';
+import { FleetVesselSheet } from '../fleet/FleetVesselSheet';
 import { CREW_SORT_OPTIONS, formatCrewName, type CrewSortOrder } from './planningCrewPreferences';
 import { useCrewDisplayPreferences } from './useCrewDisplayPreferences';
 import { usePlanningFullscreen } from './usePlanningFullscreen';
@@ -122,7 +123,6 @@ import {
   savePlanningAssignmentDayStates,
   publishPlanningRelease,
   updatePlanningEvent,
-  updatePlanningVessel,
   updatePlanningProject,
   updatePlanningProjectStatus,
   type PlanningPerson,
@@ -254,7 +254,6 @@ interface ProjectFormState {
 }
 
 interface CrewListFormState { vesselId: string; date: string; watchGroup: string; format: PlanningCrewListFormat }
-interface VesselFormState { id: number; name: string; acronym: string }
 interface PlanningDayStateForm {
   event: PlanningCrewEvent;
   date: string | null;
@@ -590,7 +589,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     project: ProjectPlanningEditorProject;
   } | null>(null);
   const [isVesselsOpen, setIsVesselsOpen] = useState(false);
-  const [vesselForm, setVesselForm] = useState<VesselFormState | null>(null);
+  const [vesselSheet, setVesselSheet] = useState<{ id: number; name: string } | null>(null);
   const [dayStateForm, setDayStateForm] = useState<PlanningDayStateForm | null>(null);
   const [eligiblePeopleDialog, setEligiblePeopleDialog] = useState<PlanningEligiblePeopleDialogState | null>(null);
   const [pendingBoardRows, setPendingBoardRows] = useState<{
@@ -1534,13 +1533,8 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }
   }
 
-  function openVesselEditor(lane: PlanningFleetLane) {
-    const vessel = overview.vessels.find((item) => item.id === lane.vesselId);
-    if (!vessel) {
-      setErrorMessage('La fiche de ce navire est indisponible. Actualisez le planning.');
-      return;
-    }
-    setVesselForm({ id: vessel.id, name: vessel.name, acronym: vessel.acronym });
+  function openVesselSheet(lane: PlanningFleetLane) {
+    if (lane.vesselId !== null) setVesselSheet({ id: lane.vesselId, name: lane.label });
   }
 
   function openNewVesselVisit(lane: PlanningFleetLane) {
@@ -1559,23 +1553,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       return;
     }
     setVisitDialog({ vessel, visit });
-  }
-
-  async function saveVesselEditor(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!vesselForm || !permissions.canManageVessels) return;
-    setIsSaving(true);
-    setErrorMessage(null);
-    try {
-      const vessel = await updatePlanningVessel(effectiveClient, vesselForm);
-      updateOverview((current) => ({ ...current, vessels: current.vessels.map((item) => item.id === vessel.id ? vessel : item) }));
-      setVesselForm(null);
-      setStatusMessage(`Fiche de ${vessel.name} mise à jour.`);
-    } catch (error) {
-      setErrorMessage(planningErrorMessage(error, 'Impossible de modifier ce navire.'));
-    } finally {
-      setIsSaving(false);
-    }
   }
 
   function openNewBoard(lane: PlanningFleetLane) {
@@ -2642,7 +2619,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         onOpen={openProjectEditor}
         onOpenContextMenu={(project, position) => setProjectContextMenu({ project, position })}
         onOpenVisit={openVesselVisit}
-        onOpenVessel={openVesselEditor}
+                onOpenVessel={openVesselSheet}
         onMoveVisit={(visitId, targetLane, date) => void moveTechnicalStop(visitId, targetLane, date)}
         onResize={(project, edge, delta) => void resizeProject(project, edge, delta)}
         onResizeVisit={(visit, edge, delta) => void resizeTechnicalStop(visit, edge, delta)}
@@ -3117,7 +3094,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         />
       ) : null}
       {isVesselsOpen ? <div className="planning-dialog-backdrop" role="presentation"><section aria-modal="true" className="planning-dialog planning-vessel-dialog" role="dialog"><header><div><Ship aria-hidden="true" size={20} /><h2>Gérer les navires</h2></div><button aria-label="Fermer" onClick={() => setIsVesselsOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><form className="planning-inline-form" onSubmit={addVessel}><label>Nom<input required value={newVessel.name} onChange={(event) => setNewVessel((current) => ({ ...current, name: event.target.value }))} /></label><label>Indicatif<input value={newVessel.acronym} onChange={(event) => setNewVessel((current) => ({ ...current, acronym: event.target.value }))} /></label><button disabled={isSaving} type="submit"><Plus aria-hidden="true" size={16} />Ajouter</button></form><div className="planning-vessel-list">{activeVessels.map((vessel) => <div key={vessel.id}><span><strong>{vessel.name}</strong><small>{vessel.acronym || 'Sans indicatif'}</small></span><button aria-label={`Retirer ${vessel.name}`} onClick={() => void archiveVessel(vessel)} type="button"><Trash2 aria-hidden="true" size={16} /></button></div>)}</div></section></div> : null}
-      {vesselForm ? <div className="planning-dialog-backdrop" role="presentation"><form aria-label={`Fiche du navire ${vesselForm.name}`} aria-modal="true" className="planning-dialog planning-vessel-sheet" onSubmit={saveVesselEditor} role="dialog"><header><div><FilePenLine aria-hidden="true" size={20} /><span><small>Fiche navire</small><h2>{vesselForm.name}</h2></span></div><button aria-label="Fermer" onClick={() => setVesselForm(null)} type="button"><X aria-hidden="true" size={18} /></button></header><div className="planning-dialog-grid"><label className="is-wide">Nom<input aria-label="Nom du navire" disabled={!permissions.canManageVessels} maxLength={120} onChange={(event) => setVesselForm((current) => current ? { ...current, name: event.target.value } : null)} required value={vesselForm.name} /></label><label className="is-wide">Indicatif<input aria-label="Indicatif du navire" disabled={!permissions.canManageVessels} maxLength={40} onChange={(event) => setVesselForm((current) => current ? { ...current, acronym: event.target.value } : null)} value={vesselForm.acronym} /></label></div><footer><button className="is-secondary" onClick={() => setVesselForm(null)} type="button">Fermer</button>{permissions.canManageVessels ? <button disabled={isSaving} type="submit">Enregistrer</button> : null}</footer></form></div> : null}
+      {vesselSheet ? <FleetVesselSheet key={vesselSheet.id} client={effectiveClient} vesselId={vesselSheet.id} vesselName={vesselSheet.name} onClose={() => setVesselSheet(null)} /> : null}
       {isCrewListOpen ? <div className="planning-dialog-backdrop" role="presentation"><form aria-modal="true" className="planning-dialog planning-crew-list-dialog" onSubmit={handleGenerateCrewList} role="dialog"><header><div><FileSpreadsheet aria-hidden="true" size={20} /><span><small>Document réglementaire</small><h2>Générer une crew list</h2></span></div><button aria-label="Fermer" onClick={() => setIsCrewListOpen(false)} type="button"><X aria-hidden="true" size={18} /></button></header><p className="planning-dialog-intro">Le document A4 paysage reprend uniquement les affectations et profils enregistrés dans Supabase.</p><div className="planning-dialog-grid"><label>Date<input aria-label="Date de la crew list" onChange={(event) => changeCrewListDate(event.target.value)} required type="date" value={crewListForm.date} /></label><label>Navire<select aria-label="Navire de la crew list" onChange={(event) => { const vesselId = event.target.value; const boards = availablePlanningCrewListBoards(overview, Number(vesselId), crewListForm.date); setCrewListForm((current) => ({ ...current, vesselId, watchGroup: boards.length === 1 ? boards[0] : '' })); }} required value={crewListForm.vesselId}><option value="">Choisir</option>{crewListVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label><label>Bordée<select aria-label="Bordée de la crew list" disabled={!crewListBoards.length} onChange={(event) => setCrewListForm((current) => ({ ...current, watchGroup: event.target.value }))} required={crewListBoards.length > 0} value={crewListForm.watchGroup}><option value="">{crewListBoards.length ? 'Choisir' : 'Aucune bordée à cette date'}</option>{crewListBoards.map((board) => <option key={board}>{board}</option>)}</select></label><label>Format<select aria-label="Format de la crew list" onChange={(event) => setCrewListForm((current) => ({ ...current, format: event.target.value as PlanningCrewListFormat }))} value={crewListForm.format}><option value="xlsx">Excel (.xlsx)</option><option value="pdf">PDF (.pdf)</option></select></label></div>{!crewListVessels.length ? <p className="planning-crew-list-warning" role="status">Aucune affectation active pour cette date.</p> : null}<footer><button className="is-secondary" onClick={() => setIsCrewListOpen(false)} type="button">Annuler</button><button disabled={isSaving || !crewListBoards.length || !crewListForm.watchGroup} type="submit">Générer {crewListForm.format.toUpperCase()}</button></footer></form></div> : null}
       {isExportOpen ? <Suspense fallback={<div className="planning-dialog-backdrop"><div className="admin-state" role="status">Chargement des exports…</div></div>}><PlanningExportDialog client={effectiveClient} onClose={() => setIsExportOpen(false)} overview={overview} range={range} /></Suspense> : null}
       {isSilaeExportOpen && permissions.canExport ? <Suspense fallback={<div className="planning-dialog-backdrop"><div className="admin-state" role="status">Chargement de l’export SILAE…</div></div>}><PlanningSilaeExportDialog client={effectiveClient} onClose={() => setIsSilaeExportOpen(false)} previewOverview={previewMode ? overview : undefined} /></Suspense> : null}

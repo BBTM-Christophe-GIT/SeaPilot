@@ -132,6 +132,41 @@ describe('Planning timeline visit and leave rendering', () => {
     }
   });
 
+  it('moves an overflowing two-day project name below its code and keeps a fitting one-day label inside', () => {
+    const offsetWidth = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('planning-project-title-measure')) return this.dataset.text?.includes('P251') ? 180 : 34;
+      if (this.classList.contains('planning-mission-caption-measure')) return 140;
+      return 0;
+    });
+    const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('planning-project-title') ? 90 : 0;
+    });
+    const project = (id: number, title: string, startsOn: string, endsOn: string): PlanningProjectRecord => ({
+      id, title, startsOn, endsOn, description: '', clientName: '', primaryVesselId: 2, primaryVesselName: 'GOURY',
+      secondaryVesselId: null, secondaryVesselName: '', eventType: 'operation', responsibleName: '', status: 'A planifier', sourceLabel: 'test',
+    });
+    try {
+      render(<PlanningFleetTimelineRow
+        crewCount={0} dayWidth={48} days={buildPlanningTimeline('2026-08-11', 'week')} editable={false} expanded={false} hasBoards={false}
+        lane={{
+          key: 'vessel-2', vesselId: 2, label: 'GOURY', detail: 'GRY', vessel: 'GOURY', assignments: [], locations: [],
+          projects: [project(1, 'P144 · Balisage', '2026-08-11', '2026-08-11'), project(2, 'P251 – Fécamp Grand Large', '2026-08-12', '2026-08-13')],
+        }}
+        onAddBoard={vi.fn()} onAssignPerson={vi.fn()} onCreateVisit={vi.fn()} onMove={vi.fn()} onOpen={vi.fn()} onOpenCell={vi.fn()}
+        onOpenVessel={vi.fn()} onOpenVisit={vi.fn()} onMoveVisit={vi.fn()} onResize={vi.fn()} onResizeVisit={vi.fn()} onSelect={vi.fn()} onToggle={vi.fn()}
+        pendingId={null} selectedId={null} touchDropTarget={null} visits={[]}
+      />);
+      expect(screen.getByRole('button', { name: /P144/ })).toHaveTextContent('P144 · Balisage');
+      const longProject = screen.getByRole('button', { name: /P251 – Fécamp Grand Large/ });
+      expect(longProject).toHaveTextContent('P251');
+      expect(longProject).not.toHaveTextContent('Fécamp Grand Large');
+      expect(screen.getByText('Fécamp Grand Large')).toHaveClass('planning-mission-caption');
+    } finally {
+      offsetWidth.mockRestore();
+      clientWidth.mockRestore();
+    }
+  });
+
   it('stacks multiple visits on the vessel row and opens provider details', async () => {
     const user = userEvent.setup();
     const onOpenVisit = vi.fn();
