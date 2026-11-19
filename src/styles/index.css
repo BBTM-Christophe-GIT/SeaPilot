@@ -18169,6 +18169,11 @@ button.planning-p12-conflict-card {
   width: 100%;
   padding: 0 16px 2px;
   text-align: center;
+  white-space: nowrap;
+}
+
+.planning-timeline-row.is-fleet .planning-project-title.is-code {
+  padding-inline: 4px;
 }
 
 .planning-timeline-row.is-fleet.has-expanded-mission-names .planning-project-bar,
@@ -18199,17 +18204,34 @@ button.planning-p12-conflict-card {
 .planning-mission-caption {
   position: relative;
   z-index: 4;
-  width: max-content;
-  max-width: var(--planning-mission-max-width, 240px);
-  align-self: center;
-  margin-block: 2px var(--sp-space-1);
+  left: var(--planning-mission-shift, 0px);
+  width: var(--planning-mission-width, max-content);
+  align-self: start;
+  margin-block: 3px calc(var(--planning-mission-depth, 0px) + var(--sp-space-1));
+  overflow: hidden;
   color: var(--sp-text);
   font-size: .68rem;
   font-weight: 700;
   line-height: 1.25;
-  overflow-wrap: anywhere;
-  text-align: center;
-  translate: var(--planning-mission-shift, 0px);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transform: rotate(var(--planning-mission-angle, 0deg));
+  transform-origin: top left;
+}
+
+.planning-timeline-row.is-fleet .planning-project-title-measure,
+.planning-timeline-row.is-fleet .planning-mission-caption-measure {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: max-content;
+  margin: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.planning-project-title-measure::before,
+.planning-mission-caption-measure::before {
+  content: attr(data-text);
 }
 
 .planning-project-with-caption .planning-project-bar.is-cancelled + .planning-mission-caption {
