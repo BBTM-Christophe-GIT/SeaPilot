@@ -152,7 +152,9 @@ function OrganigrammeContent({ client, previewMode }: AppShellOutletContext) {
             {!error && !currentData ? <div className="admin-state" role="status">Chargement de l’organigramme…</div> : !error && !sections.length ? <div className="admin-state">Aucun effectif dans cette sélection. Modifiez les filtres ou composez les bordées.</div> : currentData && !error && (
               <OrgDiagramCanvas
                 canvasRef={canvasRef} diagram={diagram} imageSrc={diagramUrl} zoom={zoom}
-                imageAlt={`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`}
+                imageAlt={[`Organigramme ${ORG_VIEW_LABELS[options.view].toLocaleLowerCase('fr')}${options.showVessels ? '' : ', sans navires'}`,
+                  ...diagram.legend?.map(({ label, line }) => `${line.relationship === 'dpa' ? 'Trait rouge' : 'Trait gris'} — ${label}`) ?? [],
+                ].join('. ')}
                 client={client} data={currentData} disabled={loading || exporting} onSaved={refresh}
               />
             )}
