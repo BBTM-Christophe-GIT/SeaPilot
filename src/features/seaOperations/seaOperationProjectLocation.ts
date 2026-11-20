@@ -17,7 +17,10 @@ export function copyProjectLocationToSeaOperation(payload: SeaOperationPayload, 
   const plan = !parsed.etd.trim() && parsed.waypoints[0]?.eta.trim() ? parsed
     : projectLocationRouteEtas(parsed, maxSpeedKnots, navigationSpeedKnots);
   const copyPoint = (point: SeaOperationWaypoint): SeaOperationWaypoint => ({ ...point, id: newId() });
-  const waypoints = plan.waypoints.map((point, index) => copyPoint(preserveAutomaticEtas && index > 0 ? parsed.waypoints[index] : point));
+  const waypoints = plan.waypoints.map((point, index) => {
+    const copied = copyPoint(preserveAutomaticEtas && index > 0 ? parsed.waypoints[index] : point);
+    return { ...copied, ukcMode: copied.ukcMode ?? 'automatic' };
+  });
   if (waypoints[0] && !waypoints[0].eta.trim() && seaOperationWaypointEtaIsAutomatic(waypoints[0]) && !plan.etd.trim()) {
     const eta = initialSeaOperationDepartureEta(now);
     if (eta) waypoints[0] = { ...waypoints[0], eta, etaMode: 'manual' };

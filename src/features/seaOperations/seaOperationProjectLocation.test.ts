@@ -27,7 +27,7 @@ describe('project location copied when selecting a sea-operation mission', () =>
     expect(copyProjectLocationToSeaOperation(draft, null)).toBe(draft);
   });
   it('copies independent route/points/zones with fresh identities and no retained provider captures', () => {
-    const plan = { ...emptyProjectLocationPlan(), charts: '7120 - 7421', etd: '2026-10-27T10:00', waypoints: [point('a'), point('b', '1')],
+    const plan = { ...emptyProjectLocationPlan(), charts: '7120 - 7421', etd: '2026-10-27T10:00', waypoints: [point('a'), { ...point('b', '1'), ukcMode: 'manual' as const }],
       points: [{ ...point('isolated', '40'), weather: { stale: true } }], zones: [{ id: 'zone', name: 'Zone', vertices: [{ latitude: '1', longitude: '1' }] }] };
     const draft = emptySeaOperation(); draft.vessel.etd = '2026-10-27T08:00';
     const original = structuredClone(plan); let id = 0;
@@ -35,6 +35,7 @@ describe('project location copied when selecting a sea-operation mission', () =>
     const result = copyProjectLocationToSeaOperation(draft, plan as unknown as ProjectLocationPlan, 20, { newId: () => `fresh-${++id}` });
     expect(result.vessel.etd).toBe(plan.etd); expect(result.charts).toBe(plan.charts);
     expect(result.waypoints.map(point => [point.id, point.eta])).toEqual([['fresh-1', '2026-10-27T10:00'], ['fresh-2', '2026-10-27T15:00']]);
+    expect(result.waypoints.map(point => [point.ukcMode, point.ukc])).toEqual([['automatic', '3'], ['manual', '3']]);
     expect(result.locationOverlay).toMatchObject({ version: 1, points: [{ id: 'fresh-3', longitude: '40' }], zones: [{ id: 'fresh-4', name: 'Zone' }] });
     expect(result.locationOverlay!.points[0]).not.toHaveProperty('weather');
     result.locationOverlay!.zones[0].vertices[0].latitude = '5'; result.waypoints[0].descriptionVhf = 'Capitaine';

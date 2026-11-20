@@ -1,11 +1,12 @@
 import type { SeaOperationPayload, SeaOperationWaypoint } from './seaOperationModel';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
 import { seaDistanceToRouteNm, seaWaypointPosition } from './seaOperationNavigation';
-import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, waypointUkcSnapshot } from './seaOperationWaypointSnapshots';
+import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, seaOperationUkcThreshold, storedSeaOperationUkcThreshold, waypointUkcSnapshot } from './seaOperationWaypointSnapshots';
 import { isVesselDraftMeters } from './seaOperationUkc';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 
 const metres = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const draught = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 20 });
 const distance = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const utcDate = new Intl.DateTimeFormat('fr-FR', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' });
 const utc = (time: string) => `${utcDate.format(new Date(time))} UTC`;
@@ -25,16 +26,21 @@ export function seaOperationUkcPrerequisite(payload: SeaOperationPayload | undef
 }
 
 /** Read only the recorded capture matching every input; never fetch data during presentation. */
-export function seaOperationUkcPresentation(payload: SeaOperationPayload | undefined, point: SeaOperationWaypoint) {
+export function seaOperationUkcPresentation(payload: SeaOperationPayload | undefined, point: SeaOperationWaypoint, showDraftThreshold = false) {
   const automatic = point.ukcMode === 'automatic';
   const reference = payload ? seaOperationUkcReference(payload) : undefined;
   const rawValue = payload ? effectiveSeaOperationUkc(payload, point) : automatic ? '' : point.ukc;
   const capture = reference ? waypointUkcSnapshot(point, reference) : undefined;
-  const fallbackMeters = reference ? seaOperationUkcFallback(point, reference) : undefined;
+  const thresholdMeters = reference ? (showDraftThreshold ? seaOperationUkcThreshold : storedSeaOperationUkcThreshold)(point, reference) : undefined;
+  const threshold = thresholdMeters !== undefined;
+  const fallbackMeters = reference && !showDraftThreshold ? seaOperationUkcFallback(point, reference) : undefined;
   const fallback = fallbackMeters !== undefined;
   const { source, cell, waterLevel, estimate } = capture ?? {};
   const available = capture?.status === 'available' && estimate && source && cell && waterLevel;
-  const formatted = available ? `${metres.format(estimate!.ukcMeters)} m` : fallback ? `${metres.format(fallbackMeters)} m` : rawValue;
+  let formatted = rawValue;
+  if (available) formatted = `${metres.format(estimate!.ukcMeters)} m`;
+  else if (threshold && isVesselDraftMeters(reference?.draftMeters)) formatted = `UKC > ${draught.format(reference.draftMeters)} + 3 m`;
+  else if (fallback) formatted = `${metres.format(fallbackMeters)} m`;
   const unavailableReason = capture?.status === 'unavailable' ? capture.message
     : seaOperationUkcPrerequisite(payload, point) ?? 'Aucune estimation enregistrée pour cette position et cette ETA.';
   const caption = !automatic ? '' : available ? 'Indicative · Incertitude non quantifiée' : `${unavailableLabel} · ${unavailableReason}`;
@@ -46,7 +52,8 @@ export function seaOperationUkcPresentation(payload: SeaOperationPayload | undef
     );
   } else if (automatic) {
     details.push(caption);
-    if (fallback) details.push(`Profondeur théorique de repli de ${formatted} (tirant d’eau du navire + 5 m), réservée à la validation de la fiche.`);
+    if (threshold) details.push(`Seuil théorique à vérifier : ${formatted} (tirant d’eau du navire + 3 m). Le Capitaine vérifie l’UKC à partir des données nautiques officielles.`);
+    else if (fallback) details.push(`Profondeur théorique de repli de ${formatted} (tirant d’eau du navire + 5 m), réservée à la validation de la fiche.`);
   }
   if (source) {
     details.push(`Copernicus Marine Service ${source.model} · produit ${source.productId} · version ${source.datasetVersion}.`,
@@ -69,7 +76,8 @@ export function seaOperationUkcPresentation(payload: SeaOperationPayload | undef
   }
   if (source && (cell || waterLevel)) details.push('Generated using E.U. Copernicus Marine Service Information.');
   const sourceUrls = source ? [source.sourceUrl, `https://doi.org/${source.model === 'NWS' ? '10.48670/moi-00054' : '10.48670/moi-00027'}`] : [];
-  return { rawValue, automatic, approximate: Boolean(available), fallback, label: available ? 'Indicative' : fallback ? 'Profondeur de repli' : 'Automatique',
+  const label = available ? 'Indicative' : threshold ? 'Seuil théorique à vérifier' : fallback ? 'Profondeur de repli' : 'Automatique';
+  return { rawValue, automatic, approximate: Boolean(available), fallback, threshold, label,
     displayValue: available ? `≈ ${formatted}` : formatted, pdfValue: available ? `~ ${formatted}` : formatted, caption, details,
     sourceFootnote: [...details, ...sourceUrls].join('\n'), sourceUrls, capture };
 }

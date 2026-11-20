@@ -538,7 +538,7 @@ describe('Sea operation PDF', () => {
     coast.weather!.seaState = { ...coast.weather!.waves!, component: 'total', heightMeters: 1.72, periodSeconds: 8.4, periodKind: 'peak' };
     coast.weather!.model = { ...coast.weather!.model!, product: 'MFWAM 0,025° · SP1', latitude: 49.7,
       longitude: -1.62, distanceKm: 5.6, selection: 'marine-fallback' };
-    coast.ukcMode = 'automatic'; coast.ukc = 'MANUAL-OLD'; coast.ukcFallbackMeters = 7;
+    coast.ukcMode = 'automatic'; coast.ukc = 'MANUAL-OLD'; coast.ukcThresholdMeters = 5;
     coast.ukcForecast = calculateSeaOperationCopernicusEstimate({ ...source.input, pointId: coast.id, eta: coast.eta }, {
       status: 'unavailable', message: 'La maille de ce waypoint est terrestre.', reasonCode: 'land-cell',
       source: source.provider.source, cell: null, cellPosition: { latitude: 49.65, longitude: -1.62 }, waterLevel: null,
@@ -549,8 +549,8 @@ describe('Sea operation PDF', () => {
     const original = structuredClone(record);
     const output = await generateSeaOperationPdf(record, { templateBytes: await template(), sections: ['passage'] });
     const text = (await landscapeBodies(output.bytes)).join('\n').replace(/\x92/g, '’').replace(/\) Tj\s*T\* \(/g, ' ');
-    for (const label of ['UKC indisponible', 'La maille de ce waypoint est terrestre.', 'Profondeur de repli', 'Maille examinée', 'à 0 m du waypoint', 'NWSHELF_ANALYSISFORECAST_PHY_004_013',
-      'Hs mer totale · 1,72 m', 'Période de pic · 8,4 s', 'MFWAM 0,025° · SP1', 'Maille marine voisine', '5,6 km du waypoint', 'Échéance mer totale', 'MESURES APRÈS LE PASSAGE',
+    for (const label of ['UKC indisponible', 'La maille de ce waypoint est terrestre.', 'Seuil théorique à vérifier', 'UKC > 2 + 3 m', 'Maille examinée', 'à 0 m du waypoint', 'NWSHELF_ANALYSISFORECAST_PHY_004_013',
+      'Hs mer totale · 1,72 m', 'Période de pic · 8,4 s', 'MFWAM 0,025° · SP1', 'Maille marine voisine', '5,6 km du waypoint', 'Échéance mer totale', 'Mesures officielles après le passage',
       'Archives annuelles des observations bouées', 'Incertitude non quantifiée']) expect(text).toContain(label);
     expect(text).not.toMatch(/89 nd|MANUAL-OLD|rafale/i);
     expect(record).toEqual(original);
@@ -714,7 +714,7 @@ describe('Sea operation PDF', () => {
     const nearText = nearBody.replace(/\) Tj\s*T\* \(/g, ' ');
     expect(nearText).toContain('5,6 km');
     expect(nearText).toContain('position approchée.');
-    expect(nearBody).toContain('MESURES APRÈS LE PASSAGE');
+    expect(nearBody).not.toContain('MESURES APRÈS LE PASSAGE');
     const locations = [...nearBody.matchAll(/BT\n([\s\S]*?)\nET/g)]
       .filter((match) => match[1].includes("(Point météo : 49° 42.000' N -"))
       .map((match) => /([\d.-]+) ([\d.-]+) Td/.exec(match[1])!);
@@ -722,7 +722,6 @@ describe('Sea operation PDF', () => {
     const location = { x: Number(locations[0][1]), y: Number(locations[0][2]) };
     expect(location.x).toBeGreaterThan(557); expect(location.x).toBeLessThan(757);
     expect(textPositions(nearBody, 'Vent moyen 10 m')[0].y - location.y).toBeGreaterThan(20);
-    expect(location.y - textPositions(nearBody, 'MESURES APRÈS LE PASSAGE')[0].y).toBeGreaterThan(15);
     const exactBody = bodies.find((body) => textPositions(body, 'GRID').length > 0)!;
     expect(exactBody).toContain("49° 39.000' N -");
     expect(exactBody.replace(/\) Tj\s*T\* \(/g, ' ')).toContain('0,0 km');
@@ -758,9 +757,8 @@ describe('Sea operation PDF', () => {
     const document = await PDFDocument.load(generated.bytes);
     const bodies = await generatedBodies(generated.bytes);
     const text = bodies.join('\n');
-    expect(text).toContain('MESURES APRÈS LE PASSAGE');
-    expect(text).toContain('Hs mer totale 4,20 m');
-    expect(text).toContain('Tp 11 s');
+    expect(text).not.toContain('MESURES APRÈS LE PASSAGE');
+    expect(text).toContain('Mesures officielles après le passage');
     expect(text).toContain('Houle Hs');
     expect(text).toContain('(0,60 m)');
     expect(text.match(/\(Confortable\)/g)).toHaveLength(3);
@@ -785,12 +783,6 @@ describe('Sea operation PDF', () => {
         expect(Number(placement[1])).toBeLessThan(page.getWidth() - 49);
         expect(Number(placement[2])).toBeGreaterThanOrEqual(55);
         expect(Number(placement[2])).toBeLessThanOrEqual(page.getHeight() - 100);
-      }
-      const observed = textPositions(body, 'MESURES APRÈS LE PASSAGE');
-      if (observed.length) {
-        const wind = textPositions(body, 'Vent moyen 10 m');
-        expect(observed).toHaveLength(wind.length);
-        observed.forEach((position, index) => expect(wind[index].y - position.y).toBeGreaterThan(30));
       }
     }
     expect(record).toEqual(original);

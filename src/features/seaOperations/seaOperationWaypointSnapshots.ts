@@ -95,6 +95,13 @@ export function seaOperationWeatherReference(payload: SeaOperationPayload): Pick
     : { projectId: payload.planning?.projectId ?? '' };
 }
 
+/** Apply the automatic default only in edit flows, leaving historical snapshots intact. */
+export function defaultSeaOperationUkcModes(payload: SeaOperationPayload): SeaOperationPayload {
+  if (!payload.waypoints.some(point => point.ukcMode === undefined)) return payload;
+  return { ...payload, waypoints: payload.waypoints.map(point => point.ukcMode === undefined
+    ? { ...point, ukcMode: 'automatic' } : point) };
+}
+
 /** Coordinate/ETA edits invalidate only the captures that no longer match. */
 export function updateSeaOperationWaypoint(point: SeaOperationWaypoint, patch: Partial<SeaOperationWaypoint>): SeaOperationWaypoint {
   const next = { ...point, ...patch };
@@ -102,7 +109,10 @@ export function updateSeaOperationWaypoint(point: SeaOperationWaypoint, patch: P
   if (next.weather && !waypointWeatherSnapshot(next)) delete next.weather;
   if (next.radio && !waypointRadioSnapshot(next)) delete next.radio;
   if (next.ukcForecast && (next.ukcMode !== 'automatic' || !waypointUkcIdentity(next))) delete next.ukcForecast;
-  if (next.ukcMode !== 'automatic') delete next.ukcFallbackMeters;
+  if (next.ukcMode !== 'automatic') {
+    delete next.ukcFallbackMeters;
+    delete next.ukcThresholdMeters;
+  }
   return next;
 }
 
@@ -129,28 +139,36 @@ export function seaOperationUkcReference(payload: SeaOperationPayload): SeaOpera
     vesselId: payload.vessel.id, draftMeters: payload.vessel.draftMeters };
 }
 
-/** The fallback is a theoretical water depth. Keep it separate from actual UKC. */
-function theoreticalDepth(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): number | undefined {
+/** The required theoretical threshold is separate from actual UKC. */
+export function seaOperationUkcThreshold(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): number | undefined {
   if (point.ukcMode !== 'automatic' || !isVesselDraftMeters(reference.draftMeters)
     || waypointUkcSnapshot(point, reference)?.status === 'available') return undefined;
-  return reference.draftMeters + 5;
+  return reference.draftMeters + 3;
 }
 
+/** Historical theoretical water depth stored before the current threshold rule. */
 export function seaOperationUkcFallback(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): number | undefined {
-  const depth = theoreticalDepth(point, reference);
   const stored = point.ukcFallbackMeters;
-  return depth !== undefined && typeof stored === 'number' && Math.abs(stored - depth) < 1e-8 ? stored : undefined;
+  if (seaOperationUkcThreshold(point, reference) === undefined || !isVesselDraftMeters(reference.draftMeters)) return undefined;
+  return typeof stored === 'number' && Math.abs(stored - (reference.draftMeters + 5)) < 1e-8 ? stored : undefined;
 }
 
-/** Save the rule only after allowing all available forecasts to take precedence. */
-export function captureSeaOperationUkcFallbacks(payload: SeaOperationPayload): SeaOperationPayload {
+export function storedSeaOperationUkcThreshold(point: SeaOperationWaypoint, reference: SeaOperationUkcReference): number | undefined {
+  const threshold = seaOperationUkcThreshold(point, reference);
+  const stored = point.ukcThresholdMeters;
+  return threshold !== undefined && typeof stored === 'number' && Math.abs(stored - threshold) < 1e-8 ? stored : undefined;
+}
+
+/** Save the current threshold only after allowing all available forecasts to take precedence. */
+export function captureSeaOperationUkcThresholds(payload: SeaOperationPayload): SeaOperationPayload {
   const reference = seaOperationUkcReference(payload);
   const waypoints = payload.waypoints.map(point => {
-    const depth = theoreticalDepth(point, reference);
-    if (point.ukcFallbackMeters === depth || seaOperationUkcFallback(point, reference) !== undefined) return point;
+    const threshold = seaOperationUkcThreshold(point, reference);
+    if (point.ukcFallbackMeters === undefined && point.ukcThresholdMeters === threshold) return point;
     const next = { ...point };
-    if (depth === undefined) delete next.ukcFallbackMeters;
-    else next.ukcFallbackMeters = depth;
+    delete next.ukcFallbackMeters;
+    if (threshold === undefined) delete next.ukcThresholdMeters;
+    else next.ukcThresholdMeters = threshold;
     return next;
   });
   return waypoints.some((point, index) => point !== payload.waypoints[index]) ? { ...payload, waypoints } : payload;
@@ -170,10 +188,12 @@ export function invalidateSeaOperationUkc(payload: SeaOperationPayload): SeaOper
   const waypoints = payload.waypoints.map(point => {
     const staleForecast = point.ukcForecast && !waypointUkcSnapshot(point, reference);
     const staleFallback = point.ukcFallbackMeters !== undefined && seaOperationUkcFallback(point, reference) === undefined;
-    if (!staleForecast && !staleFallback) return point;
+    const staleThreshold = point.ukcThresholdMeters !== undefined && storedSeaOperationUkcThreshold(point, reference) === undefined;
+    if (!staleForecast && !staleFallback && !staleThreshold) return point;
     const next = { ...point };
     if (staleForecast) delete next.ukcForecast;
     if (staleFallback) delete next.ukcFallbackMeters;
+    if (staleThreshold) delete next.ukcThresholdMeters;
     changed = true;
     return next;
   });
@@ -199,7 +219,10 @@ export function retainSeaOperationUkc(payload: SeaOperationPayload, incoming: Se
     if (JSON.stringify(existing) === JSON.stringify(candidate)) return point;
     changed = true;
     const next = { ...point, ukcForecast: structuredClone(candidate) };
-    if (candidate.status === 'available') delete next.ukcFallbackMeters;
+    if (candidate.status === 'available') {
+      delete next.ukcFallbackMeters;
+      delete next.ukcThresholdMeters;
+    }
     return next;
   });
   return changed ? { ...payload, waypoints } : payload;

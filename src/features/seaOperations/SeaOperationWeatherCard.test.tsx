@@ -200,9 +200,9 @@ describe('saved waypoint weather comparison', () => {
     const observation = observed(); observation.wind!.source.sourceUrl = 'https://unofficial.example/reanalysis';
     const view = render(<SeaOperationWeatherCard point={point()} variant="comparison" validatedAt="2026-10-23T06:00:00Z" observations={[observation]} />);
     expect(screen.getByRole('region', { name: 'Données réelles à l’ETA' }).textContent).not.toMatch(/14 nd|1,20/);
-    view.rerender(<SeaOperationWeatherCard point={point()} compact validatedAt="2026-10-23T06:00:00Z" showObservations observations={[observed()]} />);
+    view.rerender(<SeaOperationWeatherCard point={point()} compact validatedAt="2026-10-23T06:00:00Z" observations={[observed()]} />);
     expect(view.container.querySelector('.is-comparison')).toBeNull();
-    expect(view.container.querySelector('.so-weather-observations')).not.toBeNull();
+    expect(view.container.querySelector('.so-weather-observations')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Données réelles à l’ETA' })).not.toBeInTheDocument();
   });
 });

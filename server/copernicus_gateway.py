@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zoneinfo import ZoneInfo
 
+from server.copernicus_port_water_level import PORT_SAMPLE_RADIUS_METERS, PORT_WATER_LEVEL_SOURCES, fetch_port_water_level, port_sample_distance
 from server.copernicus_provider import GRID_TOLERANCE_DEGREES, MESSAGES, MODELS, UNAVAILABLE_REASONS, fetch_copernicus_point
 
 HEADERS = {"Cache-Control": "private, no-store", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff"}
@@ -83,14 +84,24 @@ def validate_input(value):
             raise ValueError("invalid Transit context")
     elif not identifier(value.get("projectId")):
         raise ValueError("invalid project")
-    if not isinstance(value.get("pointId"), str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", value["pointId"]):
-        raise ValueError("invalid point")
+    is_port = value.get("purpose") == "port-water-level"
+    if "purpose" in value and not is_port:
+        raise ValueError("invalid purpose")
     if not finite(value.get("latitude")) or not finite(value.get("longitude")) or abs(value["latitude"]) > 90 or abs(value["longitude"]) > 180:
         raise ValueError("invalid position")
-    if not finite(value.get("draftMeters")) or not 0 < value["draftMeters"] <= 50:
-        raise ValueError("invalid draught")
     eta = paris_eta(value.get("eta"))
-    point = {key: value[key] for key in ("projectId", "pointId", "vesselId", "latitude", "longitude", "eta", "draftMeters")}
+    point = {key: value[key] for key in ("projectId", "vesselId", "latitude", "longitude", "eta")}
+    if is_port:
+        port_key = value.get("portKey")
+        if not isinstance(port_key, str) or not re.fullmatch(r"(?:sandre|wpi):[1-9][0-9]{0,15}", port_key):
+            raise ValueError("invalid port")
+        point["portKey"] = port_key
+    else:
+        if not isinstance(value.get("pointId"), str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", value["pointId"]):
+            raise ValueError("invalid point")
+        if not finite(value.get("draftMeters")) or not 0 < value["draftMeters"] <= 50:
+            raise ValueError("invalid draught")
+        point.update(pointId=value["pointId"], draftMeters=value["draftMeters"])
     if transit is not None:
         point["transit"] = {"date": transit["date"], "vesselId": transit["vesselId"]}
     return point, eta
@@ -247,11 +258,34 @@ def build_estimate(point, eta, provider, fetched_at):
     return result
 
 
+def build_port_water_level(point, eta, forecast, fetched_at):
+    if forecast is None or fetched_at > eta:
+        raise UkcError(422, "PORT_WATER_LEVEL_UNAVAILABLE")
+    if not isinstance(forecast, dict):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    latitude, longitude = forecast.get("sampleLatitude"), forecast.get("sampleLongitude")
+    height, source = forecast.get("heightMeters"), forecast.get("source")
+    expected = PORT_WATER_LEVEL_SOURCES.get(source) if isinstance(source, str) else None
+    if (expected is None or expected != (forecast.get("datum"), forecast.get("sourceUrl"))
+            or not finite(height) or abs(height) > 100 or not finite(latitude) or not finite(longitude)
+            or abs(latitude) > 90 or abs(longitude) > 180
+            or port_sample_distance(point["latitude"], point["longitude"], latitude, longitude) > PORT_SAMPLE_RADIUS_METERS):
+        raise UkcError(502, "UKC_SERVICE_UNAVAILABLE")
+    return {
+        **{key: point[key] for key in ("portKey", "latitude", "longitude")},
+        "etaUtc": iso(eta), "fetchedAt": iso(fetched_at), "heightMeters": height,
+        "sampleLatitude": latitude, "sampleLongitude": longitude, "source": source,
+        "sourceUrl": expected[1], "datum": expected[0],
+    }
+
+
 class UkcGateway:
-    def __init__(self, env, backend_factory=None, provider=fetch_copernicus_point, now=time.time):
+    def __init__(self, env, backend_factory=None, provider=fetch_copernicus_point, now=time.time, port_provider=fetch_port_water_level):
         self.env, self.provider, self.now = env, provider, now
+        self.port_provider = port_provider
         self.backend_factory = backend_factory or (lambda jwt: SupabaseBackend(jwt, env))
         self.lock, self.slots = threading.Lock(), threading.BoundedSemaphore(2)
+        self.port_slots = threading.BoundedSemaphore(2)
         self.users, self.cache = {}, {}
 
     def handle(self, method, headers, raw, request_origin):
@@ -279,11 +313,13 @@ class UkcGateway:
             context = backend.transit_context(point["transit"]["date"], point["vesselId"]) if "transit" in point else backend.context(point["projectId"], point["vesselId"])
             if not isinstance(context, dict) or context.get("projectId") != point["projectId"] or context.get("vesselId") != point["vesselId"] or context.get("transit") != point.get("transit"):
                 raise UkcError(403, "UKC_ACCESS_DENIED")
-            canonical = context.get("draftMeters")
-            if not finite(canonical) or not 0 < canonical <= 50:
-                raise UkcError(400, "UKC_DRAFT_REQUIRED")
-            if canonical != point["draftMeters"]:
-                raise UkcError(409, "UKC_DRAFT_CHANGED")
+            is_port = "portKey" in point
+            if not is_port:
+                canonical = context.get("draftMeters")
+                if not finite(canonical) or not 0 < canonical <= 50:
+                    raise UkcError(400, "UKC_DRAFT_REQUIRED")
+                if canonical != point["draftMeters"]:
+                    raise UkcError(409, "UKC_DRAFT_CHANGED")
             current = self.now()
             with self.lock:
                 self.users = {key: entry for key, entry in self.users.items() if entry[0] > current}
@@ -294,31 +330,34 @@ class UkcGateway:
                 if len(self.users) > 512:
                     self.users.pop(next(iter(self.users)))
             stamp = datetime.fromtimestamp(current, timezone.utc)
+            build = build_port_water_level if is_port else build_estimate
             if eta < stamp:
-                return 200, build_estimate(point, eta, {}, stamp)
+                return 200, build(point, eta, None if is_port else {}, stamp)
             username, password = self.env.get("COPERNICUSMARINE_SERVICE_USERNAME"), self.env.get("COPERNICUSMARINE_SERVICE_PASSWORD")
-            if not username or not username.strip() or not password:
+            if not is_port and (not username or not username.strip() or not password):
                 raise UkcError(503, "UKC_NOT_CONFIGURED")
-            key = (point["latitude"], point["longitude"], iso(eta))
+            key = (is_port, point["latitude"], point["longitude"], iso(eta))
             with self.lock:
                 self.cache = {name: entry for name, entry in self.cache.items() if entry[0] > current}
                 cached = self.cache.get(key)
             if cached:
-                return 200, build_estimate(point, eta, copy.deepcopy(cached[1]), cached[2])
-            if not self.slots.acquire(blocking=False):
+                return 200, build(point, eta, copy.deepcopy(cached[1]), cached[2])
+            slots = self.port_slots if is_port else self.slots
+            if not slots.acquire(blocking=False):
                 raise UkcError(503, "UKC_BUSY")
             try:
-                source = self.provider(point["latitude"], point["longitude"], iso(eta), username, password)
+                provider = self.port_provider if is_port else self.provider
+                source = provider(point["latitude"], point["longitude"], iso(eta), username, password)
                 finished = datetime.fromtimestamp(self.now(), timezone.utc)
-                result = build_estimate(point, eta, source, finished)
-                if result["status"] == "available":
+                result = build(point, eta, source, finished)
+                if is_port or result["status"] == "available":
                     with self.lock:
                         self.cache[key] = (min(self.now()+900, eta.timestamp()), copy.deepcopy(source), finished)
                         if len(self.cache) > 64:
                             self.cache.pop(next(iter(self.cache)))
                 return 200, result
             finally:
-                self.slots.release()
+                slots.release()
         except UkcError as error:
             return error.status, {"error": error.code}
         except Exception:

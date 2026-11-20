@@ -14,6 +14,10 @@ capture compatible consultée avant sa signature. Les mesures restent une
 annexe distincte, avec leur heure effective et la distance de la station.
 Une indisponibilité de lecture est distinguée de l’absence de mesures.
 
+La colonne **Météo à l’ETA** de la fiche et du PDF présente les prévisions.
+Les mesures collectées se consultent dans **Météo enregistrée** et dans
+l’annexe PDF lorsqu’elles sont disponibles.
+
 Les trois métriques sont Hs, période et vent moyen, sans rafales. Houle / mer
 totale, période moyenne / de pic et hauteur instrumentale du vent ne sont pas
 assimilées. Les sources, stations, licences et précisions restent disponibles

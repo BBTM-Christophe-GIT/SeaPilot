@@ -157,7 +157,7 @@ describe('Opération en Mer printable content', () => {
     const draft = emptySeaOperation(); draft.vessel.draftMeters = 2;
     draft.waypoints = [
       { id: 'dense', number: 'WP1', descriptionVhf: 'Approche du port', latitude: '50', longitude: '1', eta: '2026-10-27T10:00', ukc: '2,5', denseTraffic: true },
-      { id: 'clear', number: 'WP2', descriptionVhf: 'Au large', latitude: '50.1', longitude: '1.1', eta: '2026-10-27T11:00', ukc: '', ukcMode: 'automatic', denseTraffic: false },
+      { id: 'clear', number: 'WP2', descriptionVhf: 'Au large', latitude: '50.1', longitude: '1.1', eta: '2026-10-27T11:00', ukc: '', ukcMode: 'automatic', ukcThresholdMeters: 5, denseTraffic: false },
     ];
     const record: SeaOperationRecord = { id: 'passage-alignment', companyId: 1, version: 1, status: 'draft', draft,
       createdBy: 'author', createdByName: 'Auteur', createdAt: '2026-10-27T08:00:00Z', updatedBy: 'author', updatedByName: 'Auteur', updatedAt: '2026-10-27T09:00:00Z',
@@ -176,7 +176,8 @@ describe('Opération en Mer printable content', () => {
     expect(within(rows[1]).getByRole('cell', { name: 'Non' })).toBe(rows[1].lastElementChild);
     expect(within(rows[1]).queryByRole('img')).not.toBeInTheDocument();
     expect(rows[0].querySelector('.so-print-ukc-cell .so-ukc-pill')).toHaveTextContent('2,5 m');
-    expect(rows[1].querySelector('.so-print-ukc-note')).toHaveTextContent('AutomatiqueAnnexe UKC');
+    expect(rows[1].querySelector('.so-print-ukc-note')).toHaveTextContent('Seuil théorique à vérifierUKC > 2 + 3 mAnnexe UKC');
+    expect(rows[1].querySelector('.so-print-ukc-cell .so-ukc-pill')).toBeNull();
     expect(rows[0].querySelector('.so-print-weather-cell > .so-waypoint-weather-card')).not.toBeNull();
     expect(record).toEqual(original);
   });
@@ -405,11 +406,9 @@ describe('Opération en Mer printable content', () => {
     expect(waypointCell.textContent).toBe('WP1');
     expect(waypointCell.querySelector('.so-sea-state')).toBeNull();
     expect(table.querySelectorAll('.so-sea-state')).toHaveLength(1);
-    expect(within(weatherCell).getByText('Hs de mer totale observée')).toBeInTheDocument();
-    expect(within(weatherCell).getByText('4,2 m · période de pic : 11 s')).toBeInTheDocument();
-    expect(within(weatherCell).getByText('Vent mesuré à 3 m')).toBeInTheDocument();
-    expect(within(weatherCell).getAllByText('Bouée Manche · 5,8 km · 23/10/2026 10:15 UTC')).toHaveLength(2);
-    expect(within(weatherCell).getAllByRole('link', { name: 'Licence Ouverte 2.0' })[0]).toHaveAttribute('href', SEA_METEO_FRANCE_OBSERVATIONS_LICENSE_URL);
+    expect(within(weatherCell).queryByText('Mesures officielles après le passage')).not.toBeInTheDocument();
+    expect(within(weatherCell).queryByText('Hs de mer totale observée')).not.toBeInTheDocument();
+    expect(within(weatherCell).queryByText('Vent mesuré à 3 m')).not.toBeInTheDocument();
     expect(passage.getByText(/Météo-France · consultée le/)).toHaveTextContent(SEA_METEO_FRANCE_OBSERVATIONS_URL);
     expect(container.textContent).toContain('GO');
     expect(record).toEqual(original);

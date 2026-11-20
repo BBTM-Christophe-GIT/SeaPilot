@@ -20,6 +20,7 @@ import { formatSeaLatitude, formatSeaLongitude } from './seaOperationCoordinates
 import { drawSeaOperationZoneLegendPdf, drawSeaOperationZoneTablePdf, seaOperationZoneTableMinimumHeight } from './seaOperationZonePdf';
 import { formatClientContactLines } from '../../lib/clientContact';
 import { seaWaypointPosition } from './seaOperationNavigation';
+import { PORT_WATER_LEVEL_ROLES, PORT_WATER_LEVEL_SOURCES, portWaterLevelText, retainedPortWaterLevel } from './seaOperationPortWaterLevel';
 
 export const SEA_OPERATION_WORD_TEMPLATE_URL = '/templates/sea-operation/word-header-footer.pdf';
 const PAGE_WIDTH = 595.32;
@@ -167,7 +168,13 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
     fields([['Navire', form.vessel.name], ['Capitaine', form.vessel.captainName], ['N° immatriculation / IMO', form.vessel.registrationImo],
       ['Port de départ / Quai', `${value(form.vessel.departurePort)} / ${value(form.vessel.departureQuay)}`],
       ['Port à destination / Quai', `${value(form.vessel.arrivalPort)} / ${value(form.vessel.arrivalQuay)}`],
-      ['ETD - Date / Heure', date(form.vessel.etd)], ['ETA - Date / Heure', date(form.vessel.eta)]]);
+      ['ETD - Date / Heure', date(form.vessel.etd)], ['ETA - Date / Heure', date(form.vessel.eta)],
+      ...PORT_WATER_LEVEL_ROLES.flatMap((role): Array<[string, string]> => {
+        const level = retainedPortWaterLevel(form.vessel, role);
+        if (!level) return [];
+        return [[role === 'departure' ? 'Hauteur d’eau prévue au départ' : 'Hauteur d’eau prévue à l’arrivée',
+          `${portWaterLevelText(level)} · ${PORT_WATER_LEVEL_SOURCES[level.source].name}`]];
+      })]);
   }
   if (includes('documents')) {
     heading('Documents de la mission');
@@ -378,8 +385,12 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const number = assessment ? label.slice(0, -2) : label;
       const lines = inline ? [label] : document.getTextWidth(number) <= maxTextWidth ? [number, 'm'] : document.splitTextToSize(label, maxTextWidth) as string[];
       const valueHeight = 8 + lines.length * 9 + (warning && !inline ? 9 : 0);
-      const notes = row.ukcPresentation.automatic ? row.ukcPresentation.fallback
-        ? [row.ukcPresentation.label, row.ukcPresentation.pdfValue, 'Annexe UKC'] : [row.ukcPresentation.label, 'Annexe UKC'] : [];
+      document.setFont('helvetica', 'normal'); document.setFontSize(6.5);
+      const notes = row.ukcPresentation.automatic ? [
+        row.ukcPresentation.label,
+        ...((row.ukcPresentation.threshold || row.ukcPresentation.fallback) ? [row.ukcPresentation.pdfValue] : []),
+        'Annexe UKC',
+      ].flatMap(note => document.splitTextToSize(clean(note), maxTextWidth) as string[]) : [];
       return { assessment, warning, inline, lines, notes, valueHeight, height: valueHeight + (notes.length ? 7 + notes.length * 8 : 0) };
     });
     const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
@@ -398,19 +409,11 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
       const totalSeaLines = forecast?.seaState ? document.splitTextToSize(clean(forecastTotalSeaText(forecast).join('\n')), weatherColumnWidth - 26) as string[] : [];
       const windLines = forecast?.wind ? [metric(forecast.wind.speedKnots, 'nd') + (forecast.wind.directionDegrees === null ? '' : ` · de ${integer.format(forecast.wind.directionDegrees)}°`)]
         : document.splitTextToSize(clean(forecastWindUnavailableMessage(forecast) || 'Prévision de vent indisponible.'), weatherColumnWidth - 38) as string[];
-      const observed = row.observation;
-      const observationSummary = !signed ? '' : observed?.status === 'recorded' ? [
-        'MESURES APRÈS LE PASSAGE',
-        observed.waves ? `${observed.waves.component === 'swell' ? 'Houle Hs' : 'Hs mer totale'} ${metric(observed.waves.heightMeters, 'm', height)} · ${observed.waves.periodKind === 'peak' ? 'Tp' : 'Tm'} ${metric(observed.waves.periodSeconds, 's')}` : 'Hs : aucune mesure proche.',
-        observed.wind ? `Vent mesuré : ${metric(observed.wind.speedKnots, 'nd')} · de ${metric(observed.wind.directionDegrees, '°', integer)}` : 'Vent : aucune mesure proche.',
-        'Stations, horaires et sources en annexe.',
-      ].join('\n') : row.observedWeather;
-      const observedLines = observationSummary ? document.splitTextToSize(clean(observationSummary), weatherColumnWidth - 26) as string[] : [];
       const validationLines = signed && record.signedAt ? document.splitTextToSize(clean(`Prévision conservée à la validation du ${new Date(record.signedAt).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`), weatherColumnWidth - 26) as string[] : [];
       const locationLines = forecast ? document.splitTextToSize(clean(seaOperationWeatherGridLocations(forecast).join('\n')), weatherColumnWidth - 26).filter(Boolean) as string[] : [];
-      return { forecast, messageLines, totalSeaLines, windLines, indicatorLines, indicatorHeight, observedLines, validationLines, locationLines,
+      return { forecast, messageLines, totalSeaLines, windLines, indicatorLines, indicatorHeight, validationLines, locationLines,
         height: indicatorHeight + (forecast ? 114 + messageLines.length * 10 + windLines.length * 10 : 33 + messageLines.length * 10)
-          + (observedLines.length ? observedLines.length * 8 + 14 : 0) + validationLines.length * 8 + locationLines.length * 8
+          + validationLines.length * 8 + locationLines.length * 8
           + (totalSeaLines.length ? totalSeaLines.length * 9 + 6 : 0) };
     });
     if (passageRows.length) {
@@ -552,12 +555,7 @@ export async function generateSeaOperationPdf(record: SeaOperationRecord, option
           }
           if (card.locationLines.length) {
             document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(55, 71, 84);
-            document.text(card.locationLines, x, top, { lineHeightFactor: 1.15 }); top += card.locationLines.length * 8;
-          }
-          if (card.observedLines.length) {
-            document.setDrawColor(209, 220, 230); document.line(x, top, x + cell.cell.width - 24, top); top += 12;
-            document.setFont('helvetica', 'normal'); document.setFontSize(6.5); document.setTextColor(55, 71, 84);
-            document.text(card.observedLines, x, top, { lineHeightFactor: 1.2 });
+            document.text(card.locationLines, x, top, { lineHeightFactor: 1.15 });
           }
         },
       });

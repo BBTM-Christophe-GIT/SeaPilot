@@ -216,7 +216,7 @@ def _axis(dataset, name):
         raise CopernicusProviderError("incompatibleGrid") from None
 
 
-def _locate(values, target, grid):
+def _qualify_axis(values, grid):
     start, end = grid["extent"]
     step = grid["step"]
     for value in values:
@@ -225,6 +225,12 @@ def _locate(values, target, grid):
             raise CopernicusProviderError("incompatibleGrid")
     if any(abs(b - a - step) > GRID_TOLERANCE_DEGREES for a, b in zip(values, values[1:])):
         raise CopernicusProviderError("incompatibleGrid")
+
+
+def _locate(values, target, grid):
+    start, end = grid["extent"]
+    step = grid["step"]
+    _qualify_axis(values, grid)
     index = min(range(len(values)), key=lambda item: abs(values[item] - target))
     center = values[index]
     # Only the boundary of the published grid can define a model cell edge without an adjacent center.
