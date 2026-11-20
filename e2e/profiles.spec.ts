@@ -88,6 +88,26 @@ test.afterEach(async ({ page }) => {
 
 for (const profile of profiles) {
   test.describe(profile.label, () => {
+    test('flotte : exporter les navires du référentiel de sa société', async ({ page }) => {
+      await signIn(page, profile, '/modules/fleet');
+      const menu = page.getByRole('navigation', { name: 'Menu des navires', exact: true });
+      await menu.getByRole('button', { name: 'Flotte', exact: true }).click();
+
+      const dialog = page.getByRole('dialog', { name: 'Exporter la flotte', exact: true });
+      const vessels = dialog.getByRole('group', { name: 'Navires actifs', exact: true });
+      await expect(vessels.getByRole('checkbox', { name: 'CI VESSEL ASSIGNED', exact: true })).toBeChecked();
+      const unassigned = vessels.getByRole('checkbox', { name: 'CI VESSEL UNASSIGNED', exact: true });
+      await expect(unassigned).toBeChecked();
+      await expect(dialog.getByRole('checkbox', { name: 'CI VESSEL FOREIGN', exact: true })).toHaveCount(0);
+      await unassigned.uncheck();
+
+      const downloading = page.waitForEvent('download');
+      await dialog.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
+      const download = await downloading;
+      expect(download.suggestedFilename()).toBe('Flotte-BBTM-FR.pdf');
+      expect(await download.failure()).toBeNull();
+    });
+
     test('radar : filtre limité aux unités autorisées et retour au périmètre global du profil', async ({ page }) => {
       await signIn(page, profile, '/');
       const radar = page.getByRole('region', { name: 'Où agir en priorité ?', exact: true });

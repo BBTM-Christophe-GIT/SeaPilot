@@ -35,3 +35,23 @@ La photo GOURY et ses caractéristiques techniques initiales proviennent de la b
 ## Retour arrière
 
 Le retour arrière applicatif consiste à redéployer le client précédent. Conserver les nouvelles colonnes et le bucket pendant cette phase évite toute perte de données. Le commutateur Planning reste `false` ; ne le réactiver qu’avec un workflow métier explicitement validé. Les lignes importées ne doivent pas être supprimées automatiquement lors d’un rollback.
+
+## Export du tableau de flotte
+
+Dans **Opérations → Navires**, ouvrir **Flotte** dans la barre d’actions.
+Tous les navires actifs accessibles au compte sont présélectionnés, indépendamment
+de la recherche et de la catégorie affichée. Choisir les navires et les
+caractéristiques à exporter. Le nom du navire figure toujours en première colonne.
+
+Le français est sélectionné à l’ouverture. Choisir le français, l’anglais ou
+les deux. Une seule langue télécharge directement le PDF. L’export dans les deux
+langues télécharge un ZIP contenant les deux PDF.
+
+Chaque tableau utilise le logo et la charte BBTM sur une page A4 sans pied de
+page. La mise en page s’adapte à la sélection. Si elle est trop dense pour
+rester lisible sur une page, réduire le nombre de navires ou de caractéristiques.
+Les valeurs libres telles que les noms de ports et les références techniques
+sont reprises de la fiche navire.
+
+La génération s’effectue dans le navigateur à partir du référentiel autorisé
+pour le compte. Aucune migration ni configuration de déploiement n’est nécessaire.
