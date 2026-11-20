@@ -54,6 +54,7 @@ describe('fleet list PDF', () => {
   it('renders the selected vessels and columns on one branded A4 page in French and English', async () => {
     const selection = [
       ...fleet,
+      { ...vessel, id: 49, name: 'REMORQUEUR DU PORT', typeLabel: 'Remorqueur fluvial' },
       { ...vessel, id: 50, assetKind: 'office' as const, name: 'BUREAU BBTM' },
       { ...vessel, id: 51, active: false, name: 'NAVIRE ARCHIVE' },
     ];
@@ -74,7 +75,8 @@ describe('fleet list PDF', () => {
       expect(text).toContain(title);
       fleet.forEach(({ name }) => expect(text).toContain(name));
       expect(text).not.toMatch(/BUREAU BBTM|NAVIRE ARCHIVE|9213870|SeaPilot|1\s*\/\s*1/);
-      expect(text).toContain(title === 'Flotte BBTM' ? 'Navire de charge' : 'Cargo vessel');
+      expect(text).toContain(title === 'Flotte BBTM' ? 'GOURY Navire de charge' : 'GOURY Cargo ship');
+      expect(text).toContain(title === 'Flotte BBTM' ? 'REMORQUEUR DU PORT Remorqueur fluvial' : 'REMORQUEUR DU PORT River tug');
       expect(text).toContain(title === 'Flotte BBTM' ? '30,62 m' : '30.62 m');
     }
   }, 15_000);
