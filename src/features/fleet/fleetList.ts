@@ -16,12 +16,13 @@ const numberFormats = {
 };
 
 const englishVesselTypes: Readonly<Record<string, string>> = {
-  'navire de charge': 'Cargo vessel',
+  'navire de charge': 'Cargo ship',
   'navire à passagers': 'Passenger vessel',
   'navire de servitude': 'Workboat',
   'navire de travail': 'Workboat',
   'navire de pêche': 'Fishing vessel',
   remorqueur: 'Tug',
+  'remorqueur fluvial': 'River tug',
   vedette: 'Launch',
   barge: 'Barge',
   navire: 'Vessel',

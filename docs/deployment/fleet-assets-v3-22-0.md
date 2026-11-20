@@ -52,6 +52,8 @@ page. La mise en page s’adapte à la sélection. Si elle est trop dense pour
 rester lisible sur une page, réduire le nombre de navires ou de caractéristiques.
 Les valeurs libres telles que les noms de ports et les références techniques
 sont reprises de la fiche navire.
+Dans la version anglaise, les types « Navire de charge » et « Remorqueur fluvial »
+sont traduits par « Cargo ship » et « River tug ».
 
 La génération s’effectue dans le navigateur à partir du référentiel autorisé
 pour le compte. Aucune migration ni configuration de déploiement n’est nécessaire.
