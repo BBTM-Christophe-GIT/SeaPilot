@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
@@ -20,6 +21,7 @@ import { FleetCapacityPlans } from './FleetCapacityPlans';
 import { FleetCapacitySectionFields } from './FleetCapacitySections';
 import { createFleetCapacitySectionDrafts, parseFleetCapacitySections, type FleetCapacitySectionDraft } from './fleetCapacityModel';
 import { FleetFuelFields, type FleetFuelDraft } from './FleetFuelFields';
+import { FleetListExportDialog } from './FleetListExportDialog';
 import { fleetFuelTankLabel, fleetMainFuelCapacityLiters, isFleetFuelTankCapacity, isFleetFuelTankName, isFleetFuelTankNames, type FleetFuelCapacity } from './fleetFuel';
 import { VesselWeatherMatrixEditor } from './VesselWeatherMatrixEditor';
 import { FleetVesselOverview } from './FleetVesselOverview';
@@ -123,6 +125,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [form, setForm] = useState<FleetVesselForm | null>(null);
+  const [showFleetExport, setShowFleetExport] = useState(false);
   const [matrixReady, setMatrixReady] = useState(true);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,6 +158,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   useEffect(() => { void load(); }, [load]);
 
   const baseVisible = useMemo(() => vessels.filter((vessel) => includeArchived || vessel.active), [includeArchived, vessels]);
+  const exportVessels = useMemo(() => vessels.filter((vessel) => vessel.active && vessel.assetKind === 'vessel'), [vessels]);
   const counts = useMemo(() => Object.fromEntries(ASSET_KINDS.map(({ key }) => [key, baseVisible.filter((vessel) => vessel.assetKind === key).length])) as Record<FleetAssetKind, number>, [baseVisible]);
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('fr-FR');
@@ -259,8 +263,17 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   return <section className="fleet-page">
     <header className="fleet-page-heading">
       <div><span><Anchor aria-hidden="true" size={20} /></span><div><small>Référentiel opérationnel BBTM</small><h1>Navires</h1><p>Navires, bureaux et quais issus de la liste BBTM - Flotte.</p></div></div>
-      <div className="fleet-heading-actions"><button aria-label="Actualiser les actifs" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw aria-hidden="true" size={17} />Actualiser</button>{canManage ? <button className="is-primary" onClick={() => { setForm(vesselForm()); setMatrixReady(true); setPhotoFile(null); }} type="button"><Plus size={17} />Ajouter</button> : null}</div>
     </header>
+
+    <ModuleRibbon ariaLabel="Menu des navires" singleRow>
+      <ModuleRibbonGroup label="Référentiel">
+        {canManage ? <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Ajouter" onClick={() => { setForm(vesselForm()); setMatrixReady(true); setPhotoFile(null); }} /> : null}
+        <ModuleRibbonCommand aria-label="Actualiser les actifs" disabled={isLoading} icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => void load()} />
+      </ModuleRibbonGroup>
+      <ModuleRibbonGroup label="Exports">
+        <ModuleRibbonCommand aria-haspopup="dialog" disabled={isLoading || !exportVessels.length} icon={<FileDown aria-hidden="true" size={22} />} label="Flotte" onClick={() => setShowFleetExport(true)} />
+      </ModuleRibbonGroup>
+    </ModuleRibbon>
 
     <nav aria-label="Types d’actifs" className="fleet-kind-tabs">
       {ASSET_KINDS.map((kind) => <button aria-pressed={assetKind === kind.key} className={assetKind === kind.key ? 'is-active' : ''} key={kind.key} onClick={() => chooseKind(kind.key)} type="button"><AssetIcon kind={kind.key} /><span>{kind.label}</span><strong>{counts[kind.key]}</strong></button>)}
@@ -291,6 +304,8 @@ export function FleetPage({ client, roles }: FleetPageProps) {
         </>}
       </> : <div className="fleet-empty-detail"><MapPin size={28} /><p>Sélectionnez un élément.</p></div>}</article>
     </div>
+
+    {showFleetExport ? <FleetListExportDialog onClose={() => setShowFleetExport(false)} vessels={exportVessels} /> : null}
 
     {form ? <div className="fleet-dialog-backdrop" role="presentation"><form aria-label={form.id ? 'Modifier l’actif' : 'Ajouter un actif'} aria-modal="true" className={`fleet-dialog is-wide${form.assetKind === 'vessel' ? ' has-weather-matrix' : ''}`} onSubmit={submitVessel} role="dialog"><header><div><AssetIcon kind={form.assetKind} size={19} /><span><small>Référentiel BBTM</small><h2>{form.id ? 'Modifier l’actif' : 'Ajouter un actif'}</h2></span></div><button aria-label="Fermer" onClick={() => setForm(null)} type="button"><X size={18} /></button></header><div className="fleet-dialog-grid">
       <label>Type d’actif<select onChange={(event) => { setForm({ ...form, assetKind: event.target.value as FleetAssetKind }); setMatrixReady(true); }} value={form.assetKind}>{ASSET_KINDS.map((kind) => <option key={kind.key} value={kind.key}>{kind.singular}</option>)}</select></label><label>Nom<input autoFocus minLength={2} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} /></label><label>Acronyme<input onChange={(event) => setForm({ ...form, acronym: event.target.value })} value={form.acronym} /></label><label>Type / désignation<input onChange={(event) => setForm({ ...form, typeLabel: event.target.value })} value={form.typeLabel} /></label>

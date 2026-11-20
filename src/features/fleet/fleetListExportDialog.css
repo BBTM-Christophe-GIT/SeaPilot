@@ -1,0 +1,120 @@
+.fleet-dialog.fleet-list-export {
+  width: min(840px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+  color: #163147;
+}
+
+.fleet-list-export::backdrop { background: rgb(11 34 49 / 50%); }
+
+.fleet-list-export > form {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: inherit;
+}
+
+.fleet-list-export header > div > svg { flex: 0 0 auto; color: #075e74; }
+.fleet-list-export header > button { flex: 0 0 auto; margin-left: 8px; }
+.fleet-list-export header h2 { color: #0b2c43; font-size: 21px; }
+.fleet-list-export header p { margin: 4px 0 0; color: #526c7f; font-size: 13px; }
+
+.fleet-list-export-body {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+
+.fleet-list-export-selections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.85fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.fleet-list-export fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid #d7e2ea;
+  border-radius: 8px;
+  background: #f7fafb;
+}
+
+.fleet-list-export legend {
+  padding: 0 5px;
+  color: #173f56;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.fleet-list-export-note,
+.fleet-list-export-controls > p {
+  margin: 0;
+  color: #526c7f;
+  font-size: 12px;
+}
+
+.fleet-list-export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-bottom: 4px;
+}
+
+.fleet-list-export-controls > p { margin-right: auto; font-variant-numeric: tabular-nums; }
+
+.fleet-list-export-controls > button {
+  padding: 3px 0;
+  border: 0;
+  color: #075e74;
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fleet-list-export-controls > button:hover:not(:disabled) { text-decoration: underline; }
+
+.fleet-list-export-options { display: grid; gap: 4px 8px; }
+.fleet-list-export-options.is-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fleet-list-export-languages .fleet-list-export-options { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.fleet-list-export-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid #dce6ec;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fleet-list-export-options label:has(input:checked) { border-color: #a9cbd4; background: #edf7f8; }
+.fleet-list-export-options input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: #075e74; }
+.fleet-list-export :is(button, input):focus-visible { outline: 2px solid #075e74; outline-offset: 2px; }
+.fleet-list-export button:disabled { opacity: .56; cursor: default; }
+
+.fleet-list-export footer { flex-wrap: wrap; align-items: center; }
+.fleet-list-export footer > p { flex: 1 0 100%; margin: 0; }
+
+@media (max-width: 640px) {
+  .fleet-list-export-selections { grid-template-columns: minmax(0, 1fr); }
+  .fleet-list-export header,
+  .fleet-list-export footer { padding-inline: 12px; }
+  .fleet-list-export-body { padding-inline: 12px; }
+}
+
+@media (pointer: coarse) {
+  .fleet-list-export-options label,
+  .fleet-list-export-controls > button,
+  .fleet-list-export footer button,
+  .fleet-list-export header > button { min-height: 44px; }
+  .fleet-list-export header > button { width: 44px; }
+}

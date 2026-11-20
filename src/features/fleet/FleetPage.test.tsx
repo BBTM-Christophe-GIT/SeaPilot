@@ -2,11 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FleetPage } from './FleetPage';
 import type { FleetVessel } from './fleetQueries';
 import { fetchPlanningP11Data } from '../planning/planningP11Queries';
 import { downloadFleetBrochure } from './fleetBrochure';
+import { downloadFleetListPdfs } from './fleetListPdf';
 import { fetchFleetVessels, resolveFleetVesselPhotoUrl, saveFleetVessel } from './fleetQueries';
 import { createEmptyVesselWeatherMatrix, GOURY_WEATHER_MATRIX, vesselHsRange, vesselPeriodRange } from './vesselWeatherMatrix';
 
@@ -16,6 +17,7 @@ vi.mock('./fleetQueries', async (importOriginal) => {
 });
 vi.mock('../planning/planningP11Queries', () => ({ fetchPlanningP11Data: vi.fn() }));
 vi.mock('./fleetBrochure', () => ({ downloadFleetBrochure: vi.fn() }));
+vi.mock('./fleetListPdf', () => ({ downloadFleetListPdfs: vi.fn() }));
 vi.mock('./FleetCapacityPlans', () => ({ FleetCapacityPlans: () => <section aria-label="Plans" /> }));
 
 const baseVessel: FleetVessel = {
@@ -44,6 +46,93 @@ describe('FleetPage', () => {
     vi.mocked(resolveFleetVesselPhotoUrl).mockResolvedValue('/vessels/goury.jpg');
     vi.mocked(downloadFleetBrochure).mockResolvedValue(undefined);
     vi.mocked(saveFleetVessel).mockReset();
+  });
+
+  describe('fleet list exports', () => {
+    const dialogMethods = Object.getOwnPropertyDescriptors(HTMLDialogElement.prototype);
+
+    beforeAll(() => {
+      if (!dialogMethods.showModal) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+          configurable: true, value(this: HTMLDialogElement) { this.open = true; },
+        });
+      }
+      if (!dialogMethods.close) {
+        Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+          configurable: true, value(this: HTMLDialogElement) { this.open = false; },
+        });
+      }
+    });
+
+    afterAll(() => {
+      if (!dialogMethods.showModal) Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
+      if (!dialogMethods.close) Reflect.deleteProperty(HTMLDialogElement.prototype, 'close');
+    });
+
+    beforeEach(() => {
+      vi.mocked(downloadFleetListPdfs).mockReset().mockResolvedValue(undefined);
+    });
+
+    it('selects active vessels across register views and exports only the chosen columns in both languages', async () => {
+      const user = userEvent.setup();
+      const secondVessel = { ...baseVessel, id: 4, name: 'ROZEL' };
+      const archivedVessel = { ...baseVessel, id: 5, name: 'ANCIEN NAVIRE', active: false };
+      vi.mocked(fetchFleetVessels).mockResolvedValue([baseVessel, office, quay, secondVessel, archivedVessel]);
+      render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['direction']} /></MemoryRouter>);
+      await screen.findByRole('heading', { name: baseVessel.name });
+      await user.click(screen.getByRole('button', { name: /Bureaux/ }));
+      await user.click(screen.getByRole('checkbox', { name: 'Afficher les éléments retirés' }));
+      await user.type(screen.getByRole('searchbox', { name: 'Rechercher un actif' }), 'Cherbourg');
+
+      const menu = within(screen.getByRole('navigation', { name: 'Menu des navires' }));
+      expect(menu.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
+      await user.click(menu.getByRole('button', { name: 'Flotte' }));
+      const dialog = within(screen.getByRole('dialog', { name: 'Exporter la flotte' }));
+      const shipOptions = within(dialog.getByRole('group', { name: 'Navires actifs' }));
+      expect(shipOptions.getByRole('checkbox', { name: baseVessel.name })).toBeChecked();
+      expect(shipOptions.getByRole('checkbox', { name: secondVessel.name })).toBeChecked();
+      expect(shipOptions.getAllByRole('checkbox')).toHaveLength(2);
+      await user.click(shipOptions.getByRole('button', { name: 'Tout désélectionner' }));
+      expect(dialog.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
+      await user.click(shipOptions.getByRole('button', { name: 'Tout sélectionner' }));
+      await user.click(shipOptions.getByRole('checkbox', { name: baseVessel.name }));
+
+      const columns = within(dialog.getByRole('group', { name: 'Caractéristiques' }));
+      await user.click(columns.getByRole('button', { name: 'Tout désélectionner' }));
+      await user.click(columns.getByRole('checkbox', { name: 'N° IMO' }));
+      expect(dialog.getByRole('checkbox', { name: 'Français' })).toBeChecked();
+      await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
+      await user.click(dialog.getByRole('button', { name: 'Télécharger les PDF (.zip)' }));
+
+      expect(await dialog.findByRole('status')).toHaveTextContent('Les deux PDF');
+      expect(downloadFleetListPdfs).toHaveBeenCalledWith(
+        [secondVessel],
+        ['imoNumber'],
+        ['fr', 'en'],
+      );
+    });
+
+    it('handles an unavailable export, keeps the selection, and retries the English PDF', async () => {
+      vi.mocked(downloadFleetListPdfs).mockRejectedValueOnce(new Error('Réduisez la sélection pour tenir sur une page.'));
+      const user = userEvent.setup();
+      render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['direction']} /></MemoryRouter>);
+      await screen.findByRole('heading', { name: baseVessel.name });
+      await user.click(screen.getByRole('button', { name: 'Flotte' }));
+      const dialogElement = screen.getByRole('dialog', { name: 'Exporter la flotte' });
+      const dialog = within(dialogElement);
+      const submit = dialog.getByRole('button', { name: 'Télécharger le PDF' });
+      await user.click(dialog.getByRole('checkbox', { name: 'Français' }));
+      expect(submit).toBeDisabled();
+      await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
+      await user.click(submit);
+      expect(await dialog.findByRole('alert')).toHaveTextContent('Réduisez la sélection');
+      expect(dialog.getByRole('checkbox', { name: 'Anglais' })).toBeChecked();
+      await user.click(submit);
+      expect(await dialog.findByRole('status')).toHaveTextContent('Le PDF est prêt.');
+      expect(downloadFleetListPdfs).toHaveBeenLastCalledWith([baseVessel], expect.any(Array), ['en']);
+      fireEvent(dialogElement, new Event('cancel', { cancelable: true }));
+      expect(screen.queryByRole('dialog', { name: 'Exporter la flotte' })).not.toBeInTheDocument();
+    });
   });
 
   it('organizes the mixed register and keeps staffing decisions inside each vessel', async () => {
