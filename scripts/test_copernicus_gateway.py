@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock
 
 from server.copernicus_gateway import UkcError, UkcGateway, build_estimate, paris_eta, utc
+from server.copernicus_port_water_level import PORT_WATER_LEVEL_SOURCES
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[1] / "src/features/seaOperations/testFixtures/copernicus-ukc.json").read_text(encoding="utf-8"))
 HEADERS = {"Content-Type": "application/json", "Authorization": "Bearer synthetic-test-token", "Origin": "https://seapilot.example"}
@@ -43,6 +44,58 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.call(headers={"Content-Type": "application/json"})[0], 401)
         self.backend.user.return_value = None
         self.assertEqual(self.call()[0], 401)
+        self.provider.assert_not_called()
+
+    def port_request(self):
+        return {**{key: self.input[key] for key in ("projectId", "vesselId", "latitude", "longitude", "eta")},
+                "purpose": "port-water-level", "portKey": "sandre:63"}
+
+    def port_provider_result(self):
+        datum, url = PORT_WATER_LEVEL_SOURCES["shom-tolosa"]
+        return {"heightMeters": -1.25, "sampleLatitude": self.input["latitude"] + .005,
+                "sampleLongitude": self.input["longitude"], "source": "shom-tolosa", "sourceUrl": url, "datum": datum}
+
+    def test_port_water_level_authorizes_context_before_cache_without_draft_or_provider_credentials(self):
+        self.gateway.env = {}
+        self.backend.context.side_effect = lambda project, vessel: {"projectId": project, "vesselId": vessel, "draftMeters": None}
+        forecast = self.port_provider_result()
+        self.gateway.port_provider = Mock(return_value=forecast)
+        point = self.port_request()
+        status, result = self.call(point)
+        self.assertEqual(status, 200)
+        self.assertEqual(result, {**forecast, "portKey": "sandre:63", "latitude": point["latitude"], "longitude": point["longitude"],
+                                  "etaUtc": FIXTURE["expected"]["etaUtc"], "fetchedAt": FIXTURE["fetchedAt"]})
+        self.gateway.port_provider.assert_called_once_with(point["latitude"], point["longitude"], result["etaUtc"], None, None)
+        self.assertEqual(self.call({**point, "portKey": "wpi:35600"})[1]["portKey"], "wpi:35600")
+        self.gateway.port_provider.assert_called_once()
+        self.provider.assert_not_called()
+        self.backend.context.side_effect = UkcError(403, "UKC_ACCESS_DENIED")
+        self.assertEqual(self.call(point), (403, {"error": "UKC_ACCESS_DENIED"}))
+
+    def test_port_water_levels_use_transit_auth_and_explicit_unavailability(self):
+        point = {**self.port_request(), "projectId": "",
+                 "transit": {"date": "2026-10-26", "vesselId": self.input["vesselId"]}}
+        self.backend.transit_context.return_value = {key: point[key] for key in ("projectId", "vesselId", "transit")}
+        self.gateway.port_provider = Mock(return_value=None)
+        expected = (422, {"error": "PORT_WATER_LEVEL_UNAVAILABLE"})
+        self.assertEqual(self.call(point), expected)
+        self.backend.context.assert_not_called()
+        self.backend.transit_context.assert_called_once_with("2026-10-26", point["vesselId"])
+        self.gateway.port_provider.reset_mock()
+        self.assertEqual(self.call({**point, "eta": "2026-10-25T12:00"}), expected)
+        self.gateway.port_provider.assert_not_called()
+
+    def test_port_levels_reject_unknown_identity_invalid_sample_and_mixed_datum(self):
+        point = self.port_request()
+        self.gateway.port_provider = Mock()
+        for change in ({"portKey": "arbitrary:63"}, {"portKey": "sandre:0"}, {"longitude": 181}, {"purpose": "other"}):
+            self.assertEqual(self.call({**point, **change}), (400, {"error": "UKC_INVALID_REQUEST"}))
+        self.backend.context.assert_not_called()
+        forecast = self.port_provider_result()
+        for change in ({"datum": "model-geoid"}, {"sampleLatitude": self.input["latitude"] + .04},
+                       {"heightMeters": float("nan")}, {"sourceUrl": "https://example.com"}):
+            self.gateway.port_provider.return_value = {**forecast, **change}
+            self.assertEqual(self.call(point), (502, {"error": "UKC_SERVICE_UNAVAILABLE"}))
         self.provider.assert_not_called()
 
     def test_rejects_cross_origin_and_non_post(self):

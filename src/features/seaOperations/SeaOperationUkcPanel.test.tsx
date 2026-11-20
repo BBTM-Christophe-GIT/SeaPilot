@@ -100,9 +100,16 @@ describe('automatic UKC editor loader', () => {
 });
 
 describe('UKC editor field', () => {
-  it('leaves historical manual text editable and emits an explicit mode switch', () => {
-    const draft = payload(), onChange = vi.fn(); delete draft.waypoints[0].ukcMode;
-    render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={onChange} />);
+  it('preserves the manual annotation when switching an automatic waypoint to manual', () => {
+    const draft = payload(), onChange = vi.fn();
+    const view = render(<SeaOperationUkcField payload={draft} point={draft.waypoints[0]} index={0} disabled={false} onChange={onChange} />);
+    expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('textbox', { name: 'UKC · point 1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manuel' }));
+    expect(onChange).toHaveBeenLastCalledWith({ ukcMode: 'manual' });
+    const manual = { ...draft.waypoints[0], ukcMode: 'manual' as const };
+    view.rerender(<SeaOperationUkcField payload={draft} point={manual} index={0} disabled={false} onChange={onChange} />);
+    expect(screen.getByLabelText('UKC · point 1')).toHaveValue('12.5');
     fireEvent.change(screen.getByLabelText('UKC · point 1'), { target: { value: '4.2' } });
     expect(onChange).toHaveBeenLastCalledWith({ ukc: '4.2', ukcMode: 'manual' });
     fireEvent.click(screen.getByRole('button', { name: 'Auto' })); expect(onChange).toHaveBeenLastCalledWith({ ukcMode: 'automatic' });
@@ -131,17 +138,16 @@ describe('UKC editor field', () => {
     expect(screen.queryByText(/12,5 m/)).not.toBeInTheDocument();
   });
 
-  it('shows the recorded land-cell reason and neutral fallback while retaining manual input', () => {
+  it('shows the land-cell reason and the neutral theoretical threshold while retaining manual input', () => {
     const draft = payload(), point = draft.waypoints[0], onChange = vi.fn();
-    point.ukcFallbackMeters = fixture.input.draftMeters + 5;
     point.ukcForecast = calculateSeaOperationCopernicusEstimate(fixture.input, {
       status: 'unavailable', message: 'La maille de ce waypoint est terrestre.', reasonCode: 'land-cell',
       source: fixture.provider.source, cell: null, waterLevel: null, cellPosition: { latitude: 49.65, longitude: -1.62 },
     }, fixture.fetchedAt);
-    render(<SeaOperationUkcField payload={draft} point={point} index={0} disabled={false} onChange={onChange} />);
+    render(<SeaOperationUkcField payload={draft} point={point} index={0} disabled={false} showDraftThreshold onChange={onChange} />);
     const output = screen.getByLabelText('UKC · point 1');
     expect(output).toHaveTextContent('UKC indisponible');
-    expect(output).toHaveTextContent('Profondeur de repli · 7,00 m');
+    expect(output).toHaveTextContent('Seuil théorique à vérifier · UKC > 2 + 3 m');
     expect(output.querySelector('.so-ukc-pill')).toBeNull();
     expect(screen.getByRole('status', { name: 'État du calcul UKC · point 1' })).toHaveTextContent('La maille de ce waypoint est terrestre.');
     fireEvent.click(screen.getByText('Détails UKC'));

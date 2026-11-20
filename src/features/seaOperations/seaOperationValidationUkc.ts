@@ -7,6 +7,8 @@ import { fetchSeaOperationWaypointUkc } from './seaOperationUkcQueries';
 import { calculateSeaOperationCopernicusEstimate, validateSeaOperationCopernicusInput } from './seaOperationCopernicusModel';
 import { retainSeaOperationUkc, seaOperationUkcReference, waypointUkcSnapshot, type SeaOperationUkcReference } from './seaOperationWaypointSnapshots';
 
+const UKC_VALIDATION_TIMEOUT_MS = 12_000;
+
 export interface SeaOperationUkcRequestStatus { loading: boolean; error?: string }
 export function ukcRequestKey(reference: SeaOperationUkcReference, point: SeaOperationWaypoint): string {
   return JSON.stringify([reference.projectId || '', reference.vesselId, reference.draftMeters ?? null,
@@ -37,10 +39,13 @@ export async function captureSeaOperationValidationUkc(client: SupabaseClient, p
       return [{ point, pastEta, input, context: { ...identity, latitude: point.latitude, longitude: point.longitude, eta: point.eta } }];
     } catch { return []; }
   });
+  if (!pending.length) return payload;
+  const deadlineController = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, deadlineController.signal]) : deadlineController.signal;
   let captured = payload, next = 0;
   const worker = async () => {
-    while (next < pending.length) {
-      options.signal?.throwIfAborted(); const entry = pending[next++];
+    while (!signal.aborted && next < pending.length) {
+      const entry = pending[next++];
       if (entry.pastEta) {
         const unavailable = calculateSeaOperationCopernicusEstimate(entry.input, {
           status: 'unavailable', reasonCode: 'past-eta', message: 'L’ETA est passée et aucune estimation n’a été enregistrée.',
@@ -50,10 +55,11 @@ export async function captureSeaOperationValidationUkc(client: SupabaseClient, p
         continue;
       }
       try {
-        const forecast = await fetchSeaOperationWaypointUkc(client, entry.input, { signal: options.signal });
-        options.signal?.throwIfAborted(); captured = retainSeaOperationUkc(captured, forecast, entry.context);
+        const forecast = await fetchSeaOperationWaypointUkc(client, entry.input, { signal });
+        if (signal.aborted) return;
+        captured = retainSeaOperationUkc(captured, forecast, entry.context);
       } catch (error) {
-        options.signal?.throwIfAborted();
+        if (signal.aborted) return;
         const message = error instanceof Error ? error.message : 'Le calcul UKC est indisponible. Réessayez.';
         options.onError?.(entry.point, message);
         const unavailable = calculateSeaOperationCopernicusEstimate(entry.input, {
@@ -63,6 +69,17 @@ export async function captureSeaOperationValidationUkc(client: SupabaseClient, p
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(2, pending.length) }, worker));
-  options.signal?.throwIfAborted(); return captured;
+  let stopWaiting!: () => void;
+  const stopped = new Promise<void>(resolve => { stopWaiting = resolve; });
+  signal.addEventListener('abort', stopWaiting, { once: true });
+  const deadline = setTimeout(() => deadlineController.abort(), UKC_VALIDATION_TIMEOUT_MS);
+  try {
+    // Authentication and network waits may outlive cancellation.
+    await Promise.race([Promise.all(Array.from({ length: Math.min(2, pending.length) }, worker)), stopped]);
+    options.signal?.throwIfAborted();
+    return captured;
+  } finally {
+    clearTimeout(deadline);
+    signal.removeEventListener('abort', stopWaiting);
+  }
 }

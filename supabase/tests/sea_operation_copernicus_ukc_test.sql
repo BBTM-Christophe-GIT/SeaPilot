@@ -285,7 +285,7 @@ select is(public.sea_operation_sign((select id from copernicus_fixture where kin
   'NO GO remains signable with no automatic UKC evidence');
 reset role;
 
--- Fully complete GO fixture: only automatic UKC availability may block it.
+-- Fully complete GO fixture with its automatic estimate unavailable.
 insert into public.clients(company_id,name) select id,'SEA-COP-SYNTHETIC-CLIENT' from public.companies where code='bbtm';
 insert into copernicus_fixture(kind,payload)
 select 'go',jsonb_set(jsonb_set(payload||jsonb_build_object('decision','GO','client','SEA-COP-SYNTHETIC-CLIENT',
@@ -300,37 +300,40 @@ from copernicus_fixture where kind='unavailable';
 set local role authenticated;
 select lives_ok($$select sea_operation_private.validate_draft((select payload from copernicus_fixture where kind='go'),true)$$,
   'the complete GO fixture passes all existing business requirements with a separate automatic UKC field');
+select lives_ok($$select sea_operation_private.validate_draft((select payload#-'{waypoints,0,ukcMode}'
+  from copernicus_fixture where kind='go'),true)$$,'a legacy point with no saved mode defaults to automatic when signing');
 select throws_ok($$select sea_operation_private.validate_draft(jsonb_set((select payload from copernicus_fixture where kind='go'),
   '{waypoints,0,ukcMode}','"manual"'),true)$$,'22023','Complétez chaque point du passage plan.','manual GO still requires its original UKC field');
 insert into copernicus_fixture(kind,id,payload)
 select 'go-record',(saved->>'id')::uuid,saved->'draft' from (select public.sea_operation_save(null,null,
   (select payload from copernicus_fixture where kind='go'))saved)response;
-select throws_ok($$select public.sea_operation_sign((select id from copernicus_fixture where kind='go-record'),1,'COPERNICUS TEST 1',true)$$,
-  '22023','Recalculez l’UKC automatique avant de signer.','GO with unavailable UKC still requires an explicit fallback');
+select is((select payload#>'{waypoints,0,ukcThresholdMeters}' from copernicus_fixture where kind='go-record'),
+  '7.1'::jsonb,'GO with unavailable UKC automatically gets the threshold without a client marker');
 insert into copernicus_fixture(kind,id,payload)
 select 'fallback-record',(saved->>'id')::uuid,saved->'draft'
-from (select public.sea_operation_save(null,null,jsonb_set(
-  (select payload from copernicus_fixture where kind='go'),'{waypoints,0,ukcFallbackMeters}','444'))saved)response;
-select is((select payload#>'{waypoints,0,ukcFallbackMeters}' from copernicus_fixture where kind='fallback-record'),
-  '9.1'::jsonb,'the fallback is recomputed from the canonical draught');
+from (select public.sea_operation_save(null,null,jsonb_set(jsonb_set(
+  (select payload#-'{waypoints,0,ukcMode}' from copernicus_fixture where kind='go'),
+  '{waypoints,0,ukcThresholdMeters}','444'),'{waypoints,0,ukcFallbackMeters}','9.1'))saved)response;
+select is((select payload#>'{waypoints,0,ukcThresholdMeters}' from copernicus_fixture where kind='fallback-record'),
+  '7.1'::jsonb,'the threshold is recomputed from the canonical draught');
+select is((select payload#>>'{waypoints,0,ukcMode}' from copernicus_fixture where kind='fallback-record'),
+  'automatic','a saved point with no mode becomes automatic');
+select ok(not (select (payload#>'{waypoints,0}') ? 'ukcFallbackMeters' from copernicus_fixture where kind='fallback-record'),
+  'an ordinary save removes the old theoretical depth marker');
 select is((select payload#>>'{waypoints,0,ukcForecast,status}' from copernicus_fixture where kind='fallback-record'),
-  'unavailable','the fallback remains separate from the unavailable provider result');
-select is(public.sea_operation_save(null,null,jsonb_set(
-  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='go'),
-  '{waypoints,0,ukcFallbackMeters}','9.1'))#>'{draft,waypoints,0,ukcFallbackMeters}',
-  '9.1'::jsonb,'a provider error with no response can use the fallback too');
+  'unavailable','the threshold remains separate from the unavailable provider result');
+select is(public.sea_operation_save(null,null,
+  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='go'))#>'{draft,waypoints,0,ukcThresholdMeters}',
+  '7.1'::jsonb,'a provider error with no response yields the same threshold');
 select ok(not ((public.sea_operation_save(null,null,jsonb_set(
-  (select payload from copernicus_fixture where kind='go'),'{waypoints,0,ukcFallbackMeters}','"9.1"'))#>'{draft,waypoints,0}') ? 'ukcFallbackMeters'),
-  'a nonnumeric marker is removed');
-select ok(not ((public.sea_operation_save(null,null,jsonb_set(
-  (select payload from copernicus_fixture where kind='fallback-record'),'{waypoints,0,ukcMode}','"manual"'))#>'{draft,waypoints,0}') ? 'ukcFallbackMeters'),
-  'manual mode removes the automatic fallback');
+  (select payload from copernicus_fixture where kind='fallback-record'),'{waypoints,0,ukcMode}','"manual"'))#>'{draft,waypoints,0}') ? 'ukcThresholdMeters'),
+  'manual mode removes the automatic threshold');
 select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000002',true);
 select throws_ok($$select public.sea_operation_sign((select id from copernicus_fixture where kind='fallback-record'),1,'COPERNICUS TEST 1',true)$$,
-  '42501',null,'a real Marin cannot sign an operation with a fallback');
+  '42501',null,'a real Marin cannot sign an operation with a threshold');
 select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000001',true);
-select is(public.sea_operation_sign((select id from copernicus_fixture where kind='fallback-record'),1,'COPERNICUS TEST 1',true)#>'{draft,waypoints,0,ukcFallbackMeters}',
-  '9.1'::jsonb,'the assigned Captain can sign GO and the theoretical fallback is preserved');
+select is(public.sea_operation_sign((select id from copernicus_fixture where kind='fallback-record'),1,'COPERNICUS TEST 1',true)#>'{draft,waypoints,0,ukcThresholdMeters}',
+  '7.1'::jsonb,'the assigned Captain can sign GO and the theoretical threshold is preserved');
 reset role;
 update copernicus_fixture set payload=jsonb_set(payload,'{waypoints,0,ukcForecast}',
   (select payload from copernicus_fixture where kind='capture')||jsonb_build_object('draftMeters',4.1,
@@ -338,8 +341,8 @@ update copernicus_fixture set payload=jsonb_set(payload,'{waypoints,0,ukcForecas
       'ukcMeters',17.4,'cellVariability',jsonb_build_object('lowerMeters',16.4,'upperMeters',18.4)))) where kind='go';
 set local role authenticated;
 select ok(not ((public.sea_operation_save(null,null,jsonb_set(
-  (select payload from copernicus_fixture where kind='go'),'{waypoints,0,ukcFallbackMeters}','9.1'))#>'{draft,waypoints,0}') ? 'ukcFallbackMeters'),
-  'a compatible available capture takes precedence over the fallback');
+  (select payload from copernicus_fixture where kind='go'),'{waypoints,0,ukcThresholdMeters}','7.1'))#>'{draft,waypoints,0}') ? 'ukcThresholdMeters'),
+  'a compatible available capture takes precedence over the threshold');
 update copernicus_fixture set payload=saved->'draft' from (select public.sea_operation_save((select id from copernicus_fixture where kind='go-record'),1,
   (select payload from copernicus_fixture where kind='go'))saved)response where kind='go-record';
 select is(public.sea_operation_sign((select id from copernicus_fixture where kind='go-record'),2,'COPERNICUS TEST 1',true)->>'status','signed',
@@ -348,16 +351,74 @@ reset role;
 
 update public.vessels set draft_m=3.3 where name='SEA-COP-MAIN';
 set local role authenticated;
-select is(public.sea_operation_save(null,null,jsonb_set(
-  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='fallback-record'),
-  '{waypoints,0,ukcFallbackMeters}','8.3'))#>'{draft,waypoints,0,ukcFallbackMeters}',
-  '8.3'::jsonb,'the JSON client value for 3.3 metres of draught is preserved');
+select is(public.sea_operation_save(null,null,
+  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='fallback-record'))#>'{draft,waypoints,0,ukcThresholdMeters}',
+  '6.3'::jsonb,'the threshold follows a changed canonical draught on new drafts');
+select is(public.sea_operation_detail((select id from copernicus_fixture where kind='fallback-record'))#>'{draft,waypoints,0,ukcThresholdMeters}',
+  '7.1'::jsonb,'a change to Navires never rewrites the signed threshold');
 reset role;
 update public.vessels set draft_m=null where name='SEA-COP-MAIN';
 set local role authenticated;
-select ok(not ((public.sea_operation_save(null,null,
-  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='fallback-record'))#>'{draft,waypoints,0}') ? 'ukcFallbackMeters'),
-  'a missing canonical draught cannot produce a theoretical fallback');
+insert into copernicus_fixture(kind,id,payload)
+select 'unknown-record',(saved->>'id')::uuid,saved->'draft' from (select public.sea_operation_save(null,null,
+  (select payload#-'{waypoints,0,ukcForecast}' from copernicus_fixture where kind='fallback-record'))saved)response;
+select ok(not (select (payload#>'{waypoints,0}') ? 'ukcThresholdMeters' from copernicus_fixture where kind='unknown-record'),
+  'a missing canonical draught cannot produce a theoretical threshold');
+select throws_ok($$select public.sea_operation_sign((select id from copernicus_fixture where kind='unknown-record'),1,'COPERNICUS TEST 1',true)$$,
+  '22023','Renseignez le tirant d’eau du navire ou saisissez l’UKC manuellement.','GO with no canonical draught requires a manual UKC');
+select lives_ok($$select public.sea_operation_save((select id from copernicus_fixture where kind='unknown-record'),1,jsonb_set(jsonb_set(
+  (select payload from copernicus_fixture where kind='unknown-record'),'{waypoints,0,ukcMode}','"manual"'),'{waypoints,0,ukc}','"2 m vérifiés"'))$$,
+  'the assigned Captain can enter a manual UKC even when no reference draught is configured');
+select is(public.sea_operation_sign((select id from copernicus_fixture where kind='unknown-record'),2,'COPERNICUS TEST 1',true)#>>'{draft,waypoints,0,ukc}',
+  '2 m vérifiés','a manual UKC lets the assigned Captain sign without a reference draught');
+reset role;
+
+-- Only persist the forecast for its selected port and scheduled passage time.
+insert into copernicus_fixture(kind,payload)
+select 'port-levels',jsonb_set(payload,'{vessel}',(payload->'vessel')||jsonb_build_object(
+  'departurePort','Cherbourg','etd',to_char(departure,'YYYY-MM-DD"T"HH24:MI'),
+  'arrivalPort','Le Havre','eta',to_char(arrival,'YYYY-MM-DD"T"HH24:MI'),
+  'portWaterLevels',jsonb_build_object('departure',jsonb_build_object(
+    'portKey','sandre:cherbourg','portName','Cherbourg','latitude',49.65,'longitude',-1.625,
+    'sampleLatitude',49.65,'sampleLongitude',-1.625,'heightMeters',-0.42,
+    'etaUtc',to_char(departure at time zone 'Europe/Paris' at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'fetchedAt',to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'source','copernicus-nws','datum','model-geoid',
+    'sourceUrl','https://data.marine.copernicus.eu/product/NWSHELF_ANALYSISFORECAST_PHY_004_013/description'),
+  'arrival',jsonb_build_object(
+    'portKey','wpi:le-havre','portName','Le Havre','latitude',49.481,'longitude',0.112,
+    'sampleLatitude',49.481,'sampleLongitude',0.112,'heightMeters',2.34,
+    'etaUtc',to_char(arrival at time zone 'Europe/Paris' at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'fetchedAt',to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+    'source','shom-tolosa','datum','model-mean-sea-level','sourceUrl','https://www.shom.fr/fr/copernicus'))))
+from copernicus_fixture cross join lateral (
+  select (now() at time zone 'Europe/Paris')::date + interval '1 day 12 hours' as departure,
+    (now() at time zone 'Europe/Paris')::date + interval '1 day 15 hours' as arrival
+) scheduled where kind='go';
+set local role authenticated;
+select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000001',true);
+insert into copernicus_fixture(kind,id,payload)
+select 'port-levels-record',(saved->>'id')::uuid,saved->'draft' from (select public.sea_operation_save(null,null,
+  (select payload from copernicus_fixture where kind='port-levels'))saved)response;
+select is(public.sea_operation_detail((select id from copernicus_fixture where kind='port-levels-record'))#>'{draft,vessel,portWaterLevels}',
+  (select payload#>'{vessel,portWaterLevels}' from copernicus_fixture where kind='port-levels'),
+  'the assigned Captain stores and reloads both distinct port forecasts and their provenance');
+select throws_ok($$select public.sea_operation_save(null,null,jsonb_set(
+  (select payload from copernicus_fixture where kind='port-levels'),'{vessel,portWaterLevels,arrival,sampleLatitude}','49.9'))$$,
+  '22023','Maille trop éloignée du port pour le niveau d’eau.','a sample outside the maximum port distance is rejected');
+select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000002',true);
+select throws_ok($$select public.sea_operation_save((select id from copernicus_fixture where kind='port-levels-record'),1,
+  (select payload from copernicus_fixture where kind='port-levels'))$$,
+  '42501',null,'a real Marin cannot rewrite the Captain preparation and its port forecasts');
+select set_config('request.jwt.claim.sub','a6460000-0000-0000-0000-000000000001',true);
+select is(public.sea_operation_save((select id from copernicus_fixture where kind='port-levels-record'),1,jsonb_set(
+  (select payload from copernicus_fixture where kind='port-levels'),'{vessel,arrivalPort}','"Dieppe"'))#>'{draft,vessel,portWaterLevels}',
+  (select (payload#>'{vessel,portWaterLevels}')-'arrival' from copernicus_fixture where kind='port-levels'),
+  'changing the arrival port invalidates its forecast and retains the departure forecast');
+select ok(not ((public.sea_operation_save((select id from copernicus_fixture where kind='port-levels-record'),2,jsonb_set(
+  (select payload from copernicus_fixture where kind='port-levels'),'{vessel,eta}',to_jsonb(
+    to_char((now() at time zone 'Europe/Paris')::date+interval '1 day 16 hours','YYYY-MM-DD"T"HH24:MI'))))#>'{draft,vessel,portWaterLevels}') ? 'arrival'),
+  'changing the ETA also invalidates the arrival forecast');
 reset role;
 
 select * from finish(true);

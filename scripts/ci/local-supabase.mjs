@@ -76,6 +76,7 @@ const pgTapTests = [
   'project_voyage_fuel_references_test.sql',
   'sea_operation_consumption_test.sql',
   'sea_operation_consumption_history_test.sql',
+  'sea_operation_copernicus_ukc_test.sql',
   'dpr_role_matrix_test.sql',
   'working_time_signed_entry_flow_test.sql',
   'working_time_daily_approval_test.sql',

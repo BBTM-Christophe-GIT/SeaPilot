@@ -117,8 +117,9 @@ au plus 64 positions pendant quinze minutes ou jusqu’à l’ETA. Les réponses
 privées et non mises en cache par le navigateur. Aucun mode anonyme de
 démonstration ne peut utiliser les identifiants Copernicus.
 
-Le champ `ukc` reste la saisie manuelle. Les nouveaux points utilisent
-`ukcMode: automatic` ; les anciens points sans mode restent manuels.
+Le champ `ukc` conserve la saisie manuelle. Les points modifiables sans choix
+explicite utilisent le mode Auto. Le Capitaine peut passer en mode Manuel à
+tout moment. La décision signée conserve la version et le mode enregistrés.
 `ukcForecast` conserve séparément le calcul, sa provenance et toutes ses
 identités. Une capture incompatible avec le projet, le point, la position,
 l’ETA, le navire ou le tirant d’eau n’est pas affichée comme une valeur actuelle.
@@ -133,20 +134,36 @@ La migration `20261116150758_sea_operation_waypoint_provenance.sql` ajoute
 la validation des motifs, des coordonnées de maille rejetée et des champs
 météo facultatifs. Les versions de fiche existantes restent lisibles.
 
-Un brouillon incomplet reste enregistrable. À l’enregistrement, en l’absence
-d’une UKC automatique disponible, SeaPilot conserve une profondeur théorique
-de repli égale au tirant d’eau canonique du navire + 5 m. Le champ
-`ukcFallbackMeters` est distinct de `ukcForecast` et de la saisie manuelle.
-Il est affiché sans indicateur coloré dans la fiche et le PDF. Il permet
-de transmettre et de signer la fiche lorsque le calcul automatique est
-indisponible. Pour la navigation, le Capitaine utilise des données nautiques
-officielles. Le [calcul UKC décrit par Rijkswaterstaat](https://protide.rws.nl/Documentation/Transits/Calculation)
+Quand l’UKC automatique est indisponible, la fiche et le PDF affichent
+« Seuil théorique à vérifier » et « UKC > [tirant d’eau du navire] + 3 m »,
+sans indicateur coloré. Le champ `ukcThresholdMeters` contient ce seuil.
+Il permet de transmettre et de signer la fiche en cas d’indisponibilité du
+modèle. Le Capitaine vérifie le clair sous quille à partir des données
+nautiques officielles. Le [calcul UKC décrit par Rijkswaterstaat](https://protide.rws.nl/Documentation/Transits/Calculation)
 soustrait le tirant d’eau à la profondeur d’eau totale.
 
-Une capture disponible et compatible prévaut sur le repli. Sans tirant d’eau
-de référence, le mode automatique ne peut fournir ni UKC ni profondeur de
-repli. Le Capitaine peut renseigner une UKC manuellement. NO GO reste signable
-sans cette donnée. La signature fige la valeur et sa provenance avec la fiche.
+Sans tirant d’eau de référence, un GO exige une UKC manuelle. La décision
+NO GO reste signable. Les anciennes fiches signées conservent le sens de leur
+valeur historique `ukcFallbackMeters`, exprimée comme profondeur théorique.
+
+## Hauteurs d’eau portuaires
+
+Les ports de départ et d’arrivée sont résolus dans le catalogue SANDRE/WPI.
+SeaPilot recherche une hauteur d’eau prévue à l’ETD du départ et à l’ETA
+de l’arrivée avec les modèles Copernicus Marine NWS, IBI et MED ou les
+prévisions côtières publiques Shom/Météo-France TOLOSA et HYCOM.
+La recherche couvre le port et un rayon maximal de 2 km. Elle conserve la
+position, la source, l’échéance, la date de consultation et le référentiel
+vertical dans la fiche. Un changement de port ou d’horaire écarte la capture
+concernée. Les prévisions présentes au moment de la signature sont figées.
+
+Les prévisions sont des hauteurs relatives au géoïde ou au niveau moyen du
+modèle. SeaPilot les affiche dans **Navire et voyage** et conserve le modèle
+utilisé. Le calcul de l’UKC d’un waypoint continue d’utiliser uniquement la
+profondeur et le niveau d’eau compatibles d’une même maille NWS ou IBI.
+Les ports non localisés, hors échéance ou sans point marin compatible
+affichent un état d’indisponibilité. Une prévision portuaire manquante
+n’empêche pas l’enregistrement de la fiche.
 
 ## Sources et vérification
 

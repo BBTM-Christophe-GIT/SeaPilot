@@ -153,6 +153,14 @@ describe('sea operation form model', () => {
     expect(point.ukc).toBe(''); expect(payload.decision).toBe('GO');
     point.ukcForecast = { ...point.ukcForecast, status: 'unavailable', estimate: null, message: 'Hors horizon' };
     expect(isSeaOperationPayload(payload)).toBe(true);
+    expect(validateSeaOperation(payload, 'GO')).toEqual([]);
+    point.ukcThresholdMeters = 6;
+    expect(isSeaOperationPayload(payload)).toBe(true);
+    point.ukcThresholdMeters = 8;
+    expect(isSeaOperationPayload(payload)).toBe(false);
+    delete point.ukcThresholdMeters;
+    delete point.ukcForecast;
+    delete payload.vessel.draftMeters;
     expect(validateSeaOperation(payload, 'GO')).toContain('L’UKC du point n° 1 est obligatoire.');
     expect(payload.decision).toBe('GO');
   });

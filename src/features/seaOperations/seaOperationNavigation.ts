@@ -42,6 +42,8 @@ function angularDistance(a: SeaPosition, b: SeaPosition): number {
   const sinLon = Math.sin((b.longitude - a.longitude) * RAD / 2);
   return 2 * Math.asin(Math.sqrt(Math.min(1, sinLat ** 2 + Math.cos(a.latitude * RAD) * Math.cos(b.latitude * RAD) * sinLon ** 2)));
 }
+export const seaDistanceNm = (a: SeaPosition, b: SeaPosition): number => angularDistance(a, b) * EARTH_NM;
+
 function bearing(a: SeaPosition, b: SeaPosition): number {
   const lon = (b.longitude - a.longitude) * RAD;
   return Math.atan2(Math.sin(lon) * Math.cos(b.latitude * RAD), Math.cos(a.latitude * RAD) * Math.sin(b.latitude * RAD) - Math.sin(a.latitude * RAD) * Math.cos(b.latitude * RAD) * Math.cos(lon));

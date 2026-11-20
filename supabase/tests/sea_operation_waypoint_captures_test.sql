@@ -45,7 +45,7 @@ select 'legacy',jsonb_build_object('version',1,'project','Waypoint capture test'
     'standingOrders','nauticalDocumentation','navigationNotices','portWorkNotices','portRegulations','berthAvailable','weather']) key),
   'towedVesselBoarding','{"required":"","measures":"","details":""}'::jsonb,'portServices','[]'::jsonb,'mandatoryServicesNotified',false,
   'supplies','{"delegated":"","shipchandlerName":"","shipchandlerContact":"","items":[],"suppliers":"","customerAccountsPrepared":false}'::jsonb,
-  'charts','SHOM 7000','waypoints','[{"id":"w1","number":"1","descriptionVhf":"Entrée de Cherbourg","latitude":"49.65","longitude":"-1.62","ukc":"2,4 m validés à bord","eta":"12:00","denseTraffic":true}]'::jsonb,
+  'charts','SHOM 7000','waypoints','[{"id":"w1","number":"1","descriptionVhf":"Entrée de Cherbourg","latitude":"49.65","longitude":"-1.62","ukc":"2,4 m validés à bord","ukcMode":"manual","eta":"12:00","denseTraffic":true}]'::jsonb,
   'decision','NO_GO','risks','Mission suspendue, Armement informé.','signature',jsonb_build_object('captainName','Capture Test 4','date',(now() at time zone 'Europe/Paris')::date,'place','Cherbourg','acknowledged',true));
 insert into capture_fixture(kind,payload)
 select 'captured',jsonb_set(jsonb_set(jsonb_set(payload,'{waypoints,0,eta}','"2026-10-23T14:00"'),'{waypoints,0,weather}',

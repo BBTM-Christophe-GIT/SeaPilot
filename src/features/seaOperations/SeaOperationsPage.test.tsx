@@ -102,7 +102,7 @@ function waypointCaptureDraft(mission = plannedMissions()[1]): SeaOperationPaylo
   draft.specialPersonnel = [{ name: 'Observateur embarqué', phone: '0200000000' }];
   draft.signature = { ...draft.signature, captainName: mission.captains[0].name, place: mission.vessel.departurePort };
   draft.vessel = { ...draft.vessel, ...mission.vessel, captainName: mission.captains[0].name };
-  draft.waypoints = [{ id: 'capture-point', number: '3', descriptionVhf: 'Entrée de Cherbourg', latitude: '49.65', longitude: '-1.62', ukc: '2,4 m validés par le Capitaine', eta: '2026-10-23T14:00', denseTraffic: true }];
+  draft.waypoints = [{ id: 'capture-point', number: '3', descriptionVhf: 'Entrée de Cherbourg', latitude: '49.65', longitude: '-1.62', ukc: '2,4 m validés par le Capitaine', ukcMode: 'manual', eta: '2026-10-23T14:00', denseTraffic: true }];
   return draft;
 }
 
@@ -169,9 +169,13 @@ function recordFixture(account: Account, overrides: Partial<SeaOperationRecord> 
   };
 }
 
+function fixtureClient(fixtureAccountId: string) {
+  return { fixtureAccountId, auth: { getSession: async () => ({ data: { session: null }, error: null }) },
+    rpc: async () => ({ data: [], error: null }) };
+}
+
 function renderAccount(account: Account = captainAccount, record?: SeaOperationRecord, companyId = 1, choices: SeaOperationPlanningChoice[] = [], previewMode = false) {
-  const client = { fixtureAccountId: account.id };
-  Object.assign(client, { rpc: async () => ({ data: [], error: null }) });
+  const client = fixtureClient(account.id);
   const data: SeaOperationData = {
     companyId, actorId: account.id, actorName: account.name,
     records: record ? [record] : [],
@@ -950,9 +954,11 @@ describe('Planning project choices across four Paris calendar days', () => {
 describe('Copernicus UKC in authenticated operation forms', () => {
   it('retains a calculation across wizard sections while preserving the original manual annotation', async () => {
     const draft = automaticUkcDraft(), forecast = waypointUkc(draft), record = recordFixture(captainAccount, { draft });
+    delete draft.waypoints[0].ukcMode;
     const { client } = renderAccount(captainAccount, record, 1, plannedMissions());
     await openRecord(record); fireEvent.click(stepButton(2));
     const panel = capturingUkcPanel(); expect(panel.active).toBe(true);
+    expect(panel.payload.waypoints[0].ukcMode).toBe('automatic');
     fireEvent.click(stepButton(1));
     expect(capturingUkcPanel().active).toBe(true);
     act(() => panel.onUkcLoaded?.(forecast, waypointUkcContext(draft), client));
@@ -1025,7 +1031,7 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     expect(await formQueries().findByText('Brouillon enregistré.')).toBeInTheDocument();
     expect(formQueries().getByText('La connexion Copernicus Marine n’est pas encore configurée. Contactez l’Armement.')).toBeVisible();
     expect(vi.mocked(saveSeaOperation).mock.calls[0][1].waypoints[0]).toMatchObject({
-      ukcMode: 'automatic', ukc: draft.waypoints[0].ukc, ukcFallbackMeters: draft.vessel.draftMeters! + 5,
+      ukcMode: 'automatic', ukc: draft.waypoints[0].ukc, ukcThresholdMeters: draft.vessel.draftMeters! + 3,
     });
     expect(signSeaOperation).not.toHaveBeenCalled();
   });
@@ -1046,10 +1052,11 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     expect(captureSeaOperationValidationUkc).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ missingOnly: false }));
     expect(stored.draft.waypoints[0].ukcForecast?.status).toBe('available');
     expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcFallbackMeters');
+    expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcThresholdMeters');
     expect(stored.draft.waypoints[0].ukc).toBe(draft.waypoints[0].ukc);
   });
 
-  it('signs GO with a recorded fallback when Copernicus cannot return a value', async () => {
+  it('signs GO with a recorded theoretical threshold when Copernicus cannot return a value', async () => {
     const draft = automaticUkcDraft(true), record = recordFixture(captainAccount, { draft });
     let stored = record;
     vi.mocked(captureSeaOperationValidationUkc).mockImplementation(async (_client, payload, options) => {
@@ -1068,22 +1075,27 @@ describe('Copernicus UKC in authenticated operation forms', () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => expect(signSeaOperation).toHaveBeenCalled());
-    expect(stored.draft.waypoints[0]).toMatchObject({ ukcMode: 'automatic', ukcFallbackMeters: draft.vessel.draftMeters! + 5 });
+    expect(stored.draft.waypoints[0]).toMatchObject({ ukcMode: 'automatic', ukcThresholdMeters: draft.vessel.draftMeters! + 3 });
+    expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcFallbackMeters');
     expect(stored.draft.waypoints[0]).not.toHaveProperty('ukcForecast');
   });
 
-  it('stops GO signing when canonical save changes the draught and removes the obsolete capture', async () => {
+  it('signs GO with the new threshold when canonical save changes the draught and removes the obsolete capture', async () => {
     const draft = automaticUkcDraft(true); draft.waypoints[0].ukcForecast = waypointUkc(draft);
     const record = recordFixture(captainAccount, { draft });
+    let stored = record;
     vi.mocked(saveSeaOperation).mockImplementation(async (_client, payload) => {
       const canonical = structuredClone(payload); canonical.vessel.draftMeters = 3; delete canonical.waypoints[0].ukcForecast;
-      return recordFixture(captainAccount, { draft: canonical, version: 4 });
+      canonical.waypoints[0].ukcThresholdMeters = 6;
+      stored = recordFixture(captainAccount, { draft: canonical, version: 4 });
+      return stored;
     });
+    vi.mocked(signSeaOperation).mockImplementation(async () => ({ ...stored, status: 'signed', canEdit: false, signedBy: captainAccount.id, signedAt: new Date().toISOString() }));
     renderAccount(captainAccount, record, 1, plannedMissions()); await openRecord(record); await decisionStep();
     await waitFor(() => expect(footerQueries().getByRole('button', { name: 'Signer la décision GO' })).toBeEnabled());
     fireEvent.click(footerQueries().getByRole('button', { name: 'Signer la décision GO' }));
-    expect(await formQueries().findByText('L’UKC du point n° 1 est obligatoire.')).toBeInTheDocument();
-    expect(saveSeaOperation).toHaveBeenCalled(); expect(signSeaOperation).not.toHaveBeenCalled();
+    await waitFor(() => expect(signSeaOperation).toHaveBeenCalledWith(expect.anything(), stored, expect.any(String), true));
+    expect(capturingUkcPanel().payload.waypoints[0].ukcThresholdMeters).toBe(6);
     expect(capturingUkcPanel().payload.vessel.draftMeters).toBe(3);
     expect(capturingUkcPanel().payload.waypoints[0]).not.toHaveProperty('ukcForecast');
   });
@@ -1301,7 +1313,7 @@ describe('Opération en Mer administration with authenticated server permissions
     const other = recordFixture(sailorAccount, { id: 'other-company-record', companyId: 2, canEdit: false,
       draft: { ...noGoDraft(), project: 'Autre société à conserver' } });
     vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
-    view.rerenderClient({ fixtureAccountId: sailorAccount.id });
+    view.rerenderClient(fixtureClient(sailorAccount.id));
     expect(await revealRecord(other)).toBeVisible();
     await act(async () => pending.resolve(revised));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -1342,7 +1354,7 @@ describe('Opération en Mer administration with authenticated server permissions
       draft: { ...noGoDraft(), project: 'Préparation du second compte' } });
     vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: 'other-admin-account', records: [other] });
     vi.mocked(deleteSeaOperation).mockReturnValue(pendingDelete.promise);
-    view.rerenderClient({ fixtureAccountId: 'other-admin-account' });
+    view.rerenderClient(fixtureClient('other-admin-account'));
     await revealRecord(other);
     fireEvent.click(recordActions(other).getByRole('button', { name: 'Supprimer' }));
     const confirmation = screen.getByRole('dialog', { name: 'Supprimer cette fiche du registre ?' });
@@ -2102,7 +2114,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const { client, data } = renderAccount(captainAccount, record, 1, [mission], true);
     data.vessels[0].draftMeters = 2.65;
     await openRecord(record);
-    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [{ ...draft.waypoints[0], descriptionVhf: 'Waypoint 1' }] }));
+    expect(weatherPanelMock).toHaveBeenLastCalledWith(expect.objectContaining({ client, projectId: mission.projectId, preview: true, active: true, waypoints: [{ ...draft.waypoints[0], descriptionVhf: 'Waypoint 1', ukcMode: 'automatic' }] }));
     await userEvent.click(stepButton(2));
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveValue(2.65);
     expect(formQueries().getByLabelText('Tirant d’eau de référence (m)')).toHaveAttribute('readonly');
@@ -2227,7 +2239,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     const other = recordFixture(sailorAccount, { id: 'same-waypoint-other-client', draft: { ...structuredClone(draft), project: 'Autre compte météo', waypoints: [structuredClone(currentPoint)] } });
     vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
     vi.mocked(fetchSeaOperationDetail).mockResolvedValue(other);
-    const nextClient = { fixtureAccountId: sailorAccount.id };
+    const nextClient = fixtureClient(sailorAccount.id);
     view.rerenderClient(nextClient);
     await openRecord(other);
     fireEvent.click(stepButton(2));
@@ -2462,11 +2474,11 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
     renderAccount(captainAccount, record);
     await openRecord(record);
     await userEvent.click(stepButton(2));
-    expect(capturingWeatherPanel().waypoints).toEqual(original.waypoints);
+    expect(capturingWeatherPanel().waypoints).toEqual([{ ...original.waypoints[0], ukcMode: 'automatic' }]);
     expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('weather');
     expect(capturingWeatherPanel().waypoints[0]).not.toHaveProperty('radio');
     expect(formQueries().getByLabelText('Description · point 1')).toHaveValue(original.waypoints[0].descriptionVhf);
-    expect(formQueries().getByLabelText('UKC · point 1')).toHaveValue(original.waypoints[0].ukc);
+    expect(formQueries().getByLabelText('UKC · point 1')).toHaveTextContent('UKC indisponible');
     expect(formQueries().getByText(/Ancienne ETA : 12:00/)).toBeVisible();
     expect(sessionStorage.length).toBe(0);
     expect(draft).toEqual(original);
@@ -3337,7 +3349,7 @@ describe('Opération en Mer with authenticated server permission fixtures', () =
       draft: { ...noGoDraft(), project: 'Mission du second compte' } });
     vi.mocked(fetchSeaOperationData).mockResolvedValue({ ...view.data, companyId: 2, actorId: sailorAccount.id, actorName: sailorAccount.name, records: [other] });
     vi.mocked(fetchSeaOperationDetail).mockResolvedValue(other);
-    view.rerenderClient({ fixtureAccountId: sailorAccount.id });
+    view.rerenderClient(fixtureClient(sailorAccount.id));
     expect(await revealRecord(other)).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByText('Document du premier compte')).not.toBeInTheDocument();

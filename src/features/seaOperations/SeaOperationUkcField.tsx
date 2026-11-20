@@ -7,11 +7,12 @@ import { seaOperationEtaUtc } from './seaOperationWeatherModel';
 import type { SeaOperationUkcRequestStatus } from './seaOperationValidationUkc';
 import './seaOperationUkcEditor.css';
 
-export function SeaOperationUkcField({ payload, point, index, disabled, readOnly = false, status, onChange }: {
+export function SeaOperationUkcField({ payload, point, index, disabled, readOnly = false, showDraftThreshold = false, status, onChange }: {
   payload: SeaOperationPayload; point: SeaOperationWaypoint; index: number; disabled: boolean;
-  readOnly?: boolean; status?: SeaOperationUkcRequestStatus; onChange: (patch: Partial<SeaOperationWaypoint>) => void;
+  readOnly?: boolean; showDraftThreshold?: boolean; status?: SeaOperationUkcRequestStatus; onChange: (patch: Partial<SeaOperationWaypoint>) => void;
 }) {
-  const id = useId(), presentation = seaOperationUkcPresentation(payload, point), automatic = point.ukcMode === 'automatic';
+  const id = useId(), presentation = seaOperationUkcPresentation(payload, point, showDraftThreshold && !readOnly), automatic = presentation.automatic;
+  const showRequirement = presentation.threshold || presentation.fallback;
   const requestStatus = readOnly ? undefined : status;
   let message = presentation.caption;
   if (requestStatus?.loading) message = 'Calcul UKC en cours…';
@@ -30,12 +31,12 @@ export function SeaOperationUkcField({ payload, point, index, disabled, readOnly
     </div>
     {automatic ? <output id={id} aria-label={`UKC · point ${index + 1}`} aria-live="off" className="so-ukc-field-value">
       {presentation.rawValue ? <SeaOperationUkcIndicator value={presentation.rawValue} draftMeters={payload.vessel.draftMeters} approximate={presentation.approximate} />
-        : <span className="so-ukc-unclassified">UKC indisponible{presentation.fallback && <><br /><small>{presentation.label} · {presentation.displayValue}</small></>}</span>}
+        : <span className="so-ukc-unclassified">UKC indisponible{showRequirement && <><br /><small>{presentation.label} · {presentation.displayValue}</small></>}</span>}
     </output> : <input id={id} aria-label={`UKC · point ${index + 1}`} type="text" readOnly={readOnly || disabled} value={point.ukc}
       onChange={event => { if (!readOnly && !disabled) onChange({ ukc: event.target.value, ukcMode: 'manual' }); }} />}
     {!automatic && assessSeaOperationUkc(presentation.rawValue, payload.vessel.draftMeters) && <SeaOperationUkcIndicator value={presentation.rawValue}
       draftMeters={payload.vessel.draftMeters} approximate={presentation.approximate} />}
-    {automatic && (presentation.capture || presentation.fallback) && presentation.details.length > 0 && <details className="so-ukc-details"><summary>Détails UKC</summary>
+    {automatic && (presentation.capture || showRequirement) && presentation.details.length > 0 && <details className="so-ukc-details"><summary>Détails UKC</summary>
       {presentation.details.map((detail, item) => <p key={item}>{detail}</p>)}
       {presentation.sourceUrls.map(url => <a href={url} target="_blank" rel="noopener noreferrer" key={url}>Source Copernicus Marine</a>)}
     </details>}

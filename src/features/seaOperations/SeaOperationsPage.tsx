@@ -15,8 +15,10 @@ import { SeaOperationProjectDocuments } from './SeaOperationProjectDocuments';
 import { SeaOperationRadioPanel } from './SeaOperationRadioPanel';
 import { SeaOperationWeatherPanel } from './SeaOperationWeatherPanel';
 import { SeaOperationHydroSources } from './SeaOperationHydroSources';
+import { SeaOperationPortWaterLevels } from './SeaOperationPortWaterLevels';
+import { cleanPortWaterLevels, retainPortWaterLevel, type PortWaterLevelRole, type PortWaterLevelSnapshot } from './seaOperationPortWaterLevel';
 import { SeaOperationChartsPanel } from './SeaOperationChartsPanel';
-import { captureSeaOperationRadios, captureSeaOperationUkcFallbacks, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference, seaOperationWeatherReference,
+import { captureSeaOperationRadios, captureSeaOperationUkcThresholds, defaultSeaOperationUkcModes, invalidateSeaOperationUkc, retainSeaOperationUkc, retainSeaOperationWeather, seaOperationUkcReference, seaOperationWeatherReference,
   updateSeaOperationWaypoint, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationUkcCaptureContext, SeaOperationWeatherCaptureContext } from './seaOperationWaypointSnapshots';
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
@@ -347,7 +349,7 @@ export function SeaOperationsPage() {
       setProjectPortsContext({ client: currentClient.current, account, ports: retainedPorts, projectIsTowage: existing?.projectIsTowage ?? recovery.projectIsTowage });
     }
     const vessel = result.vessels.find((source) => String(source.id) === recovery.draft.vessel.id);
-    setDraft(captureSeaOperationWaypointDescriptions(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
+    setDraft(defaultSeaOperationUkcModes(captureSeaOperationWaypointDescriptions(captureVesselDraft(captureVesselMatrix(recovery.draft, vessel), vessel)))); setPlanningDate(seaOperationContextDate(recovery.draft) || recovery.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setDocumentsContext(null); setStep(recovery.step); setEditing(true); setDirty(true);
     setNotice('Votre préparation non enregistrée a été récupérée dans cet onglet. Vérifiez-la avant de l’enregistrer.');
   }, []);
 
@@ -507,7 +509,7 @@ export function SeaOperationsPage() {
       const next = { ...current, vessel: { ...current.vessel, ...patch,
         ...(changed ? { captainName: '', draftMeters: source?.draftMeters ?? null, weatherMatrix: structuredClone(source?.weatherMatrix ?? null) } : {}) } };
       if (changed && source?.draftMeters === undefined) delete next.vessel.draftMeters;
-      const vessel = captureVesselDraft(next, source).vessel;
+      const vessel = cleanPortWaterLevels(captureVesselDraft(next, source).vessel);
       return { vessel, ...(changed ? { signature: { ...current.signature, captainName: '', acknowledged: false },
         ...(current.transit ? { transit: { ...current.transit, captainPersonId: '' } } : current.planning ? { planning: { ...current.planning, captainPersonId: '' } } : {}) } : {}) };
     });
@@ -518,6 +520,7 @@ export function SeaOperationsPage() {
   const formLocked = !editable || busy || signed;
   const weatherEditor = useRef({ client, draft, editing, editable, signed, busy, exporting });
   const pendingWeather = useRef(new globalThis.Map<string, { weather: SeaOperationWaypointWeather; context: SeaOperationWeatherCaptureContext; sourceClient: SupabaseClient }>());
+  const pendingPortLevels = useRef<Partial<Record<PortWaterLevelRole, { level: PortWaterLevelSnapshot; sequence: number }>>>({});
   weatherEditor.current = { client, draft, editing, editable, signed, busy, exporting };
   useEffect(() => {
     const current = weatherEditor.current;
@@ -662,6 +665,18 @@ export function SeaOperationsPage() {
       return { client: sourceClient, statuses: next };
     });
   }, []);
+  const retainPortLevel = useCallback((role: PortWaterLevelRole, level: PortWaterLevelSnapshot, sourceClient: SupabaseClient) => {
+    const current = weatherEditor.current;
+    if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
+      || retainPortWaterLevel(current.draft, role, level) === current.draft) return;
+    const sequence = loadSequence.current;
+    if (current.busy) {
+      pendingPortLevels.current[role] = { level, sequence };
+      return;
+    }
+    setDraft(value => sequence === loadSequence.current ? retainPortWaterLevel(value, role, level) : value);
+    setDirty(true);
+  }, []);
   const retainUkc = useCallback((capture: SeaOperationCopernicusEstimate, context: SeaOperationUkcCaptureContext, sourceClient: SupabaseClient) => {
     const current = weatherEditor.current;
     if (sourceClient !== current.client || !current.editing || !current.editable || current.signed
@@ -692,6 +707,15 @@ export function SeaOperationsPage() {
     pendingWeather.current.clear();
     if (editing && editable && !signed) for (const entry of pending) retainWeather(entry.weather, entry.context, entry.sourceClient);
   }, [busy, client, editing, editable, signed, retainWeather]);
+  useEffect(() => {
+    if (busy) return;
+    const pending = pendingPortLevels.current;
+    pendingPortLevels.current = {};
+    for (const role of ['departure', 'arrival'] as const) {
+      const entry = pending[role];
+      if (entry?.sequence === loadSequence.current) retainPortLevel(role, entry.level, client);
+    }
+  }, [busy, client, editing, editable, signed, retainPortLevel]);
   useEffect(() => {
     if (busy) return;
     const pending = [...pendingUkc.current.values()]; pendingUkc.current.clear();
@@ -780,10 +804,10 @@ export function SeaOperationsPage() {
     try {
       const { levels, pending, unavailable } = latestNavigation.current;
       const timed = pending || unavailable ? payload : captureRouteEtas(payload, data?.vessels, levels, source.projectIsTowage);
-      const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(timed));
+      const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(defaultSeaOperationUkcModes(timed)));
       const weather = await captureSeaOperationValidationWeather(client, prepared, { preview: previewMode, missingOnly: true });
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
-      const captured = captureSeaOperationUkcFallbacks(await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true }));
+      const captured = captureSeaOperationUkcThresholds(await captureSeaOperationValidationUkc(client, weather, { preview: previewMode, missingOnly: true }));
       if (!isCurrent()) throw new Error('La sélection a changé. Les modifications n’ont pas été enregistrées.');
       const saved = source.projectPorts
         ? await saveSeaOperation(client, captured, { id: source.id, version: source.version }, source.projectPorts)
@@ -813,7 +837,7 @@ export function SeaOperationsPage() {
   }
   const remember = (saved: SeaOperationRecord) => {
     clearRecovery(data);
-    setRecord(saved); setDraft(saved.draft); setDirty(false);
+    setRecord(saved); setDraft(saved.status === 'draft' && saved.canEdit ? defaultSeaOperationUkcModes(saved.draft) : saved.draft); setDirty(false);
     setMapRecord(current => current?.id === saved.id ? saved : current);
     setProjectPortsContext(saved.projectPorts && data ? { client, account: recoveryKey(data), ports: saved.projectPorts, projectIsTowage: saved.projectIsTowage } : null);
     const ports = saved.projectPorts;
@@ -842,7 +866,7 @@ export function SeaOperationsPage() {
         const { levels, pending, unavailable } = latestNavigation.current;
         const prepared = captureSeaOperationWaypointDescriptions(pending || unavailable ? updatedVessel
           : captureRouteEtas(updatedVessel, data?.vessels, levels, loaded.projectIsTowage));
-        if (prepared !== loaded.draft) { setDraft(prepared); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
+        if (prepared !== loaded.draft) { setDraft(defaultSeaOperationUkcModes(prepared)); setDirty(true); setNotice('Les données du navire ont été actualisées pour cette préparation. Enregistrez pour les conserver.'); }
       }
       setPlanning(null); setPlanningDate(seaOperationContextDate(loaded.draft) || loaded.draft.vessel.etd.slice(0, 10) || seaOperationToday()); setEditing(true); setDocumentsContext(null); setStep(0); setMobilePane('form');
     } }
@@ -915,8 +939,7 @@ export function SeaOperationsPage() {
       ? data?.vessels.find(vessel => String(vessel.id) === draft.vessel.id) : selectedMission.vessel;
     const vessel = data?.vessels.find((source) => String(source.id) === draft.vessel.id);
     const prepared = captureSeaOperationRadios(captureSeaOperationWaypointDescriptions(captureFormRouteEtas(captureVesselDraft(captureVesselMatrix(draft, matrixSource), vessel))));
-    const automaticUkcErrors = new Set(prepared.waypoints.flatMap((point, index) => point.ukcMode === 'automatic' ? [`L’UKC du point n° ${index + 1} est obligatoire.`] : []));
-    const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT').filter(message => !automaticUkcErrors.has(message));
+    const validation = validateSeaOperation(prepared, sign ? prepared.decision || 'GO' : 'DRAFT');
     if (validation.length) { setIssues(validation); setDocumentsContext(null); setStep(sign ? 3 : step); revealFormFeedback(); return; }
     setBusy(true); setError(''); setIssues([]); setNotice('');
     const sequence = loadSequence.current;
@@ -935,7 +958,14 @@ export function SeaOperationsPage() {
       // A silent request may finish while save-time requests are busy. Preserve its compatible result.
       const queued = [...pendingUkc.current.values()]; pendingUkc.current.clear();
       for (const entry of queued) if (entry.sourceClient === client) captured = retainSeaOperationUkc(captured, entry.capture, entry.context);
-      captured = captureSeaOperationUkcFallbacks(captured);
+      const portLevels = pendingPortLevels.current;
+      pendingPortLevels.current = {};
+      for (const role of ['departure', 'arrival'] as const) {
+        const entry = portLevels[role];
+        if (entry?.sequence === sequence) captured = retainPortWaterLevel(captured, role, entry.level);
+      }
+      captured = { ...captured, vessel: cleanPortWaterLevels(captured.vessel) };
+      captured = captureSeaOperationUkcThresholds(captured);
       const beforeSave = sign ? validateSeaOperation(captured, captured.decision || 'GO') : [];
       if (beforeSave.length) {
         setDraft(captured); setDirty(true); setIssues([...beforeSave, ...ukcErrors]); setDocumentsContext(null); setStep(3); revealFormFeedback(); return;
@@ -1204,6 +1234,8 @@ export function SeaOperationsPage() {
             <Field label="Quai d’arrivée"><input value={draft.vessel.arrivalQuay} onChange={event => vesselUpdate({ arrivalQuay: event.target.value })} /></Field>
             <Field label="ETD · date et heure de départ"><input type="datetime-local" value={draft.vessel.etd} onChange={event => vesselUpdate({ etd: event.target.value })} /></Field>
             <Field label="ETA · date et heure d’arrivée"><input type="datetime-local" value={draft.vessel.eta} onChange={event => vesselUpdate({ eta: event.target.value })} /></Field>
+            <SeaOperationPortWaterLevels client={client} payload={draft} active={editing && editable && !signed && !previewMode} disabled={formLocked}
+              onCapture={retainPortLevel} />
           </div><p className="so-help">Les horaires sont saisis dans l’heure locale de l’opération.</p>
         </section>
         <section id="sea-operation-step-1" hidden={step !== 1} className={`so-panel ${step === 1 ? 'is-active' : ''}`} aria-label="Contrôles du Capitaine">
@@ -1280,7 +1312,7 @@ export function SeaOperationsPage() {
               return <div className={`so-passage-row${signed || !editable ? ' is-readonly' : ''}`} role="row" key={point.id}>
                 {([['number', 'Waypoint', 'number'], ['descriptionVhf', 'Description', 'description']] as const).map(([key, label, variant]) => <label role="cell" className={`so-passage-field is-${variant}`} key={key}><span>{label}</span><input aria-label={`${label} · point ${index + 1}`} type="text" value={point[key]} onChange={(event) => waypointUpdate(index, { [key]: event.target.value })} onBlur={key === 'descriptionVhf' ? () => { if (!point.descriptionVhf.trim()) waypointUpdate(index, { descriptionVhf: seaOperationWaypointDescription(point, index) }); } : undefined} /></label>)}
                 <div className="so-passage-position" role="presentation">{([['latitude', 'Latitude'], ['longitude', 'Longitude']] as const).map(([axis, label]) => <label role="cell" className={`so-passage-field is-${axis}`} key={axis}><span>{label}</span><SeaOperationCoordinateInput axis={axis} value={point[axis]} label={`${label} · point ${index + 1}`} onChange={(value) => waypointUpdate(index, { [axis]: value })} /></label>)}</div>
-                <SeaOperationUkcField payload={draft} point={point} index={index} disabled={!editable || signed || busy || exporting} readOnly={signed || !editable}
+                <SeaOperationUkcField payload={draft} point={point} index={index} disabled={!editable || signed || busy || exporting} readOnly={signed || !editable} showDraftThreshold
                   onChange={patch => waypointUpdate(index, patch)} status={signed || ukcRequests.client !== client ? undefined : ukcRequests.statuses[ukcRequestKey(seaOperationUkcReference(draft), point)]} />
                 <div role="cell" className="so-passage-field is-vhf"><span>Contacts VHF</span><p>{navigation.vhf.split('\n\n').map((contact) => contact.replace(/\n/g, ' · ')).join('\n')}</p></div>
                 {!signed && editable && <div role="cell" className="so-passage-field is-weather"><span>Météo à l’ETA</span><SeaOperationWeatherCard point={point} matrix={draft.vessel.weatherMatrix} compact variant="editor" requestStatus={(weatherRequests.client === client ? weatherRequests.statuses[weatherRequestKey(seaOperationWeatherReference(draft), point)] : undefined) || initialSeaOperationWeatherStatus(seaOperationWeatherReference(draft), point)} /></div>}

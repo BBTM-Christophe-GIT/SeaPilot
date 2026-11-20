@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.115.0` active le mode Auto sur les waypoints modifiables
+sans choix d’UKC. Le Passage Plan affiche le seuil à vérifier quand le modèle
+est indisponible. La fiche conserve les hauteurs d’eau prévues aux ports.
+La colonne Météo à l’ETA présente les prévisions. Appliquer
+`20261120154056_sea_operation_ukc_threshold.sql` puis
+`20261120154521_sea_operation_port_water_levels.sql` avant le frontend.
+Voir [UKC et niveaux d’eau aux ports](./sea-operation-copernicus-ukc.md).
+
 La version `3.111.0` ajoute **Remettre sans affectation** au menu contextuel
 des cartes de l’organigramme. Appliquer
 `20261118152222_organigramme_remove_watch_member.sql` avant le frontend.

@@ -17,6 +17,7 @@ import { seaOperationWaypointDescription } from './seaOperationWaypointDescripti
 import { seaOperationVoyageSummary } from './seaOperationVoyageSummary';
 import { formatClientContactLines } from '../../lib/clientContact';
 import { formatSeaLatitude, formatSeaLongitude, formatSeaPosition } from './seaOperationCoordinates';
+import { PORT_WATER_LEVEL_ROLES, PORT_WATER_LEVEL_SOURCES, portWaterLevelText, retainedPortWaterLevel } from './seaOperationPortWaterLevel';
 import './seaOperationPrint.css';
 
 const blank = 'À renseigner';
@@ -151,6 +152,12 @@ export function SeaOperationPrint({ record, signatureImageUrl, documents }: {
         <PrintField label="Port de destination / Quai">{text(vessel.arrivalPort)} / {text(vessel.arrivalQuay)}</PrintField>
         <PrintField label="ETD – Date et heure">{dateText(vessel.etd)}</PrintField>
         <PrintField label="ETA – Date et heure">{dateText(vessel.eta)}</PrintField>
+        {PORT_WATER_LEVEL_ROLES.map(role => {
+          const level = retainedPortWaterLevel(vessel, role);
+          return level && <PrintField key={role} label={role === 'departure' ? 'Hauteur d’eau prévue au départ' : 'Hauteur d’eau prévue à l’arrivée'}>
+            {portWaterLevelText(level)} · {PORT_WATER_LEVEL_SOURCES[level.source].name}
+          </PrintField>;
+        })}
       </dl>
     </section>
 
@@ -237,9 +244,9 @@ export function SeaOperationPrint({ record, signatureImageUrl, documents }: {
       {passageRows.length ? <table className="so-print-passage"><caption>Points de passage, contacts VHF et météo à l’ETA</caption><thead><tr><th scope="col">Waypoint</th><th scope="col">Description</th><th scope="col">Latitude</th><th scope="col">Longitude</th><th scope="col">UKC</th><th scope="col" className="so-print-eta-header" aria-label="ETA Date - Heure">ETA<br />Date - Heure</th><th scope="col">Contacts VHF</th><th scope="col">Météo à l’ETA</th><th scope="col">Trafic dense</th></tr></thead><tbody>
         {passageRows.map((row, index) => <tr key={`${index}:${form.waypoints[index].id}`} className={form.waypoints[index].denseTraffic ? 'is-dense-traffic' : undefined}>
           <td>{row.waypoint}</td><td>{row.description}</td><td>{row.latitude}</td><td>{row.longitude}</td>
-          <td className="so-print-ukc-cell"><div className="so-print-ukc-value">{row.ukcPresentation.automatic && !row.ukcPresentation.rawValue ? <strong>UKC indisponible</strong> : <SeaOperationUkcIndicator value={row.ukcPresentation.rawValue} draftMeters={vessel.draftMeters} approximate={row.ukcPresentation.approximate} />}</div>{row.ukcPresentation.automatic && <small className="so-print-ukc-note"><span>{row.ukcPresentation.label}</span>{row.ukcPresentation.fallback && <span>{row.ukcPresentation.displayValue}</span>}<span>Annexe UKC</span></small>}</td>
+          <td className="so-print-ukc-cell"><div className="so-print-ukc-value">{row.ukcPresentation.automatic && !row.ukcPresentation.rawValue ? <strong>UKC indisponible</strong> : <SeaOperationUkcIndicator value={row.ukcPresentation.rawValue} draftMeters={vessel.draftMeters} approximate={row.ukcPresentation.approximate} />}</div>{row.ukcPresentation.automatic && <small className="so-print-ukc-note"><span>{row.ukcPresentation.label}</span>{(row.ukcPresentation.threshold || row.ukcPresentation.fallback) && <span>{row.ukcPresentation.displayValue}</span>}<span>Annexe UKC</span></small>}</td>
           <td>{row.eta}</td><td>{row.vhf}</td>
-          <td className="so-print-weather-cell"><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact showObservations={signed} observations={record.weatherObservations} validatedAt={signed ? record.signedAt : undefined} /></td>
+          <td className="so-print-weather-cell"><SeaOperationWeatherCard point={form.waypoints[index]} matrix={form.vessel.weatherMatrix} compact validatedAt={signed ? record.signedAt : undefined} /></td>
           <td>{form.waypoints[index].denseTraffic ? <span className="so-print-traffic-warning" role="img" aria-label="Vigilance : trafic dense, risque de collision"><Eye aria-hidden="true" size={16} /><small>Traffic dense</small></span> : row.denseTraffic}</td>
         </tr>)}
       </tbody></table> : <p>Aucun point de passage renseigné.</p>}

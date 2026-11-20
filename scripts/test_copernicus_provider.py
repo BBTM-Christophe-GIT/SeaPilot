@@ -8,10 +8,11 @@ import pathlib
 import sys
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from server.copernicus_provider import MODELS, _sdk_opener, fetch_copernicus_point
+from server.copernicus_port_water_level import PORT_COPERNICUS_MODELS, SHOM_WMS, _shom_height, fetch_port_water_level, port_sample_distance
+from server.copernicus_provider import MODELS, _sdk_opener, _utc, fetch_copernicus_point
 
 ETA = "2026-10-26T10:07:00Z"
 
@@ -130,8 +131,8 @@ class Transport:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        model = MODELS["NWS"] if "_nws_" in kwargs["dataset_id"] else MODELS["IBI"]
-        bathy = kwargs["dataset_id"] == model["bathy"]
+        model = next(item for item in PORT_COPERNICUS_MODELS.values() if kwargs["dataset_id"] in (item["sea"], item.get("bathy")))
+        bathy = kwargs["dataset_id"] == model.get("bathy")
         result = Dataset(model, self.latitude, self.longitude, bathy, kwargs)
         self.change_dataset(result, bathy)
         self.datasets.append(result)
@@ -143,6 +144,71 @@ class Transport:
 
 
 class CopernicusProviderTests(unittest.TestCase):
+    def test_port_water_level_uses_qualified_sea_level_only_and_interpolates_same_cell(self):
+        transport = Transport(latitude=49.926557, longitude=1.080533)
+        read_shom = Mock()
+        result = fetch_port_water_level(transport.latitude, transport.longitude, ETA, "fixture-user", "fixture-password",
+                                        _opener=transport.open, _metadata_loader=transport.metadata, _read_shom=read_shom)
+        self.assertEqual(result["source"], "copernicus-nws")
+        self.assertEqual(result["datum"], "model-geoid")
+        self.assertAlmostEqual(result["heightMeters"], -1 + 2 * 7 / 15)
+        self.assertLessEqual(port_sample_distance(transport.latitude, transport.longitude, result["sampleLatitude"],
+                                                 result["sampleLongitude"]), 2_000)
+        self.assertEqual(transport.metadata_calls, [(MODELS["NWS"], False)])
+        self.assertEqual([call["variables"] for call in transport.calls], [["zos"]])
+        self.assertTrue(transport.datasets[0].closed)
+        read_shom.assert_not_called()
+
+    def test_port_water_level_uses_shom_without_secrets_and_records_nearby_bracket(self):
+        latitude, longitude = 49.761481, .367817
+        eta = "2026-10-26T10:15:00Z"
+
+        def read_shom(layer, lat, lon, instant):
+            if not layer.endswith("-200M/ssh") or lat <= latitude or lon != longitude:
+                return None
+            return 0 if instant.hour == 10 else 2
+
+        opener, metadata = Mock(), Mock()
+        result = fetch_port_water_level(latitude, longitude, eta, None, None, _opener=opener,
+                                        _metadata_loader=metadata, _read_shom=read_shom)
+        self.assertEqual(result["source"], "shom-tolosa")
+        self.assertEqual(result["datum"], "model-mean-sea-level")
+        self.assertEqual(result["heightMeters"], .5)
+        self.assertAlmostEqual(port_sample_distance(latitude, longitude, result["sampleLatitude"],
+                                                   result["sampleLongitude"]), 750.0)
+        opener.assert_not_called()
+        metadata.assert_not_called()
+        self.assertIsNone(fetch_port_water_level(latitude, longitude, eta, None, None,
+                                                _read_shom=lambda layer, lat, lon, instant: 0 if instant.hour == 10 else None))
+
+    def test_mediterranean_copernicus_port_level_does_not_enable_waypoint_ukc(self):
+        transport = Transport(latitude=43.3125, longitude=5.3541667)
+        read_shom = Mock()
+        result = fetch_port_water_level(transport.latitude, transport.longitude, ETA, "fixture-user", "fixture-password",
+                                        _opener=transport.open, _metadata_loader=transport.metadata, _read_shom=read_shom)
+        self.assertEqual(result["source"], "copernicus-med")
+        self.assertEqual(result["datum"], "model-geoid")
+        self.assertEqual(transport.calls[0]["dataset_version"], "202611")
+        self.assertEqual(transport.run()["code"], "outsideCoverage")
+        read_shom.assert_not_called()
+
+    @patch("server.copernicus_port_water_level.urlopen")
+    def test_shom_requires_reported_point_layer_and_timestamp(self, urlopen):
+        layer = "NIVEAUX_TOLOSA_R1120_NORMANDIE-200M/ssh"
+        response = MagicMock()
+        response.geturl.return_value = SHOM_WMS + "?fixed"
+        urlopen.return_value.__enter__.return_value = response
+        raw = f"""<FeatureInfoResponse><latitude>49.9</latitude><longitude>1.1</longitude>
+            <Feature><layer>{layer}</layer><FeatureInfo><id>ssh</id>
+            <time>2026-10-26T10:00:00.000Z</time><value>0</value></FeatureInfo></Feature></FeatureInfoResponse>""".encode()
+        requested = _utc("2026-10-26T10:00:00Z")
+        response.read.return_value = raw
+        self.assertEqual(_shom_height(layer, 49.9, 1.1, requested), 0)
+        self.assertIsNone(_shom_height(layer, 49.9, 1.1, _utc("2026-10-26T11:00:00Z")))
+        for original, replacement in ((b"49.9", b"NaN"), (b"id>ssh", b"id>surge"), (b"value>0", b"value>NaN")):
+            response.read.return_value = raw.replace(original, replacement)
+            self.assertIsNone(_shom_height(layer, 49.9, 1.1, requested))
+
     def test_lazy_sdk_import_cannot_reenable_account_or_blank_console_logging(self):
         loggers = [logging.getLogger(name) for name in ("copernicusmarine", "copernicusmarine_blank_logger")]
         previous = [(logger.level, logger.disabled, logger.propagate) for logger in loggers]

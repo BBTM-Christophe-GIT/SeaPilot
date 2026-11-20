@@ -1,10 +1,11 @@
 import type { SeaOperationWaypointWeather } from './seaOperationWeatherModel';
-import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
+import { effectiveSeaOperationUkc, seaOperationUkcFallback, seaOperationUkcReference, seaOperationUkcThreshold, storedSeaOperationUkcThreshold, waypointRadioSnapshot, waypointUkcSnapshot, waypointWeatherSnapshot } from './seaOperationWaypointSnapshots';
 import type { SeaOperationCopernicusEstimate } from './seaOperationCopernicusModel';
 import { parseProjectLocationOverlay, type ProjectLocationOverlay } from '../projects/projectLocation';
 import { isVesselWeatherMatrix, type VesselWeatherMatrix } from '../fleet/vesselWeatherMatrix';
 import { isSeaOperationMapViewport, type SeaOperationMapViewport } from './seaOperationMapViewport';
 import type { SeaOperationIsolatedPointIconName } from './seaOperationIsolatedPointIcons';
+import { isPortWaterLevels, type PortWaterLevels } from './seaOperationPortWaterLevel';
 
 /** Digital transcription of OPE-FOR-10-C, GO / NO GO – OPÉRATION EN MER. */
 export type SeaOperationAnswer = '' | 'yes' | 'no';
@@ -54,6 +55,7 @@ export interface SeaOperationWaypoint {
   ukcMode?: 'manual' | 'automatic';
   ukcForecast?: SeaOperationCopernicusEstimate;
   ukcFallbackMeters?: number;
+  ukcThresholdMeters?: number;
   /** The source permits a time alone when the point is reached on the same day. */
   eta: string;
   /** Missing with a nonempty ETA is historical/manual; a blank unmarked ETA can be calculated. */
@@ -92,6 +94,7 @@ export interface SeaOperationPayload {
     weatherMatrix?: VesselWeatherMatrix | null;
     /** Navires draft retained with this revision, independently of later vessel changes. */
     draftMeters?: number | null;
+    portWaterLevels?: PortWaterLevels;
     id: string;
     name: string;
     registrationImo: string;
@@ -303,6 +306,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
   }
   if (!['', 'GO', 'NO_GO'].includes(value.decision as string)) return false;
   if (!hasStringFields(value.vessel, ['id', 'name', 'registrationImo', 'captainName', 'departurePort', 'departureQuay', 'arrivalPort', 'arrivalQuay', 'etd', 'eta'])) return false;
+  if (value.vessel.portWaterLevels !== undefined && !isPortWaterLevels(value.vessel.portWaterLevels)) return false;
   if (value.vessel.weatherMatrix !== undefined && value.vessel.weatherMatrix !== null && !isVesselWeatherMatrix(value.vessel.weatherMatrix)) return false;
   if (value.vessel.draftMeters !== undefined && value.vessel.draftMeters !== null
     && (typeof value.vessel.draftMeters !== 'number' || !Number.isFinite(value.vessel.draftMeters) || value.vessel.draftMeters <= 0 || value.vessel.draftMeters > 50)) return false;
@@ -329,6 +333,7 @@ export function isSeaOperationPayload(value: unknown): value is SeaOperationPayl
     && (point.ukcMode === undefined || point.ukcMode === 'manual' || point.ukcMode === 'automatic')
     && (point.ukcForecast === undefined || point.ukcMode === 'automatic' && Boolean(waypointUkcSnapshot(point as unknown as SeaOperationWaypoint, ukcReference)))
     && (point.ukcFallbackMeters === undefined || seaOperationUkcFallback(point as unknown as SeaOperationWaypoint, ukcReference) !== undefined)
+    && (point.ukcThresholdMeters === undefined || point.ukcFallbackMeters === undefined && storedSeaOperationUkcThreshold(point as unknown as SeaOperationWaypoint, ukcReference) !== undefined)
     && (point.weather === undefined || Boolean(waypointWeatherSnapshot(point as unknown as SeaOperationWaypoint)))
     && (point.radio === undefined || Boolean(waypointRadioSnapshot(point as unknown as SeaOperationWaypoint))));
   if (!validWaypoints) return false;
@@ -437,7 +442,7 @@ export function validateSeaOperation(
       [point.latitude, 'La latitude'], [point.longitude, 'La longitude'], [point.eta, 'L’ETA'],
     ] as const;
     for (const [value, label] of fields) requireText(value, `${label} du point n° ${index + 1}`);
-    if (seaOperationUkcFallback(point, ukcReference) === undefined) {
+    if (seaOperationUkcThreshold(point, ukcReference) === undefined) {
       requireText(effectiveSeaOperationUkc(payload, point), `L’UKC du point n° ${index + 1}`);
     }
     if (point.eta && !/^([01]\d|2[0-3]):[0-5]\d$/.test(point.eta) && !validDate(point.eta)) errors.push(`L’ETA du point n° ${index + 1} doit être une date et une heure valides, ou une heure au format HH:mm.`);

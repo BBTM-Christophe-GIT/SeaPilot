@@ -26,7 +26,7 @@ describe('UKC capture before save and captain signature', () => {
     const draft = payload(); delete draft.planning; draft.transit = { date: '2026-10-27', captainPersonId: '3' };
     vi.mocked(fetchSeaOperationWaypointUkc).mockImplementation(async (_client, input) => forecast(input));
     const captured = await captureSeaOperationValidationUkc(client, draft, { now });
-    expect(fetchSeaOperationWaypointUkc).toHaveBeenCalledWith(client, expect.objectContaining({ projectId: '', vesselId: '1', transit: { date: '2026-10-27', vesselId: '1' } }), { signal: undefined });
+    expect(fetchSeaOperationWaypointUkc).toHaveBeenCalledWith(client, expect.objectContaining({ projectId: '', vesselId: '1', transit: { date: '2026-10-27', vesselId: '1' } }), { signal: expect.any(AbortSignal) });
     expect(captured.waypoints[0].ukcForecast).toMatchObject({ projectId: '', transit: { date: '2026-10-27', vesselId: '1' } });
     expect(captured.waypoints[0].ukc).toBe('Annotation manuelle conservée');
   });
@@ -91,6 +91,28 @@ describe('UKC capture before save and captain signature', () => {
     const result = await pending;
     expect(maximum).toBe(2); expect(fetchSeaOperationWaypointUkc).toHaveBeenCalledTimes(5);
     expect(result.waypoints.every(point => point.ukcForecast?.pointId === point.id)).toBe(true);
+  });
+
+  it('keeps the compatible result and releases the save even if another request ignores cancellation', async () => {
+    vi.useFakeTimers();
+    try {
+      const draft = payload();
+      draft.waypoints.push({ ...draft.waypoints[0], id: 'pending' });
+      let signal: AbortSignal | undefined;
+      vi.mocked(fetchSeaOperationWaypointUkc).mockImplementation((_client, input, options) => {
+        if (input.pointId !== 'pending') return Promise.resolve(forecast(input));
+        signal = options?.signal;
+        return new Promise(() => {});
+      });
+      const saving = captureSeaOperationValidationUkc(client, draft, { now });
+      await vi.advanceTimersByTimeAsync(12_000);
+      const result = await saving;
+      expect(signal?.aborted).toBe(true);
+      expect(result.waypoints[0].ukcForecast).toEqual(forecast());
+      expect(result.waypoints[1].ukcForecast).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('propagates abort so a cancelled save cannot continue into signing', async () => {

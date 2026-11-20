@@ -3,7 +3,7 @@ import type { VesselSeaStateAssessment, VesselWeatherMatrix } from '../fleet/ves
 import type { SeaOperationWaypoint } from './seaOperationModel';
 import './seaOperationWeatherCard.css';
 import type { ObservationResult } from './seaOperationWeatherObservationsModel';
-import { SeaOperationWeatherObservationCard, SeaOperationWeatherObservationOrigin } from './SeaOperationWeatherObservationCard';
+import { SeaOperationWeatherObservationOrigin } from './SeaOperationWeatherObservationCard';
 import type { WeatherRequestStatus } from './seaOperationWeatherStatus';
 import { observationTime, observationWaitingMessage, waypointWeatherObservation, weatherUncertaintyLabel } from './seaOperationWeatherHistory';
 import { seaOperationEtaUtc } from './seaOperationWeatherModel';
@@ -23,9 +23,9 @@ export function SeaStateIndicator({ assessment }: { assessment: VesselSeaStateAs
 }
 
 /** Recorded data only: this card neither fetches a forecast nor changes the captain's decision. */
-export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default', validatedAt, showObservations = false, observations, requestStatus }: {
+export function SeaOperationWeatherCard({ point, matrix, compact = false, showIndicator = true, variant = 'default', validatedAt, observations, requestStatus }: {
   point: SeaOperationWaypoint; matrix?: VesselWeatherMatrix | null; compact?: boolean; showIndicator?: boolean; variant?: 'default' | 'editor' | 'comparison';
-  validatedAt?: string | null; showObservations?: boolean; observations?: readonly ObservationResult[];
+  validatedAt?: string | null; observations?: readonly ObservationResult[];
   requestStatus?: WeatherRequestStatus;
 }) {
   if (variant === 'comparison') return <SeaOperationWeatherComparison point={point} matrix={matrix} showIndicator={showIndicator} validatedAt={validatedAt} observations={observations} />;
@@ -57,7 +57,6 @@ export function SeaOperationWeatherCard({ point, matrix, compact = false, showIn
     {forecast && requestStatus?.loading && <small role="status" className="so-waypoint-weather-model">Actualisation des prévisions météo…</small>}
     {forecast && requestStatus?.error && <p role="status" className="so-waypoint-weather-unavailable">{requestStatus.error} Les prévisions déjà enregistrées sont conservées.</p>}
     {signatureTime && <small className="so-waypoint-weather-model">Validation du Capitaine : {date.format(new Date(signatureTime))} UTC</small>}
-    {showObservations && <SeaOperationWeatherObservationCard point={point} observations={observations} />}
   </div>;
 }
 

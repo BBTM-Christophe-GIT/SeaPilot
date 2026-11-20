@@ -73,4 +73,17 @@ describe('retained UKC presentation', () => {
     expect(assessSeaOperationUkc(result.rawValue, payload.vessel.draftMeters)).toBeUndefined();
     expect(seaOperationUkcPresentation(payload, { ...fallback, ukcFallbackMeters: 8 }).displayValue).toBe('');
   });
+  it('presents the prospective or recorded theoretical threshold separately from UKC', () => {
+    const { payload, point } = fixture();
+    payload.vessel.draftMeters = 2.65;
+    const automatic = { ...point, ukcForecast: undefined };
+    const recorded = { ...automatic, ukcThresholdMeters: 5.65 };
+    for (const result of [seaOperationUkcPresentation(payload, automatic, true), seaOperationUkcPresentation(payload, recorded)]) {
+      expect(result).toMatchObject({ rawValue: '', threshold: true, fallback: false, approximate: false,
+        displayValue: 'UKC > 2,65 + 3 m', pdfValue: 'UKC > 2,65 + 3 m', sourceUrls: [] });
+      expect(result.sourceFootnote).toContain('Seuil théorique à vérifier');
+      expect(assessSeaOperationUkc(result.rawValue, payload.vessel.draftMeters)).toBeUndefined();
+    }
+    expect(seaOperationUkcPresentation(payload, { ...recorded, ukcThresholdMeters: 7.65 }).displayValue).toBe('');
+  });
 });
