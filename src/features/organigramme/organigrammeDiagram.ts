@@ -16,6 +16,11 @@ export const ORG_DPA_BADGE_LABEL = 'Designated Person Ashore';
 export const ORG_DPA_BADGE_FONT_SIZE = 11;
 const DPA_BADGE_HEIGHT = 22;
 const FLEET_LINE_GAP = 9;
+const CREW_CARD_GAP = 12;
+type Point = [x: number, y: number];
+type Relationship = NonNullable<OrgLine['relationship']>;
+type RelationshipTargets = Partial<Record<Relationship, Point[]>>;
+interface SectionDiagram extends OrgDiagram { targets?: RelationshipTargets }
 
 function hasDpaBadge(person: OrgMember, office: boolean) {
   return office && Boolean(person.officeRoles?.includes('dpa') && person.functionLabel.trim());
@@ -75,21 +80,32 @@ function memberCard(person: OrgMember, x: number, y: number, metrics: CardMetric
   };
 }
 
-function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingHeight?: number, sharedMetrics?: CardMetrics): OrgDiagram {
-  const diagram: OrgDiagram = { width: 320, height: 40, boxes: [], lines: [] };
+function layoutSection(section: OrgSection, showVessels: boolean, relationshipSources: readonly Relationship[] = [], sharedHeadingHeight?: number, sharedMetrics?: CardMetrics): SectionDiagram {
+  const diagram: SectionDiagram = { width: 320, height: 40, boxes: [], lines: [] };
   let y = 24;
   const columnWidth = 270;
   const columns = section.columns.length ? section.columns : [{ key: 'empty', label: 'Aucune bordée', members: [] }];
   const metrics = sharedMetrics ?? categoryCardMetrics(columns.flatMap((column) => column.members));
   const sectionWidth = columns.length * columnWidth - 22;
   diagram.width = Math.max(diagram.width, sectionWidth + 48);
-  const hasHeading = section.kind !== 'vessel' || showVessels;
+  const isVessel = section.kind === 'vessel';
+  const hasHeading = !isVessel || showVessels;
+  const connectDpa = relationshipSources.includes('dpa');
+  const crewPorts: Point[] = [];
+  let dpaHeadingBottom: Point | undefined;
+  const dpaStyle = { relationship: 'dpa', dashed: true } as const;
   if (hasHeading) {
     const headingWidth = Math.min(sectionWidth, 440);
-    const headingLines = wrapOrgText(section.label, section.kind === 'vessel' ? 20 : 26).map((text) => ({ text, size: 16, bold: true }));
-    const headingHeight = sharedHeadingHeight ?? Math.max(section.kind === 'vessel' ? 64 : 0, 24 + headingLines.length * 20);
-    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines, ...(section.kind === 'vessel' ? { image: section.iconDataUrl, mediaKind: 'vessel' as const, vesselId: section.vesselId } : {}) });
+    const headingLines = wrapOrgText(section.label, isVessel ? 20 : 26).map((text) => ({ text, size: 16, bold: true }));
+    const headingHeight = sharedHeadingHeight ?? Math.max(isVessel ? 64 : 0, 24 + headingLines.length * 20);
+    diagram.boxes.push({ x: 24 + (sectionWidth - headingWidth) / 2, y, width: headingWidth, height: headingHeight, tone: 'navy', lines: headingLines, ...(isVessel ? { image: section.iconDataUrl, mediaKind: 'vessel' as const, vesselId: section.vesselId } : {}) });
     const middle = 24 + sectionWidth / 2;
+    for (const relationship of relationshipSources) {
+      const offset = relationship === 'dpa' ? -FLEET_LINE_GAP / 2 : relationshipSources.length > 1 ? FLEET_LINE_GAP / 2 : 0;
+      const portX = middle + offset;
+      (diagram.targets ??= {})[relationship] = [[portX, y]];
+      if (relationship === 'dpa') dpaHeadingBottom = [portX, y + headingHeight];
+    }
     diagram.lines.push({ x1: middle, y1: y + headingHeight, x2: middle, y2: y + headingHeight + 16 });
     y += headingHeight + 32;
     diagram.lines.push({ x1: 24 + 124, y1: y - 16, x2: 24 + sectionWidth - 124, y2: y - 16 });
@@ -101,25 +117,46 @@ function layoutSection(section: OrgSection, showVessels: boolean, sharedHeadingH
   columns.forEach((column, index) => {
     const x = 24 + index * columnWidth;
     const center = x + 124;
+    const dpaX = center - FLEET_LINE_GAP;
     if (hasHeading) diagram.lines.push({ x1: center, y1: y - 16, x2: center, y2: y });
     if (showColumnHeaders) diagram.boxes.push({ x, y, width: 248, height: headerHeight, tone: 'teal', lines: headerLines[index].map((text) => ({ text, size: 13, bold: true })) });
-    let cardY = y + headerHeight + (showColumnHeaders ? 18 : 0);
+    let cardY = y + headerHeight + (showColumnHeaders ? (connectDpa ? 20 : 18) : 0);
     const members = column.members.length ? column.members : [{ id: -1, name: 'Bordée à composer', functionLabel: '', detail: '' }];
+    const dpaColumn = connectDpa && column.members.some((person) => person.id > 0);
+    if (dpaColumn) crewPorts.push([dpaX, y]);
+    let previousBottom = showColumnHeaders ? y + headerHeight : undefined;
+    let previousDpaBottom = previousBottom;
     members.forEach((person) => {
       const { height } = metrics;
-      // A side rail denotes ordered members of a bordée, not invented reporting lines.
-      if (showColumnHeaders) {
+      if (isVessel) {
+        if (previousBottom !== undefined) addPath(diagram.lines, [[center, previousBottom], [center, cardY]], {});
+      } else if (showColumnHeaders) {
         diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x - 9, y2: cardY + height / 2 });
         diagram.lines.push({ x1: x - 9, y1: cardY + height / 2, x2: x, y2: cardY + height / 2 });
       }
+      if (dpaColumn && person.id > 0) {
+        if (previousDpaBottom !== undefined) addPath(diagram.lines, [[dpaX, previousDpaBottom], [dpaX, cardY]], dpaStyle);
+        previousDpaBottom = cardY + height;
+      }
       diagram.boxes.push(memberCard(person, x, cardY, metrics));
-      cardY += height + 12;
+      previousBottom = cardY + height;
+      cardY += height + CREW_CARD_GAP;
     });
-    if (showColumnHeaders) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
+    if (showColumnHeaders && !isVessel) diagram.lines.push({ x1: x - 9, y1: y + headerHeight / 2, x2: x, y2: y + headerHeight / 2 });
     bottom = Math.max(bottom, cardY);
   });
+  if (crewPorts.length) {
+    if (dpaHeadingBottom) {
+      const [x, bottomY] = dpaHeadingBottom;
+      const branchY = bottomY + 10;
+      addPath(diagram.lines, [[x, bottomY], [x, branchY]], dpaStyle);
+      connectBranches(diagram.lines, x, branchY, crewPorts, dpaStyle);
+    } else {
+      (diagram.targets ??= {}).dpa = crewPorts;
+    }
+  }
   const watchAreas = columns.flatMap((column, index) => column.watchId === undefined ? [] : [
-    { watchId: column.watchId, x: 24 + index * columnWidth, y, width: 248, height: bottom - y - 12 },
+    { watchId: column.watchId, x: 24 + index * columnWidth, y, width: 248, height: bottom - y - CREW_CARD_GAP },
   ]);
   if (watchAreas.length) diagram.watches = watchAreas;
   y = bottom + 32;
@@ -173,28 +210,36 @@ function layoutOffice(section: OrgSection): OrgDiagram & { rails: OfficeRails } 
   sides.forEach((people, side) => {
     const x = side === 0 ? 24 : width - 272;
     const railX = side === 0 ? x + 262 : x - 14;
+    const branchY = supportY - 24;
+    let railY = branchY;
     let cardY = supportY;
     people.forEach((person) => {
       const box = memberCard(person, x, cardY, metrics, true);
       diagram.boxes.push(box);
-      diagram.lines.push({ x1: railX, y1: supportY - 24, x2: railX, y2: cardY + box.height / 2, dashed: true });
-      diagram.lines.push({ x1: railX, y1: cardY + box.height / 2, x2: side === 0 ? x + 248 : x, y2: cardY + box.height / 2, dashed: true });
+      const approachY = cardY - 12;
+      const cardCenter = x + box.width / 2;
+      addPath(diagram.lines, [[railX, railY], [railX, approachY], [cardCenter, approachY], [cardCenter, cardY]], { dashed: true });
+      railY = approachY;
       cardY += box.height + 18;
     });
-    if (people.length) diagram.lines.push({ x1: middle, y1: supportY - 24, x2: railX, y2: supportY - 24, dashed: true });
+    if (people.length) addPath(diagram.lines, [[middle, branchY], [railX, branchY]], { dashed: true });
     supportBottom = Math.max(supportBottom, cardY);
   });
   diagram.height = Math.max(y, supportBottom + 24);
   return { ...diagram, rails: { left: sideWidth + 12, right: width - sideWidth - 12 } };
 }
 
-type Point = [x: number, y: number];
-
 function addPath(lines: OrgLine[], points: Point[], style: Pick<OrgLine, 'relationship' | 'dashed'>) {
   points.slice(1).forEach(([x2, y2], index) => {
     const [x1, y1] = points[index];
     if (x1 !== x2 || y1 !== y2) lines.push({ x1, y1, x2, y2, ...style });
   });
+}
+
+function connectBranches(lines: OrgLine[], fromX: number, branchY: number, targets: Point[], style: Pick<OrgLine, 'relationship' | 'dashed'>) {
+  const xs = [fromX, ...targets.map(([x]) => x)];
+  addPath(lines, [[Math.min(...xs), branchY], [Math.max(...xs), branchY]], style);
+  targets.forEach(([x, y]) => addPath(lines, [[x, branchY], [x, y]], style));
 }
 
 function pathClearsCards(points: Point[], cards: OrgBox[]) {
@@ -224,49 +269,51 @@ function connectDpaAndPresident(diagram: OrgDiagram, dpa: OrgBox, president: Org
   addPath(diagram.lines, [direct, ...detours].find((path) => pathClearsCards(path, cards)) ?? direct, { relationship: 'dpa' });
 }
 
-function addOfficeRelationships(diagram: OrgDiagram, rails: OfficeRails) {
+function addOfficeRelationships(diagram: OrgDiagram, rails: OfficeRails, targets: RelationshipTargets) {
   const president = diagram.boxes.find((box) => box.officeRoles?.includes('president'));
   const dpa = diagram.boxes.find((box) => box.officeRoles?.includes('dpa'));
   const captain = diagram.boxes.find((box) => box.officeRoles?.includes('armementCaptain'));
   if (dpa && president && dpa !== president) connectDpaAndPresident(diagram, dpa, president, rails);
 
-  const vessels = diagram.boxes.filter((box) => box.vesselId !== undefined);
-  if (!vessels.length) return;
   const fleetRoles = ([{ box: captain, relationship: 'armement' }, { box: dpa, relationship: 'dpa' }] as const)
-    .flatMap(({ box, relationship }) => box ? [{
+    .flatMap(({ box, relationship }) => box && targets[relationship]?.length ? [{
       x: box.x + box.width / 2 + (captain === dpa ? (relationship === 'armement' ? FLEET_LINE_GAP / 2 : -FLEET_LINE_GAP / 2) : 0),
       y: box.y + box.height,
       relationship,
+      targets: targets[relationship],
     }] : []).sort((a, b) => a.x - b.x);
   if (!fleetRoles.length) return;
 
+  const targetTop = Math.min(...fleetRoles.flatMap((route) => route.targets.map(([, y]) => y)));
   const routes = fleetRoles.map((role, index) => ({ ...role,
     offset: (index - (fleetRoles.length - 1) / 2) * FLEET_LINE_GAP,
-    bendY: role.y + 10 + index * FLEET_LINE_GAP,
-    laneY: vessels[0].y - 32 + index * FLEET_LINE_GAP,
+    bendY: role.y + 10,
+    laneY: targetTop - 32 + index * FLEET_LINE_GAP,
   }));
-  const entrance = (route: typeof routes[number], center: number): Point[] => {
-    const railX = center + route.offset;
-    return [[route.x, route.y], [route.x, route.bendY], [railX, route.bendY], [railX, route.laneY]];
-  };
+  const entrance = (route: typeof routes[number], railX: number): Point[] => [
+    [route.x, route.y], [route.x, route.bendY], [railX, route.bendY], [railX, route.laneY],
+  ];
   const sourceCenter = routes.reduce((sum, route) => sum + route.x, 0) / routes.length;
-  const vesselCenter = vessels[0].x + vessels[0].width / 2;
-  const preferredRail = vessels.length === 1 ? vesselCenter : sourceCenter;
-  const rail = [preferredRail, sourceCenter, rails.left, rails.right].find((x) => routes.every((route) => (
-    pathClearsCards(entrance(route, x), diagram.boxes)
-  ))) ?? preferredRail;
+  const targetCenter = routes.reduce((sum, route) => sum + route.targets[0][0], 0) / routes.length;
+  const singleTarget = routes.every((route) => route.targets.length === 1);
+  const centers = singleTarget ? [targetCenter, sourceCenter, rails.left, rails.right] : [sourceCenter, rails.left, rails.right];
+  // A lower office tier can force the two paths to run on opposite sides.
+  const outerRails = [rails.left, rails.right];
+  const railOptions = [...centers.map((center) => routes.map((route) => center + route.offset)), outerRails];
+  const railXs = railOptions.find((xs) => {
+    const [left, right] = routes;
+    const overlapping = right && left.bendY === right.bendY && Math.max(left.x, xs[0]) > Math.min(right.x, xs[1]);
+    return !overlapping && routes.every((route, index) => pathClearsCards(entrance(route, xs[index]), diagram.boxes));
+  }) ?? outerRails;
   const fleetLines: OrgLine[] = [];
 
-  for (const route of routes) {
-    const { relationship, laneY, offset } = route;
-    const railX = rail + offset;
-    const targets = vessels.map((vessel) => ({ x: vessel.x + vessel.width / 2 + offset, y: vessel.y }));
-    const xs = [railX, ...targets.map((target) => target.x)];
+  routes.forEach((route, index) => {
+    const { relationship, laneY } = route;
+    const railX = railXs[index];
     const style = { relationship, dashed: true };
-    addPath(fleetLines, entrance(route, rail), style);
-    addPath(fleetLines, [[Math.min(...xs), laneY], [Math.max(...xs), laneY]], style);
-    targets.forEach((target) => addPath(fleetLines, [[target.x, laneY], [target.x, target.y]], style));
-  }
+    addPath(fleetLines, entrance(route, railX), style);
+    connectBranches(fleetLines, railX, laneY, route.targets, style);
+  });
 
   // At crossings between two branches, leave a gap in the grey line so the paths read independently.
   const dpaLines = fleetLines.filter((line) => line.relationship === 'dpa');
@@ -325,44 +372,55 @@ export function layoutOrganigramme(sections: OrgSection[], showVessels = true): 
   const vessels = sections.filter((section) => section.kind === 'vessel');
   const fleetMetrics = categoryCardMetrics(vessels.flatMap((section) => section.columns.flatMap((column) => column.members)));
   const headingHeight = Math.max(64, ...vessels.map((section) => 24 + wrapOrgText(section.label, 20).length * 20));
-  const rows: OrgDiagram[][] = [];
+  const rows: SectionDiagram[][] = [];
   const office = sections.find((section) => section.kind === 'office');
   const hierarchy = office ? layoutOffice(office) : null;
   const external = sections.find((section) => section.kind === 'external');
-  let fleetRow: number | undefined;
+  const hasDpa = hierarchy?.boxes.some((box) => box.officeRoles?.includes('dpa'));
+  const hasArmement = hierarchy?.boxes.some((box) => box.officeRoles?.includes('armementCaptain'));
+  const dpaSources: Relationship[] = hasDpa ? ['dpa'] : [];
+  let fleetRowAdded = false;
   for (const section of sections) {
     if (section.kind === 'office' && hierarchy) {
       const advisers = external ? layoutSection({ ...external, columns: [{ key: 'external', label: '', members: external.columns.flatMap((column) => column.members) }] }, showVessels) : null;
       rows.push(advisers ? [advisers, hierarchy] : [hierarchy]);
     } else if (section.kind === 'external' && office) continue;
     else if (section.kind === 'vessel') {
-      if (fleetRow === undefined) {
-        fleetRow = rows.length;
-        rows.push(vessels.map((vessel) => layoutSection(vessel, showVessels, headingHeight, fleetMetrics)));
+      if (!fleetRowAdded) {
+        fleetRowAdded = true;
+        rows.push(vessels.map((vessel) => {
+          const sources: Relationship[] = vessel.columns.some((column) => column.members.some((person) => person.id > 0)) ? [...dpaSources] : [];
+          if (showVessels && hasArmement) sources.push('armement');
+          return layoutSection(vessel, showVessels, sources, headingHeight, fleetMetrics);
+        }));
       }
-    } else rows.push([layoutSection(section, showVessels)]);
+    } else rows.push([layoutSection(section, showVessels, section.kind === 'functions' ? dpaSources : [])]);
   }
   const gap = 24;
   const rowWidths = rows.map((row) => row.reduce((width, section) => width + section.width, 0) + (row.length - 1) * gap);
   const watches: OrgWatchArea[] = [];
   const diagram: OrgDiagram = { width: Math.max(320, ...rowWidths), height: 80, boxes: [], lines: [], watches };
-  const reserveFleetConnectionSpace = showVessels && hierarchy?.boxes.some((box) => box.officeRoles?.some((role) => role === 'dpa' || role === 'armementCaptain'));
+  const targets: RelationshipTargets = {};
   let officeRails: OfficeRails | undefined;
   let y = 0;
   rows.forEach((row, index) => {
-    if (index === fleetRow && reserveFleetConnectionSpace) y += 48;
+    if (row.some((section) => section.targets)) y += 48;
     let x = (diagram.width - rowWidths[index]) / 2;
     row.forEach((section) => {
       if (hierarchy && section === hierarchy) officeRails = { left: x + hierarchy.rails.left, right: x + hierarchy.rails.right };
       diagram.boxes.push(...section.boxes.map((box) => ({ ...box, x: box.x + x, y: box.y + y })));
       diagram.lines.push(...section.lines.map((line) => ({ ...line, x1: line.x1 + x, x2: line.x2 + x, y1: line.y1 + y, y2: line.y2 + y })));
       watches.push(...(section.watches ?? []).map((watch) => ({ ...watch, x: watch.x + x, y: watch.y + y })));
+      for (const relationship of ['armement', 'dpa'] as const) {
+        const points = section.targets?.[relationship];
+        if (points) (targets[relationship] ??= []).push(...points.map(([portX, portY]): Point => [portX + x, portY + y]));
+      }
       x += section.width + gap;
     });
     y += Math.max(...row.map((section) => section.height));
   });
   diagram.height = Math.max(80, y);
-  if (officeRails) addOfficeRelationships(diagram, officeRails);
+  if (officeRails) addOfficeRelationships(diagram, officeRails, targets);
   addRelationshipLegend(diagram);
   return diagram;
 }
