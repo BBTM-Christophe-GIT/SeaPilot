@@ -24,7 +24,7 @@ vi.mock('./SeaOperationWaypointMapEditor', () => ({ SeaOperationWaypointMapEdito
 vi.mock('./SeaOperationRouteMap', () => ({ SeaOperationRouteMap: () => null }));
 
 const actor = { id: 'actual-captain-weather-fixture', name: 'Camille MARTIN' };
-const client = { fixtureAccountId: actor.id } as unknown as SupabaseClient;
+const client = { fixtureAccountId: actor.id, auth: { getSession: async () => ({ data: { session: null }, error: null }) } } as unknown as SupabaseClient;
 const project = 'METEO-26 - Passage de recette';
 const horizonMessage = 'Horizon de prévision dépassé pour cette ETA.';
 

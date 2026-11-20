@@ -113,7 +113,7 @@ export function SeaOperationPortWaterLevels({ client, payload, active, disabled,
     </dl>
     {requests.some(request => retainedPortWaterLevel(vessel, request.role)) && <p className="so-help">Hauteurs d’eau de modèle, exprimées dans leur référentiel. Pour la navigation, vérifiez les hauteurs officielles du port.</p>}
     {active && canRequest && requests.some(request => request.location && Date.parse(request.etaUtc) > Date.now()) &&
-      <button type="button" className="sp-button sp-button--secondary" disabled={disabled || Object.values(current).some(value => value.startsWith('Recherche'))}
+      <button type="button" className="sp-button sp-button--secondary so-secondary" disabled={disabled || Object.values(current).some(value => value.startsWith('Recherche'))}
         onClick={() => setRefresh(value => value + 1)}>Actualiser les hauteurs d’eau</button>}
   </section>;
 }
