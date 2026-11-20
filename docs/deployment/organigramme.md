@@ -115,11 +115,16 @@ Le libellé temporaire appartient à la version d’origine. La fiche RH, les
 listes de contacts et le Planning utilisent leurs libellés habituels.
 
 Dans **Par navire et bordée**, le Capitaine d’Armement et le DPA rejoignent
-les navires affichés par deux liaisons parallèles en pointillés, chacune ancrée
-à sa carte. La légende identifie le gris comme lien hiérarchique et le rouge
-comme accès direct au Président via le DPA. La liaison du DPA au Président est
-continue. La carte affiche **Designated Person Ashore** dans un bandeau rouge
-en bas. Le diagramme et ses exports partagent ce rendu.
+les navires affichés par deux liaisons en pointillés. Le premier coude sous
+chaque carte est à la même hauteur lorsque les deux responsables sont du même rang.
+Dans une bordée, le trait plein et le pointillé rouge passent entre les bords
+inférieur et supérieur des cartes successives. Le pointillé rouge relie au DPA
+chaque marin affecté, y compris dans **Par fonction** et lorsque les titres
+des navires ou des bordées sont masqués. Il s’arrête aux derniers marins affectés.
+La légende identifie le gris comme lien hiérarchique et le rouge comme accès
+direct au Président via le DPA. La liaison du DPA au Président est continue.
+La carte affiche **Designated Person Ashore** dans un bandeau rouge en bas.
+Le diagramme et ses exports partagent ce rendu.
 Les liaisons suivent les responsabilités enregistrées dans l’organigramme.
 
 La liste du personnel et les coordonnées reprennent les fiches RH de référence.
@@ -183,7 +188,8 @@ La rubrique Modifier la structure permet d'ajouter, modifier, ordonner et suppri
 les responsabilités. Les noms et missions libres restent à maintenir manuellement.
 Le champ `hierarchy_rank` est distinct de l'ordre d'affichage. Les rangs numériques
 forment des niveaux verticaux : rang 1 en haut, puis 2, etc. Le statut **Support**
-place les personnes sur les côtés, en gris avec des branches en pointillés.
+place les personnes sur les côtés, en gris avec des branches en pointillés
+qui entrent au centre du bord supérieur de chaque carte.
 Les mentions « Rang 1 », « Rang 2 », « Rang à définir » et « Support » restent
 visibles uniquement dans l'éditeur de structure. Elles ne sont pas dessinées sur
 les cartes de l'organigramme ni dans les exports PDF, PNG ou SVG. Les rangs continuent

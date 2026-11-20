@@ -81,6 +81,10 @@ describe('governance relationships and person card colors', () => {
     ))).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'armement' && line.y1 === armement.y + armement.height)).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && line.dashed && line.y1 === dpa.y + dpa.height)).toBe(true);
+    const bends = [dpa, armement].map((card) => diagram.lines.find((line) => line.dashed && line.relationship &&
+      line.x1 === card.x + card.width / 2 && line.x1 === line.x2 && line.y1 === card.y + card.height)?.y2);
+    expect(bends[0]).toBeDefined();
+    expect(bends[0]).toBe(bends[1]);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && !line.dashed && line.y1 === dpa.y)).toBe(true);
     expect(diagram.lines.some((line) => line.relationship === 'dpa' && !line.dashed && line.y2 === president.y + president.height)).toBe(true);
     const svg = organigrammeSvg(diagram);
@@ -93,7 +97,7 @@ describe('governance relationships and person card colors', () => {
   });
 
   it('omits relations with missing or ambiguous endpoints, and ignores DPA assistants', () => {
-    const withoutVessels = layoutOrganigramme(buildOrganigramme(ORG_GOVERNANCE_DEMO, { ...options, showVessels: false }), false);
+    const withoutVessels = layoutOrganigramme(buildOrganigramme(ORG_GOVERNANCE_DEMO, { ...options, vesselIds: [] }));
     expect(withoutVessels.lines.filter((line) => line.relationship).every((line) => line.relationship === 'dpa' && !line.dashed)).toBe(true);
     expect(withoutVessels.lines.some((line) => line.relationship === 'dpa')).toBe(true);
     const withoutOffice = layoutOrganigramme(buildOrganigramme(ORG_GOVERNANCE_DEMO, { ...options, includeOffice: false }));
@@ -106,6 +110,64 @@ describe('governance relationships and person card colors', () => {
     expect(diagram.boxes.some((box) => box.tone === 'dpa')).toBe(false);
     expect(diagram.lines.some((line) => line.relationship === 'dpa')).toBe(false);
     expect(diagram.lines.some((line) => line.relationship === 'armement')).toBe(true);
+  });
+
+  it('aligns the bends around a lower office tier and connects support cards at the center of their top edge', () => {
+    const data = { ...ORG_GOVERNANCE_DEMO, support: [...ORG_GOVERNANCE_DEMO.support, {
+      id: 100, personId: null, name: 'Responsable de chantier', functionLabel: 'Maintenance', category: 'office' as const, rank: '4' as const, position: 1,
+    }] };
+    const diagram = layoutOrganigramme(buildOrganigramme(data, options));
+    const lowerTier = diagram.boxes.find((box) => box.lines.some((line) => line.text === 'Responsable de chantier'))!;
+    const support = diagram.boxes.find((box) => box.tone === 'support')!;
+    const topCenter = support.x + support.width / 2;
+    expect(diagram.lines).toContainEqual({ x1: topCenter, y1: support.y - 12, x2: topCenter, y2: support.y, dashed: true });
+    expect(diagram.lines.some((line) => line.dashed && line.y1 === line.y2 &&
+      line.y2 > support.y && line.y2 < support.y + support.height &&
+      [line.x1, line.x2].some((x) => x === support.x || x === support.x + support.width))).toBe(false);
+    const runs = diagram.lines.filter((line) => line.dashed && line.relationship && line.x1 === line.x2 &&
+      line.y1 < lowerTier.y && line.y2 > lowerTier.y + lowerTier.height);
+    expect(runs.map((line) => line.relationship).sort()).toEqual(['armement', 'dpa']);
+    expect(runs[0].y1).toBe(runs[1].y1);
+    expect(runs.every((line) => line.x1 < lowerTier.x || line.x1 > lowerTier.x + lowerTier.width)).toBe(true);
+  });
+
+  it.each([
+    { view: 'vessels', showVessels: true, showWatches: true },
+    { view: 'vessels', showVessels: false, showWatches: true },
+    { view: 'vessels', showVessels: false, showWatches: false },
+    { view: 'functions', showVessels: false, showWatches: false },
+  ] as const)('reaches every assigned card by its top edge in $view (vessels $showVessels / watches $showWatches)', (visibility) => {
+    const data = {
+      ...ORG_GOVERNANCE_DEMO,
+      people: [...ORG_GOVERNANCE_DEMO.people, { id: 30, name: 'Marin sans affectation', functionLabel: 'Matelot', population: 'offshore' }],
+      memberships: [...ORG_GOVERNANCE_DEMO.memberships, { personId: 2, vesselId: 3, watchGroup: 'Bordée 1', functionLabel: 'Capitaine', source: 'manual' as const }],
+    };
+    const diagram = layoutOrganigramme(buildOrganigramme(data, { ...options, vesselIds: null, ...visibility }), visibility.showVessels);
+    const red = diagram.lines.filter((line) => line.dashed && line.relationship === 'dpa');
+    const assigned = diagram.boxes.filter((box) => box.person && box.person.id >= 2 && box.person.id <= 10);
+    expect(assigned).toHaveLength(visibility.view === 'functions' ? 9 : 10);
+    for (const card of assigned) {
+      const top = red.find((line) => line.y2 === card.y && line.x2 > card.x && line.x2 < card.x + card.width);
+      expect(top).toBeDefined();
+      expect(top?.x1).toBe(top?.x2);
+      if (visibility.view === 'functions') continue;
+      const next = assigned.find((other) => other.x === card.x && other.y === card.y + card.height + 12);
+      if (next) {
+        const gap = diagram.lines.filter((line) => line.y1 === card.y + card.height && line.y2 === next.y &&
+          line.x1 === line.x2 && line.x2 > card.x && line.x2 < card.x + card.width);
+        expect(gap.map((line) => line.relationship)).toEqual([undefined, 'dpa']);
+        expect(gap[0].x2).toBe(card.x + card.width / 2);
+        expect(gap[1].x2).toBe(top!.x2);
+      }
+      expect(diagram.lines.some((line) => line.y1 === line.y2 && line.y2 > card.y && line.y2 < card.y + card.height &&
+        [line.x1, line.x2].some((x) => x === card.x || x === card.x + card.width))).toBe(false);
+    }
+    const unconnected = diagram.boxes.filter((box) => box.person?.id === 30 || box.lines.some((line) => line.text === 'Bordée à composer'));
+    expect(unconnected.length).toBeGreaterThan(0);
+    for (const card of unconnected) {
+      expect(red.some((line) => [line.y1, line.y2].some((y) => y >= card.y && y <= card.y + card.height) &&
+        [line.x1, line.x2].some((x) => x >= card.x && x <= card.x + card.width))).toBe(false);
+    }
   });
 
   it('uses a saved pastel for each person and keeps leader and DPA text legible', () => {
