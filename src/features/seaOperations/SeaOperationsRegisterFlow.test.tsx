@@ -330,7 +330,9 @@ describe('Operation consumption from the register', () => {
     const fuelRibbon = within(screen.getByRole('group', { name: 'Fuel' }));
     expect(fuelRibbon.getByRole('button', { name: 'Export Excel' }).querySelector('img')).toHaveAttribute('src', '/icons/microsoft-excel.svg');
     expect(fuelRibbon.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
-    fireEvent.click(await fuelRibbon.findByRole('button', { name: 'Soutes' }));
+    const soutes = fuelRibbon.getByRole('button', { name: 'Soutes' });
+    await waitFor(() => expect(soutes).toBeEnabled());
+    fireEvent.click(soutes);
     const form = within(screen.getByRole('dialog', { name: 'Soutes' }));
     expect(form.getByLabelText('Navire')).toHaveValue('12');
     expect(form.getByLabelText('Date de référence')).toHaveValue(today);
@@ -367,6 +369,18 @@ describe('Operation consumption from the register', () => {
     expect(within(fleetFuel().getByRole('region', { name: 'Soutes' })).queryByText(waterTank.name)).not.toBeInTheDocument();
     expect(rpc).toHaveBeenCalledWith('sea_operation_save_fuel_tanks', { p_vessel_id: 12, p_date: baselineDate, p_time: '14:30',
       p_expected_version: null, p_readings: [{ key: 'main-1', unit: 'percent', value: 60.5 }, { key: waterTank.key, unit: 'liters', value: 500 }] });
+  });
+
+  it('opens Soutes for a profile with no accessible vessel', async () => {
+    const rpc = vi.fn(async () => ({ data: emptyRegisterConsumption, error: null }));
+    mount(['marin'], [], rpc, []);
+    const command = within(screen.getByRole('group', { name: 'Fuel' })).getByRole('button', { name: 'Soutes' });
+    await waitFor(() => expect(command).toBeEnabled());
+    fireEvent.click(command);
+    const dialog = within(screen.getByRole('dialog', { name: 'Soutes' }));
+    expect(dialog.getByText('Aucun navire accessible.')).toBeVisible();
+    expect(dialog.queryByRole('button', { name: 'Enregistrer les niveaux' })).not.toBeInTheDocument();
+    expect(rpc.mock.calls).not.toContainEqual(expect.arrayContaining(['sea_operation_fuel_tanks']));
   });
 
   it('selects the operation being edited and shows the saved fuel KPIs even if the refresh fails', async () => {
@@ -517,7 +531,7 @@ describe('Operation consumption from the register', () => {
     expect(chart.queryByRole('heading', { name: 'BR 71' })).not.toBeInTheDocument();
     const fuelRibbon = within(screen.getByRole('group', { name: 'Fuel' }));
     expect(fuelRibbon.queryByRole('button', { name: 'Paramètres carburant' })).not.toBeInTheDocument();
-    expect(fuelRibbon.queryByRole('button', { name: 'Soutes' })).not.toBeInTheDocument();
+    expect(fuelRibbon.getByRole('button', { name: 'Soutes' })).toBeEnabled();
     expect(fuelRibbon.getByRole('button', { name: 'Export Excel' })).toBeEnabled();
     const towageLabel = 'Consommation moyenne en opération de remorquage';
     expect(chart.queryByText(towageLabel)).not.toBeInTheDocument();

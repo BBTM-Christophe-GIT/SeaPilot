@@ -13,11 +13,14 @@ consulter la fiche accèdent à son récapitulatif.
 
 Le bandeau **Carburant de la flotte** affiche le niveau de chaque navire visible
 sur une rangée, hors BR71. Le chevron de la carte ouvre la provenance du stock,
-l’autonomie, les moyennes et leurs tendances. Dans le ruban **Fuel**, **Soutes**
-permet au Capitaine affecté ou à un responsable habilité de saisir le stock à
-la date et à l’heure de la mesure. Le navire de l’affectation confirmée du jour est
-présélectionné quand il est accessible en saisie. Le collaborateur peut choisir
-un autre navire autorisé. La date et l’heure de Paris sont proposées par défaut.
+l’autonomie, les moyennes et leurs tendances. Dans le ruban **Fuel**, tous
+les profils ayant accès à **Opération en mer** peuvent ouvrir **Soutes** et
+consulter les relevés des navires de leur périmètre. En consultation,
+la fenêtre s’ouvre sur le dernier relevé du navire, s’il existe.
+Le Capitaine affecté et les responsables habilités peuvent saisir ou corriger
+les niveaux. Le navire de l’affectation confirmée du jour est présélectionné
+quand il est accessible en saisie. La date et l’heure de Paris sont proposées
+par défaut pour un nouveau relevé.
 **Export Excel** télécharge les consommations avec le périmètre habituel.
 L’icône utilisée dans le ruban provient du [catalogue Microsoft](https://res.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/excel_48x1.svg).
 La jauge devient orange de 25 à 35 % inclus. Sous 25 %, elle devient rouge

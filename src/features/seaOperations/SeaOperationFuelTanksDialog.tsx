@@ -160,17 +160,18 @@ function TotalStock({ fields, updatesFuelBaseline }: { fields: readonly TankFiel
   </section>;
 }
 
-function PreviousReading({ reading, tanks, selectionChanged }: {
-  reading: Configuration['reading']; tanks: readonly Tank[]; selectionChanged: boolean;
+function PreviousReading({ reading, tanks, selectionChanged, canEdit }: {
+  reading: Configuration['reading']; tanks: readonly Tank[]; selectionChanged: boolean; canEdit: boolean;
 }) {
   if (!reading) return null;
   const changed = tanks.some(tank => !reading.tanks.some(saved => matchesTank(saved, tank)));
   if (!selectionChanged && !changed && !reading.superseded) return null;
   return <div className="so-soutes-previous">
     {selectionChanged
-      ? <p>La sélection des cuves a changé depuis ce relevé. Choisissez « Nouveau relevé » pour saisir les niveaux des cuves sélectionnées.</p>
-      : <p>{reading.superseded ? 'Un stock global a remplacé ce relevé détaillé. Vérifiez les niveaux avant d’enregistrer une nouvelle référence.'
-        : 'La configuration des cuves a changé. Renseignez les niveaux des cuves modifiées.'}</p>}
+      ? <p>La sélection des cuves a changé depuis ce relevé.{canEdit && ' Choisissez « Nouveau relevé » pour saisir les niveaux des cuves sélectionnées.'}</p>
+      : reading.superseded
+        ? <p>Un stock global a remplacé ce relevé détaillé.{canEdit && ' Vérifiez les niveaux avant d’enregistrer une nouvelle référence.'}</p>
+        : <p>La configuration des cuves a changé.{canEdit && ' Renseignez les niveaux des cuves modifiées.'}</p>}
     <details><summary>Consulter le relevé précédent</summary>
       <ul>{reading.tanks.map(tank => <li key={tank.key}>
         {tank.sectionName && `${tank.sectionName} · `}{tank.name} · {decimal.format(tank.value)} {units[tank.unit]} · {formatFuelVolume(tank.liters, 'L')}
@@ -182,12 +183,14 @@ function PreviousReading({ reading, tanks, selectionChanged }: {
 export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId, onClose, onSaved }: {
   client: SupabaseClient; vessels: readonly SeaOperationFleetFuelLevel[]; preferredVesselId?: number; onClose: () => void; onSaved: () => void;
 }) {
-  const candidates = vessels.filter(vessel => vessel.canSetBaseline)
-    .map(vessel => ({ ...vessel, name: vessel.vesselName, assetKind: 'vessel' as const })).sort(compareFleetAssets);
+  const candidates = vessels.map(vessel => ({ ...vessel, name: vessel.vesselName, assetKind: 'vessel' as const })).sort(compareFleetAssets);
   const [selection, setSelection] = useState<number>();
-  const vesselId = (candidates.find(vessel => vessel.vesselId === (selection ?? preferredVesselId)) ?? candidates[0])?.vesselId;
-  const [{ date, time: newTime }, setMeasurement] = useState(newMeasurement);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const vessel = candidates.find(candidate => candidate.vesselId === (selection ?? preferredVesselId))
+    ?? candidates.find(candidate => candidate.canSetBaseline) ?? candidates[0];
+  const vesselId = vessel?.vesselId;
+  const latestReading = vessel?.canSetBaseline === false ? vessel.latestTankReading : null;
+  const [{ date, time: newTime }, setMeasurement] = useState(() => newMeasurement(latestReading?.date));
+  const [selectedTime, setSelectedTime] = useState<string | null>(() => latestReading?.time ?? null);
   const [revision, setRevision] = useState(0);
   const [response, setResponse] = useState<LoadedState>();
   const [saving, setSaving] = useState(false);
@@ -207,6 +210,7 @@ export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId
   const current = dayResponse?.time === selectedTime && dayResponse.revision === revision ? dayResponse : undefined;
   const loaded = current && 'configuration' in current ? current : undefined;
   const configuration = loaded?.configuration;
+  const canEdit = Boolean(vessel?.canSetBaseline && configuration?.canSetBaseline !== false);
   const missingReading = Boolean(selectedTime && configuration && !configuration.reading);
   const selectionChanged = Boolean(configuration?.reading && (!matchesSelection(configuration.reading.tanks, configuration.tanks)
     || configuration.reading.updatesFuelBaseline !== configuration.updatesFuelBaseline));
@@ -217,7 +221,7 @@ export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId
     return { ...tank, draft, value, liters: value === null ? null : saved?.liters ?? measuredLiters(tank, draft.unit, value) };
   }) ?? [];
   const fuelFields = fields.filter(field => field.sectionName === undefined);
-  const valid = validTime && !duplicate && !missingReading && !selectionChanged && Boolean(configuration?.canSetBaseline && fields.length
+  const valid = canEdit && validTime && !duplicate && !missingReading && !selectionChanged && Boolean(configuration?.canSetBaseline && fields.length
     && fields.every(field => field.value !== null && field.liters !== null));
 
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -239,8 +243,15 @@ export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId
 
   function chooseReading(nextTime: string | null, nextDate = date) {
     setSelectedTime(nextTime);
-    if (nextTime === null) setMeasurement(newMeasurement(nextDate));
+    if (nextTime === null || nextDate !== date) setMeasurement(newMeasurement(nextDate));
     reload();
+  }
+
+  function chooseVessel(nextVesselId: number) {
+    const nextVessel = candidates.find(candidate => candidate.vesselId === nextVesselId);
+    const reading = nextVessel?.canSetBaseline === false ? nextVessel.latestTankReading : null;
+    setSelection(nextVesselId);
+    chooseReading(reading?.time ?? null, reading?.date ?? date);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -273,51 +284,56 @@ export function SeaOperationFuelTanksDialog({ client, vessels, preferredVesselId
   }
 
   return <AppDialog size="md" title="Soutes" eyebrow="Niveaux des cuves" icon={<Fuel size={21} aria-hidden="true" />}
-    description="Renseignez les niveaux mesurés à la date et à l’heure de Paris choisies."
+    description={canEdit ? 'Renseignez les niveaux mesurés à la date et à l’heure de Paris choisies.' : 'Consultez les niveaux de soutes des navires accessibles.'}
     isBusy={saving} onClose={onClose} onSubmit={event => void submit(event)}
-    footer={<div className="app-dialog__actions"><button type="button" className="sp-button sp-button--secondary" onClick={onClose} disabled={saving}>Annuler</button>
-      <button type="submit" className="sp-button sp-button--primary" disabled={saving || conflict || !valid}>{saving ? 'Enregistrement…' : 'Enregistrer les niveaux'}</button></div>}>
+    footer={<div className="app-dialog__actions"><button type="button" className="sp-button sp-button--secondary" onClick={onClose} disabled={saving}>
+      {canEdit ? 'Annuler' : 'Fermer'}
+    </button>
+      {canEdit && <button type="submit" className="sp-button sp-button--primary" disabled={saving || conflict || !valid}>
+        {saving ? 'Enregistrement…' : 'Enregistrer les niveaux'}
+      </button>}</div>}>
     <div className="so-soutes-dialog">
-      <fieldset className="so-soutes-selectors" disabled={saving}>
-        <label className="so-field so-soutes-vessel"><span className="so-field-label">Navire</span><select value={vesselId ?? ''} disabled={!candidates.length}
-          onChange={event => { setSelection(Number(event.target.value)); chooseReading(null); }}>
+      <fieldset className="so-soutes-selectors" disabled={saving || !candidates.length}>
+        <label className="so-field so-soutes-vessel"><span className="so-field-label">Navire</span><select value={vesselId ?? ''}
+          onChange={event => chooseVessel(Number(event.target.value))}>
           {!candidates.length && <option value="">Aucun navire disponible</option>}
           {candidates.map(vessel => <option key={vessel.vesselId} value={vessel.vesselId}>{vessel.vesselName}</option>)}
         </select></label>
         <label className="so-field"><span className="so-field-label">Date de référence</span><input type="date" min={earliestDate} max={today}
           value={date} onChange={event => { setSelection(vesselId); chooseReading(null, event.target.value); }} /></label>
-        <label className="so-field"><span className="so-field-label">Heure du relevé</span><input type="time" step={60} max={latestTime}
+        {canEdit && <label className="so-field"><span className="so-field-label">Heure du relevé</span><input type="time" step={60} max={latestTime}
           value={time} readOnly={selectedTime !== null} aria-invalid={Boolean(time) && !validTime || undefined}
-          onChange={event => { setSelection(vesselId); setMeasurement({ date, time: event.target.value }); resetError(); }} /></label>
+          onChange={event => { setSelection(vesselId); setMeasurement({ date, time: event.target.value }); resetError(); }} /></label>}
         {(times.length > 0 || selectedTime) && <label className="so-field so-soutes-day-readings"><span className="so-field-label">Relevés de la journée</span>
           <select value={selectedTime ?? ''} onChange={event => { setSelection(vesselId); chooseReading(event.target.value || null); }}>
-            <option value="">Nouveau relevé</option>
+            <option value="">{canEdit ? 'Nouveau relevé' : 'Choisir un relevé'}</option>
             {times.map(savedTime => <option key={savedTime} value={savedTime}>{savedTime}</option>)}
             {selectedTime && !times.includes(selectedTime) && <option value={selectedTime}>{selectedTime}</option>}
           </select>
         </label>}
       </fieldset>
-      {validDate && !validTime && <p className="so-help">Choisissez une heure de relevé passée ou actuelle.</p>}
-      {duplicate && <div className="so-soutes-status"><p role="status">Un relevé existe déjà à {time}.</p>
+      {canEdit && validDate && !validTime && <p className="so-help">Choisissez une heure de relevé passée ou actuelle.</p>}
+      {canEdit && duplicate && <div className="so-soutes-status"><p role="status">Un relevé existe déjà à {time}.</p>
         <button type="button" className="sp-button sp-button--secondary" disabled={saving}
           onClick={() => { setSelection(vesselId); chooseReading(time); }}>Modifier le relevé de {time}</button>
       </div>}
-      {!candidates.length ? <p>Aucun navire accessible pour la saisie des soutes.</p>
+      {!candidates.length ? <p>Aucun navire accessible.</p>
         : !validDate ? <p className="so-help">Choisissez une date de référence valide.</p>
         : !current ? <p role="status">Chargement des soutes…</p>
         : 'error' in current ? <div className="so-soutes-status"><p role="alert">{current.error}</p>
           <button type="button" className="sp-button sp-button--secondary" onClick={reload}>Réessayer</button></div>
-        : missingReading ? <p role="status">Ce relevé n’est plus disponible. Choisissez un autre relevé ou créez-en un nouveau.</p>
+        : missingReading ? <p role="status">Ce relevé n’est plus disponible. Choisissez un autre relevé{canEdit && ' ou créez-en un nouveau'}.</p>
         : <>
-          <PreviousReading reading={current.configuration.reading} tanks={current.configuration.tanks} selectionChanged={selectionChanged} />
+          <PreviousReading reading={current.configuration.reading} tanks={current.configuration.tanks} selectionChanged={selectionChanged} canEdit={canEdit} />
+          {!canEdit && times.length === 0 && <p>Aucun relevé de soutes pour cette date.</p>}
           {fields.length === 0 ? <p>Aucune cuve sélectionnée pour ce navire dans Navires → Capacités.</p> : <>
             {fuelFields.length > 0 && <TotalStock fields={fuelFields} updatesFuelBaseline={current.configuration.updatesFuelBaseline} />}
-            {current.configuration.updatesFuelBaseline
+            {canEdit && (current.configuration.updatesFuelBaseline
               ? <p className="so-help">À 00:00, les DPR validés sont déduits dès le jour du relevé. Pour une heure ultérieure, le décompte commence le lendemain.</p>
-              : <p className="so-help">La mise à jour du stock de référence carburant et du décompte DPR nécessite la sélection de toutes les cuves principales de carburant.</p>}
-            {!current.configuration.canSetBaseline && <p className="so-help">Ce relevé est en consultation selon vos droits sur le navire.</p>}
+              : <p className="so-help">La mise à jour du stock de référence carburant et du décompte DPR nécessite la sélection de toutes les cuves principales de carburant.</p>)}
+            {!canEdit && <p className="so-help">Ce relevé est en consultation selon vos droits sur le navire.</p>}
             <fieldset className="so-soutes-layout" aria-label="Niveaux des soutes"
-              disabled={saving || selectionChanged || !current.configuration.canSetBaseline}>
+              disabled={saving || selectionChanged || !canEdit}>
               <SeaOperationTankGroups tanks={fields} heading="h3" renderTank={field => <TankEntry field={field} onChange={draft => {
                 setSelection(vesselId);
                 setResponse(previous => previous && 'drafts' in previous ? { ...previous, drafts: { ...previous.drafts, [field.key]: draft } } : previous);
