@@ -157,6 +157,35 @@ for (const profile of profiles) {
       await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     });
 
+    test('soutes : ouvrir les relevés du navire autorisé selon les droits du profil', async ({ page }) => {
+      await signIn(page, profile, '/modules/seaOperations');
+      const command = page.getByRole('button', { name: 'Soutes', exact: true });
+      await expect(command).toBeEnabled();
+
+      const configuration = page.waitForResponse(response =>
+        new URL(response.url()).pathname === '/rest/v1/rpc/sea_operation_fuel_tanks');
+      await command.click();
+      const dialog = page.getByRole('dialog', { name: 'Soutes', exact: true });
+      await expect(dialog).toBeVisible();
+      const response = await configuration;
+      expect(response.ok()).toBe(true);
+      expect(await response.json()).toMatchObject({ canSetBaseline: profile.role === 'capitaine' });
+
+      const vessel = dialog.getByRole('combobox', { name: 'Navire', exact: true });
+      await expect(vessel.locator('option')).toHaveText(['CI VESSEL ASSIGNED']);
+      await expect(vessel.locator('option:checked')).toHaveText('CI VESSEL ASSIGNED');
+      const save = dialog.getByRole('button', { name: 'Enregistrer les niveaux', exact: true });
+      if (profile.role === 'capitaine') {
+        const level = dialog.getByRole('spinbutton', { name: 'Niveau', exact: true });
+        await expect(level).toBeEnabled();
+        await level.fill('100');
+        await expect(save).toBeEnabled();
+      } else {
+        await expect(dialog.getByText(/en consultation/i)).toBeVisible();
+        await expect(save).toHaveCount(0);
+      }
+    });
+
     test('planning : lire le nom complet sous la barre d’une mission diffusée sur une journée', async ({ page }) => {
       const published = page.waitForResponse((response) => new URL(response.url()).pathname === '/rest/v1/rpc/latest_planning_release');
       await signIn(page, profile, '/modules/planning');

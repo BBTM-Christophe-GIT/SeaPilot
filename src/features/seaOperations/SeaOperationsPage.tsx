@@ -294,7 +294,8 @@ export function SeaOperationsPage() {
   const mapNavigationPending = mapRecord?.status === 'draft' && Boolean(mapRecord.draft.vessel.id) && waitingForNavigationSpeeds;
   const mapNavigationSpeedKnots = mapRecord?.status !== 'draft' ? undefined : mapNavigationPending || navigationUnavailable ? null
     : navigationSpeedFor(mapRecord.draft, fleetFuel.rows, mapRecord.projectIsTowage);
-  const writableFuelVessels = useMemo(() => orderedFleetFuelLevels(fleetFuel.rows ?? []).filter(vessel => vessel.canSetBaseline), [fleetFuel.rows]);
+  const fuelVessels = useMemo(() => orderedFleetFuelLevels(fleetFuel.rows ?? []), [fleetFuel.rows]);
+  const preferredFuelVessel = fuelVessels.find(vessel => vessel.assignedToday);
   useEffect(() => {
     if (!account || !currentAccess) return;
     let active = true;
@@ -1065,8 +1066,8 @@ export function SeaOperationsPage() {
         <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess} icon={<Plus size={22} />} label="Nouvelle opération" onClick={create} />
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Fuel">
-        {writableFuelVessels.length > 0 && <ModuleRibbonCommand disabled={editing || busy || exporting} icon={<Fuel size={22} aria-hidden="true" />}
-          label="Soutes" onClick={() => setFuelAction({ client, accessKey })} />}
+        <ModuleRibbonCommand disabled={editing || busy || exporting || !data || !currentAccess || !fleetFuel.rows}
+          icon={<Fuel size={22} aria-hidden="true" />} label="Soutes" onClick={() => setFuelAction({ client, accessKey })} />
         <ModuleRibbonCommand disabled={busy || exporting || !data || !currentAccess}
           icon={<img src="/icons/microsoft-excel.svg" width={22} height={22} alt="" />}
           label={exportingConsumption ? 'Export en cours…' : 'Export Excel'} aria-busy={exportingConsumption}
@@ -1325,8 +1326,8 @@ export function SeaOperationsPage() {
         setConsumptionRefresh(value => value + 1);
         setNotice('La consommation de l’opération a été enregistrée.');
       }} />}
-    {fuelDialog && <SeaOperationFuelTanksDialog client={client} vessels={writableFuelVessels}
-      preferredVesselId={writableFuelVessels.find(vessel => vessel.assignedToday)?.vesselId}
+    {fuelDialog && <SeaOperationFuelTanksDialog client={client} vessels={fuelVessels}
+      preferredVesselId={preferredFuelVessel?.vesselId}
       onClose={() => setFuelAction(null)} onSaved={() => {
       if (actionContext.current.client !== fuelDialog.client || actionContext.current.accessKey !== fuelDialog.accessKey) return;
       setFuelAction(null);

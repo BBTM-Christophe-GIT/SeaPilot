@@ -33,7 +33,9 @@ describe('Soutes fuel readings', () => {
       { ...landemer, vesselId: 1, vesselName: 'GOURY', lengthOverall: '30,62 m', canSetBaseline: false }, landemer,
     ]} onClose={vi.fn()} onSaved={onSaved} />);
     await screen.findByRole('group', { name: 'Cuve Bâbord' });
-    expect(screen.getAllByRole('option').slice(0, 2).map(option => option.textContent)).toEqual(['LANDEMER', 'SUROÎT']);
+    const vessel = screen.getByLabelText('Navire');
+    expect(within(vessel).getAllByRole('option').map(option => option.textContent)).toEqual(['GOURY', 'LANDEMER', 'SUROÎT']);
+    expect(vessel).toHaveValue('2');
     expect(screen.getByLabelText('Date de référence')).toHaveValue(today);
     expect(screen.getByLabelText('Heure du relevé')).toHaveValue('00:30');
     expect(rpc).toHaveBeenCalledWith('sea_operation_fuel_tanks', { p_vessel_id: 2, p_date: today, p_time: null });
@@ -59,6 +61,37 @@ describe('Soutes fuel readings', () => {
       p_vessel_id: 2, p_date: today, p_time: '00:30', p_expected_version: null,
       p_readings: [{ key: 'main-1', unit: 'm3', value: 4 }, { key: 'main-2', unit: 'percent', value: 60.442 }, { key: 'day', unit: 'liters', value: 100 }],
     });
+  });
+
+  it('opens the latest accessible reading in consultation and offers earlier readings by date', async () => {
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const previous = '2026-11-07';
+    const measurement = { ...tanks[0], unit: 'liters' as const, value: 800, liters: 800 };
+    const reading = { version: 2, savedAt: '2026-11-07T09:00:00Z', mainLiters: 800,
+      superseded: false, updatesFuelBaseline: true, tanks: [measurement] };
+    const vessel = { ...landemer, canSetBaseline: false, latestTankReading: {
+      date: previous, time: '09:00', superseded: false, updatesFuelBaseline: true, tanks: [measurement],
+    } };
+    const rpc = vi.fn(async (_name: string, args: { p_date: string; p_time: string | null }) => ({
+      data: { ...configuration, date: args.p_date, time: args.p_time, canSetBaseline: false,
+        tanks: [tanks[0]], times: args.p_date === previous ? ['08:00', '09:00'] : [],
+        reading: args.p_time ? reading : null }, error: null,
+    }));
+    render(<SeaOperationFuelTanksDialog client={{ rpc } as unknown as SupabaseClient} vessels={[vessel]} onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    expect(await screen.findByText('Ce relevé est en consultation selon vos droits sur le navire.')).toBeVisible();
+    const day = screen.getByLabelText('Date de référence');
+    expect(day).toHaveValue(previous);
+    expect(screen.getByLabelText('Relevés de la journée')).toHaveValue('09:00');
+    expect(tank('S1 avant').getByLabelText('Niveau')).toBeDisabled();
+    expect(tank('S1 avant').getByLabelText('Niveau')).toHaveValue(800);
+    expect(screen.queryByRole('button', { name: 'Enregistrer les niveaux' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Relevés de la journée'), { target: { value: '08:00' } });
+    await waitFor(() => expect(rpc).toHaveBeenLastCalledWith('sea_operation_fuel_tanks', {
+      p_vessel_id: 2, p_date: previous, p_time: '08:00',
+    }));
+    fireEvent.change(day, { target: { value: today } });
+    expect(await screen.findByText('Aucun relevé de soutes pour cette date.')).toBeVisible();
   });
 
   it('converts reference heights only for calibrated Goury tanks and preserves earlier volume entries', async () => {
@@ -204,7 +237,8 @@ describe('Soutes fuel readings', () => {
     const dialog = (preferredVesselId: number) => <SeaOperationFuelTanksDialog client={client} vessels={vessels}
       preferredVesselId={preferredVesselId} onClose={vi.fn()} onSaved={vi.fn()} />;
     const { rerender } = render(dialog(1));
-    expect(screen.getByLabelText('Navire')).toHaveValue('2');
+    expect(screen.getByLabelText('Navire')).toHaveValue('1');
+    expect(screen.queryByRole('button', { name: 'Enregistrer les niveaux' })).not.toBeInTheDocument();
     await screen.findByRole('group', { name: 'Cuve Bâbord' });
     rerender(dialog(3));
     expect(screen.getByLabelText('Navire')).toHaveValue('3');
