@@ -28,15 +28,17 @@ catalogue de flotte puis un pictogramme générique en repli. Elles sont intégr
 aux fichiers exportés, sans dépendance réseau après téléchargement.
 
 Dans **RH / Brevets → fiche → Identité**, Administrateur, Direction et Armement
-peuvent ajouter, remplacer ou retirer une photo JPEG/PNG (5 Mo maximum). L’original
-est écrit et vérifié par le lanceur Drive 2.4 dans **Ressources Humaines/<dossier du
-collaborateur>**, puis enregistré comme document administratif. Le chemin réutilise
-le dossier RH existant. Une copie carrée de 320 px, sans métadonnées, est stockée dans
-le bucket **privé** `hr-portraits` pour l’affichage automatique. Les références
-`people.photo_document_id` / `photo_storage_path` sont validées ensemble : bon
-collaborateur, même société, document Drive image et objet réellement présent.
-Les lectures suivent les RLS RH existantes (Marin : soi ; Capitaine : périmètre RH).
-Aucune URL publique de portrait n’est créée. Pas de nouvelle version du lanceur.
+peuvent ajouter, remplacer ou retirer une photo JPEG/PNG (5 Mo maximum). SeaPilot
+conserve l’original dans le stockage privé des documents RH et le rattache au
+dossier administratif du collaborateur. Une copie carrée de 320 px, sans
+métadonnées, est enregistrée sous `hr-portraits` pour l’affichage. La validation
+vérifie le collaborateur, sa société, le document image et la présence de la
+miniature. Elle accepte les originaux vérifiés dans le stockage privé et les
+références Drive historiques. Les lectures suivent les RLS RH existantes
+(Marin sur sa propre fiche, Capitaine dans son périmètre RH).
+
+Appliquer `20261123091407_fix_hr_portrait_blob_original.sql` pour rétablir le
+rattachement des photos enregistrées dans le stockage privé.
 
 La photo remplace les initiales dans la liste RH et l’en-tête de fiche, et apparaît
 dans les cartes de l’organigramme. Sans photo, les initiales RH restent affichées.
@@ -44,8 +46,8 @@ dans les cartes de l’organigramme. Sans photo, les initiales RH restent affich
 l’affichage à l’écran. Les images sont embarquées dans les fichiers. Si une photo
 référencée ne peut pas être chargée, une alerte propose Actualiser ou l’export sans
 photos ; aucun export « avec photos » incomplet n’est présenté comme réussi.
-Retirer/remplacer la photo conserve l’original dans les documents RH et supprime
-uniquement l’ancienne miniature devenue inutilisée. Le document utilisé comme
+Retirer ou remplacer la photo conserve l’original dans les documents RH.
+L’ancienne miniature cesse d’être utilisée pour l’affichage. Le document utilisé comme
 photo ne peut pas être supprimé avant retrait de la photo du profil.
 
 La responsabilité d’affichage de Julien LECOCQ devient **Capitaine d’Armement -
