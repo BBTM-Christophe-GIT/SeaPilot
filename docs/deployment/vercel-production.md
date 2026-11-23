@@ -1,5 +1,9 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.116.1` rétablit le rattachement des nouvelles photos de profil
+dans le module RH. Appliquer `20261123091407_fix_hr_portrait_blob_original.sql`
+sur Supabase. Voir [Photos de profil](./organigramme.md#interface-et-photos).
+
 La version `3.116.0` ajoute l’affichage des fins de contrat dans l’organigramme
 et le Planning pour Administration et Direction. Dans le Planning, l’interrupteur
 est visible à côté des onglets de vue et activé à l’ouverture. Appliquer

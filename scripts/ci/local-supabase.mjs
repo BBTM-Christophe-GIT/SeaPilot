@@ -109,6 +109,7 @@ const assertionTests = [
   'sea_operation_suroit_sludges_test.sql',
   'dpr_dashboard_access_scope_test.sql',
   'hr_document_captain_upload_test.sql',
+  'hr_portraits_test.sql',
   'exercise_monthly_performance_test.sql',
   'exercise_crew_obligations_test.sql',
   'hr_employment_contracts_test.sql',
