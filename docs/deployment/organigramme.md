@@ -19,6 +19,10 @@ Le diagramme est le premier contenu, à gauche du panneau **Réglages** sur bure
 Les éditeurs de bordées et de structure s’ouvrent dans un tiroir avec fermeture
 Échap et retour du focus. Sur écran étroit, les réglages passent après le diagramme.
 La sélection des documents conserve les choix indépendants du personnel et des urgences.
+Dans **Réglages → Affichage**, la case **Mettre en évidence les CDD et les fins de contrat**
+est décochée à l’ouverture. Elle active le contour en pointillés des cartes CDD et
+affiche en rouge les dates de fin renseignées. Les deux présentations et leurs
+exports PDF, PNG et SVG reprennent ce réglage.
 Les illustrations des navires reprennent `illustration_thumbnail_url`, avec le
 catalogue de flotte puis un pictogramme générique en repli. Elles sont intégrées
 aux fichiers exportés, sans dépendance réseau après téléchargement.
@@ -140,6 +144,11 @@ l'appelant (SECURITY INVOKER), vérifie le profil, l'appartenance à la sociét�
 la permission du module. Les coordonnées proviennent de `people.email` et
 `people.phone` ; les contacts d'urgence familiaux et les autres données privées
 du dossier RH ne sont pas renvoyés. Aucune copie de dossier RH n'est créée.
+
+Appliquer `20261123075201_organigramme_contract_details.sql` pour enrichir
+l’instantané avec le type et la date de fin de contrat. Pour un CDD, la date
+contractuelle inclut le dernier jour et provient de la période RH en cours.
+L’instantané conserve les mêmes droits Administrateur et Direction.
 
 Les compositions sont désormais propres à l'organigramme : aucune lecture ni
 écriture des affectations, journées, périodes ou bordées du Planning. La migration

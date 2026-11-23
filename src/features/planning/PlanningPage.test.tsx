@@ -606,6 +606,31 @@ function createClient(options: {
 }
 
 describe('PlanningPage cockpit', () => {
+  it.each(['admin', 'direction'] as const)('lets %s toggle contract departures in both personnel views', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient({
+      people: [captainRow, { ...crewRow, departed_on: '2026-07-08' }, pastDepartureCrewRow],
+      assignments: [{ ...assignmentOverviewRow, starts_on: '2026-06-29' }],
+      periods: [],
+      days: [],
+    });
+    const { container } = render(<PlanningPage client={client as never} roles={[role]} />);
+    await screen.findByRole('button', { name: 'Replier COTENTIN' });
+    const toggle = screen.getByRole('switch', { name: 'Fins de contrat' });
+    expect(toggle).not.toBeChecked();
+    expect(container.querySelector('.planning-contract-departure-line')).not.toBeInTheDocument();
+    await user.click(toggle);
+    const label = 'Fin de contrat de Paul DURAND le 08/07/2026';
+    expect(screen.getByRole('img', { name: label }).closest('.is-fleet-person')).toBeInTheDocument();
+    const line = container.querySelector<HTMLElement>('.planning-contract-departure-line');
+    expect(line?.style.gridColumn).toBe(`${daysBetween('2026-04-29', '2026-06-29') + 2} / span 10`);
+    await user.click(screen.getByRole('tab', { name: 'Équipages' }));
+    expect(screen.getByRole('switch', { name: 'Fins de contrat' })).toBeChecked();
+    expect(screen.getByRole('img', { name: label })).toBeInTheDocument();
+    await user.click(screen.getByRole('switch', { name: 'Fins de contrat' }));
+    expect(screen.queryByRole('img', { name: label })).not.toBeInTheDocument();
+  });
+
   it('shows all audit kinds for a vessel with no crew and refreshes rescheduled dates without duplicates', async () => {
     const user = userEvent.setup();
     const planningAudits = ['internal_ism', 'ovid', 'ecmid', 'external_ism', 'client'].map((kind) => ({

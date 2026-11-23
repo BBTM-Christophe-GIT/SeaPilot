@@ -564,6 +564,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }));
   }, [defaultFilters, filterScope]);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [showContractDepartures, setShowContractDepartures] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('billing');
   const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
@@ -847,6 +848,10 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
+  const contractDepartures = useMemo(() => showContractDepartures && permissions.canViewContractDepartures
+    ? new Map(planningData.people.filter((person) => person.departedOn >= todayDate)
+      .map((person) => [person.id, person.departedOn]))
+    : null, [permissions.canViewContractDepartures, planningData.people, showContractDepartures, todayDate]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
@@ -2736,6 +2741,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences(), loadVesselVisits(), loadPlanningAudits()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
+              {permissions.canViewContractDepartures && perspective !== 'projects' ? (
+                <label className="planning-contract-departures-switch">
+                  <input checked={showContractDepartures} onChange={(event) => setShowContractDepartures(event.target.checked)} role="switch" type="checkbox" />
+                  Fins de contrat
+                </label>
+              ) : null}
               <div className="planning-toolbar-spacer" />
               {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}
@@ -2852,6 +2863,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   <PlanningCrewTimelineRow
                     absences={absences}
                     conflictDatesByEvent={conflictDatesByEvent}
+                    contractDeparture={lane.personId === null ? undefined : contractDepartures?.get(lane.personId)}
                     cutGridCellKeys={cutGridCellKeys}
                     dayWidth={effectiveDayWidth}
                     days={days}
@@ -2885,6 +2897,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <PlanningCrewTimelineRow
                   balances={lane.personId === null ? undefined : getCrewBalance(lane.personId)}
                   balanceLoading={!previewMode && !balancesLoaded}
+                  contractDeparture={lane.personId === null ? undefined : contractDepartures?.get(lane.personId)}
                   onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                   onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}
                   onEditDayState={openDayState}

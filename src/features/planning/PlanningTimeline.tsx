@@ -1,5 +1,5 @@
 import { formatPlanningCrewBalance, type PlanningCrewBalanceDays } from './planningCrewBalance';
-import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FileText, FileWarning, Plus, Trash2, UserRoundPlus } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CalendarOff, ChevronDown, ChevronRight, FileText, FileWarning, Flag, Plus, Trash2, UserRoundPlus } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import billedIcon from './assets/icone_a_facturer.svg';
 import plannedIcon from './assets/icone_a_planifier.svg';
@@ -37,6 +37,7 @@ import { planningStaffingBoardKey } from './planningStaffingQueries';
 import { planningEventFunctionOnDate, planningShortFunctionLabel, planningTemporaryFunctionSegments } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
 import { planningCrewContextsByDate, planningTimelineDateLabels, planningTimelineDocumentsByPerson } from './planningTimelineData';
+import './planningContractDepartures.css';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
 export const PlanningFleetBoardTimelineRow = withStablePlanningHandlers(PlanningFleetBoardTimelineRowContent);
@@ -755,6 +756,7 @@ function PlanningCrewTimelineRowContent({
   editable,
   pendingId,
   conflictDatesByEvent,
+  contractDeparture = '',
   dayWidth,
   onCreate,
   onMove,
@@ -786,6 +788,7 @@ function PlanningCrewTimelineRowContent({
 }: TimelineBaseProps & {
   lane: PlanningCrewLane;
   conflictDatesByEvent: Map<string, Set<string>>;
+  contractDeparture?: string;
   dayWidth: number;
   onCreate: (lane: PlanningCrewLane, date: string) => void;
   onMove: (event: PlanningCrewEvent, date: string) => void;
@@ -923,8 +926,12 @@ function PlanningCrewTimelineRowContent({
   const temporarySegments = lane.events.flatMap((event) => event.kind === 'annualReview' ? [] : planningTemporaryFunctionSegments(event, lane.functionLabel || ''))
     .filter((segment) => segment.startsOn <= days[days.length - 1].date && segment.endsOn >= days[0].date);
   const temporaryFunctions = [...new Set(temporarySegments.map((segment) => segment.functionLabel))];
+  const departurePlacement = contractDeparture ? dateGridPlacement(today, contractDeparture, days) : null;
+  const departureColumn = departurePlacement && contractDeparture <= days[days.length - 1].date
+    ? departurePlacement.start + departurePlacement.span : null;
+  const departureLabel = departureColumn ? `Fin de contrat de ${lane.label} le ${formatPlanningDate(contractDeparture)}` : '';
   return (
-    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}${temporarySegments.length ? ' has-temporary-functions' : ''}`}>
+    <div className={`planning-calendar-grid planning-timeline-row is-crew${hierarchy ? ' is-fleet-person' : ''}${balances ? ' has-crew-balances' : ''}${temporarySegments.length ? ' has-temporary-functions' : ''}${departurePlacement ? ' has-contract-departure' : ''}`}>
       <div className={`planning-row-label${onDeleteEmptyRow ? ' has-empty-row-action' : ''}`}>
         <span>
           {onReplacePerson ? <button className="planning-generic-person" type="button" onClick={onReplacePerson} aria-label={`Remplacer ${lane.label} par un marin`}>{lane.label}</button> : <strong>{lane.label}</strong>}
@@ -935,6 +942,18 @@ function PlanningCrewTimelineRowContent({
         {onInitializeBalance ? <button className="planning-balance-open" aria-label={`Saisir le solde de ${lane.label}`} onClick={onInitializeBalance} type="button">Solde</button> : null}
         {onDeleteEmptyRow ? <button aria-label={`Supprimer la ligne vide de ${lane.label}`} className="planning-empty-row-delete" disabled={isDeletingEmptyRow} onClick={onDeleteEmptyRow} title="Supprimer la ligne vide" type="button"><Trash2 aria-hidden="true" size={13} /></button> : null}
       </div>
+      {departurePlacement && contractDeparture !== today ? (
+        <span aria-hidden="true" className="planning-contract-departure-line" style={{
+          gridColumn: `${departurePlacement.start + 1} / span ${departurePlacement.span}`,
+          marginInlineStart: today >= days[0].date ? 'calc(var(--planning-day-width) / 2)' : undefined,
+          marginInlineEnd: departureColumn ? 'calc(var(--planning-day-width) / 2)' : undefined,
+        }} />
+      ) : null}
+      {departureColumn ? (
+        <span aria-label={departureLabel} className="planning-contract-departure-flag" role="img" style={{ gridColumn: departureColumn }} title={departureLabel}>
+          <Flag aria-hidden="true" size={15} />
+        </span>
+      ) : null}
       {days.map((day, index) => {
         const occupied = laneCoverage.occupiedDates.has(day.date);
         const context = contextsByDate?.get(day.date);

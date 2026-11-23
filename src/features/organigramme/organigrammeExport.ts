@@ -1,4 +1,4 @@
-import { layoutOrganigramme, ORG_COLORS, ORG_DPA_BADGE_FONT_SIZE, ORG_DPA_BADGE_LABEL, ORG_SHIP_LINES, orgBoxFill, orgBoxMedia, orgBoxTextColor, orgBoxTextX, orgBoxTextTop, orgDpaBadge, orgImageSource, orgLineColor, organigrammeSvg, type OrgDiagram, type OrgLine } from './organigrammeDiagram';
+import { layoutOrganigramme, ORG_CDD_DASH, ORG_COLORS, ORG_DPA_BADGE_FONT_SIZE, ORG_DPA_BADGE_LABEL, ORG_SHIP_LINES, orgBoxFill, orgBoxMedia, orgBoxStroke, orgBoxTextColor, orgBoxTextX, orgBoxTextTop, orgDpaBadge, orgImageSource, orgLineColor, organigrammeSvg, type OrgDiagram, type OrgLine } from './organigrammeDiagram';
 import { ORGANIGRAMME_REFERENCE, ORGANIGRAMME_SOURCE, ORG_VIEW_LABELS, type OrgSection, type OrganigrammeView } from './organigrammeModel';
 
 export function downloadOrgBlob(blob: Blob, name: string) {
@@ -64,8 +64,9 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
     diagram.lines.forEach(drawLine);
     pdf.setLineDashPattern([], 0);
     diagram.boxes.forEach((box) => {
-      pdf.setFillColor(orgBoxFill(box)); pdf.setDrawColor(box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]);
-      pdf.roundedRect(offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2, 'FD');
+      const cardBounds = [offsetX + box.x * scale, offsetY + box.y * scale, box.width * scale, box.height * scale, 2, 2] as const;
+      pdf.setFillColor(orgBoxFill(box)); pdf.setDrawColor(orgBoxStroke(box));
+      pdf.roundedRect(...cardBounds, box.dashed ? 'F' : 'FD');
       const media = orgBoxMedia(box);
       const source = orgImageSource(box.image);
       if (source) {
@@ -91,7 +92,7 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
         baseline += line.size + 5;
         pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
         pdf.setFontSize(line.size * scale * 72 / 25.4);
-        pdf.setTextColor(orgBoxTextColor(box, line.bold));
+        pdf.setTextColor(orgBoxTextColor(box, line));
         pdf.text(line.text, offsetX + orgBoxTextX(box) * scale, offsetY + (baseline - 5) * scale, { align: 'center' });
       });
       const badge = orgDpaBadge(box);
@@ -101,6 +102,14 @@ export async function buildOrgPdf(sections: OrgSection[], showVessels: boolean, 
         pdf.roundedRect(offsetX + badge.x * scale, offsetY + badge.y * scale, badge.width * scale, badge.height * scale, radius, radius, 'F');
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(ORG_DPA_BADGE_FONT_SIZE * scale * 72 / 25.4); pdf.setTextColor(ORG_COLORS.white);
         pdf.text(ORG_DPA_BADGE_LABEL, offsetX + (badge.x + badge.width / 2) * scale, offsetY + (badge.y + badge.height / 2 + 4) * scale, { align: 'center' });
+      }
+      if (box.dashed) {
+        pdf.saveGraphicsState();
+        pdf.setDrawColor(orgBoxStroke(box));
+        pdf.setLineWidth(2 * scale);
+        pdf.setLineDashPattern(ORG_CDD_DASH.map((length) => length * scale), 0);
+        pdf.roundedRect(...cardBounds, 'S');
+        pdf.restoreGraphicsState();
       }
     });
   };
