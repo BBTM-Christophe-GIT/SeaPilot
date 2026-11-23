@@ -69,7 +69,6 @@ function panel(record = project, isManager = true) {
 }
 
 async function ready() {
-  await screen.findByLabelText('Catégorie de la prestation 1');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
 }
 
@@ -130,7 +129,7 @@ describe('raw billing workspace integration', () => {
     ] as const) {
       const toggle = screen.getByRole('button', { name: label });
       expect(toggle).toHaveAttribute('aria-expanded', 'true');
-      const badge = within(toggle).getByLabelText(`${count} enregistrement${count === 1 ? '' : 's'}`);
+      const badge = await within(toggle).findByLabelText(`${count} enregistrement${count === 1 ? '' : 's'}`);
       expect(badge).toHaveTextContent(String(count));
       expect(badge).toBeVisible();
     }
@@ -161,6 +160,7 @@ describe('raw billing workspace integration', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
+    await screen.findByDisplayValue('Premier septembre');
     expect(screen.getByLabelText('Désignation, ligne 1')).toHaveValue('Premier septembre');
     expect(screen.getByLabelText('Désignation, ligne 2')).toHaveValue('Dernier septembre');
     expect(screen.queryByLabelText('Désignation, ligne 3')).not.toBeInTheDocument();
@@ -226,6 +226,7 @@ describe('raw billing workspace integration', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
+    await screen.findByDisplayValue('Ligne conservée');
     fireEvent.change(screen.getByLabelText('Date, ligne 1'), { target: { value: '2026-10-15' } });
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ligne 1' }));
     await waitFor(() => expect(mocks.saveRaw).toHaveBeenCalledWith(client, project.id, 20, expect.objectContaining({ serviceDate: '2026-10-15' }), 50));
@@ -295,7 +296,9 @@ describe('raw billing workspace integration', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
-    expect(screen.getByRole('button', { name: 'Prestations BBTM' })).toHaveAttribute('aria-expanded', 'true');
+    const header = screen.getByRole('button', { name: 'Prestations BBTM' });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    await user.click(within(header.closest('header')!).getByRole('button', { name: 'Ajouter' }));
     const categorySelect = screen.getByLabelText('Catégorie de la prestation 1');
     expect(within(categorySelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Spread Antipollution — GOURY', 'Spread Antipollution — SUROIT']);
     await user.selectOptions(categorySelect, '9');

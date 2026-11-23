@@ -104,6 +104,7 @@ export interface ProjectServiceCatalogEntry extends BillingServiceQuantitySettin
   unitAmountHt: number;
   descriptionHtml: string;
   defaultQuantity?: number;
+  defaultProjectIds?: number[];
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -177,6 +178,7 @@ export interface ProjectServiceCatalogDraft extends BillingServiceQuantitySettin
   unitAmountHt: number;
   descriptionHtml: string;
   defaultQuantity?: number;
+  defaultProjectIds?: number[];
   active?: boolean;
 }
 
@@ -326,10 +328,15 @@ function mapRawLine(row: Record<string, unknown>): ProjectBillingRawLine {
   };
 }
 
+const SERVICE_CATALOG_SELECT = '*, default_projects:project_service_catalog_defaults(project_id)';
+
 function mapServiceCatalogEntry(row: Record<string, unknown>): ProjectServiceCatalogEntry {
   return {
     ...mapBillingServiceQuantitySettings(row),
     ...(row.default_quantity !== null && row.default_quantity !== undefined ? { defaultQuantity: number(row.default_quantity) } : {}),
+    defaultProjectIds: Array.isArray(row.default_projects)
+      ? row.default_projects.map((project: { project_id: number }) => number(project.project_id))
+      : [],
     id: number(row.id),
     companyId: number(row.company_id),
     vesselId: nullableNumber(row.vessel_id),
@@ -347,7 +354,7 @@ export async function fetchProjectServiceCatalog(
   client: SupabaseClient,
   includeInactive = false,
 ): Promise<ProjectServiceCatalogEntry[]> {
-  let query = client.from('project_service_catalog').select('*').order('category');
+  let query = client.from('project_service_catalog').select(SERVICE_CATALOG_SELECT).order('category');
   if (!includeInactive) query = query.eq('active', true);
   const { data, error } = await query;
   if (error) throw error;
@@ -373,10 +380,19 @@ export async function saveProjectServiceCatalogEntry(
     active: draft.active !== false,
     updated_at: new Date().toISOString(),
   };
+  if (draft.defaultProjectIds !== undefined) {
+    const { data, error } = await client.rpc('save_project_service_catalog_entry', {
+      p_entry: payload,
+      p_default_project_ids: draft.defaultProjectIds,
+      p_catalog_id: draft.id ?? null,
+    });
+    if (error) throw error;
+    return mapServiceCatalogEntry(data as Record<string, unknown>);
+  }
   const query = draft.id
     ? client.from('project_service_catalog').update(payload).eq('id', draft.id)
     : client.from('project_service_catalog').insert(payload);
-  const { data, error } = await query.select('*').single();
+  const { data, error } = await query.select(SERVICE_CATALOG_SELECT).single();
   if (error) throw error;
   return mapServiceCatalogEntry(data as Record<string, unknown>);
 }

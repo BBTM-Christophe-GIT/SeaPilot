@@ -30,7 +30,7 @@ import {
   TriangleAlert,
   Undo2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { ServiceProviderEditorDialog } from '../serviceProviders/ServiceProviderEditorDialog';
 import { ServiceProviderPicker } from '../serviceProviders/ServiceProviderPicker';
@@ -118,6 +118,7 @@ function attachmentProblemSummary(check: BillingAttachmentCheck): string | null 
 interface BillingServiceLineDraft extends BillingServiceDraft {
   key: string;
   id?: number;
+  catalogDefault?: boolean;
   quantityEdited?: boolean;
 }
 
@@ -227,6 +228,7 @@ export function ProjectBillingPanel({
   isManager,
   operations,
   project,
+  ribbonServiceCatalog,
   showMonthSelector = true,
   visibleSections = ALL_BILLING_SECTIONS,
   workspace = false,
@@ -238,6 +240,7 @@ export function ProjectBillingPanel({
   isManager: boolean;
   operations: ProjectPlanningOccurrenceRecord[];
   project: ProjectRecord;
+  ribbonServiceCatalog?: ProjectServiceCatalogEntry[];
   showMonthSelector?: boolean;
   visibleSections?: ProjectBillingSectionVisibility;
   workspace?: boolean;
@@ -342,8 +345,10 @@ export function ProjectBillingPanel({
     const range = monthRange(month);
     setCustomStart(range.start);
     setCustomEnd(range.end);
+    setPeriodMode('calendar-month');
     setDprs([]);
     setCompleteMissingDays(false);
+    initializedServices.current = '';
     setServiceDrafts([]);
     setRawLinesDirty(false);
     setExpenseEditor(null);
@@ -361,9 +366,23 @@ export function ProjectBillingPanel({
     }
   }, [selectedPeriod?.id]);
   const selectedPeriodId = selectedPeriod?.id;
-  const periodExpenses = useMemo(() => selectedPeriodId
-    ? data.expenses.filter((expense) => expense.billingPeriodId === selectedPeriodId)
-    : [], [data.expenses, selectedPeriodId]);
+  const calendarRange = monthRange(selectedMonth);
+  const exportRange = periodMode === 'calendar-month' ? calendarRange : { start: customStart, end: customEnd };
+  const periodExpenses = useMemo(() => {
+    if (periodMode === 'calendar-month') {
+      return data.expenses.filter((expense) => expense.billingPeriodId === selectedPeriodId);
+    }
+    if (!customStart || !customEnd || customEnd < customStart) return [];
+
+    const startMonth = customStart.slice(0, 7);
+    const endMonth = customEnd.slice(0, 7);
+    const billingPeriodIds = new Set(data.periods.filter((period) => {
+      const month = period.periodMonth.slice(0, 7);
+      return month >= startMonth && month <= endMonth;
+    }).map((period) => period.id));
+    return data.expenses.filter((expense) => billingPeriodIds.has(expense.billingPeriodId)
+      && expense.invoiceDate >= customStart && expense.invoiceDate <= customEnd);
+  }, [customEnd, customStart, data.expenses, data.periods, periodMode, selectedPeriodId]);
   const periodExpenseIds = useMemo(() => new Set(periodExpenses.map((expense) => expense.id)), [periodExpenses]);
   // An attachment follows its expense, even when it was uploaded against an earlier billing month.
   const periodDocuments = useMemo(() => data.documents.filter((document) => document.chargeableExpenseId != null
@@ -448,14 +467,10 @@ export function ProjectBillingPanel({
     () => Array.from(new Set(operations.map((operation) => operation.primaryVesselName).filter(Boolean))).sort(compareFleetNames),
     [operations],
   );
-  const exportRange = periodMode === 'calendar-month'
-    ? monthRange(selectedMonth)
-    : { start: customStart, end: customEnd };
   const periodRawLines = useMemo(
     () => (data.rawLines || []).filter((line) => line.serviceDate >= exportRange.start && line.serviceDate <= exportRange.end),
     [data.rawLines, exportRange.start, exportRange.end],
   );
-  const calendarRange = monthRange(selectedMonth);
   const dprRange = project.projectCode.trim().toUpperCase() === 'P144' ? {
     start: exportRange.start < calendarRange.start ? exportRange.start : calendarRange.start,
     end: exportRange.end > calendarRange.end ? exportRange.end : calendarRange.end,
@@ -568,21 +583,25 @@ export function ProjectBillingPanel({
   }, [client, project.id, exportRange.start, exportRange.end, dprRange.start, dprRange.end, vesselFilter]);
 
   useEffect(() => {
-    // Creating the monthly row must not reset unsaved service lines.
+    if (billingDataContext?.client !== client || billingDataContext.projectId !== project.id) return;
+    // Initialize once per project and month so a saved or removed draft is not recreated.
     const key = `${project.id}/${selectedMonth}`;
-    const reset = initializedServices.current !== key;
+    if (initializedServices.current === key) return;
     initializedServices.current = key;
-    setServiceDrafts((current) => {
-      if (!reset && current.length) return current;
-      return periodServices.length ? periodServices.map(serviceLineFromSaved) : serviceCatalog[0] ? [serviceLineFromEntry(serviceCatalog[0], defaultServiceQuantity)] : [];
-    });
-  }, [periodServices, serviceCatalog, selectedPeriod?.id, selectedMonth, project.id]);
+    const savedCatalogIds = new Set(periodServices.map((service) => service.serviceCatalogId));
+    setServiceDrafts([
+      ...periodServices.map(serviceLineFromSaved),
+      ...serviceCatalog
+        .filter((entry) => entry.defaultProjectIds?.includes(project.id) && !savedCatalogIds.has(entry.id))
+        .map((entry) => ({ ...serviceLineFromEntry(entry, defaultServiceQuantity), catalogDefault: true })),
+    ]);
+  }, [billingDataContext, client, defaultServiceQuantity, periodServices, project.id, selectedMonth, serviceCatalog]);
 
   useEffect(() => {
       setServiceDrafts((current) => current.map((service) => (
         service.id || service.quantityEdited || service.quantityMode !== undefined ? service : { ...service, quantity: defaultServiceQuantity }
       )));
-  }, [defaultServiceQuantity, periodServices.length, serviceCatalog]);
+  }, [defaultServiceQuantity]);
 
   function selectMonth(month: string) {
     if (!/^\d{4}-\d{2}$/.test(month.slice(0, 7))) return;
@@ -869,6 +888,33 @@ export function ProjectBillingPanel({
     setServiceCatalogOpen(true);
   }
 
+  function updateServiceCatalog(entries: ProjectServiceCatalogEntry[]) {
+    setServiceCatalog(entries);
+    const previousDefaults = new Set(serviceCatalog
+      .filter((entry) => entry.defaultProjectIds?.includes(project.id)).map((entry) => entry.id));
+    const defaults = entries.filter((entry) => entry.defaultProjectIds?.includes(project.id));
+    const defaultsById = new Set(defaults.map((entry) => entry.id));
+    setServiceDrafts((current) => {
+      const retained = current.filter((draft) =>
+        draft.id || !draft.catalogDefault || draft.serviceCatalogId === null || defaultsById.has(draft.serviceCatalogId));
+      const usedIds = new Set(retained.map((draft) => draft.serviceCatalogId));
+      const added = defaults.filter((entry) => !previousDefaults.has(entry.id) && !usedIds.has(entry.id));
+      return [
+        ...retained,
+        ...added.map((entry) => ({ ...serviceLineFromEntry(entry, defaultServiceQuantity), catalogDefault: true })),
+      ];
+    });
+  }
+
+  const appliedRibbonCatalog = useRef(ribbonServiceCatalog);
+  const applyRibbonCatalog = useEffectEvent(updateServiceCatalog);
+  useEffect(() => {
+    if (billingDataContext?.client !== client || billingDataContext.projectId !== project.id) return;
+    if (!ribbonServiceCatalog || appliedRibbonCatalog.current === ribbonServiceCatalog) return;
+    appliedRibbonCatalog.current = ribbonServiceCatalog;
+    applyRibbonCatalog(ribbonServiceCatalog);
+  }, [billingDataContext, client, project.id, ribbonServiceCatalog]);
+
   async function submitProvider(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!providerEditor || busy) return;
@@ -917,7 +963,9 @@ export function ProjectBillingPanel({
   }
 
   function updateServiceDraft(key: string, changes: Partial<BillingServiceLineDraft>) {
-    setServiceDrafts((current) => current.map((service) => service.key === key ? { ...service, ...changes, quantityEdited: changes.quantity !== undefined ? true : service.quantityEdited } : service));
+    setServiceDrafts((current) => current.map((service) => service.key === key ? {
+      ...service, ...changes, catalogDefault: false, quantityEdited: changes.quantity !== undefined ? true : service.quantityEdited,
+    } : service));
   }
 
   function selectServiceCategory(key: string, catalogId: number) {
@@ -1017,14 +1065,14 @@ export function ProjectBillingPanel({
   }
 
   async function uploadDocument(files: File[], expense: ProjectChargeableExpense) {
-    if (!isManager || !selectedPeriod || busy || !files.length) return;
+    if (!isManager || busy || !files.length) return;
     const revision = contextRevision.current;
     setBusy('upload');
     setError('');
     try {
       for (const file of files) {
         const document = await uploadProjectBillingDocument(client, {
-          projectId: project.id, billingPeriodId: selectedPeriod.id, expenseId: expense.id,
+          projectId: project.id, billingPeriodId: expense.billingPeriodId, expenseId: expense.id,
           file: billingExpenseAttachmentName(file, expense), kind: 'chargeable_expense',
         });
         if (revision !== contextRevision.current) return;
@@ -1181,7 +1229,7 @@ export function ProjectBillingPanel({
     const count = {
       hire: hireDays.length,
       expenses: periodExpenses.length,
-      services: periodServices.length,
+      services: serviceDrafts.length,
       raw: periodRawLines.length,
       followup: periodDocuments.filter((document) => document.documentKind !== 'chargeable_expense').length,
     }[id];
@@ -1350,7 +1398,9 @@ export function ProjectBillingPanel({
                   </tr>
                 );
               })}
-              {!periodExpenses.length ? <tr><td className="project-billing-empty" colSpan={9}>Aucun service refacturable pour ce mois.</td></tr> : null}
+              {!periodExpenses.length ? <tr><td className="project-billing-empty" colSpan={9}>
+                {periodMode === 'custom' ? 'Aucun service refacturable sur la période sélectionnée.' : 'Aucun service refacturable pour ce mois.'}
+              </td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -1567,7 +1617,7 @@ export function ProjectBillingPanel({
         </AppDialog>
       ) : null}
       {providerEditor ? <ServiceProviderEditorDialog categories={providerCategories} draft={providerEditor} isSaving={busy === 'provider'} onChange={setProviderEditor} onClose={() => setProviderEditor(null)} onSubmit={submitProvider} serviceTypes={providerServiceTypes} /> : null}
-      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} vessels={vessels} initialMode={serviceCatalogMode} onChanged={(entries) => setServiceCatalog(entries)} onClose={() => setServiceCatalogOpen(false)} /> : null}
+      {serviceCatalogOpen ? <ServiceCatalogDialog canManage={isManager} client={client} vessels={vessels} initialMode={serviceCatalogMode} onChanged={updateServiceCatalog} onClose={() => setServiceCatalogOpen(false)} /> : null}
     </section>
   );
 }

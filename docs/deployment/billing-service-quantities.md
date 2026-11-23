@@ -18,6 +18,13 @@ du catalogue sont copiées lors de l'ajout d'une prestation à la facturation.
 Les lignes déjà enregistrées conservent leurs valeurs propres : modifier le
 catalogue ne modifie pas les factures existantes.
 
+Dans **Liste des prestations**, ouvrir une prestation et choisir **Modifier**
+pour cocher les projets dans lesquels elle doit être proposée par défaut.
+À la création, la liste des projets cochés est vide. Dans la facturation d’un
+projet, **Prestations BBTM** affiche les lignes enregistrées pour le mois et les
+prestations actives configurées par défaut pour ce projet. Le bouton **Ajouter**
+permet de choisir manuellement une autre prestation du catalogue.
+
 Dans Facturation, le mode, les types d'opération, le montant unitaire et la
 référence client restent modifiables après Enregistrer. Pour changer directement
 le nombre d'unités calculé, ouvrir **Calcul quantité** et choisir **Manuel**.
@@ -40,3 +47,9 @@ Le fichier `20261031214439_project_billing_service_quantity_modes.sql` correspon
 contraintes, les valeurs historiques et les droits dans une transaction annulée.
 Les politiques RLS de société et les droits d'écriture Admin/Direction restent
 inchangés. Aucun accès supplémentaire n'est accordé aux autres profils.
+
+Appliquer `20261123095303_project_service_catalog_project_defaults.sql` avant
+de mettre en production la sélection des projets par défaut. Cette migration
+crée la relation entre prestations et projets d’une même société. Les droits de
+modification du catalogue s’appliquent aussi aux affectations. Les affectations
+initiales sont vides et les lignes de facturation enregistrées sont conservées.
