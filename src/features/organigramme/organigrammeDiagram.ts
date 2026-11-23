@@ -3,14 +3,20 @@ import { ORG_CARD_COLORS, type OrgCardColor } from './organigrammeCardColors';
 
 export interface OrgBounds { x: number; y: number; width: number; height: number }
 export interface OrgCrewCard { personId: number; name: string; watchId: number | null }
-export interface OrgTextLine { text: string; size: number; bold: boolean }
-export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; officeRoles?: OrgOfficeRole[]; dpaBadge?: boolean; person?: { id: number; name: string }; cardColor?: OrgCardColor; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support' | 'dpa'; lines: OrgTextLine[] }
+export interface OrgTextLine { text: string; size: number; bold: boolean; contractEnd?: boolean }
+export interface OrgBox extends OrgBounds { image?: string; portraitSize?: number; mediaKind?: 'portrait' | 'vessel'; crew?: OrgCrewCard; vesselId?: number; officeRoles?: OrgOfficeRole[]; dpaBadge?: boolean; person?: { id: number; name: string }; cardColor?: OrgCardColor; dashed?: boolean; tone: 'navy' | 'teal' | 'white' | 'leader' | 'support' | 'dpa'; lines: OrgTextLine[] }
 export interface OrgWatchArea extends OrgBounds { watchId: number }
 export interface OrgLine { x1: number; y1: number; x2: number; y2: number; dashed?: boolean; relationship?: 'armement' | 'dpa' }
 export interface OrgDiagram { width: number; height: number; boxes: OrgBox[]; lines: OrgLine[]; watches?: OrgWatchArea[]; legend?: { label: string; line: OrgLine }[] }
 export const ORG_COLORS = { navy: '#12364b', teal: '#e5f2f2', white: '#ffffff', leader: '#dc640c', support: '#edf0f3', dpa: '#fbe9eb', dpaInk: '#a1263c', hierarchy: '#647180', ink: '#18394c', muted: '#526978', line: '#9bb7c2', border: '#ccdce3' };
+export const ORG_CDD_DASH = [6, 4] as const;
 export const orgBoxFill = (box: OrgBox) => box.cardColor ? ORG_CARD_COLORS[box.cardColor].fill : ORG_COLORS[box.tone];
-export const orgBoxTextColor = (box: OrgBox, bold: boolean) => !box.cardColor && (box.tone === 'navy' || box.tone === 'leader') ? '#ffffff' : bold ? ORG_COLORS.ink : ORG_COLORS.muted;
+export const orgBoxStroke = (box: OrgBox) => box.dashed ? ORG_COLORS.ink : box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone];
+export function orgBoxTextColor(box: OrgBox, line: Pick<OrgTextLine, 'bold' | 'contractEnd'>) {
+  if (line.contractEnd) return !box.cardColor && box.tone === 'leader' ? '#510015' : ORG_COLORS.dpaInk;
+  if (!box.cardColor && (box.tone === 'navy' || box.tone === 'leader')) return ORG_COLORS.white;
+  return line.bold ? ORG_COLORS.ink : ORG_COLORS.muted;
+}
 export const orgLineColor = (line: OrgLine) => line.relationship === 'dpa' ? ORG_COLORS.dpaInk : line.relationship === 'armement' ? ORG_COLORS.hierarchy : ORG_COLORS.line;
 export const ORG_DPA_BADGE_LABEL = 'Designated Person Ashore';
 export const ORG_DPA_BADGE_FONT_SIZE = 11;
@@ -48,10 +54,12 @@ export function wrapOrgText(text: string, max = 27): string[] {
 interface CardMetrics { height: number; portraitSize: number }
 function memberLines(person: OrgMember, portraitSize: number, office = false): OrgBox['lines'] {
   const width = 248 - 24 - (person.photoUrl ? portraitSize + 12 : 0);
+  const date = person.contractEndDate?.split('-').reverse().join('/');
   return [
     { text: person.name, size: office ? 14 : 13, bold: true },
     { text: cardFunction(person, office), size: 11, bold: false },
     { text: person.detail, size: 10, bold: false },
+    { text: date ? `Fin de contrat ${date}` : '', size: 11, bold: true, contractEnd: true },
     { text: person.email || '', size: 10, bold: false },
     { text: person.phone || '', size: 10, bold: false },
   ].flatMap((line) => wrapOrgText(line.text, Math.floor(width / (line.size * .62))).filter(Boolean).map((text) => ({ ...line, text })));
@@ -75,6 +83,7 @@ function memberCard(person: OrgMember, x: number, y: number, metrics: CardMetric
     ...(hasDpaBadge(person, office) ? { dpaBadge: true } : {}),
     ...(person.id > 0 ? { person: { id: person.id, name: person.name } } : {}),
     ...(person.cardColor ? { cardColor: person.cardColor } : {}),
+    ...(person.fixedTerm ? { dashed: true } : {}),
     ...(person.watchId === undefined ? {} : { crew: { personId: person.id, name: person.name, watchId: person.watchId } }),
     ...(person.photoUrl ? { image: person.photoUrl, mediaKind: 'portrait' as const, portraitSize: metrics.portraitSize } : {}),
   };
@@ -451,10 +460,13 @@ export function organigrammeSvg(diagram: OrgDiagram): string {
     const picture = source ? `${clip}<image href="${source}" x="${media.x}" y="${media.y}" width="${media.width}" height="${media.height}" preserveAspectRatio="xMidYMid ${portrait ? 'slice' : 'meet'}"${portrait ? ` clip-path="url(#${clipId})"` : ''}/>` : box.mediaKind === 'vessel' ? `<g transform="translate(${media.x + 14} ${media.y + 3}) scale(1.5)" stroke="white" stroke-width="1.5" fill="none">${ORG_SHIP_LINES.map(([x1,y1,x2,y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')}</g>` : '';
     const badge = orgDpaBadge(box);
     const badgeSvg = badge ? `<rect x="${badge.x}" y="${badge.y}" width="${badge.width}" height="${badge.height}" rx="${badge.height / 2}" fill="${ORG_COLORS.dpaInk}"/><text x="${badge.x + badge.width / 2}" y="${badge.y + badge.height / 2 + 4}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${ORG_DPA_BADGE_FONT_SIZE}" font-weight="700" fill="white">${ORG_DPA_BADGE_LABEL}</text>` : '';
-    return `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7" fill="${orgBoxFill(box)}" stroke="${box.tone === 'white' ? ORG_COLORS.border : ORG_COLORS[box.tone]}"/>${picture}${box.lines.map((line) => {
+    const rect = `<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="7"`;
+    const stroke = orgBoxStroke(box);
+    const dashedOutline = box.dashed ? `${rect} fill="none" stroke="${stroke}" stroke-width="2" stroke-dasharray="${ORG_CDD_DASH.join(' ')}"/>` : '';
+    return `${rect} fill="${orgBoxFill(box)}"${box.dashed ? '' : ` stroke="${stroke}"`}/>${picture}${box.lines.map((line) => {
       baseline += line.size + 5;
-      const color = orgBoxTextColor(box, line.bold);
+      const color = orgBoxTextColor(box, line);
       return `<text x="${orgBoxTextX(box)}" y="${baseline - 5}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${line.size}" font-weight="${line.bold ? 700 : 400}" fill="${color}">${escapeXml(line.text)}</text>`;
-    }).join('')}${badgeSvg}`;
+    }).join('')}${badgeSvg}${dashedOutline}`;
   }).join('')}</svg>`;
 }

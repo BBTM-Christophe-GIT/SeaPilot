@@ -177,7 +177,7 @@ describe('governance relationships and person card colors', () => {
     const captain = diagram.boxes.find((box) => box.person?.id === 2)!;
     const dpa = diagram.boxes.find((box) => box.person?.id === 11)!;
     expect(orgBoxFill(president)).toBe(ORG_CARD_COLORS.blue.fill);
-    expect(orgBoxTextColor(president, true)).toBe(ORG_COLORS.ink);
+    expect(orgBoxTextColor(president, { bold: true })).toBe(ORG_COLORS.ink);
     expect(orgBoxFill(captain)).toBe(ORG_CARD_COLORS.green.fill);
     expect(orgBoxFill(dpa)).toBe(ORG_CARD_COLORS.lavender.fill);
     expect(organigrammeSvg(diagram)).toContain(ORG_DPA_BADGE_LABEL);

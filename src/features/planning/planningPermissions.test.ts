@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { getPlanningPermissions } from './planningPermissions';
 
 describe('planning permissions', () => {
+  it('limits contract departures to Administration and Direction', () => {
+    expect(getPlanningPermissions(['admin']).canViewContractDepartures).toBe(true);
+    expect(getPlanningPermissions(['direction']).canViewContractDepartures).toBe(true);
+    expect(getPlanningPermissions(['armement', 'capitaine', 'marin']).canViewContractDepartures).toBe(false);
+  });
+
   it('lets direction edit and distribute without a validation circuit', () => {
     expect(getPlanningPermissions(['direction'], false)).toMatchObject({
       canRead: true,

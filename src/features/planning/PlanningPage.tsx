@@ -564,6 +564,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }));
   }, [defaultFilters, filterScope]);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [showContractDepartures, setShowContractDepartures] = useState(true);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('billing');
   const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
@@ -847,6 +848,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
+  const hasContractDepartureControl = permissions.canViewContractDepartures && perspective !== 'projects';
+  const contractDepartures = useMemo(() => showContractDepartures && permissions.canViewContractDepartures
+    ? new Map(planningData.people.filter((person) => person.departedOn >= todayDate)
+      .map((person) => [person.id, person.departedOn]))
+    : null, [permissions.canViewContractDepartures, planningData.people, showContractDepartures, todayDate]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const effectiveDayWidth = Math.round(52 * zoomLevel / 100);
 
@@ -2711,13 +2717,19 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       <div className={`planning-layout${perspective === 'crew' && !isOperationalPanelOpen ? ' is-crew-board-only' : ''}`}>
         <section className="planning-board-card" aria-label={perspective === 'projects' ? 'Calendrier des projets' : 'Calendrier des affectations'}>
-          <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}`}>
+          <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}${hasContractDepartureControl ? ' has-contract-departure-control' : ''}`}>
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
                 <button aria-selected={perspective === 'projects'} className={perspective === 'projects' ? 'is-active' : ''} onClick={() => changePerspective('projects')} role="tab" type="button">Projet</button>
                 {readPermissions.canViewCrewPlanning ? <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button> : null}
               </div>
+              {hasContractDepartureControl ? (
+                <label className="planning-contract-departures-switch">
+                  <input checked={showContractDepartures} onChange={(event) => setShowContractDepartures(event.target.checked)} role="switch" type="checkbox" />
+                  Fins de contrat
+                </label>
+              ) : null}
               {perspective === 'fleet' ? (
                 <button aria-expanded={isFleetFullyExpanded} className="planning-filter-toggle" disabled={!fleetNodeKeys.length} onClick={toggleFleetTree} title="Déplier ou replier tous les navires et toutes les bordées affichés" type="button">
                   {isFleetFullyExpanded ? <ChevronsDownUp aria-hidden="true" size={17} /> : <ChevronsUpDown aria-hidden="true" size={17} />}
@@ -2852,6 +2864,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                   <PlanningCrewTimelineRow
                     absences={absences}
                     conflictDatesByEvent={conflictDatesByEvent}
+                    contractDeparture={lane.personId === null ? undefined : contractDepartures?.get(lane.personId)}
                     cutGridCellKeys={cutGridCellKeys}
                     dayWidth={effectiveDayWidth}
                     days={days}
@@ -2885,6 +2898,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
                 <PlanningCrewTimelineRow
                   balances={lane.personId === null ? undefined : getCrewBalance(lane.personId)}
                   balanceLoading={!previewMode && !balancesLoaded}
+                  contractDeparture={lane.personId === null ? undefined : contractDepartures?.get(lane.personId)}
                   onEmptyGridCellDoubleClick={(cell) => void colorPlanningGridCell(cell)}
                   onInitializeBalance={canEditPlanning && (balancesLoaded || previewMode) && lane.personId !== null ? () => setBalancePerson({ id: lane.personId!, name: lane.label }) : undefined}
                   onEditDayState={openDayState}

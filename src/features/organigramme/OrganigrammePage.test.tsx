@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { OrganigrammePage } from './OrganigrammePage';
+import { ORG_COLORS } from './organigrammeDiagram';
 import { ORG_DEMO, ORG_LINKS_DEMO, ORG_VESSEL_FILTER_DEMO } from './organigrammeFixtures';
 import type { RoleKey } from '../permissions/roles';
 
@@ -88,6 +89,39 @@ describe('OrganigrammePage', () => {
     expect(selected).toHaveValue('18');
     expect(within(selected).getByRole('option', { name: 'Équipe hiver' })).toBeInTheDocument();
     expect(rpc).toHaveBeenLastCalledWith('organigramme_snapshot_v4', expect.objectContaining({ p_chart_id: 18 }));
+  });
+
+  it('toggles red contract dates and CDD card outlines in both presentations', async () => {
+    setup();
+    await screen.findByRole('img');
+    const checkbox = screen.getByRole('checkbox', { name: 'Mettre en évidence les CDD et les fins de contrat' });
+    const svg = () => new DOMParser().parseFromString(decodeURIComponent(screen.getByRole('img').getAttribute('src')!.split(',')[1]), 'image/svg+xml');
+    const expectFormatting = (enabled: boolean) => {
+      const document = svg();
+      const date = [...document.querySelectorAll('text')].find((text) => text.textContent === 'Fin de contrat 31/12/2026');
+      const outlines = [...document.querySelectorAll('rect[stroke-dasharray]')];
+      if (enabled) {
+        expect(date?.getAttribute('fill')).toBe(ORG_COLORS.dpaInk);
+        expect(outlines.map((outline) => {
+          const y = Number(outline.getAttribute('y'));
+          const bottom = y + Number(outline.getAttribute('height'));
+          const center = Number(outline.getAttribute('x')) + Number(outline.getAttribute('width')) / 2;
+          return [...document.querySelectorAll('text')].find((text) => Number(text.getAttribute('x')) === center && Number(text.getAttribute('y')) > y && Number(text.getAttribute('y')) < bottom)?.textContent;
+        }).sort()).toEqual(['Arthur PETIT', 'Élodie MARTIN']);
+      } else {
+        expect(date).toBeUndefined();
+        expect(outlines).toHaveLength(0);
+      }
+    };
+    expect(checkbox).not.toBeChecked();
+    expectFormatting(false);
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expectFormatting(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Par fonction' }));
+    expectFormatting(true);
+    fireEvent.click(checkbox);
+    expectFormatting(false);
   });
 
   it('previews selectable export fields and retains choices between presentations, documents and refreshes', async () => {

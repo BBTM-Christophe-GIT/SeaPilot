@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.116.0` ajoute l’affichage des fins de contrat dans l’organigramme
+et le Planning pour Administration et Direction. Dans le Planning, l’interrupteur
+est visible à côté des onglets de vue et activé à l’ouverture. Appliquer
+`20261123075201_organigramme_contract_details.sql` avant le frontend.
+Voir [Organigramme](./organigramme.md) et
+[Départs dans le Planning](./planning-reference-month-employment-v3-22-12.md#départs-dans-le-calendrier).
+
 La version `3.115.0` active le mode Auto sur les waypoints modifiables
 sans choix d’UKC. Le Passage Plan affiche le seuil à vérifier quand le modèle
 est indisponible. La fiche conserve les hauteurs d’eau prévues aux ports.

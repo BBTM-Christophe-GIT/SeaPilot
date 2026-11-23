@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { addPlanningDays, formatPlanningDate, todayPlanningDate } from './planningDates';
 import { buildPlanningTimeline, type PlanningCrewEvent } from './planningModel';
 import { PlanningCrewTimelineRow } from './PlanningTimeline';
 import type { PlanningHrDocumentRecord } from './planningQueries';
@@ -15,15 +16,50 @@ const event: PlanningCrewEvent = {
     .map((day) => [day.date, 'Arrêt Maladie'])),
 };
 
-function renderRow(item = event, conflicts = new Map<string, Set<string>>(), hrDocuments: readonly PlanningHrDocumentRecord[] = []) {
+function renderRow(item = event, conflicts = new Map<string, Set<string>>(), hrDocuments: readonly PlanningHrDocumentRecord[] = [],
+  visibleDays = days, contractDeparture?: string) {
   return render(<PlanningCrewTimelineRow
     lane={{ key: 'person-15', label: item.person, detail: '', personId: 15, vesselId: 13,
       vessel: item.vessel, watchGroup: '', events: [item] }}
-    days={days} dayWidth={52} editable pendingId={null} selectedId={null}
+    days={visibleDays} dayWidth={52} editable pendingId={null} selectedId={null} contractDeparture={contractDeparture}
     conflictDatesByEvent={conflicts} balances={new Map()} hrDocuments={hrDocuments}
     onCreate={vi.fn()} onMove={vi.fn()} onOpen={vi.fn()} onResize={vi.fn()} onSelect={vi.fn()}
   />);
 }
+
+describe('contract departure marker', () => {
+  const today = todayPlanningDate();
+  const departure = addPlanningDays(today, 2);
+  const flagLabel = `Fin de contrat de ${event.person} le ${formatPlanningDate(departure)}`;
+  const visibleDays = (offset: number) => {
+    const start = addPlanningDays(today, offset);
+    const end = addPlanningDays(start, 1);
+    return buildPlanningTimeline(today, 'day').filter((day) => start <= day.date && day.date <= end);
+  };
+
+  it('clips the dotted line at the right edge while the flag is outside the view', () => {
+    const { container } = renderRow(event, undefined, [], visibleDays(0), departure);
+    expect(container.querySelector('.planning-contract-departure-line')).toHaveStyle({ gridColumn: '2 / span 2' });
+    expect(screen.queryByRole('img', { name: flagLabel })).not.toBeInTheDocument();
+  });
+
+  it('clips the start when today is off screen and keeps the flag on the actual date', () => {
+    const { container } = renderRow(event, undefined, [], visibleDays(1), departure);
+    expect(container.querySelector('.planning-contract-departure-line')).toHaveStyle({ gridColumn: '2 / span 2' });
+    expect(screen.getByRole('img', { name: flagLabel })).toHaveStyle({ gridColumn: '3' });
+  });
+
+  it('marks a departure on the current date without drawing a line', () => {
+    const { container } = renderRow(event, undefined, [], visibleDays(0), today);
+    expect(screen.getByRole('img', { name: `Fin de contrat de ${event.person} le ${formatPlanningDate(today)}` })).toBeInTheDocument();
+    expect(container.querySelector('.planning-contract-departure-line')).not.toBeInTheDocument();
+  });
+
+  it('omits past departure dates even when visible', () => {
+    const { container } = renderRow(event, undefined, [], visibleDays(-1), addPlanningDays(today, -1));
+    expect(container.querySelector('.has-contract-departure')).not.toBeInTheDocument();
+  });
+});
 
 describe('crew daily status rendering', () => {
   it.each(['Congés Paternité', 'Congés Paternités'])('renders a paternity leave period with its canonical status and leave palette on every day (%s)', (status) => {

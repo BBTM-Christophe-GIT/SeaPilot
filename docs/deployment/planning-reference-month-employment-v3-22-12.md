@@ -15,3 +15,7 @@ La liste s’appuie sur les champs Supabase `people.hired_on` et `people.departe
 3. Vérifier que Loïc ALIX est proposé si ses dates d’embauche et de départ recouvrent janvier 2025.
 4. Vérifier qu’une personne embauchée après le 31 janvier 2025 ou partie avant le 1er janvier 2025 n’est pas proposée.
 5. Ajouter la personne et contrôler la création de sa ligne vide dans la bordée.
+
+## Départs dans le calendrier
+
+Dans **Flotte** et **Équipages**, l’interrupteur **Fins de contrat** se trouve à côté des onglets de vue pour Administration et Direction. Il est activé à l’ouverture du Planning. La date de départ RH d’un collaborateur affiché est signalée par un drapeau rouge et un pointillé rouge clair depuis aujourd’hui, dans la limite de la période affichée. Les dates passées ne sont pas signalées.

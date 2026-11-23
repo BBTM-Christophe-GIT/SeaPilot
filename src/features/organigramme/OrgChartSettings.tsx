@@ -47,7 +47,13 @@ export function OrgChartSettings({ data, options, onChange, asOf, onDateChange, 
     </fieldset>
     <section className="org-inspector-section" aria-label="Affichage">
       <h3><Eye size={16} aria-hidden="true" />Affichage</h3>
-      <div className="org-options">{([{ key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') }, { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') }, { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') }, { key: 'showVessels', label: 'Afficher les navires' }] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key]} disabled={key === 'includeUnassigned' && options.vesselIds !== null} onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}</label>)}</div>
+      <div className="org-options">{([
+        { key: 'includeOffice', label: orgCategoryLabel(data || {}, 'office') },
+        { key: 'includeExternal', label: orgCategoryLabel(data || {}, 'external') },
+        { key: 'includeUnassigned', label: orgCategoryLabel(data || {}, 'unassigned') },
+        { key: 'showVessels', label: 'Afficher les navires' },
+        { key: 'showContracts', label: 'Mettre en évidence les CDD et les fins de contrat' },
+      ] as const).map(({ key, label }) => <label key={key}><input type="checkbox" checked={options[key] ?? false} disabled={key === 'includeUnassigned' && options.vesselIds !== null} onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}</label>)}</div>
       <div className="org-editor-actions">
         <button type="button" className="org-accent" disabled={!data || disabled} onClick={() => onEdit('watches')}><Users size={16} aria-hidden="true" />Composer les bordées</button>
         <button type="button" disabled={!data || disabled} onClick={() => onEdit('transfer')}><ArrowRightLeft size={16} aria-hidden="true" />Déplacer des collaborateurs</button>

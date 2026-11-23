@@ -16,7 +16,7 @@ export interface OrgLink { id: number; sourceCategory: OrgCategory; targetKind: 
 export interface OrgTarget { kind: OrgLink['targetKind']; key: string; section: string; name: string; context: string }
 export const orgTargetValue = (target: OrgTarget) => JSON.stringify([target.kind, target.section, target.key]);
 export const orgCategoryLabel = (data: Pick<OrgData, 'categoryLabels'>, key: OrgCategory) => data.categoryLabels?.[key] || ORG_CATEGORY_LABELS[key];
-export interface OrgPerson { photoPath?: string; photoUrl?: string; photoUnavailable?: boolean; id: number; name: string; firstName?: string; lastName?: string; functionLabel: string; population: string; email?: string | null; phone?: string | null }
+export interface OrgPerson { photoPath?: string; photoUrl?: string; photoUnavailable?: boolean; id: number; name: string; firstName?: string; lastName?: string; functionLabel: string; population: string; email?: string | null; phone?: string | null; contractType?: string | null; contractEndDate?: string | null }
 export interface OrgVessel { iconUrl?: string; iconDataUrl?: string; id: number; name: string; lengthOverall: string | number | null }
 export interface OrgMembership { personId: number; vesselId: number; watchGroup: string; functionLabel: string; source: 'manual' | 'board' | 'assignment' | 'period' | 'day' }
 export interface OrgWatch { id: number; vesselId: number; name: string; revision?: number }
@@ -24,11 +24,11 @@ export interface OrgSupport { id: number; personId: number | null; name: string;
 export type OrgSupportDraft = Omit<OrgSupport, 'id'> & { id?: number };
 export interface OrgData { chartId: number; charts: OrgChart[]; people: OrgPerson[]; vessels: OrgVessel[]; memberships: OrgMembership[]; support: OrgSupport[]; watches?: OrgWatch[]; asOf: string; categoryLabels?: Partial<Record<OrgCategory, string>>; links?: OrgLink[]; emergencyDefaultIds?: number[] | null; personnelExcludedIds?: number[]; cardColors?: Record<number, OrgCardColor>; temporaryFunctions?: Record<number, string> }
 export type OrgOfficeRole = 'president' | 'dpa' | 'armementCaptain';
-export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null; watchId?: number | null; officeRoles?: OrgOfficeRole[]; cardColor?: OrgCardColor }
+export interface OrgMember { photoUrl?: string; email?: string; phone?: string; id: number; name: string; functionLabel: string; detail: string; rank?: OrgRank | null; watchId?: number | null; officeRoles?: OrgOfficeRole[]; cardColor?: OrgCardColor; fixedTerm?: boolean; contractEndDate?: string | null }
 export interface OrgColumn { key: string; label: string; members: OrgMember[]; watchId?: number }
 export interface OrgSection { iconDataUrl?: string; key: string; label: string; kind: 'vessel' | 'office' | 'external' | 'unassigned' | 'functions' | 'relations'; columns: OrgColumn[]; vesselId?: number }
 // null selects the whole fleet; an empty array explicitly selects no vessels.
-export interface OrgOptions { view: OrganigrammeView; vesselIds: number[] | null; includeOffice: boolean; includeExternal: boolean; includeUnassigned: boolean; showVessels: boolean; showPhotos?: boolean; showEmails?: boolean; showPhones?: boolean; showFunctions?: boolean; showWatches?: boolean }
+export interface OrgOptions { view: OrganigrammeView; vesselIds: number[] | null; includeOffice: boolean; includeExternal: boolean; includeUnassigned: boolean; showVessels: boolean; showPhotos?: boolean; showEmails?: boolean; showPhones?: boolean; showFunctions?: boolean; showWatches?: boolean; showContracts?: boolean }
 
 const compareMembers = (a: OrgMember, b: OrgMember) => compareHrFunctionLabels(a.functionLabel, b.functionLabel) || a.name.localeCompare(b.name, 'fr');
 
@@ -78,13 +78,14 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
   const rows = memberships.filter((row) => vesselById.has(row.vesselId));
   const watchKey = (vesselId: number, label: string) => vesselId + '-' + label;
   const watches = new Map((data.watches ?? []).map((watch) => [watchKey(watch.vesselId, watch.name), watch.id]));
-  const contacts = (person?: OrgPerson) => ({
+  const personDetails = (person?: OrgPerson) => ({
     ...(options.showEmails && person?.email?.trim() ? { email: person.email.trim() } : {}),
     ...(options.showPhones && person?.phone?.trim() ? { phone: person.phone.trim() } : {}),
+    ...(options.showContracts && person ? { fixedTerm: person.contractType?.toUpperCase() === 'CDD', contractEndDate: person.contractEndDate } : {}),
   });
   const member = (person: OrgPerson, role = person.functionLabel): OrgMember => ({ id: person.id, name: person.name,
     photoUrl: options.showPhotos !== false ? person.photoUrl : undefined,
-    functionLabel: data.temporaryFunctions?.[person.id]?.trim() || normalizeHrFunctionLabel(role || person.functionLabel) || 'Fonction non renseignée', detail: '', ...contacts(person),
+    functionLabel: data.temporaryFunctions?.[person.id]?.trim() || normalizeHrFunctionLabel(role || person.functionLabel) || 'Fonction non renseignée', detail: '', ...personDetails(person),
     ...(data.cardColors?.[person.id] ? { cardColor: data.cardColors[person.id] } : {}),
   });
   const sections: OrgSection[] = [];
@@ -98,7 +99,7 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
       const person = people.get(entry.personId ?? -1);
       const temporaryFunction = person ? data.temporaryFunctions?.[person.id]?.trim() : undefined;
       return { id: entry.personId ?? -entry.id!, name: person?.name || entry.name, functionLabel: temporaryFunction || entry.functionLabel, detail: '',
-        rank: entry.rank, photoUrl: options.showPhotos !== false ? person?.photoUrl : undefined, ...contacts(person),
+        rank: entry.rank, photoUrl: options.showPhotos !== false ? person?.photoUrl : undefined, ...personDetails(person),
         ...(roles.length ? { officeRoles: roles } : {}),
         ...(person && data.cardColors?.[person.id] ? { cardColor: data.cardColors[person.id] } : {}),
       };
@@ -150,7 +151,10 @@ export function buildOrganigramme(data: OrgData, options: OrgOptions): OrgSectio
     if (remaining.length) sections.push({ key: 'unassigned', label: 'Sans affectation', kind: 'unassigned', columns: [...groups].sort(([a], [b]) => compareHrFunctionLabels(a, b)).map(([label, members]) => ({ key: label, label, members: members.sort(compareMembers) })) });
   }
   if (options.includeExternal) {
-    const members = data.support.filter((entry) => entry.category === 'external').sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'fr')).map((entry) => ({ id: -entry.id, name: entry.name, functionLabel: entry.functionLabel, detail: '', photoUrl: options.showPhotos !== false ? people.get(entry.personId ?? -1)?.photoUrl : undefined, ...contacts(people.get(entry.personId ?? -1)) }));
+    const members = data.support.filter((entry) => entry.category === 'external').sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'fr')).map((entry) => {
+      const person = people.get(entry.personId ?? -1);
+      return { id: -entry.id, name: entry.name, functionLabel: entry.functionLabel, detail: '', photoUrl: options.showPhotos !== false ? person?.photoUrl : undefined, ...personDetails(person) };
+    });
     if (members.length) sections.push({ key: 'external', label: 'Intervenants externes', kind: 'external', columns: members.map((person) => ({ key: `external-${person.id}`, label: '', members: [person] })) });
   }
   sections.forEach((section) => {

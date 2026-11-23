@@ -11,15 +11,48 @@ import { layoutOrganigramme, ORG_COLORS, ORG_DPA_BADGE_LABEL } from './organigra
 import { ORG_CARD_COLORS } from './organigrammeCardColors';
 
 const options: OrgOptions = { view: 'vessels', vesselIds: null, includeOffice: true, includeExternal: true, includeUnassigned: true, showVessels: true };
+// jsPDF may round a channel when it serializes a hex color as two decimal fractions.
+const nearColor = (actual: string, expected: string) => [1, 3, 5].every((i) =>
+  Math.abs(Number.parseInt(actual.slice(i, i + 2), 16) - Number.parseInt(expected.slice(i, i + 2), 16)) <= 2);
+
 describe('organigramme exports', () => {
+  it('exports only the selected CDD outlines and contract dates in the PDF', async () => {
+    const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
+    for (const showContracts of [false, true]) {
+      const sections = buildOrganigramme(ORG_DEMO, { ...options, showContracts, includeOffice: false });
+      const blob = await buildOrgPdf(sections, true, ORG_DEMO.asOf, 'vessels', logo);
+      const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+      try {
+        const page = await (await task.promise).getPage(1);
+        const ops = await page.getOperatorList();
+        let dashed = false;
+        let fill = '';
+        let dashedOutlines = 0;
+        let redEndDate = false;
+        ops.fnArray.forEach((op, index) => {
+          const args = ops.argsArray[index];
+          if (op === OPS.setDash) dashed = args[0].length > 0;
+          if (op === OPS.restore) dashed = false;
+          if (op === OPS.constructPath && args[0] === OPS.stroke && dashed) dashedOutlines++;
+          if (op === OPS.setFillRGBColor) fill = args[0];
+          if (op === OPS.showText && nearColor(fill, ORG_COLORS.dpaInk)) {
+            const text = args[0].map((glyph: { unicode: string } | number) => typeof glyph === 'number' ? '' : glyph.unicode).join('');
+            if (text.includes('Fin de contrat 31/12/2026')) redEndDate = true;
+          }
+        });
+        expect(dashedOutlines).toBe(showContracts ? 2 : 0);
+        expect(redEndDate).toBe(showContracts);
+        const text = (await page.getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ');
+        expect(text.includes('31/12/2026')).toBe(showContracts);
+      } finally { await task.destroy(); }
+    }
+  });
+
   it('renders the governance links, accent and pastel customization in PDF and SVG', async () => {
     const data = { ...ORG_GOVERNANCE_DEMO, cardColors: { 1: 'blue' } as const, temporaryFunctions: { 2: 'Chef de quart invité' } };
     const sections = buildOrganigramme(data, options);
     const logo = new Uint8Array(await readFile('public/bbtm-report-logo.png'));
     const bytes = new Uint8Array(await (await buildOrgPdf(sections, true, data.asOf, 'vessels', logo)).arrayBuffer());
-    // jsPDF may round a channel when it serializes a hex color as two decimal fractions.
-    const nearColor = (actual: string, expected: string) => [1, 3, 5].every((i) =>
-      Math.abs(Number.parseInt(actual.slice(i, i + 2), 16) - Number.parseInt(expected.slice(i, i + 2), 16)) <= 2);
     const task = getDocument({ data: bytes });
     try {
       const page = await (await task.promise).getPage(1);

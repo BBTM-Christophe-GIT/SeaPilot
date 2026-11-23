@@ -7,10 +7,10 @@ export const ORG_DEMO: OrgData = {
   asOf: '2026-09-26',
   people: [
     { id: 1, name: 'Camille DUMONT', functionLabel: 'Président', population: 'sedentary' },
-    { id: 2, name: 'Élodie MARTIN', functionLabel: 'Capitaine', population: 'offshore' },
-    { id: 3, name: 'Louis BERNARD', functionLabel: 'Chef Mécanicien', population: 'offshore' },
+    { id: 2, name: 'Élodie MARTIN', functionLabel: 'Capitaine', population: 'offshore', contractType: 'CDD', contractEndDate: '2026-12-31' },
+    { id: 3, name: 'Louis BERNARD', functionLabel: 'Chef Mécanicien', population: 'offshore', contractType: 'CDI' },
     { id: 4, name: 'Emma ROBERT', functionLabel: '2nd Capitaine', population: 'offshore' },
-    { id: 5, name: 'Arthur PETIT', functionLabel: 'Matelot polyvalent', population: 'offshore' },
+    { id: 5, name: 'Arthur PETIT', functionLabel: 'Matelot polyvalent', population: 'offshore', contractType: 'CDD' },
     { id: 6, name: 'Léa MOREAU', functionLabel: 'Capitaine', population: 'offshore' },
     { id: 7, name: 'Gabriel SIMON', functionLabel: 'Chef Mécanicien', population: 'offshore' },
     { id: 8, name: 'Alice LAURENT', functionLabel: 'Capitaine', population: 'offshore' },
