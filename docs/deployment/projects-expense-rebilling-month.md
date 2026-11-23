@@ -14,10 +14,12 @@ brouillon de la facture actuellement affichée sont conservés. Le frais appara�
 alors dans le tableau, le compteur, les totaux et l'export du mois choisi.
 Un message confirme le mois de refacturation après l'enregistrement.
 
+Le mois affiché suit le premier jour de la période sélectionnée dans le
+calendrier. Le sélecteur de mois sélectionne tous les jours du mois choisi.
+En sélectionnant un mois complet, les frais suivent leur mois de refacturation.
 Sur une période personnalisée, le tableau, le compteur, les totaux et les
 exports se limitent aux factures datées dans la plage de jours choisie, bornes
 incluses, et rattachées à un mois de refacturation couvert par cette plage.
-Avec le sélecteur de mois, le classement suit le mois de refacturation.
 
 Les justificatifs suivent l'identifiant du frais : ils restent accessibles dans
 le formulaire, le tableau du nouveau mois et ses exports, même si leurs anciennes

@@ -4,6 +4,7 @@ import './projectBillingAttachmentStatus.css';
 import BillingPeriodCalendar from './BillingPeriodCalendar';
 import { ProjectPdfPreview } from './ProjectPdfPreview';
 import { ProjectBillingRawLines } from './ProjectBillingRawLines';
+import { ProjectBillingTimeline } from './ProjectBillingTimeline';
 import { billingReferenceScope, billingReferenceScopeLabel, fetchBillingReferences, saveBillingReference, type BillingReference } from './projectBillingReferences';
 import {
   checkBillingAttachments,
@@ -603,8 +604,8 @@ export function ProjectBillingPanel({
       )));
   }, [defaultServiceQuantity]);
 
-  function selectMonth(month: string) {
-    if (!/^\d{4}-\d{2}$/.test(month.slice(0, 7))) return;
+  function changeBillingMonth(month: string) {
+    if (month === selectedMonth) return;
     setRawLinesDirty(false);
     contextRevision.current += 1;
     autoCreatedPeriodId.current = null;
@@ -612,20 +613,36 @@ export function ProjectBillingPanel({
     setBusy('');
     setError('');
     setMessage('');
-    const normalized = month.slice(0, 7);
-    setSelectedMonth(normalized);
+    setSelectedMonth(month);
     setExpandedSections(EXPANDED_BILLING_SECTIONS);
-    const period = data.periods.find((item) => item.periodMonth.startsWith(normalized));
-    setPeriodDraft({ ...billingDraft(project, period), periodMonth: normalized });
-    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.serviceDate.startsWith(normalized)) }) : null);
+    const period = data.periods.find((item) => item.periodMonth.startsWith(month));
+    setPeriodDraft({ ...billingDraft(project, period), periodMonth: month });
+    setLegacyReferenceScope(period ? billingReferenceScope({ ...period, includeRawInPdf: period.includeRawInPdf !== false && (data.rawLines || []).some((line) => line.serviceDate.startsWith(month)) }) : null);
     setReferenceDrafts({});
     setExpenseEditor(null);
-    const range = monthRange(normalized);
-    setCustomStart(range.start);
-    setCustomEnd(range.end);
+  }
+
+  function changeBillingRange(start: string, end: string, mode: BillingPeriodMode) {
+    setCustomStart(start);
+    setCustomEnd(end);
     setCompleteMissingDays(false);
-    setPeriodMode('calendar-month');
+    setPeriodMode(mode);
     setPreviewBlob(null);
+  }
+
+  function selectMonth(value: string) {
+    const month = value.slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) return;
+    changeBillingMonth(month);
+    const { start, end } = monthRange(month);
+    changeBillingRange(start, end, 'calendar-month');
+  }
+
+  function selectCalendarRange(start: string, end: string) {
+    const month = start.slice(0, 7);
+    const fullMonth = monthRange(month);
+    changeBillingMonth(month);
+    changeBillingRange(start, end, start === fullMonth.start && end === fullMonth.end ? 'calendar-month' : 'custom');
   }
 
   function editInvoiceDraft(changes: Partial<BillingPeriodDraft>) {
@@ -1248,7 +1265,7 @@ export function ProjectBillingPanel({
         <h2>Facturation mensuelle</h2>
         <label className="project-billing-vessel">Navire<select disabled={Boolean(busy)} onChange={(event) => { setVesselFilter(event.target.value); setCompleteMissingDays(false); setPreviewBlob(null); }} value={vesselFilter}><option value="">Navire de l’opération</option>{vesselOptions.map((vessel) => <option key={vessel}>{vessel}</option>)}</select></label>
         {showMonthSelector ? <label className="project-billing-month">Mois<input disabled={Boolean(busy)} onChange={(event) => selectMonth(event.target.value)} type="month" value={selectedMonth} /></label> : null}
-        <BillingPeriodCalendar month={selectedMonth} startDate={exportRange.start} endDate={exportRange.end} disabled={Boolean(busy)} onRangeChange={(start, end) => { setCustomStart(start); setCustomEnd(end); setPeriodMode('custom'); setCompleteMissingDays(false); setPreviewBlob(null); }} />
+        <BillingPeriodCalendar month={selectedMonth} startDate={exportRange.start} endDate={exportRange.end} disabled={Boolean(busy)} onRangeChange={selectCalendarRange} />
       </div> : <div className="project-section-heading">
         <div>
           <strong>Facturation mensuelle</strong>
@@ -1261,6 +1278,15 @@ export function ProjectBillingPanel({
           </label>
         ) : null}
       </div>}
+
+      {workspace ? <ProjectBillingTimeline
+        project={project}
+        contract={contract}
+        operations={operations}
+        periods={billingDataContext?.client === client && billingDataContext.projectId === project.id ? data.periods : undefined}
+        documents={billingDataContext?.client === client && billingDataContext.projectId === project.id ? data.documents : undefined}
+        loading={busy === 'load'}
+      /> : null}
 
       {message ? <p className="project-billing-message" role="status">{message}</p> : null}
       {attachmentExportIssues.length ? <div className="project-billing-attachment-warning" role="status">

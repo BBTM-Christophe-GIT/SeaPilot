@@ -1265,6 +1265,12 @@ export function billingOperationRows(input: BillingExportInput): BillingOperatio
 
 export type ContractHireMode = 'operation' | 'standby' | 'weather-standby';
 
+export interface BillingHireRate {
+  amount: number;
+  currency: string;
+  unit: string;
+}
+
 export function contractHireModeForOperation(operation: string): ContractHireMode {
   const normalized = singleLineBillingOperation(operation).toLocaleUpperCase('fr-FR');
   if (/WEATHER\s+STAND[ -]?BY/.test(normalized) || /STAND[ -]?BY\s+M[ÉE]T[ÉE]O/.test(normalized)) {
@@ -1274,27 +1280,49 @@ export function contractHireModeForOperation(operation: string): ContractHireMod
   return 'operation';
 }
 
+function hireRate(
+  amount: number | null | undefined,
+  source: { hireCurrency: string; hireUnit: string } | undefined,
+  contract: ProjectContractRecord | undefined,
+): BillingHireRate | null {
+  if (amount == null) return null;
+  return {
+    amount,
+    currency: source?.hireCurrency || contract?.hireCurrency || 'EUR',
+    unit: source?.hireUnit || contract?.hireUnit || '',
+  };
+}
+
+function contractHireRateForDate(
+  contract: ProjectContractRecord | undefined,
+  reportDate: string,
+  mode: ContractHireMode = 'operation',
+): BillingHireRate | null {
+  const period = [...(contract?.hirePeriods || [])]
+    .filter((candidate) => candidate.startsOn <= reportDate && (!candidate.endsOn || candidate.endsOn >= reportDate))
+    .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
+  if (!period) return hireRate(contract?.charterHire, contract, contract);
+  const amount = mode === 'weather-standby' ? period.weatherStandbyHire ?? period.charterHire
+    : mode === 'standby' ? period.standbyHire ?? period.charterHire
+    : period.charterHire;
+  return hireRate(amount, period, contract);
+}
+
 export function contractHireForDate(
   contract: ProjectContractRecord | undefined,
   reportDate: string,
   mode: ContractHireMode = 'operation',
 ): number | null {
-  const period = [...(contract?.hirePeriods || [])]
-    .filter((candidate) => candidate.startsOn <= reportDate && (!candidate.endsOn || candidate.endsOn >= reportDate))
-    .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
-  if (!period) return contract?.charterHire ?? null;
-  if (mode === 'weather-standby') return period.weatherStandbyHire ?? period.charterHire;
-  if (mode === 'standby') return period.standbyHire ?? period.charterHire;
-  return period.charterHire;
+  return contractHireRateForDate(contract, reportDate, mode)?.amount ?? null;
 }
 
-export function billingApplicableHire(
+export function billingApplicableHireRate(
   operations: ProjectPlanningOccurrenceRecord[],
   contract: ProjectContractRecord | undefined,
   reportDate: string,
   vesselName: string,
   mode: ContractHireMode = 'operation',
-): number | null {
+): BillingHireRate | null {
   const normalizedVesselName = vesselName.trim().toLocaleUpperCase('fr-FR');
   const operation = operations
     .filter((candidate) => candidate.startsOn <= reportDate
@@ -1304,11 +1332,22 @@ export function billingApplicableHire(
           (name) => name.trim().toLocaleUpperCase('fr-FR') === normalizedVesselName,
         )))
     .sort((left, right) => right.startsOn.localeCompare(left.startsOn) || right.id - left.id)[0];
-  if (operation?.charterHireOverride === true) return operation.charterHire;
-  if (operation?.charterHireOverride === undefined && mode === 'operation') {
-    return operation?.charterHire ?? contractHireForDate(contract, reportDate, mode);
+  const operationRate = hireRate(operation?.charterHire, operation, contract);
+  if (operation?.charterHireOverride === true) return operationRate;
+  if (operation && operation.charterHireOverride === undefined && mode === 'operation') {
+    return operationRate ?? contractHireRateForDate(contract, reportDate, mode);
   }
-  return contractHireForDate(contract, reportDate, mode) ?? operation?.charterHire ?? null;
+  return contractHireRateForDate(contract, reportDate, mode) ?? operationRate;
+}
+
+export function billingApplicableHire(
+  operations: ProjectPlanningOccurrenceRecord[],
+  contract: ProjectContractRecord | undefined,
+  reportDate: string,
+  vesselName: string,
+  mode: ContractHireMode = 'operation',
+): number | null {
+  return billingApplicableHireRate(operations, contract, reportDate, vesselName, mode)?.amount ?? null;
 }
 
 export function billingOperationHire(

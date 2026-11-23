@@ -29,7 +29,6 @@ function adjacentMonths(month: string) {
     const days = new Date(year, monthIndex + 1, 0, 12).getDate();
     return {
       key: prefix,
-      current: offset === 0,
       label: first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }),
       blanks: (first.getDay() + 6) % 7,
       dates: Array.from({ length: days }, (_, index) => `${prefix}-${String(index + 1).padStart(2, '0')}`),
@@ -40,24 +39,34 @@ function adjacentMonths(month: string) {
 export default function BillingPeriodCalendar({
   className = '', month, startDate, endDate, disabled = false, onRangeChange,
 }: BillingPeriodCalendarProps) {
-  const [rangeStart, setRangeStart] = useState<{ month: string; date: string } | null>(null);
+  const [rangeStart, setRangeStart] = useState<{ month: string; visibleMonth: string; date: string } | null>(null);
   const [focusedDate, setFocusedDate] = useState<string | null>(null);
   const dayRefs = useRef(new Map<string, HTMLButtonElement>());
   const id = useId();
-  const months = useMemo(() => adjacentMonths(month), [month]);
+  const pendingRangeStart = rangeStart && (rangeStart.month === month || rangeStart.date.slice(0, 7) === month)
+    && startDate === rangeStart.date && endDate === rangeStart.date ? rangeStart : null;
+  const startMonth = startDate.slice(0, 7);
+  const endMonth = endDate.slice(0, 7);
+  const months = useMemo(() => {
+    // Keep all three months available until the second day is chosen.
+    const visibleMonths = adjacentMonths(pendingRangeStart?.visibleMonth ?? month);
+    const lastVisibleMonth = visibleMonths[2]?.key;
+    if (!pendingRangeStart && startMonth === month && lastVisibleMonth && endMonth > lastVisibleMonth) {
+      return adjacentMonths(lastVisibleMonth);
+    }
+    return visibleMonths;
+  }, [endMonth, month, pendingRangeStart, startMonth]);
   const dates = months.flatMap((calendarMonth) => calendarMonth.dates);
   const focusDate = focusedDate && dates.includes(focusedDate)
     ? focusedDate : dates.includes(startDate) ? startDate : dates[0];
-  const pendingRangeStart = rangeStart?.month === month
-    && startDate === rangeStart.date && endDate === rangeStart.date ? rangeStart.date : null;
 
   function chooseDay(value: string) {
     if (!pendingRangeStart) {
-      setRangeStart({ month, date: value });
+      setRangeStart({ month, visibleMonth: months[1]?.key ?? month, date: value });
       onRangeChange(value, value);
       return;
     }
-    const [start, end] = [pendingRangeStart, value].sort();
+    const [start, end] = [pendingRangeStart.date, value].sort();
     onRangeChange(start, end);
     setRangeStart(null);
   }
@@ -75,7 +84,7 @@ export default function BillingPeriodCalendar({
         <div className="billing-period-calendar-months">
           {months.map((calendarMonth) => <section className="billing-period-calendar-month" key={calendarMonth.key}
             aria-labelledby={`${id}-${calendarMonth.key}`}>
-            <h3 id={`${id}-${calendarMonth.key}`} className={calendarMonth.current ? 'is-current' : undefined}>
+            <h3 id={`${id}-${calendarMonth.key}`} className={calendarMonth.key === month ? 'is-current' : undefined}>
               {calendarMonth.label}
             </h3>
             <div className="billing-period-calendar-week" aria-hidden="true">

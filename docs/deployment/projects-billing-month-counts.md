@@ -1,5 +1,19 @@
 # Projet — classement mensuel des saisies et compteurs
 
+## Chronologie du projet
+
+Dans **Projets → Facturation**, la chronologie reprend les mois pour lesquels
+une facture client est renseignée, les changements de loyer d’affrètement et
+la date de fin enregistrée sur le dossier. L’ouverture d’une fiche mensuelle
+pour préparer un relevé ne suffit pas à faire apparaître un mois facturé.
+
+Les dates et références de facture sont enregistrées sur la fiche mensuelle.
+Pour les loyers, les services refacturables, les prestations BBTM et la saisie
+brute, les sélections d’export restent modifiables. Le statut facturé d’une
+ligne nécessite le rattachement de cette ligne à la facture client émise.
+
+## Classement des lignes et compteurs
+
 Les saisies brutes sont affichées selon leur date de prestation, dans les bornes
 inclusives de la période sélectionnée. Le tableau, sa pastille, son sous-total,
 le relevé et l'export PDF utilisent les mêmes lignes. Une ligne datée d'octobre
