@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.117.1` affiche une seule option par nom de navire dans le filtre
+et le formulaire du DPR. Le filtre inclut les rapports liés aux fiches de même
+nom, et chaque rapport conserve son identifiant de navire. Aucune migration
+requise.
+
 La version `3.117.0` permet de choisir les projets où chaque prestation BBTM
 est proposée par défaut. La sélection d’une plage de jours actualise les
 services refacturables, les totaux et les exports. Appliquer
