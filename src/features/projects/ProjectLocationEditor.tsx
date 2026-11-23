@@ -16,11 +16,14 @@ import type { ProjectFuelReference } from './projectFuelEstimate';
 import { renderProjectVoyageFuelDetails } from './projectVoyageFuelDetails';
 import './projectLocationEditor.css';
 
-export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort, fuelReference, towing, showPdfToggle = true }: {
+export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort, fuelReference, towing, fixedEtd }: {
   value?: ProjectLocationPlan | null; onChange: (value: ProjectLocationPlan) => void; disabled?: boolean; vessel?: ProjectLocationVessel; projectId?: string;
-  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; towing?: boolean; showPdfToggle?: boolean;
+  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; towing?: boolean; fixedEtd?: string;
 }) {
-  const plan = useMemo(() => value ?? emptyProjectLocationPlan(), [value]);
+  const plan = useMemo(() => {
+    const location = value ?? emptyProjectLocationPlan();
+    return fixedEtd === undefined || location.etd === fixedEtd ? location : { ...location, etd: fixedEtd };
+  }, [value, fixedEtd]);
   const [mode, setMode] = useState<'route' | 'point' | 'zone'>('route');
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
   const latest = useRef({ plan, disabled, projectId, mode }); latest.current = { plan, disabled, projectId, mode };
@@ -30,6 +33,10 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     const next = projectLocationRouteEtas(plan, vessel?.maxSpeedKnots);
     if (next !== plan) onChange(next);
   }, [plan, vessel?.maxSpeedKnots, disabled, onChange]);
+
+  function routeEtd(current: ProjectLocationPlan) {
+    return fixedEtd ?? (!current.waypoints.length && !current.etd.trim() ? initialSeaOperationDepartureEta() : current.etd);
+  }
 
   function startZone(id?: string) {
     if (disabled) return;
@@ -52,7 +59,7 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
       const field = mode === 'point' ? 'points' : 'waypoints';
       if (current[field].length >= PROJECT_LOCATION_LIMITS[field]) return;
       const number = current[field].length + 1;
-      const etd = mode === 'route' && !current.waypoints.length && !current.etd.trim() ? initialSeaOperationDepartureEta() : current.etd;
+      const etd = mode === 'route' ? routeEtd(current) : current.etd;
       emit({ ...current, etd, [field]: [...current[field], { ...emptySeaOperationWaypoint(), number: String(number), descriptionVhf: port?.name || (mode === 'route' ? `Waypoint ${number}` : `Point isolé ${number}`), ...coordinates, ...(mode === 'route' ? { etaMode: 'automatic' as const } : {}) }] });
     }
   }
@@ -66,7 +73,7 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     const next = target === 'route'
       ? {
           ...current,
-          etd: !current.waypoints.length && !current.etd.trim() ? initialSeaOperationDepartureEta() : current.etd,
+          etd: routeEtd(current),
           waypoints: appendSeaOperationImportedWaypoints(current.waypoints, points),
         }
       : {
@@ -81,9 +88,11 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
   return <fieldset className="project-location-editor" disabled={disabled}>
     <legend>Localisation facultative</legend>
     <p className="project-location-help">Préparez une route, des points isolés et des zones sur la même carte. Cette rubrique n’est pas obligatoire pour enregistrer le projet.</p>
-    <div className="project-location-settings"><label>ETD · départ prévu<input type="datetime-local" aria-label="ETD de la localisation" value={plan.etd} onChange={event => emit({ ...plan, etd: event.target.value })} /></label><label>Numéro des cartes marines<input value={plan.charts} maxLength={20000} onChange={event => emit({ ...plan, charts: event.target.value })} /></label></div>
-    {showPdfToggle && <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>}
-    {(plan.includeInPdf || !showPdfToggle) && <div className="project-location-settings"><label>Récapitulatif du parcours dans le PDF
+    {fixedEtd === undefined && <>
+      <div className="project-location-settings"><label>ETD · départ prévu<input type="datetime-local" aria-label="ETD de la localisation" value={plan.etd} onChange={event => emit({ ...plan, etd: event.target.value })} /></label><label>Numéro des cartes marines<input value={plan.charts} maxLength={20000} onChange={event => emit({ ...plan, charts: event.target.value })} /></label></div>
+      <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>
+    </>}
+    {fixedEtd === undefined && plan.includeInPdf && <div className="project-location-settings"><label>Récapitulatif du parcours dans le PDF
       <select value={plan.includeVoyageEstimateInPdf === undefined ? 'navigation' : plan.includeVoyageEstimateInPdf ? 'full' : 'none'} onChange={event => {
         const next = { ...plan };
         if (event.target.value === 'navigation') delete next.includeVoyageEstimateInPdf;
@@ -100,8 +109,9 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
       {waypointImport => <SeaOperationWaypointMapEditor
         waypoints={plan.waypoints} isolatedPoints={plan.points} zones={plan.zones} drawingMode={mode} maxSpeedKnots={vessel?.maxSpeedKnots}
         renderVoyageDetails={distanceNm => renderProjectVoyageFuelDetails(fuelReference, typeof vessel?.id === 'number' ? vessel.id : null, distanceNm, towing)}
-        etd={plan.waypoints[0]?.eta || plan.etd} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
+        etd={fixedEtd ?? (plan.waypoints[0]?.eta || plan.etd)} eta={seaOperationRouteArrivalEta(plan)} disabled={disabled}
         departurePort={departurePort} arrivalPort={arrivalPort} mapViewport={plan.mapViewport}
+        showManualControls={fixedEtd === undefined}
         waypointImport={waypointImport}
         onMapViewportChange={mapViewport => { const current = latest.current.plan; const next = { ...current }; if (mapViewport) next.mapViewport = { ...mapViewport }; else delete next.mapViewport; emit(next); }}
         onAddWaypoint={(position, port) => { if (position) addOnMap(position, port); }}
@@ -111,7 +121,7 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
         onDeleteIsolatedPoint={id => { const current = latest.current.plan; emit({ ...current, points: current.points.filter(point => point.id !== id) }); }}
         onMoveZoneVertex={moveVertex} onDeleteZoneVertex={(id, index) => { const current = latest.current.plan; emit({ ...current, zones: current.zones.map(zone => zone.id === id ? { ...zone, vertices: zone.vertices.filter((_vertex, vertexIndex) => vertexIndex !== index) } : zone) }); }} />}
     </SeaOperationWaypointImportPanel>
-    <section aria-label="Route à compléter"><div className="project-location-subheading"><h3>Route</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || plan.waypoints.length >= PROJECT_LOCATION_LIMITS.waypoints} onClick={() => emit({ ...plan, etd: !plan.waypoints.length && !plan.etd.trim() ? initialSeaOperationDepartureEta() : plan.etd, waypoints: [...plan.waypoints, { ...emptySeaOperationWaypoint(), number: String(plan.waypoints.length + 1), etaMode: 'automatic' }] })}>Ajouter un waypoint</button></div>
+    <section aria-label="Route à compléter"><div className="project-location-subheading"><h3>Route</h3><button type="button" className="sp-button sp-button--secondary" disabled={disabled || plan.waypoints.length >= PROJECT_LOCATION_LIMITS.waypoints} onClick={() => emit({ ...plan, etd: routeEtd(plan), waypoints: [...plan.waypoints, { ...emptySeaOperationWaypoint(), number: String(plan.waypoints.length + 1), etaMode: 'automatic' }] })}>Ajouter un waypoint</button></div>
       <div role="table" aria-label="Waypoints de la route">{plan.waypoints.map((point, index) => <ProjectLocationPointFields key={point.id} point={point} index={index} disabled={disabled} vessel={vessel} projectId={projectId}
         onChange={patch => emit({ ...plan, waypoints: plan.waypoints.map(item => item.id === point.id ? updateSeaOperationWaypoint(item, patch) : item) })} onDelete={() => emit({ ...plan, waypoints: plan.waypoints.filter(item => item.id !== point.id) })} />)}</div>
       {!plan.waypoints.length && <p className="project-location-help">Aucun waypoint. Les distances et durées concernent uniquement les points de cette route.</p>}

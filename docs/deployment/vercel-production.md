@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.118.0** ajoute **Opérations → Devis** pour créer une offre à partir
+du formulaire Projets. Le PDF calcule le total HT à partir de la durée, du loyer
+journalier et des frais, et peut intégrer la carte et les brochures des navires.
+Voir [Devis et offres commerciales](./project-quotes.md).
+
 La version `3.117.1` affiche une seule option par nom de navire dans le filtre
 et le formulaire du DPR. Le filtre inclut les rapports liés aux fiches de même
 nom, et chaque rapport conserve son identifiant de navire. Aucune migration

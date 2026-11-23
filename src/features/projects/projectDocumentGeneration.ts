@@ -27,6 +27,7 @@ import { BIMCO_P144_FIELDS } from './projectContractModels';
 import { buildStyledContract } from './projectStyledContract';
 import {
   buildCommercialReserves,
+  calculateCommercialQuoteTotal,
   COMMERCIAL_OFFER_COMPANY_DETAILS,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_WEATHER,
@@ -35,6 +36,7 @@ import {
   getCommercialConditionsMode,
   getCommercialIncludedServiceDescriptions,
   getCommercialIncludedServiceRichDescriptions,
+  readCommercialQuoteDurationDays,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
@@ -47,7 +49,7 @@ import {
   localTodayIso,
 } from './projectBareboatContract';
 import { projectDescriptionToPlainText } from './projectDescription';
-import { appendProjectQuoteTerms, QUOTE_FUEL_EXCLUDED } from './projectQuoteTerms';
+import { appendProjectQuoteTerms, QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -215,6 +217,9 @@ export const PROJECT_OFFER_TRANSLATIONS = {
     redelivery: 'Redélivraison',
     firmDuration: 'Durée ferme',
     calendarDays: 'jours calendaires',
+    charterDuration: 'Durée d’affrètement',
+    charterDay: 'jour',
+    charterDays: 'jours',
     fuel: 'Carburant',
     commercialTerms: 'Conditions commerciales',
     descriptionOfTerms: 'DESCRIPTION DES CONDITIONS',
@@ -227,6 +232,7 @@ export const PROJECT_OFFER_TRANSLATIONS = {
     payment: 'PAIEMENT',
     includedServices: 'PRESTATIONS INCLUSES DANS LES CONDITIONS COMMERCIALES',
     charterHire: 'Loyer d’affrètement',
+    quoteTotal: 'Total HT du devis',
     mobilisationFees: 'Frais de mobilisation',
     demobilisationFees: 'Frais de démobilisation',
     commercialReserves: 'RÉSERVES COMMERCIALES',
@@ -263,6 +269,9 @@ export const PROJECT_OFFER_TRANSLATIONS = {
     redelivery: 'Redelivery',
     firmDuration: 'Firm period',
     calendarDays: 'calendar days',
+    charterDuration: 'Charter duration',
+    charterDay: 'day',
+    charterDays: 'days',
     fuel: 'Fuel',
     commercialTerms: 'Commercial terms',
     descriptionOfTerms: 'DESCRIPTION OF TERMS',
@@ -275,6 +284,7 @@ export const PROJECT_OFFER_TRANSLATIONS = {
     payment: 'PAYMENT',
     includedServices: 'SERVICES INCLUDED IN THE COMMERCIAL TERMS',
     charterHire: 'Charter hire',
+    quoteTotal: 'Total excl. VAT',
     mobilisationFees: 'Mobilization fees',
     demobilisationFees: 'Demobilization fees',
     commercialReserves: 'COMMERCIAL RESERVATIONS',
@@ -555,7 +565,13 @@ async function generateProjectDocumentBase(
       ? conditionsDescription ? [{ html: conditionsDescription, label: copy.descriptionOfTerms }] : []
       : includedServiceRows.map(([label, html]) => ({ html, label }));
     const emitterName = formatProjectDocumentEmitterName(input.emitter);
-    const duration = input.project.startsOn && input.project.endsOn
+    const fuel = supplytime.box19_special_fuel || (quote ? QUOTE_FUEL_EXCLUDED : '-');
+    const hasQuoteTerms = quote || fuel === QUOTE_FUEL_EXCLUDED || fuel === QUOTE_FUEL_INCLUDED;
+    const quoteDuration = hasQuoteTerms ? readCommercialQuoteDurationDays(supplytime) : null;
+    const quoteTotal = hasQuoteTerms && contract && contract.feeCurrency === contract.hireCurrency
+      ? calculateCommercialQuoteTotal(contract)
+      : null;
+    const duration = !quote && input.project.startsOn && input.project.endsOn
       ? Math.max(1, Math.round((new Date(input.project.endsOn).getTime() - new Date(input.project.startsOn).getTime()) / 86_400_000) + 1)
       : null;
     const reference = `OC-${input.project.projectCode.replace(/^P/i, '') || 'BROUILLON'}`;
@@ -664,11 +680,13 @@ async function generateProjectDocumentBase(
     const redelivery = [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ');
     detailRow(copy.delivery, delivery || '-', 18, quote ? 126 : 153, 78, quote ? 2 : 1);
     detailRow(copy.redelivery, redelivery || '-', 18, quote ? 136 : 161, 78, quote ? 2 : 1);
-    if (!quote && duration) {
+    if (quoteDuration) {
+      detailRow(copy.charterDuration, `${quoteDuration} ${quoteDuration === 1 ? copy.charterDay : copy.charterDays}`, 18, quote ? 146 : 169, 78);
+    } else if (duration) {
       detailRow(copy.firmDuration, `${duration} ${copy.calendarDays}`, 18, 169, 78);
     }
-    const fuel = supplytime.box19_special_fuel || (quote ? QUOTE_FUEL_EXCLUDED : '-');
-    detailRow(copy.fuel, translateProjectOfferStandardText(fuel, language), 18, quote ? 146 : duration ? 177 : 169, 78, quote ? 2 : 1);
+    const fuelRowY = quote ? (quoteDuration ? 156 : 146) : (quoteDuration || duration ? 177 : 169);
+    detailRow(copy.fuel, translateProjectOfferStandardText(fuel, language), 18, fuelRowY, 78, hasQuoteTerms ? 2 : 1);
 
     sectionHeading('2', copy.commercialTerms, 112, 111);
     if (conditionsMode === 'free_text') {
@@ -684,6 +702,9 @@ async function generateProjectDocumentBase(
       detailRow(copy.mobilisation, formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 126, 78);
       detailRow(copy.demobilisation, formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 136, 78);
       detailRow(quote ? copy.charterHire : copy.operation, formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 146, 78);
+      if (quoteTotal !== null) {
+        detailRow(copy.quoteTotal, formatMoney(quoteTotal, contract?.hireCurrency || 'EUR', '', language), 112, quote ? 156 : 164, 78);
+      }
       if (!quote) {
         detailRow(copy.extension, formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 156, 78);
         pdf.setFont('helvetica', 'bold');

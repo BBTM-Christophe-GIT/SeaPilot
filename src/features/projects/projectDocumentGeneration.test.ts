@@ -7,6 +7,8 @@ import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
 import * as projectLocationPdf from './projectLocationPdf';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClientRecord, ProjectContractRecord, ProjectRecord } from './projectQueries';
+import { COMMERCIAL_QUOTE_DURATION_DAYS_KEY } from './projectCommercialOffer';
+import { QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
 import {
   buildGeneratedDocumentFileName,
   buildBareboatTemplateFields,
@@ -313,6 +315,30 @@ describe('projectDocumentGeneration', () => {
         fetchMock.mockRestore();
       }
     });
+  });
+
+  it('keeps a saved quote’s duration and total when the offer is regenerated from Projects', async () => {
+    const logo = await readFile(resolve('public/bbtm-report-logo.png'));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(logo));
+
+    try {
+      const generated = await generateProjectDocument('offer', {
+        project,
+        contract: {
+          ...contract,
+          supplytimeData: { [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '4', box19_special_fuel: QUOTE_FUEL_INCLUDED },
+        },
+      });
+      const pdf = await PDFDocument.load(await generated.blob.arrayBuffer());
+      const content = pdf.getPage(0).node.lookup(PDFName.of('Contents'));
+      if (!(content instanceof PDFRawStream)) throw new Error('Expected a PDF content stream');
+      const pageCommands = Buffer.from(decodePDFRawStream(content).decode()).toString('latin1');
+      expect(pageCommands).toContain('4 jours');
+      expect(pageCommands).toContain('TOTAL HT DU DEVIS');
+      expect(pageCommands).toContain('51 000');
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 
   it('generates an offer PDF with the BBTM logo asset', async () => {

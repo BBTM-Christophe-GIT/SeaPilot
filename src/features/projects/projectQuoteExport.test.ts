@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildFleetBrochurePdf } from '../fleet/fleetBrochure';
 import { fetchFleetVessel, resolveFleetVesselPhotoUrl, type FleetVessel } from '../fleet/fleetQueries';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
+import { COMMERCIAL_QUOTE_DURATION_DAYS_KEY } from './projectCommercialOffer';
 import type { ProjectOfferDocumentInput } from './projectDocumentGeneration';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { buildProjectQuoteExport } from './projectQuoteExport';
@@ -54,7 +55,8 @@ describe('projectQuoteExport', () => {
           project,
           contract: {
             charterHire: 2000, demobilisationFee: 1000, extensionHire: null, feeCurrency: 'EUR',
-            hireCurrency: 'EUR', hireUnit: 'jour', mobilisationFee: 1500, supplytimeData: { box19_special_fuel: fuel },
+            hireCurrency: 'EUR', hireUnit: 'jour', mobilisationFee: 1500,
+            supplytimeData: { [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '4', box19_special_fuel: fuel },
           },
         },
         annexDocuments: [], annexFiles: [], brochureVessels: [],
@@ -69,6 +71,9 @@ describe('projectQuoteExport', () => {
       expect(cover).toContain('30 nov. 2026');
       expect(cover).toContain('Brest');
       expect(cover).toContain('Cherbourg');
+      expect(cover).toContain('4 jours');
+      expect(cover).toContain('TOTAL HT DU DEVIS');
+      expect(cover).toContain('10 500');
       expect(terms).toContain('Préambule');
       expect(terms).toContain('Article 6');
       expect(terms).toContain('Article 12');

@@ -5,6 +5,7 @@ import { ClientEditor, ProjectEditor, ProjectPlanningEditor, projectToWriteInput
 import { emptyProjectLocationPlan } from './projectLocation';
 import { localTodayIso } from './projectBareboatContract';
 import { DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
+import { COMMERCIAL_QUOTE_DURATION_DAYS_KEY } from './projectCommercialOffer';
 import { QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
 import type { ProjectQuoteEmission } from './ProjectQuoteEmission';
 import type { ComponentProps } from 'react';
@@ -38,7 +39,7 @@ vi.mock('./projectMutations', async (importOriginal) => ({
 }));
 
 vi.mock('./ProjectQuoteEmission', () => ({
-  ProjectQuoteEmission: ({ form, onExportingChange, onIncludeLocationChange, prepareExport }: ComponentProps<typeof ProjectQuoteEmission>) => (
+  ProjectQuoteEmission: ({ form, onExportingChange, onIncludeLocationChange, onVoyageRecapChange, prepareExport }: ComponentProps<typeof ProjectQuoteEmission>) => (
     <>
       <label>
         <input
@@ -48,6 +49,7 @@ vi.mock('./ProjectQuoteEmission', () => ({
         />
         Joindre la localisation au PDF
       </label>
+      <button onClick={() => onVoyageRecapChange(true)} type="button">Inclure l’estimation de carburant</button>
       <button
         onClick={async () => {
           onExportingChange(true);
@@ -117,14 +119,21 @@ describe('ProjectEditor devis', () => {
     expect(mutationMocks.saveProject).not.toHaveBeenCalled();
 
     const offer = within(dialog.getByRole('group', { name: '3 Offre Commerciale' }));
-    expect(offer.getByRole('combobox', { name: 'Port de livraison' })).toBeVisible();
-    expect(offer.getByRole('combobox', { name: 'Port de restitution' })).toBeVisible();
+    expect(offer.queryByRole('combobox', { name: 'Port de livraison' })).not.toBeInTheDocument();
+    expect(offer.queryByRole('combobox', { name: 'Port de restitution' })).not.toBeInTheDocument();
     expect(offer.getByLabelText('Début d’affrètement')).toBeVisible();
     for (const label of ['Identité armateur', 'Navire secondaire', 'Devise des frais']) {
       expect(offer.queryByLabelText(label)).not.toBeInTheDocument();
     }
     await user.selectOptions(offer.getByLabelText('Navire principal *'), '1');
     fireEvent.change(offer.getByLabelText('Début d’affrètement'), { target: { value: '2026-11-25T09:00' } });
+    const duration = offer.getByLabelText('Durée de l’affrètement en jours');
+    await user.type(duration, '0');
+    await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
+    expect(dialog.getByRole('alert')).toHaveTextContent('Saisissez une durée d’affrètement en jours entiers, supérieure à zéro.');
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+    await user.clear(duration);
+    await user.type(duration, '5');
     await user.type(offer.getByLabelText('Frais de mobilisation'), '350');
     expect(offer.getByLabelText('Fuel')).toHaveValue(QUOTE_FUEL_EXCLUDED);
     await user.selectOptions(offer.getByLabelText('Fuel'), QUOTE_FUEL_INCLUDED);
@@ -135,22 +144,34 @@ describe('ProjectEditor devis', () => {
     await user.click(steps.getByRole('button', { name: /Localisation/ }));
     const location = within(dialog.getByRole('group', { name: '2 Localisation' }));
     expect(location.getByTestId('project-location-map')).toBeVisible();
-    expect(location.getByLabelText('Récapitulatif du parcours dans le PDF')).toBeVisible();
+    expect(location.getByRole('combobox', { name: 'Port de livraison' })).toBeVisible();
+    expect(location.getByRole('combobox', { name: 'Port de restitution' })).toBeVisible();
+    expect(location.queryByLabelText('Récapitulatif du parcours dans le PDF')).not.toBeInTheDocument();
+    expect(location.queryByLabelText('ETD de la localisation')).not.toBeInTheDocument();
+    expect(location.queryByLabelText('Numéro des cartes marines')).not.toBeInTheDocument();
+    expect(locationMapMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      etd: '2026-11-25T09:00', showManualControls: false,
+    }));
     expect(location.queryByLabelText('Joindre la localisation au PDF')).not.toBeInTheDocument();
     await user.click(steps.getByRole('button', { name: /Émission du document/ }));
     await user.click(dialog.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
+    await user.click(dialog.getByRole('button', { name: 'Inclure l’estimation de carburant' }));
+    expect(dialog.queryByRole('complementary', { name: 'Complétude du document' })).not.toBeInTheDocument();
     await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(savedProject));
     expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       charterStartsAt: '2026-11-25T09:00',
       contractType: 'Offre Commerciale',
-      locationPlan: expect.objectContaining({ includeInPdf: true }),
+      locationPlan: expect.objectContaining({ etd: '2026-11-25T09:00', includeInPdf: true, includeVoyageEstimateInPdf: true }),
       mobilisationFee: 350,
       ownerIdentity: DEFAULT_PROJECT_OWNER_IDENTITY,
       primaryVesselId: 1,
       secondaryVesselId: null,
       status: 'Non validé',
-      supplytimeData: expect.objectContaining({ box19_special_fuel: QUOTE_FUEL_INCLUDED }),
+      supplytimeData: expect.objectContaining({
+        box19_special_fuel: QUOTE_FUEL_INCLUDED,
+        [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '5',
+      }),
     }));
     expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
   });

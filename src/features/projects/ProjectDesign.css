@@ -193,3 +193,12 @@
 .project-editor .project-quote-emission > .is-wide {
   grid-column: 1 / -1;
 }
+
+.project-editor .project-quote-voyage-options {
+  display: grid;
+  gap: var(--sp-space-2);
+}
+
+.project-editor .project-contract-preview-shell.is-quote {
+  grid-template-columns: minmax(0, 1fr);
+}

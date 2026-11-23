@@ -77,6 +77,7 @@ import {
   COMMERCIAL_CONDITIONS_MODE_KEY,
   COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
+  COMMERCIAL_QUOTE_DURATION_DAYS_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_AVAILABILITY_KEY,
   COMMERCIAL_RESERVE_OTHER_KEY,
@@ -84,6 +85,7 @@ import {
   COMMERCIAL_RESERVE_WEATHER_KEY,
   fetchProjectDocumentEmitter,
   getCommercialConditionsMode,
+  readCommercialQuoteDurationDays,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
 import {
@@ -92,6 +94,7 @@ import {
 } from './projectBareboatContract';
 import { cloneProjectLocationPlan, emptyProjectLocationPlan } from './projectLocation';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
+import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { ProjectQuoteEmission } from './ProjectQuoteEmission';
 import { QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
 import type { ProjectFuelReference } from './projectFuelEstimate';
@@ -499,6 +502,7 @@ export function ProjectEditor({
   const formElement = useRef<HTMLFormElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const primaryVesselInput = useRef<HTMLSelectElement>(null);
+  const charterDurationInput = useRef<HTMLInputElement>(null);
   const saveInProgress = useRef(false);
   const quoteExportInProgress = useRef(false);
   const savedQuote = useRef<ProjectMutationResult | null>(null);
@@ -538,6 +542,7 @@ export function ProjectEditor({
       && (vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId),
   );
   if (isQuote) eligibleVessels.sort(compareFleetAssets);
+  const selectedVessel = vessels.find((vessel) => vessel.id === form.primaryVesselId);
   const normalizedContractType = normalizeProjectContractType(form.contractType);
   const isCommercialOffer = normalizedContractType === COMMERCIAL_OFFER_CONTRACT_TYPE;
   const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
@@ -746,11 +751,17 @@ export function ProjectEditor({
         reportQuoteRequiredField('offer');
         return null;
       }
-      const invalidAmount = formElement.current?.querySelector<HTMLInputElement>('input[type="number"]:invalid');
-      if (invalidAmount) {
+      const invalidDuration = form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY]
+        && readCommercialQuoteDurationDays(form.supplytimeData) === null;
+      const invalidNumber = invalidDuration
+        ? charterDurationInput.current
+        : formElement.current?.querySelector<HTMLInputElement>('input[type="number"]:invalid');
+      if (invalidNumber) {
         setActiveStep('offer');
-        setErrorMessage('Saisissez des montants positifs ou nuls, avec deux décimales au maximum.');
-        requestAnimationFrame(() => invalidAmount.focus());
+        setErrorMessage(invalidNumber.name === COMMERCIAL_QUOTE_DURATION_DAYS_KEY
+          ? 'Saisissez une durée d’affrètement en jours entiers, supérieure à zéro.'
+          : 'Saisissez des montants positifs ou nuls, avec deux décimales au maximum.');
+        requestAnimationFrame(() => invalidNumber.focus());
         return null;
       }
     }
@@ -1626,10 +1637,35 @@ export function ProjectEditor({
                       <option value={QUOTE_FUEL_INCLUDED}>{QUOTE_FUEL_INCLUDED}</option>
                     </select>
                   </Field>
-                  <PortSelect label="Port de livraison" onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
-                  <PortSelect label="Port de restitution" onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
                   <Field label="Début d’affrètement">
-                    <input onChange={(event) => update('charterStartsAt', event.target.value)} type="datetime-local" value={form.charterStartsAt} />
+                    <input
+                      onChange={(event) => {
+                        const charterStartsAt = event.target.value;
+                        setForm((current) => ({
+                          ...current,
+                          charterStartsAt,
+                          locationPlan: current.locationPlan
+                            ? projectLocationRouteEtas({ ...current.locationPlan, etd: charterStartsAt }, selectedVessel?.maxSpeedKnots)
+                            : current.locationPlan,
+                        }));
+                      }}
+                      type="datetime-local"
+                      value={form.charterStartsAt}
+                    />
+                  </Field>
+                  <Field label="Durée de l’affrètement en jours">
+                    <input
+                      min="1"
+                      name={COMMERCIAL_QUOTE_DURATION_DAYS_KEY}
+                      onChange={(event) => update('supplytimeData', {
+                        ...form.supplytimeData,
+                        [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: event.target.value,
+                      })}
+                      ref={charterDurationInput}
+                      step="1"
+                      type="number"
+                      value={form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY] ?? ''}
+                    />
                   </Field>
                 </>
               ) : !isCharter ? (
@@ -1716,9 +1752,29 @@ export function ProjectEditor({
             </div>
           </fieldset> : null}
 
-          <fieldset hidden={activeStep !== 'location'} id="project-step-location">
+          <fieldset disabled={isQuote && editorBusy} hidden={activeStep !== 'location'} id="project-step-location">
             <legend><span>{isQuote ? 2 : 5}</span> Localisation</legend>
-            {activeStep === 'location' && <ProjectLocationEditor key={form.projectId || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={editorBusy} projectId={form.projectId ? String(form.projectId) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} departurePort={form.deliveryPort} arrivalPort={form.redeliveryPort} fuelReference={fuelReference} towing={isTowage} showPdfToggle={!isQuote} />}
+            {isQuote ? (
+              <div className="project-editor-grid">
+                <PortSelect label="Port de livraison" onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
+                <PortSelect label="Port de restitution" onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
+              </div>
+            ) : null}
+            {activeStep === 'location' && (
+              <ProjectLocationEditor
+                arrivalPort={form.redeliveryPort}
+                departurePort={form.deliveryPort}
+                disabled={editorBusy}
+                fixedEtd={isQuote ? form.charterStartsAt : undefined}
+                fuelReference={fuelReference}
+                key={form.projectId || 'new'}
+                onChange={(value) => update('locationPlan', value)}
+                projectId={form.projectId ? String(form.projectId) : undefined}
+                towing={isTowage}
+                value={form.locationPlan}
+                vessel={selectedVessel}
+              />
+            )}
           </fieldset>
           {isQuote ? (
             <fieldset hidden={activeStep !== 'emission'} id="project-step-emission">
@@ -1735,11 +1791,17 @@ export function ProjectEditor({
                 onExportingChange={handleQuoteExportingChange}
                 onIncludeLocationChange={(includeInPdf) => setForm((current) => ({
                   ...current,
-                  locationPlan: { ...(current.locationPlan ?? emptyProjectLocationPlan()), includeInPdf },
+                  locationPlan: { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt, includeInPdf },
                 }))}
+                onVoyageRecapChange={(includeVoyageEstimateInPdf) => setForm((current) => {
+                  const locationPlan = { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt };
+                  if (includeVoyageEstimateInPdf === undefined) delete locationPlan.includeVoyageEstimateInPdf;
+                  else locationPlan.includeVoyageEstimateInPdf = includeVoyageEstimateInPdf;
+                  return { ...current, locationPlan };
+                })}
                 prepareExport={() => saveProjectForm(true)}
                 projectClient={selectedClientContact}
-                vessel={vessels.find((item) => item.id === form.primaryVesselId)}
+                vessel={selectedVessel}
               />
             </fieldset>
           ) : <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
@@ -1880,7 +1942,7 @@ export function ProjectEditor({
               projectCode={nextProjectCode}
               towedAsset={towedAsset}
               variant={variant}
-              vessel={vessels.find((item) => item.id === form.primaryVesselId)}
+              vessel={selectedVessel}
               vesselCertificates={vesselCertificates}
             />
           </div>

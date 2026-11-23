@@ -19,14 +19,21 @@ interface ProjectQuoteEmissionProps {
   isSaving: boolean;
   onExportingChange: (value: boolean) => void;
   onIncludeLocationChange: (include: boolean) => void;
+  onVoyageRecapChange: (includeEstimate: boolean | undefined) => void;
   prepareExport: () => Promise<Pick<ProjectMutationResult, 'id' | 'projectCode'> | null>;
   projectClient?: Pick<ClientRecord, 'name' | 'representedBy'>;
   vessel?: VesselRecord;
 }
 
+const voyageRecapOptions = [
+  { label: 'Distance et durée', value: undefined },
+  { label: 'Distance, durée, carburant, coût et CO₂', value: true },
+  { label: 'Sans récapitulatif', value: false },
+];
+
 export function ProjectQuoteEmission({
   annexDocuments, annexFiles, brochureVessels, client, emitter, form, fuelReference, isSaving,
-  onExportingChange, onIncludeLocationChange, prepareExport, projectClient, vessel,
+  onExportingChange, onIncludeLocationChange, onVoyageRecapChange, prepareExport, projectClient, vessel,
 }: ProjectQuoteEmissionProps) {
   const [includeBrochures, setIncludeBrochures] = useState(false);
   const [brochureIds, setBrochureIds] = useState<number[]>([]);
@@ -100,6 +107,21 @@ export function ProjectQuoteEmission({
         <input checked={form.locationPlan?.includeInPdf ?? false} disabled={disabled} onChange={(event) => onIncludeLocationChange(event.target.checked)} type="checkbox" />
         Joindre la localisation au PDF
       </label>
+      <div aria-label="Récapitulatif du parcours dans le PDF" className="project-quote-voyage-options is-wide" role="radiogroup">
+        <strong>Récapitulatif du parcours dans le PDF</strong>
+        {voyageRecapOptions.map(({ label, value }) => (
+          <label className="project-editor-check is-wide" key={label}>
+            <input
+              checked={form.locationPlan?.includeVoyageEstimateInPdf === value}
+              disabled={disabled}
+              name="quote-location-pdf-recap"
+              onChange={() => onVoyageRecapChange(value)}
+              type="radio"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
       <label className="project-editor-check is-wide">
         <input checked={includeBrochures} disabled={disabled} onChange={(event) => setIncludeBrochures(event.target.checked)} type="checkbox" />
         Joindre la brochure du ou des navire(s)

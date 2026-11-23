@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectContractPreview } from './ProjectContractPreview';
+import { COMMERCIAL_QUOTE_DURATION_DAYS_KEY } from './projectCommercialOffer';
 import { EMPTY_PROJECT_WRITE_INPUT } from './projectMutations';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { emptySeaOperationWaypoint } from '../seaOperations/seaOperationModel';
@@ -9,6 +10,21 @@ import { BAREBOAT_CONTRACT_TYPE, BIMCO_CONTRACT_TYPE, COMMERCIAL_OFFER_CONTRACT_
 const routeMapMock = vi.hoisted(() => vi.fn());
 vi.mock('../seaOperations/SeaOperationRouteMap', () => ({ SeaOperationRouteMap: (props: Record<string, unknown>) => { routeMapMock(props); return <div>Carte de localisation</div>; } }));
 beforeEach(() => routeMapMock.mockClear());
+
+it('updates the displayed quote duration and total from the detailed rates', () => {
+  const form = {
+    ...EMPTY_PROJECT_WRITE_INPUT,
+    contractType: COMMERCIAL_OFFER_CONTRACT_TYPE,
+    charterHire: 200,
+    mobilisationFee: 100,
+    demobilisationFee: 150,
+    supplytimeData: { [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '3' },
+  };
+  render(<ProjectContractPreview form={form} projectCode="P1" towedAsset={null} variant="quote" />);
+  expect(screen.getByText('3 jours')).toBeInTheDocument();
+  expect(screen.getByText('Total HT du devis')).toBeInTheDocument();
+  expect(screen.getByText('850 € HT')).toBeInTheDocument();
+});
 
 describe('Project optional location appendix preview', () => {
   it.each([COMMERCIAL_OFFER_CONTRACT_TYPE, BIMCO_CONTRACT_TYPE, TOWAGE_CONTRACT_TYPE, BAREBOAT_CONTRACT_TYPE, TIME_CHARTER_CONTRACT_TYPE])('keeps localization out of the contract unless requested (%s)', contractType => {
