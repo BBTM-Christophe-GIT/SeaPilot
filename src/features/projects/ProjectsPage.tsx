@@ -56,6 +56,7 @@ import type { ProjectDocumentDeletionResult } from './projectDocumentDeletion';
 import type { StoredProjectDocument } from './projectDocumentStorage';
 import { ClientCatalogDialog, ServiceCatalogDialog, TowedAssetCatalogDialog } from './ProjectCatalogDialogs';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
+import type { ProjectServiceCatalogEntry } from './projectBilling';
 import {
   BAREBOAT_CONTRACT_TYPE,
   BIMCO_CONTRACT_TYPE,
@@ -623,6 +624,7 @@ function ProjectDetail({
   onSaveFuelPrice,
   operationDocuments,
   planningOccurrences,
+  ribbonServiceCatalog,
   towedAsset,
   vessels,
 }: {
@@ -658,6 +660,7 @@ function ProjectDetail({
   onSaveFuelPrice: (price: ProjectFuelPrice, vesselId?: number | null) => Promise<void>;
   operationDocuments: ProjectOperationDocumentRecord[];
   planningOccurrences: ProjectPlanningOccurrenceRecord[];
+  ribbonServiceCatalog?: ProjectServiceCatalogEntry[];
   towedAsset?: ProjectTowedAssetRecord;
   vessels: ProjectsData['vessels'];
 }) {
@@ -981,6 +984,7 @@ function ProjectDetail({
           isManager={isManager}
           operations={planningOccurrences}
           project={project}
+          ribbonServiceCatalog={ribbonServiceCatalog}
           vessels={vessels}
         />
       ) : null}
@@ -1150,6 +1154,11 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [clientCatalogOpen, setClientCatalogOpen] = useState(false);
   const [towedAssetCatalogOpen, setTowedAssetCatalogOpen] = useState(false);
   const [serviceCatalogOpen, setServiceCatalogOpen] = useState(false);
+  const [ribbonCatalog, setRibbonCatalog] = useState<{
+    client: SupabaseClient;
+    userId: typeof effectiveUserId;
+    entries: ProjectServiceCatalogEntry[];
+  }>();
   const [planningEditorOpen, setPlanningEditorOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showClosedProjects, setShowClosedProjects] = useState(false);
@@ -1944,6 +1953,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
               planningOccurrences={selectedPlanningOccurrences}
               project={selectedProject}
               projectDocuments={selectedProjectDocuments}
+              ribbonServiceCatalog={ribbonCatalog?.client === effectiveClient && ribbonCatalog.userId === effectiveUserId ? ribbonCatalog.entries : undefined}
               towedAsset={selectedTowedAsset}
               vessels={projectsData.vessels}
             />
@@ -2032,6 +2042,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
           canManage={isManager}
           client={effectiveClient}
           vessels={projectsData.vessels}
+          onChanged={(entries) => setRibbonCatalog({ client: effectiveClient, userId: effectiveUserId, entries })}
           onClose={() => setServiceCatalogOpen(false)}
         />
       ) : null}

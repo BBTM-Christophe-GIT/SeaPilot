@@ -1272,6 +1272,36 @@ describe('ProjectsPage', () => {
     expect(within(exportPanel).getByLabelText('Fichier')).toHaveValue('zip');
   });
 
+  it('updates mounted billing after assigning a default from the project ribbon while retaining billing drafts', async () => {
+    const user = userEvent.setup();
+    const catalogEntry = { id: 92, company_id: 1, category: 'Mobilisation', unit_amount_ht: 100, quantity_mode: 'manual', active: true };
+    const { client, rpc } = createClient({
+      project_billing_periods: { data: [{ id: 501, project_id: 880, period_month: '2026-07-01' }], error: null },
+      project_billing_services: { data: [{ id: 601, project_id: 880, billing_period_id: 501, category: 'Assistance', unit_amount_ht: 250, quantity: 3 }], error: null },
+      project_service_catalog: { data: [catalogEntry], error: null },
+    }, { data: { ...catalogEntry, default_projects: [{ project_id: 880 }] }, error: null });
+    render(<ProjectsPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: /P1086 Campagne Atlantique 2026/ }));
+    await user.click(screen.getByRole('tab', { name: 'Facturation' }));
+    const draftQuantity = screen.findByLabelText('Nombre d’unités');
+    fireEvent.change(await draftQuantity, { target: { value: '7' } });
+
+    await user.click(screen.getByRole('button', { name: 'Catalogue de prestations' }));
+    const catalog = within(await screen.findByRole('dialog', { name: 'Liste des prestations' }));
+    await user.click(await catalog.findByRole('button', { name: 'Modifier' }));
+    await user.click(await catalog.findByRole('checkbox', { name: 'P1086 — Campagne Atlantique 2026' }));
+    await user.click(catalog.getByRole('button', { name: 'Enregistrer' }));
+    await catalog.findByText('Prestation enregistrée dans le catalogue.');
+    expect(rpc).toHaveBeenCalledWith('save_project_service_catalog_entry', expect.objectContaining({
+      p_catalog_id: 92, p_default_project_ids: [880],
+    }));
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByRole('group', { name: 'Prestation 2 : Mobilisation' })).toBeVisible();
+    const savedService = within(screen.getByRole('group', { name: 'Prestation 1 : Assistance' }));
+    expect(savedService.getByLabelText('Nombre d’unités')).toHaveValue(7);
+  });
+
   it('opens a different project without losing the portfolio search', async () => {
     const user = userEvent.setup();
     const { client } = createClient();

@@ -30,7 +30,7 @@ import {
   TriangleAlert,
   Undo2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { ServiceProviderEditorDialog } from '../serviceProviders/ServiceProviderEditorDialog';
 import { ServiceProviderPicker } from '../serviceProviders/ServiceProviderPicker';
@@ -228,6 +228,7 @@ export function ProjectBillingPanel({
   isManager,
   operations,
   project,
+  ribbonServiceCatalog,
   showMonthSelector = true,
   visibleSections = ALL_BILLING_SECTIONS,
   workspace = false,
@@ -239,6 +240,7 @@ export function ProjectBillingPanel({
   isManager: boolean;
   operations: ProjectPlanningOccurrenceRecord[];
   project: ProjectRecord;
+  ribbonServiceCatalog?: ProjectServiceCatalogEntry[];
   showMonthSelector?: boolean;
   visibleSections?: ProjectBillingSectionVisibility;
   workspace?: boolean;
@@ -903,6 +905,15 @@ export function ProjectBillingPanel({
       ];
     });
   }
+
+  const appliedRibbonCatalog = useRef(ribbonServiceCatalog);
+  const applyRibbonCatalog = useEffectEvent(updateServiceCatalog);
+  useEffect(() => {
+    if (billingDataContext?.client !== client || billingDataContext.projectId !== project.id) return;
+    if (!ribbonServiceCatalog || appliedRibbonCatalog.current === ribbonServiceCatalog) return;
+    appliedRibbonCatalog.current = ribbonServiceCatalog;
+    applyRibbonCatalog(ribbonServiceCatalog);
+  }, [billingDataContext, client, project.id, ribbonServiceCatalog]);
 
   async function submitProvider(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
