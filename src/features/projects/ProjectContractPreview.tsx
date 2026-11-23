@@ -30,11 +30,13 @@ import { resolveSeaOperationMapPorts } from '../seaOperations/seaOperationMapPla
 import { buildStyledContract, contractPreviewFields } from './projectStyledContract';
 import {
   buildCommercialReserves,
+  calculateCommercialQuoteTotal,
   COMMERCIAL_OFFER_COMPANY_DETAILS,
   formatProjectDocumentEmitterName,
   getCommercialConditionsDescription,
   getCommercialConditionsMode,
   getCommercialIncludedServiceRichDescriptions,
+  readCommercialQuoteDurationDays,
   shouldDisplayCommercialOfferRoute,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
@@ -58,6 +60,7 @@ interface ProjectContractPreviewProps {
   form: ProjectWriteInput;
   projectCode: string;
   towedAsset: ProjectTowedAssetWriteInput | null;
+  variant?: 'quote';
   vessel?: VesselRecord;
   vesselCertificates?: ProjectVesselCertificateRecord[];
 }
@@ -349,8 +352,11 @@ function buildBareboatValues({
   };
 }
 
-function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectContractPreviewProps) {
-  const duration = form.startsOn && form.endsOn
+function OfferPreview({ client, emitter, form, projectCode, variant, vessel }: ProjectContractPreviewProps) {
+  const isQuote = variant === 'quote';
+  const quoteDuration = isQuote ? readCommercialQuoteDurationDays(form.supplytimeData) : null;
+  const quoteTotal = isQuote ? calculateCommercialQuoteTotal(form) : null;
+  const duration = !isQuote && form.startsOn && form.endsOn
     ? Math.max(1, Math.round((new Date(form.endsOn).getTime() - new Date(form.startsOn).getTime()) / 86_400_000) + 1)
     : null;
   const reserves = buildCommercialReserves(form.supplytimeData);
@@ -359,6 +365,9 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
   const includedServices = getCommercialIncludedServiceRichDescriptions(form.supplytimeData);
   const descriptionHtml = sanitizeProjectDescriptionHtml(form.description);
   const emitterName = formatProjectDocumentEmitterName(emitter);
+  const period = isQuote
+    ? compactDate(form.charterStartsAt)
+    : [compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ');
   return (
     <div className="project-offer-document">
       <header>
@@ -375,10 +384,25 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
       </section>
       <section className="project-offer-summary">
         <div><small>NOTRE PROPOSITION</small>{descriptionHtml ? <div className="project-offer-rich-copy project-offer-description" dangerouslySetInnerHTML={{ __html: descriptionHtml }} /> : <p>Décrivez la prestation et le dispositif opérationnel proposé.</p>}</div>
-        <dl><div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div><div><dt>PÉRIODE</dt><dd>{[compactDate(form.startsOn), compactDate(form.endsOn)].filter(Boolean).join(' - ') || '—'}</dd></div>{shouldDisplayCommercialOfferRoute(form.deliveryPort, form.redeliveryPort) ? <div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div> : null}</dl>
+        <dl>
+          <div><dt>NAVIRE</dt><dd>{vessel?.name || '—'}</dd></div>
+          <div><dt>{isQuote ? 'DÉBUT D’AFFRÈTEMENT' : 'PÉRIODE'}</dt><dd>{period || '—'}</dd></div>
+          {shouldDisplayCommercialOfferRoute(form.deliveryPort, form.redeliveryPort) ? <div><dt>ROUTE</dt><dd>{[form.deliveryPort, form.redeliveryPort].filter(Boolean).join(' → ') || '—'}</dd></div> : null}
+        </dl>
       </section>
       <div className="project-offer-columns">
-        <section><h3><span>1</span>Cadre opérationnel</h3><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p><dl><div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div><div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div><div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div>{duration ? <div><dt>DURÉE FERME</dt><dd>{`${duration} jours calendaires`}</dd></div> : null}<div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div></dl></section>
+        <section>
+          <h3><span>1</span>Cadre opérationnel</h3>
+          {!isQuote ? <><small>Périmètre proposé</small><p>{form.operationArea || 'Zone d’opération à renseigner'}</p></> : null}
+          <dl>
+            {!isQuote ? <div><dt>TYPE DE CONTRAT</dt><dd>{COMMERCIAL_OFFER_CONTRACT_TYPE}</dd></div> : null}
+            <div><dt>LIVRAISON</dt><dd>{[form.deliveryPort, compactDate(form.deliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div>
+            <div><dt>REDÉLIVRAISON</dt><dd>{[form.redeliveryPort, compactDate(form.redeliveryAt)].filter(Boolean).join(' - ') || '—'}</dd></div>
+            {duration ? <div><dt>DURÉE FERME</dt><dd>{`${duration} jours calendaires`}</dd></div> : null}
+            {quoteDuration ? <div><dt>DURÉE D’AFFRÈTEMENT</dt><dd>{`${quoteDuration} ${quoteDuration === 1 ? 'jour' : 'jours'}`}</dd></div> : null}
+            <div><dt>CARBURANT</dt><dd>{form.supplytimeData.box19_special_fuel || '—'}</dd></div>
+          </dl>
+        </section>
         {conditionsMode === 'free_text' ? (
           <section className="project-offer-free-conditions">
             <h3><span>2</span>Conditions commerciales</h3>
@@ -388,7 +412,20 @@ function OfferPreview({ client, emitter, form, projectCode, vessel }: ProjectCon
             ) : <p>Conditions commerciales à renseigner.</p>}
           </section>
         ) : (
-          <section><h3><span>2</span>Conditions commerciales</h3><dl><div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.mobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.mobilisation }} /></div> : null}<div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div>{includedServices.demobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.demobilisation }} /></div> : null}<div><dt>Opération</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div>{includedServices.charterHire ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.charterHire }} /></div> : null}<div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div></dl><footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer></section>
+          <section>
+            <h3><span>2</span>Conditions commerciales</h3>
+            <dl>
+              <div><dt>Mobilisation</dt><dd>{money(form.mobilisationFee, form.feeCurrency) || '—'}</dd></div>
+              {includedServices.mobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.mobilisation }} /></div> : null}
+              <div><dt>Démobilisation</dt><dd>{money(form.demobilisationFee, form.feeCurrency) || '—'}</dd></div>
+              {includedServices.demobilisation ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.demobilisation }} /></div> : null}
+              <div><dt>{isQuote ? 'Loyer d’affrètement' : 'Opération'}</dt><dd>{money(form.charterHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div>
+              {includedServices.charterHire ? <div className="project-offer-service-description"><dt>Prestation incluse</dt><dd className="project-offer-rich-copy" dangerouslySetInnerHTML={{ __html: includedServices.charterHire }} /></div> : null}
+              {quoteTotal !== null ? <div><dt>Total HT du devis</dt><dd>{money(quoteTotal, form.hireCurrency || 'EUR')}</dd></div> : null}
+              {!isQuote ? <div><dt>Extension</dt><dd>{money(form.extensionHire, form.hireCurrency, form.hireUnit) || '—'}</dd></div> : null}
+            </dl>
+            {!isQuote ? <footer><span>FACTURATION<br /><b>{form.supplytimeData.box22_invoice_remittance || '—'}</b></span><span>PAIEMENT<br /><b>{form.supplytimeData.box23_payment || '—'}</b></span></footer> : null}
+          </section>
         )}
       </div>
       {reserves.length > 0 ? <aside><strong>RÉSERVES COMMERCIALES</strong><span>{reserves.map((reserve) => <span key={reserve}>{reserve}</span>)}</span></aside> : null}
@@ -438,6 +475,7 @@ function BimcoPreview({ page, values }: { page: number; values: Record<string, s
 }
 
 export function ProjectContractPreview(props: ProjectContractPreviewProps) {
+  const isQuote = props.variant === 'quote';
   const contractType = normalizeProjectContractType(props.form.contractType);
   const bimcoValues = useMemo(() => buildBimcoValues(props), [props]);
   const towageValues = useMemo(() => buildTowageValues(props), [props]);
@@ -502,7 +540,7 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
   }
 
   return (
-    <div className="project-contract-preview-shell">
+    <div className={isQuote ? 'project-contract-preview-shell is-quote' : 'project-contract-preview-shell'}>
       <section className="project-document-preview" aria-label="Aperçu du document généré">
         <header>
           <strong>Aperçu du document généré</strong>
@@ -521,14 +559,14 @@ export function ProjectContractPreview(props: ProjectContractPreviewProps) {
           {currentPage > contractPageCount && hasAppendix && locationPlan ? <ProjectLocationPreview plan={locationPlan} projectLabel={`${props.projectCode} - ${props.form.title}`} maxSpeedKnots={props.vessel?.maxSpeedKnots} draftMeters={props.vessel?.draftMeters} departurePort={props.form.deliveryPort} arrivalPort={props.form.redeliveryPort} fuelReference={props.fuelReference} vesselId={props.vessel?.id} towing={contractType === TOWAGE_CONTRACT_TYPE} /> : null}
         </div>
       </section>
-      <aside className="project-contract-completeness" aria-label="Complétude du document">
+      {!isQuote ? <aside className="project-contract-completeness" aria-label="Complétude du document">
         <strong>Complétude</strong>
         <div aria-label={`${safeCompletion} % complété`} className="project-contract-progress-ring" style={{ '--completion': `${safeCompletion * 3.6}deg` } as React.CSSProperties}><span>{safeCompletion} %</span></div>
         <b>Champs obligatoires</b>
         <small>{`${checklist.filter((item) => item.complete).length} / ${checklist.length} sections complétées`}</small>
         <ul>{checklist.map((item) => <li className={item.complete ? 'is-complete' : undefined} key={item.label}>{item.complete ? <CheckCircle2 aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}<span>{item.label}</span></li>)}</ul>
         <p><FileText aria-hidden="true" size={14} /> Document généré et conservé dans BBTM.</p>
-      </aside>
+      </aside> : null}
     </div>
   );
 }

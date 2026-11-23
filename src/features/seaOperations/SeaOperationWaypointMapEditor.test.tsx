@@ -72,6 +72,27 @@ function cameraScale(container: HTMLElement) {
 }
 
 describe('SeaOperationWaypointMapEditor', () => {
+  it('keeps map gestures and waypoint placement available when manual controls are hidden', () => {
+    const frames = animationFrames();
+    const add = vi.fn(), changed = vi.fn();
+    render(<SeaOperationWaypointMapEditor
+      onAddWaypoint={add}
+      onMapViewportChange={changed}
+      showManualControls={false}
+      waypoints={[point(1)]}
+    />);
+    const { surface } = activate();
+    expect(screen.queryByRole('combobox', { name: 'Mode de cadrage de la carte' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Cadrer le parcours|Ajouter au centre|[Zz]oomer|Déplacer la carte/ })).not.toBeInTheDocument();
+    fireEvent.wheel(surface, { deltaY: -120, clientX: 325, clientY: 130 });
+    frames.advance(100);
+    expect(changed).toHaveBeenCalledOnce();
+    fireEvent.keyDown(surface, { key: 'ArrowRight' });
+    expect(changed).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(surface, { key: 'Enter' });
+    expect(add).toHaveBeenCalledOnce();
+  });
+
   it('browses an automatically framed read-only map with wheel, pan, keyboard and fullscreen while every point action stays unavailable', () => {
     const frames = animationFrames(), changed = vi.fn();
     const add = vi.fn(), move = vi.fn(), remove = vi.fn(), movePoint = vi.fn(), removePoint = vi.fn(), moveVertex = vi.fn(), removeVertex = vi.fn();

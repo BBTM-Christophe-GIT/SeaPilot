@@ -17,6 +17,8 @@ export const COMMERCIAL_MOBILISATION_DESCRIPTION_KEY = 'commercial_mobilisation_
 export const COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY = 'commercial_demobilisation_service_description';
 export const COMMERCIAL_CONDITIONS_MODE_KEY = 'commercial_conditions_mode';
 export const COMMERCIAL_CONDITIONS_DESCRIPTION_KEY = 'commercial_conditions_description';
+// Devis stores whole days in the existing charter-period field. Other contracts may store free text there.
+export const COMMERCIAL_QUOTE_DURATION_DAYS_KEY = 'box09_period';
 
 export const COMMERCIAL_OFFER_COMPANY_DETAILS = [
   'BENJAMIN BON TRAVAUX MARITIMES',
@@ -61,6 +63,32 @@ interface PersonRow {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function readCommercialQuoteDurationDays(supplytimeData: Readonly<Record<string, string>>): number | null {
+  const value = text(supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY]);
+  const days = Number(value);
+  return /^[0-9]+$/.test(value) && Number.isSafeInteger(days) && days > 0 ? days : null;
+}
+
+export function calculateCommercialQuoteTotal({
+  charterHire,
+  demobilisationFee,
+  mobilisationFee,
+  supplytimeData,
+}: {
+  charterHire: number | null;
+  demobilisationFee: number | null;
+  mobilisationFee: number | null;
+  supplytimeData: Readonly<Record<string, string>>;
+}): number | null {
+  const duration = readCommercialQuoteDurationDays(supplytimeData);
+  if (duration === null || charterHire === null) return null;
+  const amounts = [mobilisationFee ?? 0, demobilisationFee ?? 0, charterHire];
+  if (amounts.some((amount) => !Number.isFinite(amount) || amount < 0)) return null;
+  const [mobilisationCents, demobilisationCents, hireCents] = amounts.map((amount) => Math.round(amount * 100));
+  const totalCents = mobilisationCents + demobilisationCents + hireCents * duration;
+  return Number.isSafeInteger(totalCents) ? totalCents / 100 : null;
 }
 
 function normalizedPortName(value: string): string {

@@ -1,5 +1,5 @@
 import { CalendarDays, CreditCard, FileText, FileUp, FolderOpen, Map as MapIcon, Plus, ReceiptText, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EMPTY_PROJECT_WRITE_INPUT,
   saveProjectContractDetails,
@@ -40,8 +40,9 @@ import { resolveClientCountry } from './clientLocation';
 import { normalizeProjectStatus, PROJECT_STATUSES } from './projectStatus';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AppDialog } from '../../components/AppDialog';
-import { ClientContactDetails, type ClientContactInfo } from '../../components/ClientContactDetails';
+import { ClientContactDetails } from '../../components/ClientContactDetails';
 import { ServiceNoteRichTextEditor } from '../serviceNotes/ServiceNoteRichTextEditor';
+import { compareFleetAssets, fleetAssetKind } from '../fleet/fleetDisplay';
 import {
   projectDescriptionToPlainText,
   sanitizeProjectDescriptionHtml,
@@ -76,6 +77,7 @@ import {
   COMMERCIAL_CONDITIONS_MODE_KEY,
   COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
+  COMMERCIAL_QUOTE_DURATION_DAYS_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_AVAILABILITY_KEY,
   COMMERCIAL_RESERVE_OTHER_KEY,
@@ -83,14 +85,18 @@ import {
   COMMERCIAL_RESERVE_WEATHER_KEY,
   fetchProjectDocumentEmitter,
   getCommercialConditionsMode,
+  readCommercialQuoteDurationDays,
   type ProjectDocumentEmitter,
 } from './projectCommercialOffer';
 import {
   BAREBOAT_DELIVERY_TRUCK_LABEL,
   deriveBareboatCertificateFields,
 } from './projectBareboatContract';
-import { cloneProjectLocationPlan } from './projectLocation';
+import { cloneProjectLocationPlan, emptyProjectLocationPlan } from './projectLocation';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
+import { projectLocationRouteEtas } from './projectLocationRouteEtas';
+import { ProjectQuoteEmission } from './ProjectQuoteEmission';
+import { QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
 import type { ProjectFuelReference } from './projectFuelEstimate';
 
 interface ProjectEditorProps {
@@ -103,13 +109,14 @@ interface ProjectEditorProps {
     startsOn: string;
     vesselIds: number[];
   };
-  onClose: () => void;
+  onClose: (result?: ProjectMutationResult) => void;
   onSaved: (result: ProjectMutationResult) => void;
   project?: ProjectRecord;
   projectAttachments?: ProjectOperationDocumentRecord[];
   fuelReference?: ProjectFuelReference;
   statuses: string[];
   towedAssets: ProjectTowedAssetRecord[];
+  variant?: 'quote';
   vessels: VesselRecord[];
 }
 
@@ -413,7 +420,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
   );
 }
 
-type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents' | 'location';
+type ProjectAssistantStep = 'identification' | 'planning' | 'offer' | 'billing' | 'bimco' | 'documents' | 'location' | 'emission';
 
 interface ProjectAssistantStepDefinition {
   description: string;
@@ -458,10 +465,21 @@ export function ProjectEditor({
   projectAttachments = [],
   fuelReference,
   towedAssets,
+  variant,
   vessels,
 }: ProjectEditorProps) {
+  const isQuote = variant === 'quote';
   const baseInitialForm = projectToWriteInput(project, contract);
-  const initialForm = !project && initialOperation ? {
+  const initialForm = isQuote ? {
+    ...baseInitialForm,
+    contractType: COMMERCIAL_OFFER_CONTRACT_TYPE,
+    supplytimeData: {
+      ...baseInitialForm.supplytimeData,
+      box19_special_fuel: baseInitialForm.supplytimeData.box19_special_fuel === QUOTE_FUEL_INCLUDED
+        ? QUOTE_FUEL_INCLUDED
+        : QUOTE_FUEL_EXCLUDED,
+    },
+  } : !project && initialOperation ? {
     ...baseInitialForm,
     ...projectStartDateFields(initialOperation.startsOn),
     ...projectEndDateFields(initialOperation.endsOn),
@@ -476,12 +494,20 @@ export function ProjectEditor({
   const [hirePeriods, setHirePeriods] = useState<ProjectContractHirePeriodWriteInput[]>(() => initialHirePeriods);
   const [towedAsset, setTowedAsset] = useState<ProjectTowedAssetWriteInput | null>(() => initialTowedAsset);
   const [activeStep, setActiveStep] = useState<ProjectAssistantStep>('identification');
-  const [availableClients, setAvailableClients] = useState<
-    (Pick<ClientRecord, 'active' | 'id' | 'name'> & ClientContactInfo)[]
-  >(() => clients);
+  const [availableClients, setAvailableClients] = useState(() => clients);
   const selectedClientContact = availableClients.find(item => item.id === form.clientId);
   const [clientEditorOpen, setClientEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isQuoteExporting, setIsQuoteExporting] = useState(false);
+  const formElement = useRef<HTMLFormElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const primaryVesselInput = useRef<HTMLSelectElement>(null);
+  const charterDurationInput = useRef<HTMLInputElement>(null);
+  const saveInProgress = useRef(false);
+  const quoteExportInProgress = useRef(false);
+  const savedQuote = useRef<ProjectMutationResult | null>(null);
+  const [savedQuoteAnnexDrafts, setSavedQuoteAnnexDrafts] = useState<ProjectAttachmentDraft[]>([]);
+  const editorBusy = isSaving || isQuoteExporting;
   const [errorMessage, setErrorMessage] = useState('');
   const [initialOperationFiles, setInitialOperationFiles] = useState<File[]>([]);
   const [documentCategories, setDocumentCategories] = useState<ProjectDocumentCategory[]>(
@@ -496,7 +522,7 @@ export function ProjectEditor({
   const [vesselCertificates, setVesselCertificates] = useState<ProjectVesselCertificateRecord[]>();
   const [certificateLoadError, setCertificateLoadError] = useState('');
   const [initialOperationForm, setInitialOperationForm] = useState<ProjectPlanningOccurrenceWriteInput | null>(() => (
-    !project ? {
+    !project && !isQuote ? {
       charterHire: null,
       charterHireOverride: false,
       description: '',
@@ -512,8 +538,11 @@ export function ProjectEditor({
   ));
   const [nextProjectCode, setNextProjectCode] = useState(project?.projectCode || 'P…');
   const eligibleVessels = vessels.filter(
-    (vessel) => vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId,
+    (vessel) => (!isQuote || fleetAssetKind(vessel) === 'vessel')
+      && (vessel.active || vessel.id === project?.primaryVesselId || vessel.id === project?.secondaryVesselId),
   );
+  if (isQuote) eligibleVessels.sort(compareFleetAssets);
+  const selectedVessel = vessels.find((vessel) => vessel.id === form.primaryVesselId);
   const normalizedContractType = normalizeProjectContractType(form.contractType);
   const isCommercialOffer = normalizedContractType === COMMERCIAL_OFFER_CONTRACT_TYPE;
   const isTowage = normalizedContractType === TOWAGE_CONTRACT_TYPE;
@@ -527,7 +556,12 @@ export function ProjectEditor({
     document.categoryKey === 'commercial_offer' && document.subcategoryKey === 'commercial_appendix'
   ));
   const contractStep: ProjectAssistantStep = isBimco ? 'bimco' : 'offer';
-  const assistantSteps: ProjectAssistantStepDefinition[] = [
+  const assistantSteps: ProjectAssistantStepDefinition[] = isQuote ? [
+    { description: 'Projet et client', icon: FolderOpen, id: 'identification', label: 'Identification' },
+    { description: 'Route, points et zones · facultatif', icon: MapIcon, id: 'location', label: 'Localisation' },
+    { description: 'Navire, tarifs et affrètement', icon: ReceiptText, id: 'offer', label: 'Offre Commerciale' },
+    { description: 'Offre, localisation et brochures PDF', icon: FileText, id: 'emission', label: 'Émission du document' },
+  ] : [
     { description: 'Projet, client et contrat', icon: FolderOpen, id: 'identification', label: 'Identification' },
     { description: isBimco ? 'Cases du formulaire P144' : 'Champs du document', icon: ReceiptText, id: contractStep, label: normalizedContractType },
     { description: 'Dates, ports et première mission', icon: CalendarDays, id: 'planning', label: 'Opérations' },
@@ -698,11 +732,40 @@ export function ProjectEditor({
     }))]);
   }
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function reportQuoteRequiredField(step: 'identification' | 'offer') {
+    setActiveStep(step);
+    setErrorMessage(step === 'identification' ? 'Le nom du projet est obligatoire.' : 'Sélectionnez le navire principal du devis.');
+    const field = step === 'identification' ? titleInput : primaryVesselInput;
+    requestAnimationFrame(() => field.current?.focus());
+  }
+
+  async function saveProjectForm(saveAsDraft: boolean): Promise<ProjectMutationResult | null> {
+    if (saveInProgress.current) return null;
     setErrorMessage('');
-    const submitter = (event.nativeEvent as SubmitEvent).submitter;
-    const submittedForm = submitter instanceof HTMLButtonElement && submitter.value === 'draft'
+    if (isQuote) {
+      if (!form.title.trim()) {
+        reportQuoteRequiredField('identification');
+        return null;
+      }
+      if (!form.primaryVesselId) {
+        reportQuoteRequiredField('offer');
+        return null;
+      }
+      const invalidDuration = form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY]
+        && readCommercialQuoteDurationDays(form.supplytimeData) === null;
+      const invalidNumber = invalidDuration
+        ? charterDurationInput.current
+        : formElement.current?.querySelector<HTMLInputElement>('input[type="number"]:invalid');
+      if (invalidNumber) {
+        setActiveStep('offer');
+        setErrorMessage(invalidNumber.name === COMMERCIAL_QUOTE_DURATION_DAYS_KEY
+          ? 'Saisissez une durée d’affrètement en jours entiers, supérieure à zéro.'
+          : 'Saisissez des montants positifs ou nuls, avec deux décimales au maximum.');
+        requestAnimationFrame(() => invalidNumber.focus());
+        return null;
+      }
+    }
+    const submittedForm = saveAsDraft
       ? { ...form, status: 'Non validé' }
       : form;
     const operationVesselIds = [form.primaryVesselId, form.secondaryVesselId]
@@ -711,7 +774,7 @@ export function ProjectEditor({
     if (!project && !canScheduleOperation && (initialOperationFiles.length > 0 || initialOperationForm?.description.trim())) {
       setActiveStep('planning');
       setErrorMessage('Pour conserver la mission ou les documents de l’opération, renseignez le navire, la livraison et la restitution. Pour un projet sans dates, reportez la mission dans Identification et les pièces jointes dans Documents, puis retirez-les de la première opération.');
-      return;
+      return null;
     }
     const automaticOperation = !project && initialOperationForm && canScheduleOperation ? {
       ...initialOperationForm,
@@ -721,6 +784,7 @@ export function ProjectEditor({
       status: 'Non validé',
       vesselIds: operationVesselIds,
     } : null;
+    saveInProgress.current = true;
     setIsSaving(true);
     let savedProject: ProjectMutationResult | null = null;
     try {
@@ -756,6 +820,15 @@ export function ProjectEditor({
           updatedAt: project.updatedAt,
         };
       if (projectCoreChanged) savedProject = result;
+      if (isQuote) {
+        savedQuote.current = result;
+        setForm((current) => ({
+          ...current,
+          expectedUpdatedAt: result.updatedAt,
+          projectId: result.id,
+        }));
+        setNextProjectCode(result.projectCode);
+      }
 
       let effectiveTowedAssetId: number | null = null;
       if (normalizeProjectContractType(form.contractType) === TOWAGE_CONTRACT_TYPE) {
@@ -773,10 +846,10 @@ export function ProjectEditor({
 
       const towedAssetLinkChanged = effectiveTowedAssetId !== (contract?.towedAssetId ?? null);
       const shouldSaveContractDetails = (!projectCoreChanged && projectContractChanged) || towedAssetLinkChanged;
-      if (usesDirectHire && hirePeriodsChanged) {
+      if (!isQuote && usesDirectHire && hirePeriodsChanged) {
         await saveProjectContractHirePeriods(client, result.id, []);
         await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
-      } else if (shouldSaveContractDetails) {
+      } else if (!isQuote && shouldSaveContractDetails) {
         await saveProjectContractDetails(client, result.id, formWithEffectiveHire, effectiveTowedAssetId);
       }
       if (!usesDirectHire && hirePeriodsChanged) {
@@ -817,6 +890,12 @@ export function ProjectEditor({
           projectId: result.id,
         });
         const storedIds = new Set(uploads.stored.map((document) => document.draftId));
+        if (isQuote) {
+          setSavedQuoteAnnexDrafts((drafts) => [
+            ...drafts,
+            ...commercialConditionAttachmentDrafts.filter((draft) => storedIds.has(draft.id)),
+          ]);
+        }
         setProjectAttachmentDrafts((drafts) => drafts.filter((draft) => !storedIds.has(draft.id)));
         if (uploads.failed.length > 0) {
           throw new Error(
@@ -824,9 +903,9 @@ export function ProjectEditor({
           );
         }
       }
-      onSaved(result);
+      return result;
     } catch (error) {
-      if (savedProject && form.projectId === null) {
+      if (!isQuote && savedProject && form.projectId === null) {
         setForm((current) => ({
           ...current,
           expectedUpdatedAt: savedProject?.updatedAt || current.expectedUpdatedAt,
@@ -835,19 +914,45 @@ export function ProjectEditor({
         setNextProjectCode(savedProject.projectCode);
       }
       setErrorMessage(error instanceof Error ? error.message : "Impossible d’enregistrer le projet.");
+      return null;
     } finally {
+      saveInProgress.current = false;
       setIsSaving(false);
     }
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (quoteExportInProgress.current) return;
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const result = await saveProjectForm(submitter instanceof HTMLButtonElement && submitter.value === 'draft');
+    if (result) onSaved(result);
+  }
+
+  function closeEditor() {
+    if (saveInProgress.current || quoteExportInProgress.current) return;
+    if (savedQuote.current) onClose(savedQuote.current);
+    else onClose();
+  }
+
+  function handleQuoteExportingChange(exporting: boolean) {
+    quoteExportInProgress.current = exporting;
+    setIsQuoteExporting(exporting);
   }
 
   function handleClientSaved(clientId: number, savedClient: ClientWriteInput) {
     setAvailableClients((current) => [
       ...current.filter((item) => item.id !== clientId),
       {
-        active: savedClient.active, id: clientId, name: savedClient.name.trim(),
-        representedBy: savedClient.representedBy, address: savedClient.address,
-        postalCode: savedClient.postalCode, city: savedClient.city, country: savedClient.country,
-        phone: savedClient.phone, email: savedClient.email,
+        ...savedClient,
+        id: clientId,
+        name: savedClient.name.trim(),
+        archivedAt: '',
+        sharePointItemId: '',
+        sharePointListTitle: '',
+        sourceLabel: '',
+        sourceModifiedAt: '',
+        updatedAt: '',
       },
     ]);
     update('clientId', clientId);
@@ -855,7 +960,13 @@ export function ProjectEditor({
   }
 
   const primaryVesselSelect = (
-    <select id="project-primary-vessel" onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))} value={form.primaryVesselId ?? ''}>
+    <select
+      id="project-primary-vessel"
+      onChange={(event) => update('primaryVesselId', optionalNumber(event.target.value))}
+      ref={primaryVesselInput}
+      required={isQuote}
+      value={form.primaryVesselId ?? ''}
+    >
       <option value="">Non renseigné</option>
       {eligibleVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}{vessel.acronym ? ` (${vessel.acronym})` : ''}</option>)}
     </select>
@@ -865,7 +976,7 @@ export function ProjectEditor({
       <Field label={isCharter ? '4. Navire affrété *' : 'Navire principal *'} wide={isCharter}>
         {primaryVesselSelect}
       </Field>
-      {!isTowage && !isCharter ? (
+      {!isQuote && !isTowage && !isCharter ? (
         <Field label="Navire secondaire">
           <select onChange={(event) => update('secondaryVesselId', optionalNumber(event.target.value))} value={form.secondaryVesselId ?? ''}>
             <option value="">Non renseigné</option>
@@ -882,26 +993,37 @@ export function ProjectEditor({
       <label className="project-editor-check"><input checked={form.isDivingSupport} onChange={(event) => update('isDivingSupport', event.target.checked)} type="checkbox" /> Support plongée</label>
     </>
   );
+  const mobilisationFeeField = (
+    <Field label={isCharter ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}>
+      <input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} />
+    </Field>
+  );
+  const demobilisationFeeField = (
+    <Field label={isCharter ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}>
+      <input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} />
+    </Field>
+  );
+  const editorTitle = isQuote ? 'Nouveau devis' : project ? 'Modifier le projet' : 'Nouveau projet';
 
   return (
     <div className="project-editor-backdrop">
-      <section aria-label={project ? 'Modifier le projet' : 'Créer un projet'} aria-modal="true" className="project-editor is-project-assistant" role="dialog">
+      <section aria-label={isQuote ? 'Créer un devis' : project ? 'Modifier le projet' : 'Créer un projet'} aria-modal="true" className="project-editor is-project-assistant" role="dialog">
         <header>
           <div>
             <span>{project ? 'MODIFICATION' : 'CRÉATION'}</span>
-            <h2 id="project-editor-title">{project ? 'Modifier le projet' : 'Nouveau projet'}</h2>
+            <h2 id="project-editor-title">{editorTitle}</h2>
             <small>{nextProjectCode} · {normalizedContractType}</small>
           </div>
-          <button aria-label="Fermer le formulaire projet" disabled={isSaving} onClick={onClose} type="button">
+          <button aria-label={isQuote ? 'Fermer le formulaire de devis' : 'Fermer le formulaire projet'} disabled={editorBusy} onClick={closeEditor} type="button">
             <X aria-hidden="true" size={20} />
           </button>
         </header>
-        <form onSubmit={submit}>
+        <form noValidate={isQuote} onSubmit={submit} ref={formElement}>
           <div className={`project-assistant-layout${activeStep === 'location' ? ' is-location' : ''}`}>
-            <aside aria-label="Étapes de création du projet">
-              <span>PARCOURS PROJET</span>
+            <aside aria-label={isQuote ? 'Étapes de création du devis' : 'Étapes de création du projet'}>
+              <span>{isQuote ? 'PARCOURS DEVIS' : 'PARCOURS PROJET'}</span>
               <strong>{nextProjectCode}</strong>
-              <label className="project-assistant-contract-type">
+              {!isQuote ? <label className="project-assistant-contract-type">
                 <span>Type de contrat</span>
                 <select
                   aria-label="Type de contrat"
@@ -925,7 +1047,7 @@ export function ProjectEditor({
                 >
                   {PROJECT_CONTRACT_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
                 </select>
-              </label>
+              </label> : null}
               {assistantSteps.filter((step) => isBimco || step.id !== 'billing').map((step, index) => {
                 const Icon = step.icon;
                 const isActive = activeStep === step.id;
@@ -934,6 +1056,7 @@ export function ProjectEditor({
                     aria-controls={`project-step-${step.id}`}
                     aria-current={isActive ? 'step' : undefined}
                     className={isActive ? 'is-active' : undefined}
+                    disabled={isQuote && editorBusy}
                     key={step.id}
                     onClick={() => setActiveStep(step.id)}
                     type="button"
@@ -949,13 +1072,19 @@ export function ProjectEditor({
           <section className="project-assistant-summary" aria-label="Résumé du projet">
             <p><strong>{form.title || 'Projet sans titre'}</strong><span>{availableClients.find((item) => item.id === form.clientId)?.name || 'Client à renseigner'}</span></p>
           </section>
-          <fieldset hidden={activeStep !== 'identification'} id="project-step-identification">
+          <fieldset disabled={isQuote && editorBusy} hidden={activeStep !== 'identification'} id="project-step-identification">
             <legend><span>1</span> Identification</legend>
             <p className="project-code-preview">Nom final : <strong>{nextProjectCode} - {form.title || '…'}</strong><small>Le numéro affiché est un aperçu ; Supabase l’attribue atomiquement à l’enregistrement.</small></p>
             <div className="project-editor-grid">
               <Field label="Code projet"><input disabled value={nextProjectCode} /></Field>
               <Field label="Nom du projet *" wide>
-                <input autoFocus onChange={(event) => update('title', event.target.value)} required value={form.title} />
+                <input
+                  autoFocus
+                  onChange={(event) => update('title', event.target.value)}
+                  ref={titleInput}
+                  required
+                  value={form.title}
+                />
               </Field>
               <div className="project-editor-client-field">
                 <div className="project-editor-field-label">
@@ -975,11 +1104,11 @@ export function ProjectEditor({
               {isCharter && selectedClientContact && <ClientContactDetails contact={selectedClientContact} />}
               {!isCharter ? (
                 <>
-                  <Field label="Statut">
+                  {!isQuote ? <Field label="Statut">
                     <select onChange={(event) => update('status', event.target.value)} value={form.status}>
                       {PROJECT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
-                  </Field>
+                  </Field> : null}
                   {selectedClientContact && <ClientContactDetails contact={selectedClientContact} />}
                   <RichField label="Description">
                     <div className="project-service-rich-field project-description-rich-field">
@@ -1010,7 +1139,7 @@ export function ProjectEditor({
             </div>
           </fieldset>
 
-          <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
+          {!isQuote ? <fieldset hidden={activeStep !== 'planning'} id="project-step-planning">
             <legend><span>3</span> Opérations</legend>
             {!project ? <p>Les dates sont facultatives. Une opération sera ajoutée au planning à la création uniquement si le navire principal, la livraison et la restitution sont renseignés.</p> : null}
             <div className="project-editor-grid">
@@ -1137,15 +1266,15 @@ export function ProjectEditor({
                 </section>
               ) : null}
             </div>
-          </fieldset>
+          </fieldset> : null}
 
-          <fieldset hidden={activeStep !== 'offer' && !(isBimco && activeStep === 'billing')} id="project-step-offer">
-            <legend><span>{isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
+          <fieldset disabled={isQuote && editorBusy} hidden={activeStep !== 'offer' && !(isBimco && activeStep === 'billing')} id="project-step-offer">
+            <legend><span>{isQuote ? 3 : isBimco ? 4 : 2}</span> {isBimco ? 'Conditions tarifaires' : normalizedContractType}</legend>
             <div className="project-editor-grid">
-              <label className="project-owner-identity is-wide">
+              {!isQuote ? <label className="project-owner-identity is-wide">
                 <span>{isTowage ? '3. Armateur · Identité armateur' : isCharter ? '3. Propriétaire · Identité contractuelle' : 'Identité armateur'}</span>
                 <textarea onChange={(event) => update('ownerIdentity', event.target.value)} rows={3} value={form.ownerIdentity} />
-              </label>
+              </label> : vesselFields}
               {isTowage ? (
                 <section aria-label="Remorqué" className="project-towed-asset is-wide">
                   <div className="project-towed-asset-heading">
@@ -1324,7 +1453,7 @@ export function ProjectEditor({
                         type="radio"
                         value="structured"
                       />
-                      <span><strong>Conditions détaillées</strong><small>Loyer, mobilisation, démobilisation et descriptions associées.</small></span>
+                      <span><strong>Conditions détaillées</strong><small>{isQuote ? 'Loyer et description de la prestation, mobilisation et démobilisation.' : 'Loyer, mobilisation, démobilisation et descriptions associées.'}</small></span>
                     </label>
                     <label className={commercialConditionsMode === 'free_text' ? 'is-selected' : undefined}>
                       <input
@@ -1385,6 +1514,22 @@ export function ProjectEditor({
                         </button>
                       </div>
                     ))}
+                    {savedQuoteAnnexDrafts.map((draft) => (
+                      <div className="project-commercial-condition-attachment" key={draft.id}>
+                        <FileText aria-hidden="true" size={16} />
+                        <span><strong>{draft.file.name}</strong><small>Classée dans le projet</small></span>
+                        <div>
+                          <button
+                            aria-label={`Retirer ${draft.file.name} de l’export`}
+                            className="sp-button sp-button--secondary"
+                            onClick={() => setSavedQuoteAnnexDrafts((drafts) => drafts.filter((item) => item.id !== draft.id))}
+                            type="button"
+                          >
+                            Retirer de l’export
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                     {commercialConditionAttachments.map((document) => (
                       <div className="project-commercial-condition-attachment" key={document.id}>
                         <FileText aria-hidden="true" size={16} />
@@ -1395,7 +1540,8 @@ export function ProjectEditor({
                   </div>
                 </section>
               ) : null}
-              {isCommercialOffer ? vesselFields : null}
+              {isCommercialOffer && !isQuote ? vesselFields : null}
+              {isQuote && commercialConditionsMode === 'structured' ? <>{mobilisationFeeField}{demobilisationFeeField}</> : null}
               {(isCommercialOffer && commercialConditionsMode === 'structured') || isTowage || isCharter ? (
                 <Field label={isTowage ? '12. Tarif forfaitaire HT · Loyer d’affrètement' : isCharter ? '13. Loyer journalier' : 'Loyer d’affrètement'} wide>
                   <span className="project-commercial-hire-input">
@@ -1433,10 +1579,8 @@ export function ProjectEditor({
               ) : null}
               {!isTowage ? (
               <>
-              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isCharter ? '8. Forfait de mobilisation · Frais de mobilisation' : 'Frais de mobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('mobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.mobilisationFee ?? ''} /></Field>
-              ) : null}
-              {isCommercialOffer && commercialConditionsMode === 'structured' ? (
+              {!isQuote && (!isCommercialOffer || commercialConditionsMode === 'structured') ? mobilisationFeeField : null}
+              {!isQuote && isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de mobilisation">
                   <div className="project-service-rich-field">
                     <ServiceNoteRichTextEditor
@@ -1452,10 +1596,8 @@ export function ProjectEditor({
                   </div>
                 </RichField>
               ) : null}
-              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
-                <Field label={isCharter ? '10. Forfait de démobilisation · Frais de démobilisation' : 'Frais de démobilisation'} wide={isCommercialOffer}><input min="0" onChange={(event) => update('demobilisationFee', optionalNumber(event.target.value))} step="0.01" type="number" value={form.demobilisationFee ?? ''} /></Field>
-              ) : null}
-              {isCommercialOffer && commercialConditionsMode === 'structured' ? (
+              {!isQuote && (!isCommercialOffer || commercialConditionsMode === 'structured') ? demobilisationFeeField : null}
+              {!isQuote && isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans les frais de démobilisation">
                   <div className="project-service-rich-field">
                     <ServiceNoteRichTextEditor
@@ -1471,7 +1613,7 @@ export function ProjectEditor({
                   </div>
                 </RichField>
               ) : null}
-              {!isCommercialOffer || commercialConditionsMode === 'structured' ? (
+              {!isQuote && (!isCommercialOffer || commercialConditionsMode === 'structured') ? (
                 <Field label="Devise des frais" wide={isCommercialOffer}>
                   <select onChange={(event) => update('feeCurrency', event.target.value)} value={form.feeCurrency || 'EUR'}>
                     {form.feeCurrency && !PROJECT_CURRENCIES.some((currency) => currency.code === form.feeCurrency)
@@ -1484,7 +1626,49 @@ export function ProjectEditor({
               {!isCommercialOffer && !isCharter ? (
                 <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               ) : null}
-              {!isCharter ? (
+              {isQuote ? (
+                <>
+                  <Field label="Fuel" wide>
+                    <select
+                      onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
+                      value={form.supplytimeData.box19_special_fuel}
+                    >
+                      <option value={QUOTE_FUEL_EXCLUDED}>{QUOTE_FUEL_EXCLUDED}</option>
+                      <option value={QUOTE_FUEL_INCLUDED}>{QUOTE_FUEL_INCLUDED}</option>
+                    </select>
+                  </Field>
+                  <Field label="Début d’affrètement">
+                    <input
+                      onChange={(event) => {
+                        const charterStartsAt = event.target.value;
+                        setForm((current) => ({
+                          ...current,
+                          charterStartsAt,
+                          locationPlan: current.locationPlan
+                            ? projectLocationRouteEtas({ ...current.locationPlan, etd: charterStartsAt }, selectedVessel?.maxSpeedKnots)
+                            : current.locationPlan,
+                        }));
+                      }}
+                      type="datetime-local"
+                      value={form.charterStartsAt}
+                    />
+                  </Field>
+                  <Field label="Durée de l’affrètement en jours">
+                    <input
+                      min="1"
+                      name={COMMERCIAL_QUOTE_DURATION_DAYS_KEY}
+                      onChange={(event) => update('supplytimeData', {
+                        ...form.supplytimeData,
+                        [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: event.target.value,
+                      })}
+                      ref={charterDurationInput}
+                      step="1"
+                      type="number"
+                      value={form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY] ?? ''}
+                    />
+                  </Field>
+                </>
+              ) : !isCharter ? (
               <Field label="Fuel" wide>
                 <input
                   onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
@@ -1540,7 +1724,7 @@ export function ProjectEditor({
             </fieldset>
           ) : null}
 
-          <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
+          {!isQuote ? <fieldset hidden={activeStep !== 'bimco'} id="project-step-bimco">
             <legend><span>2</span> BIMCO</legend>
             <div className="project-editor-grid">
               <Field label="Limite d’affectation navire"><input onChange={(event) => update('vesselAssignmentLimit', event.target.value)} value={form.vesselAssignmentLimit} /></Field>
@@ -1566,13 +1750,61 @@ export function ProjectEditor({
                 </section>
               ))}
             </div>
-          </fieldset>
+          </fieldset> : null}
 
-          <fieldset hidden={activeStep !== 'location'} id="project-step-location">
-            <legend><span>5</span> Localisation</legend>
-            {activeStep === 'location' && <ProjectLocationEditor key={project?.id || 'new'} value={form.locationPlan} onChange={value => update('locationPlan', value)} disabled={isSaving} projectId={project?.id ? String(project.id) : undefined} vessel={vessels.find(item => item.id === form.primaryVesselId)} departurePort={form.deliveryPort} arrivalPort={form.redeliveryPort} fuelReference={fuelReference} towing={isTowage} />}
+          <fieldset disabled={isQuote && editorBusy} hidden={activeStep !== 'location'} id="project-step-location">
+            <legend><span>{isQuote ? 2 : 5}</span> Localisation</legend>
+            {isQuote ? (
+              <div className="project-editor-grid">
+                <PortSelect label="Port de livraison" onChange={(value) => update('deliveryPort', value)} value={form.deliveryPort} />
+                <PortSelect label="Port de restitution" onChange={(value) => update('redeliveryPort', value)} value={form.redeliveryPort} />
+              </div>
+            ) : null}
+            {activeStep === 'location' && (
+              <ProjectLocationEditor
+                arrivalPort={form.redeliveryPort}
+                departurePort={form.deliveryPort}
+                disabled={editorBusy}
+                fixedEtd={isQuote ? form.charterStartsAt : undefined}
+                fuelReference={fuelReference}
+                key={form.projectId || 'new'}
+                onChange={(value) => update('locationPlan', value)}
+                projectId={form.projectId ? String(form.projectId) : undefined}
+                towing={isTowage}
+                value={form.locationPlan}
+                vessel={selectedVessel}
+              />
+            )}
           </fieldset>
-          <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
+          {isQuote ? (
+            <fieldset hidden={activeStep !== 'emission'} id="project-step-emission">
+              <legend><span>4</span> Émission du document</legend>
+              <ProjectQuoteEmission
+                annexDocuments={commercialConditionAttachments}
+                annexFiles={[...savedQuoteAnnexDrafts, ...commercialConditionAttachmentDrafts].map((draft) => draft.file)}
+                brochureVessels={eligibleVessels}
+                client={client}
+                emitter={documentEmitter}
+                form={form}
+                fuelReference={fuelReference}
+                isSaving={isSaving}
+                onExportingChange={handleQuoteExportingChange}
+                onIncludeLocationChange={(includeInPdf) => setForm((current) => ({
+                  ...current,
+                  locationPlan: { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt, includeInPdf },
+                }))}
+                onVoyageRecapChange={(includeVoyageEstimateInPdf) => setForm((current) => {
+                  const locationPlan = { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt };
+                  if (includeVoyageEstimateInPdf === undefined) delete locationPlan.includeVoyageEstimateInPdf;
+                  else locationPlan.includeVoyageEstimateInPdf = includeVoyageEstimateInPdf;
+                  return { ...current, locationPlan };
+                })}
+                prepareExport={() => saveProjectForm(true)}
+                projectClient={selectedClientContact}
+                vessel={selectedVessel}
+              />
+            </fieldset>
+          ) : <fieldset hidden={activeStep !== 'documents'} id="project-step-documents">
             <legend><span>{isBimco ? 6 : 4}</span> Documents</legend>
             <section className="project-document-library" aria-label="Pièces jointes du projet">
               <div className="project-document-library-heading">
@@ -1699,26 +1931,29 @@ export function ProjectEditor({
                 </div>
               ) : null}
             </section>
-          </fieldset>
+          </fieldset>}
 
             </main>
             <ProjectContractPreview
-              client={clients.find((item) => item.id === form.clientId)}
+              client={selectedClientContact}
               emitter={documentEmitter}
               form={form}
               fuelReference={fuelReference}
               projectCode={nextProjectCode}
               towedAsset={towedAsset}
-              vessel={vessels.find((item) => item.id === form.primaryVesselId)}
+              variant={variant}
+              vessel={selectedVessel}
               vesselCertificates={vesselCertificates}
             />
           </div>
 
           {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
           <footer>
-            <button disabled={isSaving} onClick={onClose} type="button">Annuler</button>
-            <button disabled={isSaving} name="saveMode" type="submit" value="draft">Enregistrer le brouillon</button>
-            <button className="is-primary" disabled={isSaving} type="submit">{isSaving ? 'Enregistrement…' : project ? 'Enregistrer le projet' : 'Créer le projet'}</button>
+            <button disabled={editorBusy} onClick={closeEditor} type="button">{isQuote && form.projectId ? 'Fermer' : 'Annuler'}</button>
+            <button disabled={editorBusy} name="saveMode" type="submit" value="draft">Enregistrer le brouillon</button>
+            <button className="is-primary" disabled={editorBusy} type="submit">
+              {isSaving ? 'Enregistrement…' : isQuote ? (form.projectId ? 'Enregistrer le devis' : 'Créer le devis') : project ? 'Enregistrer le projet' : 'Créer le projet'}
+            </button>
           </footer>
         </form>
       </section>

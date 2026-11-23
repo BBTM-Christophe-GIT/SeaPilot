@@ -116,7 +116,7 @@ function groupOverlayTargets(targets: OverlayTarget[]) {
 }
 
 /** Only this wrapper accepts gestures. Moving its viewport never modifies the recorded route. */
-export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, navigationSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort, fitOperationRoute = false, waypointImport, renderVoyageDetails, voyageSummaryPosition }: {
+export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMoveWaypoint, onDeleteWaypoint, disabled = false, readOnly = false, maxSpeedKnots, navigationSpeedKnots, etd, eta, isolatedPoints = NO_POINTS, zones = NO_MAP_ZONES, onMoveIsolatedPoint, onDeleteIsolatedPoint, onMoveZoneVertex, onDeleteZoneVertex, drawingMode, mapViewport, onMapViewportChange, departurePort, arrivalPort, fitOperationRoute = false, waypointImport, renderVoyageDetails, voyageSummaryPosition, showManualControls = true }: {
   waypoints: readonly SeaOperationWaypoint[];
   onAddWaypoint: (position: SeaPosition, port?: { name: string; portKey?: string }) => void;
   onMoveWaypoint?: (id: string, position: SeaPosition) => void;
@@ -143,6 +143,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
   waypointImport?: { trigger: ReactNode; panel: ReactNode };
   renderVoyageDetails?: (distanceNm: number | null) => ReactNode;
   voyageSummaryPosition?: 'overlay' | 'compact';
+  showManualControls?: boolean;
 }) {
   const instructionsId = useId();
   const [placementRequested, setPlacing] = useState(false);
@@ -607,22 +608,22 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
       {!readOnly && waypointImport
         ? <div className="so-waypoint-map-edit-actions">{placementButton}{waypointImport.trigger}</div>
         : placementButton}
-      <select className="so-waypoint-map-framing" aria-label="Mode de cadrage de la carte" tabIndex={disabled ? -1 : 0} disabled={disabled}
-        value={viewport || wheelPreviewActive || panPreviewActive ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
-        <option value="automatic">Cadrage automatique</option><option value="manual">Cadrage manuel</option>
-      </select>
-      <>
+      {showManualControls ? <>
+        <select className="so-waypoint-map-framing" aria-label="Mode de cadrage de la carte" tabIndex={disabled ? -1 : 0} disabled={disabled}
+          value={viewport || wheelPreviewActive || panPreviewActive ? 'manual' : 'automatic'} onChange={event => changeFraming(event.target.value)}>
+          <option value="automatic">Cadrage automatique</option><option value="manual">Cadrage manuel</option>
+        </select>
         <button type="button" className="sp-button sp-button--secondary" onClick={fitRoute} disabled={disabled}><LocateFixed aria-hidden="true" size={16} />Cadrer le parcours</button>
         {placing && <button type="button" className="sp-button sp-button--primary" onClick={addAtCentre} disabled={disabled}><Plus aria-hidden="true" size={16} />Ajouter au centre</button>}
-      </>
+      </> : null}
       <button type="button" className="sp-button sp-button--secondary" ref={fullscreenToggleRef} aria-label={fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Afficher la carte en plein écran'} aria-pressed={fullscreen.isFullscreen} disabled={disabled && !fullscreen.isFullscreen} onClick={() => {
         if (fullscreen.isFullscreen) fullscreen.exitFullscreen(); else if (!disabled) fullscreen.enterFullscreen();
       }}>{fullscreen.isFullscreen ? <Minimize aria-hidden="true" size={16} /> : <Maximize aria-hidden="true" size={16} />}{fullscreen.isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}</button>
     </div>
     {!readOnly && waypointImport?.panel}
     <>
-      <p id={instructionsId} className="so-waypoint-map-instructions">{placing ? <>Cliquez pour ajouter, maintenez et glissez un waypoint pour le déplacer. Cliquez sur un point pour voir ses détails ou le supprimer. Glissez le fond pour naviguer, molette pour zoomer. Clavier : flèches, Entrée ; Alt+flèches sur un waypoint. {fullscreen.isFullscreen ? 'Échap : quitter le plein écran.' : 'Échap : fermer le menu ou terminer.'}{!viewport && ' Le cadrage automatique s’ajuste en fin de placement.'}</> : <>Glissez pour déplacer la carte, utilisez la molette ou les boutons pour zoomer. Sélectionnez un point pour afficher ses détails. Clavier : flèches.{!readOnly && ' Activez « Placer les waypoints » pour ajouter des points.'}</>}</p>
-      <div className="so-waypoint-map-navigation" aria-label="Déplacement et zoom de la carte">
+      <p id={instructionsId} className="so-waypoint-map-instructions">{placing ? <>Cliquez pour ajouter, maintenez et glissez un waypoint pour le déplacer. Cliquez sur un point pour voir ses détails ou le supprimer. Glissez le fond pour naviguer, molette pour zoomer. Clavier : flèches, Entrée ; Alt+flèches sur un waypoint. {fullscreen.isFullscreen ? 'Échap : quitter le plein écran.' : 'Échap : fermer le menu ou terminer.'}{!viewport && ' Le cadrage automatique s’ajuste en fin de placement.'}</> : <>Glissez pour déplacer la carte, utilisez la molette{showManualControls ? ' ou les boutons ' : ' '}pour zoomer. Sélectionnez un point pour afficher ses détails. Clavier : flèches.{!readOnly && ' Activez « Placer les waypoints » pour ajouter des points.'}</>}</p>
+      {showManualControls ? <div className="so-waypoint-map-navigation" aria-label="Déplacement et zoom de la carte">
         <div className="so-waypoint-map-controls">
           <button type="button" className="sp-button sp-button--secondary" aria-label="Zoomer sur la carte" onClick={() => zoomView(2)} disabled={disabled}><Plus aria-hidden="true" size={18} /></button>
           <button type="button" className="sp-button sp-button--secondary" aria-label="Dézoomer la carte" onClick={() => zoomView(.5)} disabled={disabled}><Minus aria-hidden="true" size={18} /></button>
@@ -632,7 +633,7 @@ export function SeaOperationWaypointMapEditor({ waypoints, onAddWaypoint, onMove
           <button type="button" className="sp-button sp-button--secondary" aria-label="Déplacer la carte vers l’est" onClick={() => moveView(.2, 0)} disabled={disabled}><ArrowRight aria-hidden="true" size={18} /></button>
         </div>
         {(viewport || panPreviewActive) && <span ref={centreLabelRef} className="so-waypoint-map-centre">Centre : {formatSeaPosition({ latitude: (panViewportRef.current ?? viewport)!.centerLatitude, longitude: (panViewportRef.current ?? viewport)!.centerLongitude }, 4)}</span>}
-      </div>
+      </div> : null}
     </>
     <SeaOperationRouteMap waypoints={waypoints} isolatedPoints={isolatedPoints} zones={zones} previewWaypoint={dragPreview?.overlay && dragPreview.overlay.kind !== 'route' ? undefined : dragPreview}
       previewIsolatedPoint={dragPreview?.overlay?.kind === 'point' ? dragPreview : undefined}

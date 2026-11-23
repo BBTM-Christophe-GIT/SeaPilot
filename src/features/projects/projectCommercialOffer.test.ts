@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCommercialReserves,
+  calculateCommercialQuoteTotal,
   COMMERCIAL_CHARTER_HIRE_DESCRIPTION_KEY,
   COMMERCIAL_CONDITIONS_DESCRIPTION_KEY,
   COMMERCIAL_CONDITIONS_MODE_KEY,
   COMMERCIAL_DEMOBILISATION_DESCRIPTION_KEY,
   COMMERCIAL_MOBILISATION_DESCRIPTION_KEY,
+  COMMERCIAL_QUOTE_DURATION_DAYS_KEY,
   COMMERCIAL_RESERVE_AVAILABILITY,
   COMMERCIAL_RESERVE_AVAILABILITY_KEY,
   COMMERCIAL_RESERVE_OTHER_KEY,
@@ -16,10 +18,31 @@ import {
   getCommercialConditionsMode,
   getCommercialIncludedServiceDescriptions,
   getCommercialIncludedServiceRichDescriptions,
+  readCommercialQuoteDurationDays,
   shouldDisplayCommercialOfferRoute,
 } from './projectCommercialOffer';
 
 describe('projectCommercialOffer', () => {
+  it('reads only whole positive quote days from the existing charter period field', () => {
+    expect(readCommercialQuoteDurationDays({ [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '5' })).toBe(5);
+    for (const value of ['', '0', '-1', '2.5', '1e2', '15 jours fermes', '9007199254740992']) {
+      expect(readCommercialQuoteDurationDays({ [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: value })).toBeNull();
+    }
+  });
+
+  it('adds the optional mobilisation charges to the daily hire over the quoted duration', () => {
+    const input = {
+      charterHire: 1500.25,
+      demobilisationFee: 100.5,
+      mobilisationFee: 250,
+      supplytimeData: { [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: '3' },
+    };
+    expect(calculateCommercialQuoteTotal(input)).toBe(4851.25);
+    expect(calculateCommercialQuoteTotal({ ...input, demobilisationFee: null, mobilisationFee: null })).toBe(4500.75);
+    expect(calculateCommercialQuoteTotal({ ...input, charterHire: null })).toBeNull();
+    expect(calculateCommercialQuoteTotal({ ...input, supplytimeData: {} })).toBeNull();
+  });
+
   it('omits the commercial-reserves block when no option or free text is supplied', () => {
     expect(buildCommercialReserves({})).toEqual([]);
     expect(buildCommercialReserves({

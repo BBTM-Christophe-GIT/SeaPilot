@@ -476,8 +476,11 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const isManualPage = location.pathname === '/manual' || location.pathname.startsWith('/manual/');
   const activeVisibleModules = visibleModules;
   const canOpenRegulatoryLibrary = activeVisibleModules.some((module) => module.key === 'regulatoryLibrary');
+  const canCreateQuotes = roles.some((role) => role === 'admin' || role === 'direction');
+  const isQuoteRoute = location.pathname.replace(/\/+$/, '').toLowerCase() === '/modules/projects/devis';
   const isRequestedModuleDenied = requestedModule
     ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
+      || (isQuoteRoute && !canCreateQuotes)
       || (requestedModule.family === 'Bibliothèque Réglementaire' && !canOpenRegulatoryLibrary)
     : false;
   const groupedModules = useMemo(
@@ -685,9 +688,10 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                         </NavLink>
                       ));
 
-                      return (
+                      const moduleLink = (
                         <NavLink
                           aria-label={module.label}
+                          end={module.key === 'projects'}
                           key={module.key}
                           title={module.label}
                           to={module.key === 'home' ? '/' : `/modules/${module.key}`}
@@ -696,6 +700,15 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
                           <span className="navigation-link-label">{module.label}</span>
                         </NavLink>
                       );
+                      if (module.key !== 'projects' || !canCreateQuotes) return moduleLink;
+
+                      return [
+                        moduleLink,
+                        <NavLink aria-label="Devis" end key="project-quote" title="Devis" to="/modules/projects/devis">
+                          <FileText aria-hidden="true" size={16} />
+                          <span className="navigation-link-label">Devis</span>
+                        </NavLink>,
+                      ];
                     })}
                   </div>
                 ) : null}

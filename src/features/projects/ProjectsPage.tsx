@@ -69,7 +69,7 @@ import {
 } from './projectContractOptions';
 import { PROJECT_DOCUMENT_TYPES, type ProjectGeneratedDocumentKind } from './projectDocumentTypes';
 import type { ProjectDocumentLanguage } from './projectDocumentGeneration';
-import { archiveProject, deleteProjectPlanningOccurrence, reactivateProject, saveProjectLocation, setProjectStatus } from './projectMutations';
+import { archiveProject, deleteProjectPlanningOccurrence, reactivateProject, saveProjectLocation, setProjectStatus, type ProjectMutationResult } from './projectMutations';
 import { parseProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { PROJECT_STATUSES } from './projectStatus';
 import { deduplicateProjectDocuments } from './projectDocuments';
@@ -106,6 +106,7 @@ import {
 
 interface ProjectsPageProps {
   client?: SupabaseClient;
+  onCloseQuote?: () => void;
   roles?: RoleKey[];
 }
 
@@ -1118,11 +1119,12 @@ function ProjectDetail({
   );
 }
 
-export function ProjectsPage({ client, roles }: ProjectsPageProps) {
+export function ProjectsPage({ client, onCloseQuote, roles }: ProjectsPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
   const isManager = canManageProjects(effectiveRoles);
+  const isQuoteRoute = Boolean(onCloseQuote);
   const effectiveUserId = outletContext?.userId || '';
   const mapAccount = useRef({ client: effectiveClient, userId: effectiveUserId, generation: 0 });
   if (mapAccount.current.client !== effectiveClient || mapAccount.current.userId !== effectiveUserId) {
@@ -1166,6 +1168,7 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   const [statusMenu, setStatusMenu] = useState<{ project: ProjectRecord; position: AppContextMenuPosition; trigger: HTMLButtonElement; inDossier: boolean } | null>(null);
   const [changingProjectState, setChangingProjectState] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectRecord | undefined>();
+  const editorProject = isQuoteRoute ? undefined : editingProject;
   const [editingOccurrence, setEditingOccurrence] = useState<ProjectPlanningOccurrenceRecord | undefined>();
   const [mutationMessage, setMutationMessage] = useState('');
   const [mutationError, setMutationError] = useState('');
@@ -1253,10 +1256,10 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
   }, [effectiveClient, effectiveUserId, loadAttempt]);
 
   useEffect(() => {
-    if (isLoading || !isManager || !creationRequest.open || creationQueryHandled.current) return;
+    if (isLoading || !isManager || isQuoteRoute || !creationRequest.open || creationQueryHandled.current) return;
     creationQueryHandled.current = true;
     openProjectEditor();
-  }, [creationRequest.open, isLoading, isManager]);
+  }, [creationRequest.open, isLoading, isManager, isQuoteRoute]);
 
   const fuelReference = mapDataContext?.client === effectiveClient && mapDataContext.userId === effectiveUserId
     ? projectsData.fuelReference : undefined;
@@ -1426,6 +1429,19 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
     if (project && selectedProject) setSelectedProjectId((current) => current ?? selectedProject.id);
     setEditingProject(project);
     setProjectEditorOpen(true);
+  }
+
+  function closeProjectEditor(result?: ProjectMutationResult) {
+    if (result) {
+      if (!editorProject) {
+        setSelectedProjectId(result.id);
+        setDossierOpen(true);
+      }
+      setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
+      setLoadAttempt((attempt) => attempt + 1);
+    }
+    setProjectEditorOpen(false);
+    onCloseQuote?.();
   }
 
   const closeProjectStatusMenu = useCallback(() => {
@@ -1995,27 +2011,24 @@ export function ProjectsPage({ client, roles }: ProjectsPageProps) {
         {mutationError ? <p className="form-error" role="alert">{mutationError}</p> : null}
       </AppDialog> : null}
 
-      {projectEditorOpen ? (
+      {isManager && (isQuoteRoute || projectEditorOpen) ? (
         <ProjectEditor
+          key={isQuoteRoute ? 'quote' : 'project'}
           client={effectiveClient}
           clients={projectsData.clients}
-          contract={editingProject ? projectsData.projectContracts.find((item) => item.projectId === editingProject.id && !item.archivedAt) : undefined}
+          contract={editorProject ? projectsData.projectContracts.find((item) => item.projectId === editorProject.id && !item.archivedAt) : undefined}
           contractTypes={contractTypeOptions}
           fuelReference={fuelReference}
-          initialOperation={editingProject ? undefined : creationRequest.operation}
-          onClose={() => setProjectEditorOpen(false)}
-          onSaved={(result) => {
-            setProjectEditorOpen(false);
-            if (!editingProject) { setSelectedProjectId(result.id); setDossierOpen(true); }
-            setMutationMessage(`${result.projectCode || result.title} enregistré dans Supabase.`);
-            setLoadAttempt((attempt) => attempt + 1);
-          }}
-          project={editingProject}
-          projectAttachments={editingProject
-            ? projectsData.operationDocuments.filter((document) => document.projectId === editingProject.id && document.documentType === 'project_attachment')
+          initialOperation={isQuoteRoute || editorProject ? undefined : creationRequest.operation}
+          onClose={closeProjectEditor}
+          onSaved={closeProjectEditor}
+          project={editorProject}
+          projectAttachments={editorProject
+            ? projectsData.operationDocuments.filter((document) => document.projectId === editorProject.id && document.documentType === 'project_attachment')
             : []}
           statuses={[...PROJECT_STATUSES]}
           towedAssets={projectsData.towedAssets}
+          variant={isQuoteRoute ? 'quote' : undefined}
           vessels={projectsData.vessels}
         />
       ) : null}

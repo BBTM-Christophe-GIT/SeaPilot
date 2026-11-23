@@ -82,6 +82,10 @@ function safeFileName(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
 }
 
+export function fleetBrochureFileName(vesselName: string): string {
+  return `brochure-${safeFileName(vesselName) || 'navire'}.pdf`;
+}
+
 export async function buildFleetBrochurePdf(vessel: FleetVessel, photoUrl: string): Promise<Blob> {
   if (vessel.assetKind !== 'vessel') throw new Error('La brochure est réservée aux navires.');
   const [{ jsPDF }, { default: autoTable }, logoData, photoData] = await Promise.all([
@@ -198,7 +202,7 @@ export async function downloadFleetBrochure(vessel: FleetVessel, photoUrl: strin
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `brochure-${safeFileName(vessel.name) || 'navire'}.pdf`;
+  anchor.download = fleetBrochureFileName(vessel.name);
   anchor.click();
   URL.revokeObjectURL(url);
 }
