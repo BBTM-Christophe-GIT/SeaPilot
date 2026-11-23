@@ -72,7 +72,7 @@ describe('DprPage Phase 7', () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:dpr-preview') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     mocks.fetchDashboard.mockResolvedValue(dashboard);
-    mocks.fetchDetail.mockImplementation((_client, target: DprReportRecord) => Promise.resolve({ report: target, payload: { ...structuredClone(EMPTY_DPR_PAYLOAD), reportDate: target.reportDate, projectId: 144, vesselId: 3, description: target.description }, files: target.files }));
+    mocks.fetchDetail.mockImplementation((_client, target: DprReportRecord) => Promise.resolve({ report: target, payload: { ...structuredClone(EMPTY_DPR_PAYLOAD), reportDate: target.reportDate, projectId: 144, vesselId: target.vesselId, description: target.description }, files: target.files }));
     mocks.fetchDiagnostic.mockResolvedValue({ reports: 2, orphan_files: 0 });
     mocks.save.mockResolvedValue(42);
     mocks.transition.mockResolvedValue(undefined);
@@ -106,6 +106,50 @@ describe('DprPage Phase 7', () => {
     await user.selectOptions(screen.getByText('NAVIRE').closest('label')!.querySelector('select')!, '3');
     fireEvent.change(screen.getByPlaceholderText('DPR, navire, auteur…'), { target: { value: 'introuvable' } });
     expect(screen.getByText('Aucun rapport ne correspond aux filtres.')).toBeInTheDocument();
+  });
+
+  it('offers one vessel choice in the filter and form while preserving historical report IDs', async () => {
+    const user = userEvent.setup();
+    const vesselName = 'HIRONDELLE DE LA MANCHE';
+    const activeVessel = { id: 6, name: vesselName, active: true, lengthOverall: 11.98 };
+    const legacyVessel = { id: 5, name: ' Hirondelle  de la Manche ', active: false };
+    const legacyDraft: DprReportRecord = { ...report, id: 1058, status: 'draft', number: null, vesselId: legacyVessel.id, vesselName: legacyVessel.name };
+    mocks.fetchDashboard.mockResolvedValue({
+      ...dashboard,
+      reports: [report, { ...submittedReport, vesselId: activeVessel.id, vesselName }, legacyDraft],
+      references: {
+        ...dashboard.references,
+        vessels: [legacyVessel, activeVessel, { id: 3, name: 'GOURY', active: true }, { id: 24, name: 'TAMARIS', active: false }],
+      },
+    });
+    render(<DprPage client={{} as never} roles={['direction']} />);
+
+    await screen.findByText('DPR-1057');
+    const filter = screen.getByRole('combobox', { name: 'NAVIRE' });
+    expect(within(filter).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Tous', 'GOURY', vesselName, 'TAMARIS',
+    ]);
+    await user.selectOptions(filter, String(activeVessel.id));
+    expect(screen.getByText('DPR-1057')).toBeInTheDocument();
+    expect(screen.getByText('Brouillon #1058')).toBeInTheDocument();
+    expect(screen.queryByText('DPR-1056')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Saisir un DPR' }));
+    let dialog = await screen.findByRole('dialog');
+    let vesselSelect = within(dialog).getByRole('combobox', { name: 'NAVIRE' });
+    expect(within(vesselSelect).getAllByRole('option', { name: /^hirondelle de la manche$/i })).toHaveLength(1);
+    expect(within(vesselSelect).getByRole('option', { name: vesselName })).toHaveValue(String(activeVessel.id));
+    await user.click(within(dialog).getByRole('button', { name: 'Annuler' }));
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    dialog = await screen.findByRole('dialog');
+    vesselSelect = within(dialog).getByRole('combobox', { name: 'NAVIRE' });
+    expect(within(vesselSelect).getAllByRole('option', { name: /^hirondelle de la manche$/i })).toHaveLength(1);
+    expect(vesselSelect).toHaveValue(String(legacyVessel.id));
+    await user.click(within(dialog).getByRole('button', { name: 'Enregistrer le brouillon' }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(
+      expect.anything(), legacyDraft.id, expect.objectContaining({ vesselId: legacyVessel.id }),
+    ));
   });
 
   it('selects a whole project, previews on demand, and removes hidden selections after filtering', async () => {
