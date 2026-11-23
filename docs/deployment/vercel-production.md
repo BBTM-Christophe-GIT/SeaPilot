@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version `3.117.0` permet de choisir les projets où chaque prestation BBTM
+est proposée par défaut. La sélection d’une plage de jours actualise les
+services refacturables, les totaux et les exports. Appliquer
+`20261123095303_project_service_catalog_project_defaults.sql` avant le frontend.
+Voir [Prestations BBTM](./billing-service-quantities.md) et
+[Services refacturables](./projects-expense-rebilling-month.md).
+
 La version `3.116.0` ajoute l’affichage des fins de contrat dans l’organigramme
 et le Planning pour Administration et Direction. Dans le Planning, l’interrupteur
 est visible à côté des onglets de vue et activé à l’ouverture. Appliquer
