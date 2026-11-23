@@ -64,7 +64,6 @@ function panel(record = project, isManager = true) {
 }
 
 async function ready() {
-  await waitFor(() => expect(screen.getByLabelText('Nombre d’unités')).toHaveValue(0));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Actualiser l’aperçu' })).toBeEnabled());
 }
 
@@ -266,6 +265,7 @@ describe('automatic monthly billing creation', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
     fireEvent.change(screen.getByLabelText('Nombre d’unités'), { target: { value: '7' } });
     fireEvent.change(screen.getByLabelText('Montant unitaire HT'), { target: { value: '125' } });
     await user.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
@@ -285,6 +285,7 @@ describe('automatic monthly billing creation', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
     fireEvent.change(screen.getByLabelText('Nombre d’unités'), { target: { value: '5' } });
     await user.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
     fireEvent.change(screen.getAllByLabelText('Nombre d’unités')[1], { target: { value: '9' } });
@@ -358,6 +359,7 @@ describe('automatic monthly billing creation', () => {
     const user = userEvent.setup();
     render(panel());
     await ready();
+    await user.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
     fireEvent.change(screen.getByLabelText('Nombre d’unités'), { target: { value: '6' } });
     await user.click(screen.getByRole('button', { name: 'Actualiser l’aperçu' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Création de la fiche refusée.');

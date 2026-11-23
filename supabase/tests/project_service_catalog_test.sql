@@ -1,6 +1,6 @@
 begin;
 
-select plan(9);
+select plan(19);
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.project_service_catalog'::regclass),
@@ -16,6 +16,12 @@ select ok(
 select ok(
   not has_table_privilege('anon', 'public.project_service_catalog', 'SELECT, INSERT, UPDATE, DELETE'),
   'anonymous users have no service catalog privilege'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.project_service_catalog_defaults', 'SELECT, INSERT, DELETE')
+  and not has_function_privilege('anon', 'public.save_project_service_catalog_entry(jsonb,bigint[],bigint)', 'EXECUTE'),
+  'anonymous users cannot access or save default projects'
 );
 
 select is(
@@ -71,6 +77,25 @@ cross join public.companies company
 where company.code = 'bbtm'
 on conflict (user_id, company_id, role_key) do nothing;
 
+with fixtures as (
+  insert into public.projects (company_id, title, source_label)
+  select company.id, fixture.title, 'seapilot'
+  from public.companies company
+  cross join (values ('Service catalog project A'), ('Service catalog project B')) as fixture(title)
+  where company.code = 'bbtm'
+  returning id
+)
+select set_config('test.catalog_project_ids', array_agg(id order by id)::text, true) from fixtures;
+
+with foreign_company as (
+  insert into public.companies (code, name) values ('service-catalog-fixture', 'Service catalog fixture') returning id
+), foreign_project as (
+  insert into public.projects (company_id, title, source_label)
+  select id, 'Service catalog foreign project', 'seapilot' from foreign_company
+  returning id
+)
+select set_config('test.foreign_catalog_project_id', id::text, true) from foreign_project;
+
 set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
@@ -88,6 +113,26 @@ select throws_ok(
   'active categories are unique without case sensitivity inside the company'
 );
 
+select is(
+  (select count(*)::integer from public.project_service_catalog_defaults),
+  0,
+  'a catalog entry starts with no default projects'
+);
+
+select lives_ok(
+  $$select public.save_project_service_catalog_entry(
+      '{"category":"Projet et prestation ajoutés ensemble","unit_amount_ht":450}'::jsonb,
+      current_setting('test.catalog_project_ids')::bigint[]
+    )$$,
+  'an administrator can create a catalog entry with multiple default projects atomically'
+);
+
+select is(
+  (select count(*)::integer from public.project_service_catalog_defaults),
+  2,
+  'both default projects are stored'
+);
+
 select set_config('request.jwt.claim.sub', '8d000000-0000-0000-0000-000000000002', true);
 select lives_ok(
   $$update public.project_service_catalog
@@ -96,12 +141,59 @@ select lives_ok(
   'direction can update a service category'
 );
 
+select throws_ok(
+  $$select public.save_project_service_catalog_entry(
+      '{"category":"Projet et prestation ajoutés ensemble","unit_amount_ht":999,"vessel_name":"","description_html":"","active":true}'::jsonb,
+      array[current_setting('test.foreign_catalog_project_id')::bigint],
+      (select id from public.project_service_catalog where category = 'Projet et prestation ajoutés ensemble')
+    )$$,
+  '23503', null,
+  'a default project must belong to the catalog entry company'
+);
+
+select ok(
+  (select unit_amount_ht = 450 from public.project_service_catalog where category = 'Projet et prestation ajoutés ensemble')
+  and (select count(*) = 2 from public.project_service_catalog_defaults),
+  'a failed assignment rolls back fields and previous defaults together'
+);
+
+select set_config('request.jwt.claim.sub', '8d000000-0000-0000-0000-000000000003', true);
+select is(
+  (select count(*)::integer from public.project_service_catalog_defaults),
+  0,
+  'a catalog reader cannot see configured project associations'
+);
+
+select set_config('request.jwt.claim.sub', '8d000000-0000-0000-0000-000000000002', true);
+select lives_ok(
+  $$select public.save_project_service_catalog_entry(
+      '{"category":"Projet et prestation ajoutés ensemble","unit_amount_ht":450,"vessel_name":"","description_html":"","active":true}'::jsonb,
+      '{}'::bigint[],
+      (select id from public.project_service_catalog where category = 'Projet et prestation ajoutés ensemble')
+    )$$,
+  'direction can clear every default project'
+);
+
+select is(
+  (select count(*)::integer from public.project_service_catalog_defaults),
+  0,
+  'cleared assignments no longer propose the catalog service'
+);
+
 select set_config('request.jwt.claim.sub', '8d000000-0000-0000-0000-000000000003', true);
 select throws_ok(
   $$insert into public.project_service_catalog (category, unit_amount_ht)
     values ('Catégorie refusée', 100)$$,
   '42501', null,
   'armement cannot change the service catalog'
+);
+
+select throws_ok(
+  $$insert into public.project_service_catalog_defaults (company_id, service_catalog_id, project_id)
+    select company_id, id, (current_setting('test.catalog_project_ids')::bigint[])[1]
+    from public.project_service_catalog where category = 'Projet et prestation ajoutés ensemble'$$,
+  '42501', null,
+  'a catalog reader cannot assign a default project'
 );
 
 select is(

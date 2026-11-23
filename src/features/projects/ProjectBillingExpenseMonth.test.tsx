@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectBillingPanel } from './ProjectBillingPanel';
@@ -172,6 +172,60 @@ describe('independent expense rebilling month', () => {
     expectSelectedTotal('150,00');
     await preview(user);
     expect(mocks.export.mock.calls[0][1]).toMatchObject({ period: { id: 20, periodMonth: '2026-10-01' }, expenses: [expect.objectContaining({ invoiceDate: '2026-08-19', billingPeriodId: 20 })] });
+  });
+
+  it('synchronizes the expense rows, totals, and export with the selected days across months', async () => {
+    const user = userEvent.setup();
+    const september = period({ id: 15, periodMonth: '2026-09-01' });
+    const november = period({ id: 25, periodMonth: '2026-11-01' });
+    const septemberExpense = expense({ billingPeriodId: september.id, invoiceDate: '2026-09-30', invoiceNumber: 'FIN-SEPTEMBRE', amountHt: 100 });
+    const octoberExpense = expense({ id: 31, billingPeriodId: october.id, invoiceDate: '2026-10-01', invoiceNumber: 'DEBUT-OCTOBRE', amountHt: 200 });
+    const rebilledInSeptember = expense({ id: 32, billingPeriodId: september.id, invoiceNumber: 'FACTURE-ANTERIEURE', amountHt: 50 });
+    const rebilledInNovember = expense({ id: 33, billingPeriodId: november.id, invoiceDate: '2026-09-30', invoiceNumber: 'A-REFACTURER-EN-NOVEMBRE' });
+    const outsideRange = expense({ id: 34, billingPeriodId: october.id, invoiceDate: '2026-10-02', invoiceNumber: 'APRES-LA-PERIODE' });
+    const septemberProof = attachment({ fileName: 'fin-septembre.pdf' });
+    const excludedProof = attachment({ id: 42, chargeableExpenseId: outsideRange.id, billingPeriodId: october.id, fileName: 'hors-periode.pdf' });
+    await mount(billingData({
+      periods: [september, october, november],
+      expenses: [septemberExpense, octoberExpense, rebilledInSeptember, rebilledInNovember, outsideRange],
+      documents: [septemberProof, excludedProof],
+    }), '2026-09');
+
+    expectExpenseCount(2);
+    expect(expenseSection().getByText('FACTURE-ANTERIEURE')).toBeVisible();
+
+    const calendar = within(screen.getByRole('region', { name: 'Calendrier de facturation' }));
+    await user.click(calendar.getByRole('button', { name: 'mercredi 30 septembre 2026' }));
+    expectExpenseCount(1);
+    expectSelectedTotal('100,00');
+    expect(expenseSection().getByText('FIN-SEPTEMBRE')).toBeVisible();
+
+    await user.click(calendar.getByRole('button', { name: 'jeudi 1 octobre 2026' }));
+    expectExpenseCount(2);
+    expectSelectedTotal('300,00');
+    expect(expenseSection().queryByText('FACTURE-ANTERIEURE')).not.toBeInTheDocument();
+    expect(expenseSection().queryByText('A-REFACTURER-EN-NOVEMBRE')).not.toBeInTheDocument();
+    expect(expenseSection().queryByText('APRES-LA-PERIODE')).not.toBeInTheDocument();
+
+    const octoberRow = expenseSection().getByText('DEBUT-OCTOBRE').closest('tr')!;
+    await user.upload(within(octoberRow).getByLabelText('Ajouter'), new File(['invoice'], 'debut-octobre.pdf', { type: 'application/pdf' }));
+    expect(mocks.upload).toHaveBeenCalledExactlyOnceWith(client, expect.objectContaining({
+      billingPeriodId: october.id, expenseId: octoberExpense.id,
+    }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
+    await preview(user);
+    expect(mocks.export.mock.calls[0][1]).toMatchObject({
+      startDate: '2026-09-30', endDate: '2026-10-01', expenses: [septemberExpense, octoberExpense],
+    });
+    expect(mocks.export.mock.calls[0][2]).toEqual([
+      expect.objectContaining({ billingPeriodId: october.id, chargeableExpenseId: octoberExpense.id }),
+      septemberProof,
+    ]);
+
+    await selectMonth('2026-10');
+    expectExpenseCount(2);
+    expect(expenseSection().getByText('APRES-LA-PERIODE')).toBeVisible();
   });
 
   it('creates only the target month without copying or replacing the current invoice draft', async () => {

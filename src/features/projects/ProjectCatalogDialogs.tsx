@@ -24,7 +24,7 @@ import {
   type ClientWriteInput,
   type ProjectTowedAssetWriteInput,
 } from './projectMutations';
-import type { ClientRecord, ProjectTowedAssetRecord, VesselRecord } from './projectQueries';
+import { fetchProjects, type ClientRecord, type ProjectRecord, type ProjectTowedAssetRecord, type VesselRecord } from './projectQueries';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import {
   discoverClientLogoUrl,
@@ -817,7 +817,7 @@ export function TowedAssetCatalogDialog({
 function emptyServiceForm(): ProjectServiceCatalogDraft {
   return {
     category: '', unitAmountHt: 0, descriptionHtml: '', active: true, vesselId: null, vesselName: '',
-    quantityMode: 'manual', quantityOperationTypes: [], defaultQuantity: 0, clientReference: '',
+    quantityMode: 'manual', quantityOperationTypes: [], defaultQuantity: 0, clientReference: '', defaultProjectIds: [],
   };
 }
 
@@ -834,11 +834,16 @@ function serviceForm(entry?: ProjectServiceCatalogEntry): ProjectServiceCatalogD
     quantityOperationTypes: [...(entry.quantityOperationTypes || [])],
     defaultQuantity: entry.quantityMode === 'manual' ? entry.defaultQuantity ?? 0 : entry.defaultQuantity,
     clientReference: entry.clientReference || '',
+    defaultProjectIds: entry.defaultProjectIds || [],
   } : emptyServiceForm();
 }
 
 function serviceAmount(value: number): string {
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value);
+}
+
+function serviceProjectLabel(project: ProjectRecord): string {
+  return [project.projectCode, project.title].filter(Boolean).join(' — ');
 }
 
 export function ServiceCatalogDialog({
@@ -850,6 +855,7 @@ export function ServiceCatalogDialog({
   vessels = [],
 }: ServiceCatalogDialogProps) {
   const [items, setItems] = useState<ProjectServiceCatalogEntry[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<EditorMode>(initialMode);
@@ -858,6 +864,9 @@ export function ServiceCatalogDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [projectQuery, setProjectQuery] = useState('');
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const [projectsLoading, setProjectsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -878,11 +887,31 @@ export function ServiceCatalogDialog({
     return () => { active = false; };
   }, [client, initialMode]);
 
+  useEffect(() => {
+    let active = true;
+    setProjects([]);
+    setProjectLoadError('');
+    setProjectsLoading(true);
+    void fetchProjects(client)
+      .then((entries) => {
+        if (active) setProjects(entries.sort((left, right) =>
+          serviceProjectLabel(left).localeCompare(serviceProjectLabel(right), 'fr', { numeric: true })));
+      })
+      .catch(() => {
+        if (active) setProjectLoadError('Impossible de charger les projets.');
+      })
+      .finally(() => { if (active) setProjectsLoading(false); });
+    return () => { active = false; };
+  }, [client]);
+
   const filteredItems = useMemo(
     () => items.filter((item) => queryMatches([item.category, item.unitAmountHt, item.descriptionHtml, item.vesselName || ''], query)),
     [items, query],
   );
   const selected = items.find((item) => item.id === selectedId);
+  const selectedProjectIds = selected?.defaultProjectIds || [];
+  const defaultProjectIds = form.defaultProjectIds || [];
+  const visibleProjects = projects.filter((project) => queryMatches([project.projectCode, project.title], projectQuery));
   const availableVessels = vessels
     .filter((vessel) => (!vessel.assetKind || vessel.assetKind === 'vessel') && (vessel.active || vessel.id === form.vesselId))
     .sort(compareFleetAssets);
@@ -901,6 +930,7 @@ export function ServiceCatalogDialog({
     if (!canManage || isSaving || isLoading) return;
     setSelectedId(null);
     setForm(emptyServiceForm());
+    setProjectQuery('');
     setMode('create');
     setErrorMessage('');
     setSuccessMessage('');
@@ -909,6 +939,7 @@ export function ServiceCatalogDialog({
   function beginEdit() {
     if (!selected || !canManage || isSaving || isLoading) return;
     setForm(serviceForm(selected));
+    setProjectQuery('');
     setMode('edit');
     setErrorMessage('');
     setSuccessMessage('');
@@ -918,6 +949,15 @@ export function ServiceCatalogDialog({
     setForm(serviceForm(selected));
     setMode('view');
     setErrorMessage('');
+  }
+
+  function toggleDefaultProject(id: number, checked: boolean) {
+    setForm((current) => ({
+      ...current,
+      defaultProjectIds: checked
+        ? [...(current.defaultProjectIds || []), id]
+        : current.defaultProjectIds?.filter((projectId) => projectId !== id),
+    }));
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -944,9 +984,12 @@ export function ServiceCatalogDialog({
     setErrorMessage('');
     setSuccessMessage('');
     try {
+      const defaultsChanged = defaultProjectIds.length !== selectedProjectIds.length
+        || defaultProjectIds.some((id) => !selectedProjectIds.includes(id));
       const saved = await saveProjectServiceCatalogEntry(client, {
         ...form,
         category,
+        defaultProjectIds: defaultsChanged ? defaultProjectIds : undefined,
         descriptionHtml: sanitizeServiceNoteHtml(form.descriptionHtml),
       });
       const next = [...items.filter((item) => item.id !== saved.id), saved]
@@ -1032,6 +1075,13 @@ export function ServiceCatalogDialog({
               {selected.quantityMode === 'manual' ? <div><dt>Quantité par défaut</dt><dd>{(selected.defaultQuantity ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 3 })}</dd></div> : null}
               {selected.quantityMode === 'operations' ? <div className="is-wide"><dt>Types d’opérations à compter</dt><dd>{selected.quantityOperationTypes?.join(' · ') || 'Non renseignés'}</dd></div> : null}
               <div className="is-wide"><dt>Référence client de la prestation</dt><dd>{selected.clientReference || 'Non renseignée'}</dd></div>
+              <div className="is-wide">
+                <dt>Projets où afficher cette prestation par défaut</dt>
+                <dd>{selectedProjectIds.length
+                  ? projects.filter((project) => selectedProjectIds.includes(project.id)).map(serviceProjectLabel).join(' · ')
+                    || (projectsLoading ? 'Chargement…' : `${selectedProjectIds.length} projet(s)`)
+                  : 'Aucun projet'}</dd>
+              </div>
             </dl>
             <div className="project-service-description"><strong>Description</strong>{serviceNoteBodyHasContent(selected.descriptionHtml) ? <div dangerouslySetInnerHTML={{ __html: sanitizeServiceNoteHtml(selected.descriptionHtml) }} /> : <p>Non renseignée</p>}</div>
           </div> : null}
@@ -1052,6 +1102,21 @@ export function ServiceCatalogDialog({
                 quantityOperationTypes={form.quantityOperationTypes}
               /></div>
               {form.quantityMode === 'manual' ? <label><span>Quantité par défaut</span><input max="99999999999.999" min="0" onChange={(event) => setForm((current) => ({ ...current, defaultQuantity: Number(event.target.value) }))} step="0.001" type="number" value={form.defaultQuantity ?? 0} /></label> : null}
+              <fieldset className="is-wide project-catalog-field project-service-default-projects">
+                <legend>Projets où afficher cette prestation par défaut</legend>
+                {projectLoadError ? <p role="alert">{projectLoadError}</p> : projectsLoading ? <p role="status">Chargement des projets…</p> : <>
+                  <input aria-label="Rechercher un projet" onChange={(event) => setProjectQuery(event.target.value)} placeholder="Rechercher un projet…" type="search" value={projectQuery} />
+                  <div className="project-service-default-projects-list">
+                    {visibleProjects.map((project) => (
+                      <label key={project.id}>
+                        <input checked={defaultProjectIds.includes(project.id)} onChange={(event) => toggleDefaultProject(project.id, event.target.checked)} type="checkbox" />
+                        <span>{serviceProjectLabel(project)}</span>
+                      </label>
+                    ))}
+                    {visibleProjects.length === 0 ? <p>Aucun projet trouvé.</p> : null}
+                  </div>
+                </>}
+              </fieldset>
               <label className="is-wide project-service-rich-field"><span>Description</span><ServiceNoteRichTextEditor ariaLabel="Description de la prestation" disabled={!canManage || isSaving || isLoading} onChange={(descriptionHtml) => setForm((current) => ({ ...current, descriptionHtml }))} placeholder="Décrivez le contenu et les conditions de la prestation…" toolbarLabel="Mise en forme de la description" value={form.descriptionHtml} /></label>
             </fieldset>
             <div className="project-catalog-form-actions"><button disabled={isSaving} onClick={cancelEdit} type="button">Annuler</button><button className="is-primary" disabled={!canManage || isLoading || isSaving} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></div>

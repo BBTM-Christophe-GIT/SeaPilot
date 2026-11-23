@@ -192,6 +192,7 @@ describe('editable billing service quantities and client references', () => {
 
   it('copies catalogue defaults into a new service and keeps its overridden reference independent of the global reference', async () => {
     stored.services = [];
+    catalog[0] = { ...catalog[0], defaultProjectIds: [project.id] };
     await mount();
     expect(quantityButton()).toHaveAccessibleDescription('Manuel');
     expect(field('Nombre d’unités')).toHaveValue(0);
@@ -203,6 +204,33 @@ describe('editable billing service quantities and client references', () => {
     await waitFor(() => expect(mocks.export).toHaveBeenCalledWith(client, expect.objectContaining({
       period: expect.objectContaining({ clientReference: 'REF-GLOBALE' }), services: [expect.objectContaining({ clientReference: 'REF-LIGNE' })],
     }), [], 'pdf'));
+  });
+
+  it('starts empty unless this project has assigned defaults and retains saved lines without duplicating a default', async () => {
+    const associated = { ...catalog[0], id: 8, category: 'Mobilisation', defaultProjectIds: [project.id] };
+    const other = { ...catalog[0], id: 9, category: 'Projet tiers', defaultProjectIds: [999] };
+    catalog = [{ ...catalog[0], defaultProjectIds: [project.id] }, associated, other];
+    await mount();
+    expect(screen.getByRole('group', { name: 'Prestation 1 : Assistance' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Prestation 2 : Mobilisation' })).toBeVisible();
+    expect(screen.queryByRole('group', { name: /Projet tiers/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Supprimer la prestation Mobilisation' }));
+    expect(screen.queryByRole('group', { name: /Mobilisation/ })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Mois', { exact: true }), { target: { value: '2026-10' } });
+    expect(screen.getByRole('group', { name: 'Prestation 1 : Assistance' })).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Prestation 2 : Mobilisation' })).toBeVisible();
+  });
+
+  it('leaves an unconfigured project empty and still allows an explicit add', async () => {
+    stored.services = [];
+    catalog[0] = { ...catalog[0], defaultProjectIds: [999] };
+    await mount();
+    expect(screen.getByText('Aucune prestation BBTM pour cette période.')).toBeVisible();
+    expect(screen.queryByLabelText('Catégorie de la prestation 1')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Ajouter une prestation' }));
+    expect(line()).toBeVisible();
   });
 
   it('offers manual editing for an explicitly configured P144 Spread line and keeps read-only profiles unable to mutate', async () => {

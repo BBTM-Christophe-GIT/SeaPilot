@@ -5,12 +5,16 @@ import { BILLING_SERVICE_QUANTITY_MODE_LABELS } from './BillingServiceQuantityFi
 import type { BillingServiceQuantityMode } from './projectBilling';
 import type { ProjectServiceCatalogDraft, ProjectServiceCatalogEntry } from './projectBilling';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), archive: vi.fn() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), archive: vi.fn(), projects: vi.fn() }));
 vi.mock('./projectBilling', async original => ({
   ...await original<typeof import('./projectBilling')>(),
   fetchProjectServiceCatalog: mocks.load,
   saveProjectServiceCatalogEntry: mocks.save,
   archiveProjectServiceCatalogEntry: mocks.archive,
+}));
+vi.mock('./projectQueries', async original => ({
+  ...await original<typeof import('./projectQueries')>(),
+  fetchProjects: mocks.projects,
 }));
 
 const client = {} as never;
@@ -42,10 +46,40 @@ async function finishTypes() { await click(screen.getByRole('menuitem', { name: 
 beforeEach(() => {
   Object.values(mocks).forEach(mock => mock.mockReset());
   mocks.load.mockResolvedValue([]);
+  mocks.projects.mockResolvedValue([
+    { id: 144, projectCode: 'P144', title: 'Garde maritime' },
+    { id: 145, projectCode: 'P145', title: 'Remorquage' },
+  ]);
   mocks.save.mockImplementation(async (_client: unknown, draft: ProjectServiceCatalogDraft) => entry({ ...draft, id: draft.id ?? 91 }));
 });
 
 describe('catalogue service quantity rules', () => {
+  it('starts new services with no default projects and supports assigning or clearing several projects', async () => {
+    await mount({ initialMode: 'create' });
+    const projects = () => within(screen.getByRole('group', { name: 'Projets où afficher cette prestation par défaut' }));
+    const first = () => projects().getByRole('checkbox', { name: 'P144 — Garde maritime' });
+    const second = () => projects().getByRole('checkbox', { name: 'P145 — Remorquage' });
+    expect(first()).not.toBeChecked();
+    expect(second()).not.toBeChecked();
+    change('Catégorie *', 'Assistance par projet');
+    await click(first());
+    change('Rechercher un projet', 'P145');
+    expect(projects().getAllByRole('checkbox')).toEqual([second()]);
+    await click(second());
+    await save();
+    expect(mocks.save).toHaveBeenLastCalledWith(client, expect.objectContaining({ defaultProjectIds: [144, 145] }));
+    expect(screen.getByText('P144 — Garde maritime · P145 — Remorquage')).toBeVisible();
+
+    await click(screen.getByRole('button', { name: 'Modifier' }));
+    expect(first()).toBeChecked();
+    expect(second()).toBeChecked();
+    await click(first());
+    await click(second());
+    await save();
+    expect(mocks.save).toHaveBeenLastCalledWith(client, expect.objectContaining({ id: 91, defaultProjectIds: [] }));
+    expect(screen.getByText('Aucun projet')).toBeVisible();
+  });
+
   it('saves a manual zero and client reference, then lets the saved service be edited again', async () => {
     await mount({ initialMode: 'create' });
     expect(screen.getByRole('button', { name: 'Calcul quantité' })).toHaveAccessibleDescription('Manuel');
