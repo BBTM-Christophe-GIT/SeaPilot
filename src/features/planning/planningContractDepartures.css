@@ -1,10 +1,32 @@
+.planning-board-toolbar.has-contract-departure-control,
+.has-contract-departure-control :is(.planning-toolbar-main, .planning-toolbar-navigation) {
+  flex-wrap: wrap;
+}
+
+.planning-board-toolbar.has-contract-departure-control {
+  display: flex;
+}
+
+.has-contract-departure-control :is(.planning-toolbar-main, .planning-toolbar-navigation) {
+  max-width: 100%;
+  overflow: visible;
+}
+
+.has-contract-departure-control .planning-toolbar-main {
+  flex: 1 1 auto;
+}
+
+.has-contract-departure-control .planning-filter-strip {
+  flex: 1 1 100%;
+}
+
 .planning-contract-departures-switch {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  color: #20344f;
+  color: var(--sp-text);
   font-size: .75rem;
   font-weight: 800;
   white-space: nowrap;
@@ -23,7 +45,7 @@
   appearance: none;
   border: 0;
   border-radius: 999px;
-  background: #667790;
+  background: var(--sp-muted);
   cursor: pointer;
 }
 
@@ -31,17 +53,17 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--sp-surface);
   content: '';
 }
 
 .planning-contract-departures-switch input:checked {
   justify-items: end;
-  background: #125fbf;
+  background: var(--sp-primary);
 }
 
 .planning-contract-departures-switch input:focus-visible {
-  outline: 2px solid #125fbf;
+  outline: 2px solid var(--sp-focus);
   outline-offset: 3px;
 }
 

@@ -564,7 +564,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     }));
   }, [defaultFilters, filterScope]);
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [showContractDepartures, setShowContractDepartures] = useState(false);
+  const [showContractDepartures, setShowContractDepartures] = useState(true);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<SideTab>('billing');
   const [isOperationalPanelOpen, setIsOperationalPanelOpen] = useState(true);
@@ -848,6 +848,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   const canEditPlanning = permissions.canEditEvents;
   const latestRelease = overview.versions[0] || null;
   const todayDate = todayPlanningDate();
+  const hasContractDepartureControl = permissions.canViewContractDepartures && perspective !== 'projects';
   const contractDepartures = useMemo(() => showContractDepartures && permissions.canViewContractDepartures
     ? new Map(planningData.people.filter((person) => person.departedOn >= todayDate)
       .map((person) => [person.id, person.departedOn]))
@@ -2716,13 +2717,19 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
 
       <div className={`planning-layout${perspective === 'crew' && !isOperationalPanelOpen ? ' is-crew-board-only' : ''}`}>
         <section className="planning-board-card" aria-label={perspective === 'projects' ? 'Calendrier des projets' : 'Calendrier des affectations'}>
-          <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}`}>
+          <div className={`planning-board-toolbar${perspective === 'crew' ? ' is-crew-toolbar' : ''}${hasContractDepartureControl ? ' has-contract-departure-control' : ''}`}>
             <div className="planning-toolbar-main">
               <div className="planning-perspective-switch" aria-label="Vue du planning" role="tablist">
                 <button aria-selected={perspective === 'fleet'} className={perspective === 'fleet' ? 'is-active' : ''} onClick={() => changePerspective('fleet')} role="tab" type="button">Flotte</button>
                 <button aria-selected={perspective === 'projects'} className={perspective === 'projects' ? 'is-active' : ''} onClick={() => changePerspective('projects')} role="tab" type="button">Projet</button>
                 {readPermissions.canViewCrewPlanning ? <button aria-selected={perspective === 'crew'} className={perspective === 'crew' ? 'is-active' : ''} onClick={() => changePerspective('crew')} role="tab" type="button">Équipages</button> : null}
               </div>
+              {hasContractDepartureControl ? (
+                <label className="planning-contract-departures-switch">
+                  <input checked={showContractDepartures} onChange={(event) => setShowContractDepartures(event.target.checked)} role="switch" type="checkbox" />
+                  Fins de contrat
+                </label>
+              ) : null}
               {perspective === 'fleet' ? (
                 <button aria-expanded={isFleetFullyExpanded} className="planning-filter-toggle" disabled={!fleetNodeKeys.length} onClick={toggleFleetTree} title="Déplier ou replier tous les navires et toutes les bordées affichés" type="button">
                   {isFleetFullyExpanded ? <ChevronsDownUp aria-hidden="true" size={17} /> : <ChevronsUpDown aria-hidden="true" size={17} />}
@@ -2741,12 +2748,6 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
               <button aria-busy={isRefreshing} className="planning-filter-toggle planning-refresh-button" disabled={isRefreshing} onClick={() => { setBalanceRevision((value) => value + 1); void Promise.all([loadPlanning(), loadAbsences(), loadVesselVisits(), loadPlanningAudits()]); }} type="button">
                 <RefreshCw aria-hidden="true" size={17} />{isRefreshing ? 'Actualisation…' : 'Actualiser'}
               </button>
-              {permissions.canViewContractDepartures && perspective !== 'projects' ? (
-                <label className="planning-contract-departures-switch">
-                  <input checked={showContractDepartures} onChange={(event) => setShowContractDepartures(event.target.checked)} role="switch" type="checkbox" />
-                  Fins de contrat
-                </label>
-              ) : null}
               <div className="planning-toolbar-spacer" />
               {perspective === 'crew' && balanceLoadError ? <span role="alert">{balanceLoadError} <button type="button" onClick={() => setBalanceRevision((value) => value + 1)}>Réessayer</button></span> : null}
               {perspective === 'crew' ? <div className="planning-grouping-switch" aria-label="Regrouper les équipages"><button className={crewGrouping === 'people' ? 'is-active' : ''} onClick={() => setCrewGrouping('people')} type="button">Marins</button><button className={crewGrouping === 'teams' ? 'is-active' : ''} onClick={() => setCrewGrouping('teams')} type="button">Équipes</button></div> : null}

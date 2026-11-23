@@ -18,4 +18,4 @@ La liste s’appuie sur les champs Supabase `people.hired_on` et `people.departe
 
 ## Départs dans le calendrier
 
-Dans **Flotte** et **Équipages**, l’interrupteur **Fins de contrat** est disponible pour Administration et Direction. Il est désactivé à l’ouverture du Planning. Une fois activé, la date de départ RH d’un collaborateur affiché est signalée par un drapeau rouge et un pointillé rouge clair depuis aujourd’hui, dans la limite de la période affichée. Les dates passées ne sont pas signalées.
+Dans **Flotte** et **Équipages**, l’interrupteur **Fins de contrat** se trouve à côté des onglets de vue pour Administration et Direction. Il est activé à l’ouverture du Planning. La date de départ RH d’un collaborateur affiché est signalée par un drapeau rouge et un pointillé rouge clair depuis aujourd’hui, dans la limite de la période affichée. Les dates passées ne sont pas signalées.
