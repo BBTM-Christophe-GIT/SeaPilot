@@ -2056,6 +2056,71 @@ function nextPreviewId(table: string, fallback: number): number {
   return Math.max(fallback, ...previewRows(table).map((row) => Number(row.id) || 0)) + 1;
 }
 
+function savePreviewProjectWithLocation(args: Record<string, unknown>): PreviewResult {
+  const projects = previewRows('projects');
+  const contracts = previewRows('project_contracts');
+  const existing = projects.find((row) => row.id === args.target_project_id);
+  if (args.target_project_id != null && (!existing || existing.archived_at)) {
+    return { data: null, error: { code: 'P0002', message: 'Projet de démonstration inaccessible.' } };
+  }
+  if (existing && args.target_expected_updated_at !== existing.updated_at) {
+    return { data: null, error: { code: 'P0001', message: 'Le projet a été modifié par un autre utilisateur.' } };
+  }
+  const title = String(args.target_title ?? '').trim();
+  if (!title) {
+    return { data: null, error: { code: '22023', message: 'Le nom du projet est obligatoire.' } };
+  }
+  let plan;
+  try { plan = parseProjectLocationPlan(args.target_location_plan); }
+  catch { return { data: null, error: { code: '22023', message: 'La localisation du projet est invalide.' } }; }
+
+  const id = Number(existing?.id) || nextPreviewId('projects', 9002);
+  const client = previewRows('clients').find((row) => row.id === args.target_client_id);
+  const primaryVessel = previewRows('vessels').find((row) => row.id === args.target_primary_vessel_id);
+  const secondaryVessel = previewRows('vessels').find((row) => row.id === args.target_secondary_vessel_id);
+  const existingContract = contracts.find((row) => row.project_id === id && !row.archived_at);
+  const updatedAt = new Date(Math.max(Date.now(), (Date.parse(String(existing?.updated_at)) || 0) + 1)).toISOString();
+  const project = {
+    ...existing,
+    id,
+    project_code: existing?.project_code ?? `P${id - 8100}`,
+    title,
+    client_name: client?.name ?? null,
+    primary_vessel_name: primaryVessel?.name ?? null,
+    secondary_vessel_name: secondaryVessel?.name ?? null,
+    source_label: existing?.source_label ?? 'seapilot-preview',
+    archived_at: null,
+    location_plan: plan,
+    updated_at: updatedAt,
+    ...Object.fromEntries([
+      'client_id', 'primary_vessel_id', 'secondary_vessel_id', 'status', 'description',
+      'starts_on', 'ends_on', 'delivery_at', 'redelivery_at', 'charter_starts_at',
+      'charter_ends_at', 'delivery_port', 'redelivery_port', 'contract_type', 'operation_area',
+      'is_rov_support', 'is_diving_support',
+    ].map((field) => [field, args[`target_${field}`] ?? null])),
+  };
+  const contract = {
+    ...existingContract,
+    id: existingContract?.id ?? nextPreviewId('project_contracts', 0),
+    project_id: id,
+    supplytime_schema_version: 'supplytime-2017-v1',
+    archived_at: null,
+    ...Object.fromEntries([
+      'owner_identity', 'vessel_assignment_limit', 'extension_count', 'extension_duration',
+      'extension_unit', 'auto_extension_period', 'max_extension_days', 'mobilisation_fee',
+      'demobilisation_fee', 'fee_currency', 'charter_hire', 'extension_hire', 'hire_currency',
+      'hire_unit', 'max_audit_period',
+    ].map((field) => [field, args[`target_${field}`] ?? null])),
+    supplytime_data: structuredClone(args.target_supplytime_data ?? {}),
+  };
+  if (existing) Object.assign(existing, project);
+  else projects.push(project);
+  if (existingContract) Object.assign(existingContract, contract);
+  else contracts.push(contract);
+
+  return { data: project, error: null };
+}
+
 function previewVessel(vesselId: number): { id: number; name: string } {
   const stored = previewRows('vessels').find((row) => Number(row.id) === vesselId);
   if (stored) return { id: vesselId, name: String(stored.name || `Navire ${vesselId}`) };
@@ -3616,5 +3681,18 @@ export const previewSupabaseClient = {
         : Promise.resolve({ data: null, error: PREVIEW_WRITE_ERROR });
       },
     }),
+  },
+} as unknown as SupabaseClient;
+
+export const previewQuoteSupabaseClient = {
+  ...previewSupabaseClient,
+  rpc: (functionName: string, args: Record<string, unknown> = {}) => {
+    if (functionName === 'projects_peek_next_code') {
+      return createPreviewQuery({ data: `P${nextPreviewId('projects', 9002) - 8100}`, error: null });
+    }
+    if (functionName === 'projects_save_with_location') {
+      return createPreviewQuery(savePreviewProjectWithLocation(args));
+    }
+    return previewRpc(functionName, args);
   },
 } as unknown as SupabaseClient;

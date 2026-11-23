@@ -47,6 +47,7 @@ import {
   localTodayIso,
 } from './projectBareboatContract';
 import { projectDescriptionToPlainText } from './projectDescription';
+import { appendProjectQuoteTerms, QUOTE_FUEL_EXCLUDED } from './projectQuoteTerms';
 import bimcoPage01Url from './assets/contract-previews/bimco-p144-page-01.png';
 import bimcoPage02Url from './assets/contract-previews/bimco-p144-page-02.png';
 import bimcoPage03Url from './assets/contract-previews/bimco-p144-page-03.png';
@@ -70,6 +71,21 @@ export interface ProjectDocumentGenerationInput {
   vesselCertificates?: ProjectVesselCertificateRecord[];
   language?: ProjectDocumentLanguage;
 }
+
+export interface ProjectOfferDocumentInput extends Pick<ProjectDocumentGenerationInput, 'emitter' | 'fuelReference' | 'language' | 'vessel'> {
+  client?: Pick<ClientRecord, 'name' | 'representedBy'>;
+  contract?: Pick<ProjectContractRecord,
+    'charterHire' | 'demobilisationFee' | 'extensionHire' | 'feeCurrency' |
+    'hireCurrency' | 'hireUnit' | 'mobilisationFee' | 'supplytimeData'>;
+  project: Pick<ProjectRecord,
+    'charterStartsAt' | 'clientName' | 'contractType' | 'deliveryAt' | 'deliveryPort' | 'description' |
+    'endsOn' | 'locationPlan' | 'operationArea' | 'primaryVesselName' | 'projectCode' |
+    'redeliveryAt' | 'redeliveryPort' | 'startsOn' | 'title'>;
+}
+
+type ProjectDocumentGenerationRequest =
+  | { kind: 'offer'; input: ProjectOfferDocumentInput; quote?: boolean }
+  | { kind: Exclude<ProjectGeneratedDocumentKind, 'offer'>; input: ProjectDocumentGenerationInput; quote?: never };
 
 export type ProjectDocumentLanguage = 'fr' | 'en';
 
@@ -287,7 +303,7 @@ function translateProjectOfferStandardText(value: string, language: ProjectDocum
   return value;
 }
 
-function projectReference(project: ProjectRecord): string {
+function projectReference(project: Pick<ProjectRecord, 'projectCode' | 'title'>): string {
   return [project.projectCode, project.title].filter(Boolean).join(' - ');
 }
 
@@ -426,7 +442,7 @@ export function buildProjectBimcoP144PdfFields({
 
 export function buildGeneratedDocumentFileName(
   kind: ProjectGeneratedDocumentKind,
-  project: ProjectRecord,
+  project: Pick<ProjectRecord, 'contractType' | 'projectCode' | 'title'>,
   language: ProjectDocumentLanguage = 'fr',
 ): string {
   const reference = (project.projectCode || project.title || 'Projet')
@@ -455,7 +471,19 @@ export async function generateProjectDocument(
   kind: ProjectGeneratedDocumentKind,
   input: ProjectDocumentGenerationInput,
 ): Promise<GeneratedProjectDocument> {
-  const generated = await generateProjectDocumentBase(kind, input);
+  const generated = await generateProjectDocumentBase(kind === 'offer' ? { kind, input } : { kind, input });
+  return appendProjectDocumentLocation(generated, input);
+}
+
+export async function generateProjectQuoteDocument(input: ProjectOfferDocumentInput): Promise<GeneratedProjectDocument> {
+  const generated = await generateProjectDocumentBase({ kind: 'offer', input, quote: true });
+  return appendProjectDocumentLocation(generated, input);
+}
+
+async function appendProjectDocumentLocation(
+  generated: GeneratedProjectDocument,
+  input: ProjectOfferDocumentInput,
+): Promise<GeneratedProjectDocument> {
   if (!input.project.locationPlan?.includeInPdf) return generated;
   const { appendProjectLocationPdf } = await import('./projectLocationPdf');
   return {
@@ -478,8 +506,7 @@ export async function generateProjectDocument(
 }
 
 async function generateProjectDocumentBase(
-  kind: ProjectGeneratedDocumentKind,
-  input: ProjectDocumentGenerationInput,
+  { kind, input, quote }: ProjectDocumentGenerationRequest,
 ): Promise<GeneratedProjectDocument> {
   if (kind === 'intellectual_service') {
     throw new Error('Le modèle de ce contrat doit encore être fourni avant sa génération.');
@@ -546,15 +573,15 @@ async function generateProjectDocumentBase(
       pdf.setFontSize(10);
       pdf.text(label, x + 11, y + 5.5);
     };
-    const detailRow = (label: string, value: string, x: number, y: number, width: number) => {
+    const detailRow = (label: string, value: string, x: number, y: number, width: number, maximumLines = 1) => {
       pdf.setDrawColor(226, 232, 240);
-      pdf.line(x, y + 5.5, x + width, y + 5.5);
+      pdf.line(x, y + 5.5 + (maximumLines - 1) * 2.5, x + width, y + 5.5 + (maximumLines - 1) * 2.5);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.2);
       pdf.setTextColor(113, 128, 150);
       pdf.text(label.toLocaleUpperCase('fr-FR'), x, y + 3.5);
       pdf.setTextColor(35, 59, 87);
-      pdf.text(line(value, width * 0.58, 1), x + width, y + 3.5, { align: 'right' });
+      pdf.text(line(value, width * 0.58, maximumLines), x + width, y + 3.5, { align: 'right' });
     };
 
     pdf.setFillColor(9, 31, 50);
@@ -609,30 +636,39 @@ async function generateProjectDocumentBase(
     pdf.setTextColor(23, 38, 58);
     pdf.text(line(projectDescriptionToPlainText(input.project.description) || copy.serviceMissing, 105, 5), 18, 75);
     detailRow(copy.vessel, input.project.primaryVesselName || '-', 132, 68, 59);
-    detailRow(copy.period, [formatDate(input.project.startsOn, language), formatDate(input.project.endsOn, language)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
+    if (quote) {
+      detailRow('Début d’affrètement', formatDate(input.project.charterStartsAt, language) || '-', 132, 76, 59);
+    } else {
+      detailRow(copy.period, [formatDate(input.project.startsOn, language), formatDate(input.project.endsOn, language)].filter(Boolean).join(' - ') || '-', 132, 76, 59);
+    }
     if (shouldDisplayCommercialOfferRoute(input.project.deliveryPort, input.project.redeliveryPort)) {
-      detailRow(copy.route, [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59);
+      detailRow(copy.route, [input.project.deliveryPort, input.project.redeliveryPort].filter(Boolean).join(' - ') || '-', 132, 84, 59, quote ? 2 : 1);
     }
 
     pdf.setDrawColor(216, 226, 237);
     pdf.rect(14, 106, 88, 82);
     pdf.rect(108, 106, 88, 82);
     sectionHeading('1', copy.operationalFramework, 18, 111);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(6.2);
-    pdf.setTextColor(113, 128, 150);
-    pdf.text(copy.proposedScope, 18, 124);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.1);
-    pdf.setTextColor(23, 38, 58);
-    pdf.text(line(input.project.operationArea || copy.operationAreaMissing, 78, 3), 18, 130);
-    detailRow(language === 'en' ? 'Contract type' : 'Type de contrat', copy.contractType, 18, 145, 78);
-    detailRow(copy.delivery, [input.project.deliveryPort, formatDate(input.project.deliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 153, 78);
-    detailRow(copy.redelivery, [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ') || '-', 18, 161, 78);
-    if (duration) {
+    if (!quote) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.2);
+      pdf.setTextColor(113, 128, 150);
+      pdf.text(copy.proposedScope, 18, 124);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.1);
+      pdf.setTextColor(23, 38, 58);
+      pdf.text(line(input.project.operationArea || copy.operationAreaMissing, 78, 3), 18, 130);
+      detailRow(language === 'en' ? 'Contract type' : 'Type de contrat', copy.contractType, 18, 145, 78);
+    }
+    const delivery = [input.project.deliveryPort, formatDate(input.project.deliveryAt, language)].filter(Boolean).join(' - ');
+    const redelivery = [input.project.redeliveryPort, formatDate(input.project.redeliveryAt, language)].filter(Boolean).join(' - ');
+    detailRow(copy.delivery, delivery || '-', 18, quote ? 126 : 153, 78, quote ? 2 : 1);
+    detailRow(copy.redelivery, redelivery || '-', 18, quote ? 136 : 161, 78, quote ? 2 : 1);
+    if (!quote && duration) {
       detailRow(copy.firmDuration, `${duration} ${copy.calendarDays}`, 18, 169, 78);
     }
-    detailRow(copy.fuel, translateProjectOfferStandardText(supplytime.box19_special_fuel || '-', language), 18, duration ? 177 : 169, 78);
+    const fuel = supplytime.box19_special_fuel || (quote ? QUOTE_FUEL_EXCLUDED : '-');
+    detailRow(copy.fuel, translateProjectOfferStandardText(fuel, language), 18, quote ? 146 : duration ? 177 : 169, 78, quote ? 2 : 1);
 
     sectionHeading('2', copy.commercialTerms, 112, 111);
     if (conditionsMode === 'free_text') {
@@ -647,17 +683,19 @@ async function generateProjectDocumentBase(
     } else {
       detailRow(copy.mobilisation, formatMoney(contract?.mobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 126, 78);
       detailRow(copy.demobilisation, formatMoney(contract?.demobilisationFee, contract?.feeCurrency || '', '', language) || '-', 112, 136, 78);
-      detailRow(copy.operation, formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 146, 78);
-      detailRow(copy.extension, formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 156, 78);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(6.2);
-      pdf.setTextColor(113, 128, 150);
-      pdf.text(copy.invoicing, 112, 172);
-      pdf.text(copy.payment, 151, 172);
-      pdf.setFontSize(6.7);
-      pdf.setTextColor(35, 59, 87);
-      pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
-      pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+      detailRow(quote ? copy.charterHire : copy.operation, formatMoney(contract?.charterHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 146, 78);
+      if (!quote) {
+        detailRow(copy.extension, formatMoney(contract?.extensionHire, contract?.hireCurrency || '', contract?.hireUnit || '', language) || '-', 112, 156, 78);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(6.2);
+        pdf.setTextColor(113, 128, 150);
+        pdf.text(copy.invoicing, 112, 172);
+        pdf.text(copy.payment, 151, 172);
+        pdf.setFontSize(6.7);
+        pdf.setTextColor(35, 59, 87);
+        pdf.text(line(supplytime.box22_invoice_remittance || '-', 34, 2), 112, 178);
+        pdf.text(line(supplytime.box23_payment || '-', 39, 2), 151, 178);
+      }
     }
 
     const addRichCanvasPages = (canvas: HTMLCanvasElement, startY: number): number => {
@@ -783,6 +821,7 @@ async function generateProjectDocumentBase(
     pdf.setFontSize(8);
     pdf.setTextColor(92, 111, 124);
     pdf.text(generatedOn, 196, 290, { align: 'right' });
+    if (quote) appendProjectQuoteTerms(pdf, reference, fuel);
   } else {
     const pages = await Promise.all([
       loadAssetBytes(bimcoPage01Url),

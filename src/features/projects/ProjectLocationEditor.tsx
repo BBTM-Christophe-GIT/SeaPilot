@@ -16,9 +16,9 @@ import type { ProjectFuelReference } from './projectFuelEstimate';
 import { renderProjectVoyageFuelDetails } from './projectVoyageFuelDetails';
 import './projectLocationEditor.css';
 
-export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort, fuelReference, towing }: {
+export function ProjectLocationEditor({ value, onChange, disabled = false, vessel, projectId, departurePort, arrivalPort, fuelReference, towing, showPdfToggle = true }: {
   value?: ProjectLocationPlan | null; onChange: (value: ProjectLocationPlan) => void; disabled?: boolean; vessel?: ProjectLocationVessel; projectId?: string;
-  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; towing?: boolean;
+  departurePort?: string; arrivalPort?: string; fuelReference?: ProjectFuelReference; towing?: boolean; showPdfToggle?: boolean;
 }) {
   const plan = useMemo(() => value ?? emptyProjectLocationPlan(), [value]);
   const [mode, setMode] = useState<'route' | 'point' | 'zone'>('route');
@@ -82,8 +82,8 @@ export function ProjectLocationEditor({ value, onChange, disabled = false, vesse
     <legend>Localisation facultative</legend>
     <p className="project-location-help">Préparez une route, des points isolés et des zones sur la même carte. Cette rubrique n’est pas obligatoire pour enregistrer le projet.</p>
     <div className="project-location-settings"><label>ETD · départ prévu<input type="datetime-local" aria-label="ETD de la localisation" value={plan.etd} onChange={event => emit({ ...plan, etd: event.target.value })} /></label><label>Numéro des cartes marines<input value={plan.charts} maxLength={20000} onChange={event => emit({ ...plan, charts: event.target.value })} /></label></div>
-    <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>
-    {plan.includeInPdf && <div className="project-location-settings"><label>Récapitulatif du parcours dans le PDF
+    {showPdfToggle && <label className="project-location-pdf"><input type="checkbox" checked={plan.includeInPdf} onChange={event => emit({ ...plan, includeInPdf: event.target.checked })} />Joindre la localisation au PDF</label>}
+    {(plan.includeInPdf || !showPdfToggle) && <div className="project-location-settings"><label>Récapitulatif du parcours dans le PDF
       <select value={plan.includeVoyageEstimateInPdf === undefined ? 'navigation' : plan.includeVoyageEstimateInPdf ? 'full' : 'none'} onChange={event => {
         const next = { ...plan };
         if (event.target.value === 'navigation') delete next.includeVoyageEstimateInPdf;

@@ -4,8 +4,10 @@ import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest';
 import { APP_VERSION_LABEL } from '../../config/appVersion';
 import { AuthProvider, useAuth } from '../auth/AuthProvider';
+import { RequireAuth } from '../auth/RequireAuth';
 import { ModulePage } from '../modules/ModulePage';
 import { APP_MODULES } from '../permissions/moduleAccess';
+import type { RoleKey } from '../permissions/roles';
 import { AppShell, type AppShellOutletContext } from './AppShell';
 
 function RoleProbe() {
@@ -18,7 +20,62 @@ function SessionProbe() {
   return <div data-testid="session-user">{session?.user.id || 'signed-out'}</div>;
 }
 
+function renderQuoteRoute(role: RoleKey, projectsVisible: boolean) {
+  const user = { id: `${role}-quote-fixture`, email: `${role}.quote@example.test` };
+  const permissionsForRole = vi.fn().mockResolvedValue({
+    data: APP_MODULES.map((module) => ({
+      module_key: module.key,
+      role_key: role,
+      is_visible: module.key === 'projects' ? projectsVisible : module.allowedRoles.includes(role),
+    })),
+    error: null,
+  });
+  const client = {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: { user } }, error: null }),
+      getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
+      onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    },
+    from: vi.fn((table: string) => {
+      if (table === 'user_roles') return { select: vi.fn().mockResolvedValue({ data: [{ role_key: role }], error: null }) };
+      if (table === 'role_module_permissions') return { select: () => ({ in: permissionsForRole }) };
+      if (table === 'people') return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+      throw new Error(`Unexpected table: ${table}`);
+    }),
+  };
+  render(<AuthProvider client={client as never}><MemoryRouter initialEntries={['/modules/projects/devis']}><Routes>
+    <Route element={<RequireAuth />}><Route element={<AppShell client={client as never} />}>
+      <Route path="modules/projects/devis" element={<RoleProbe />} />
+    </Route></Route>
+  </Routes></MemoryRouter></AuthProvider>);
+  return permissionsForRole;
+}
+
 describe('AppShell', () => {
+  it.each(['admin', 'direction'] as const)('shows Devis under Opérations for %s with access to Projets', async (role) => {
+    const permissionsForRole = renderQuoteRoute(role, true);
+    expect(await screen.findByTestId('effective-roles')).toHaveTextContent(role);
+    const navigation = within(screen.getByRole('navigation', { name: 'Navigation principale' }));
+    const quote = navigation.getByRole('link', { name: 'Devis' });
+    expect(navigation.getByRole('button', { name: 'Opérations' }).closest('section')).toContainElement(quote);
+    expect(quote).toHaveAttribute('href', '/modules/projects/devis');
+    expect(quote).toHaveAttribute('aria-current', 'page');
+    expect(navigation.getByRole('link', { name: 'Projets' })).not.toHaveAttribute('aria-current');
+    expect(permissionsForRole).toHaveBeenCalledWith('role_key', [role]);
+  });
+
+  it.each([
+    ['direction', false],
+    ['armement', true],
+    ['marin', true],
+    ['capitaine', true],
+  ] as const)('denies Devis to %s with Projets permission %s', async (role, projectsVisible) => {
+    renderQuoteRoute(role, projectsVisible);
+    expect(await screen.findByText('Acces refuse pour ce module.')).toBeInTheDocument();
+    expect(screen.queryByTestId('effective-roles')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Devis' })).not.toBeInTheDocument();
+  });
+
   it('renders the private application navigation', async () => {
     const client = {
       auth: {

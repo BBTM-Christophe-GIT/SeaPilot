@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClientEditor, ProjectEditor, ProjectPlanningEditor, projectToWriteInput } from './ProjectEditors';
 import { emptyProjectLocationPlan } from './projectLocation';
 import { localTodayIso } from './projectBareboatContract';
+import { DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
+import { QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
+import type { ProjectQuoteEmission } from './ProjectQuoteEmission';
 import type { ComponentProps } from 'react';
 import type { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
 
@@ -16,6 +19,7 @@ const mutationMocks = vi.hoisted(() => ({
   saveProjectTowedAsset: vi.fn(),
 }));
 const locationMapMock = vi.hoisted(() => vi.fn());
+const finishQuoteExport = vi.hoisted(() => vi.fn());
 vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({
   SeaOperationWaypointMapEditor: (props: ComponentProps<typeof SeaOperationWaypointMapEditor>) => {
     locationMapMock(props);
@@ -31,6 +35,34 @@ vi.mock('./projectMutations', async (importOriginal) => ({
   saveProjectContractDetails: mutationMocks.saveProjectContractDetails,
   saveProjectContractHirePeriods: mutationMocks.saveProjectContractHirePeriods,
   saveProjectTowedAsset: mutationMocks.saveProjectTowedAsset,
+}));
+
+vi.mock('./ProjectQuoteEmission', () => ({
+  ProjectQuoteEmission: ({ form, onExportingChange, onIncludeLocationChange, prepareExport }: ComponentProps<typeof ProjectQuoteEmission>) => (
+    <>
+      <label>
+        <input
+          checked={form.locationPlan?.includeInPdf ?? false}
+          onChange={(event) => onIncludeLocationChange(event.target.checked)}
+          type="checkbox"
+        />
+        Joindre la localisation au PDF
+      </label>
+      <button
+        onClick={async () => {
+          onExportingChange(true);
+          try {
+            if (await prepareExport()) await finishQuoteExport();
+          } finally {
+            onExportingChange(false);
+          }
+        }}
+        type="button"
+      >
+        Exporter l'offre commerciale
+      </button>
+    </>
+  ),
 }));
 
 mutationMocks.saveProjectContractDetails.mockResolvedValue(undefined);
@@ -57,6 +89,111 @@ const vessels = [
   { id: 1, name: 'LE ROZEL', acronym: 'LRZ', active: true, fleetExitOn: '', sharePointItemId: '' },
   { id: 2, name: 'SUROIT', acronym: 'SRT', active: true, fleetExitOn: '', sharePointItemId: '' },
 ];
+
+describe('ProjectEditor devis', () => {
+  it('requires a principal vessel and saves the streamlined offer as a non-validated project', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    const savedProject = { id: 145, projectCode: 'P145', title: 'Offre portuaire', updatedAt: '2026-11-23T10:30:00Z' };
+    mutationMocks.saveProject.mockResolvedValue(savedProject);
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P145', error: null }) } as never}
+      clients={[]} contractTypes={[]} onClose={vi.fn()} onSaved={onSaved} statuses={[]}
+      towedAssets={[]} variant="quote" vessels={vessels}
+    />);
+
+    const dialog = within(screen.getByRole('dialog', { name: 'Créer un devis' }));
+    const steps = within(dialog.getByLabelText('Étapes de création du devis'));
+    expect(steps.getAllByRole('button').map((button) => button.getAttribute('aria-controls'))).toEqual([
+      'project-step-identification', 'project-step-location', 'project-step-offer', 'project-step-emission',
+    ]);
+    const identification = within(dialog.getByRole('group', { name: '1 Identification' }));
+    expect(identification.getByLabelText('Code projet')).toBeDisabled();
+    expect(identification.queryByLabelText('Statut')).not.toBeInTheDocument();
+    expect(dialog.queryByLabelText('Type de contrat')).not.toBeInTheDocument();
+    await user.type(identification.getByLabelText('Nom du projet *'), savedProject.title);
+    await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
+    expect(dialog.getByRole('alert')).toHaveTextContent('Sélectionnez le navire principal du devis.');
+    expect(mutationMocks.saveProject).not.toHaveBeenCalled();
+
+    const offer = within(dialog.getByRole('group', { name: '3 Offre Commerciale' }));
+    expect(offer.getByRole('combobox', { name: 'Port de livraison' })).toBeVisible();
+    expect(offer.getByRole('combobox', { name: 'Port de restitution' })).toBeVisible();
+    expect(offer.getByLabelText('Début d’affrètement')).toBeVisible();
+    for (const label of ['Identité armateur', 'Navire secondaire', 'Devise des frais']) {
+      expect(offer.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    await user.selectOptions(offer.getByLabelText('Navire principal *'), '1');
+    fireEvent.change(offer.getByLabelText('Début d’affrètement'), { target: { value: '2026-11-25T09:00' } });
+    await user.type(offer.getByLabelText('Frais de mobilisation'), '350');
+    expect(offer.getByLabelText('Fuel')).toHaveValue(QUOTE_FUEL_EXCLUDED);
+    await user.selectOptions(offer.getByLabelText('Fuel'), QUOTE_FUEL_INCLUDED);
+    await user.click(offer.getByRole('radio', { name: /Description libre et annexes/ }));
+    expect(offer.getByLabelText('Ajouter des pièces jointes aux conditions')).toBeVisible();
+    await user.click(offer.getByRole('radio', { name: /Conditions détaillées/ }));
+    expect(offer.getByLabelText('Frais de mobilisation')).toHaveValue(350);
+    await user.click(steps.getByRole('button', { name: /Localisation/ }));
+    const location = within(dialog.getByRole('group', { name: '2 Localisation' }));
+    expect(location.getByTestId('project-location-map')).toBeVisible();
+    expect(location.getByLabelText('Récapitulatif du parcours dans le PDF')).toBeVisible();
+    expect(location.queryByLabelText('Joindre la localisation au PDF')).not.toBeInTheDocument();
+    await user.click(steps.getByRole('button', { name: /Émission du document/ }));
+    await user.click(dialog.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
+    await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(savedProject));
+    expect(mutationMocks.saveProject).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      charterStartsAt: '2026-11-25T09:00',
+      contractType: 'Offre Commerciale',
+      locationPlan: expect.objectContaining({ includeInPdf: true }),
+      mobilisationFee: 350,
+      ownerIdentity: DEFAULT_PROJECT_OWNER_IDENTITY,
+      primaryVesselId: 1,
+      secondaryVesselId: null,
+      status: 'Non validé',
+      supplytimeData: expect.objectContaining({ box19_special_fuel: QUOTE_FUEL_INCLUDED }),
+    }));
+    expect(mutationMocks.saveProjectPlanningOccurrence).not.toHaveBeenCalled();
+  });
+
+  it('keeps the server-assigned project code and updates the same project on subsequent exports', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onSaved = vi.fn();
+    const first = { id: 145, projectCode: 'P145', title: 'Offre portuaire', updatedAt: '2026-11-23T10:30:00Z' };
+    const second = { ...first, updatedAt: '2026-11-23T10:31:00Z' };
+    let allowExportToFinish!: () => void;
+    finishQuoteExport.mockReturnValueOnce(new Promise<void>((resolve) => { allowExportToFinish = resolve; }));
+    mutationMocks.saveProject.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    render(<ProjectEditor
+      client={{ rpc: vi.fn().mockResolvedValue({ data: 'P144', error: null }) } as never}
+      clients={[]} contractTypes={[]} onClose={onClose} onSaved={onSaved} statuses={[]}
+      towedAssets={[]} variant="quote" vessels={vessels}
+    />);
+    const dialog = within(screen.getByRole('dialog', { name: 'Créer un devis' }));
+    const steps = within(dialog.getByLabelText('Étapes de création du devis'));
+    await user.type(dialog.getByLabelText('Nom du projet *'), first.title);
+    await user.click(steps.getByRole('button', { name: /Offre Commerciale/ }));
+    await user.selectOptions(dialog.getByLabelText('Navire principal *'), '1');
+    await user.click(steps.getByRole('button', { name: /Émission du document/ }));
+    const exportButton = dialog.getByRole('button', { name: "Exporter l'offre commerciale" });
+    await user.click(exportButton);
+    await waitFor(() => expect(dialog.getByLabelText('Code projet')).toHaveValue(first.projectCode));
+    const closeButton = dialog.getByRole('button', { name: 'Fermer' });
+    expect(closeButton).toBeDisabled();
+    expect(dialog.getByRole('button', { name: 'Enregistrer le devis' })).toBeDisabled();
+    await act(async () => allowExportToFinish());
+    expect(closeButton).toBeEnabled();
+    await user.click(exportButton);
+    await waitFor(() => expect(mutationMocks.saveProject).toHaveBeenCalledTimes(2));
+    expect(mutationMocks.saveProject).toHaveBeenNthCalledWith(2, expect.anything(), expect.objectContaining({
+      expectedUpdatedAt: first.updatedAt,
+      projectId: first.id,
+    }));
+    expect(onSaved).not.toHaveBeenCalled();
+    await user.click(closeButton);
+    expect(onClose).toHaveBeenCalledWith(second);
+  });
+});
 
 describe('ProjectEditor client contact presentation', () => {
   it('shows the selected client postal details for every contract and updates them without mutating or saving the client', async () => {

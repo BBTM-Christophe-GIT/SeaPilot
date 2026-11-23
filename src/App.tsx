@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useMatch, useNavigate } from 'react-router-dom';
 import { ActionPlanPage } from './features/actionPlan/ActionPlanPage';
 import { AdminPage } from './features/admin/AdminPage';
 import { LoginPage } from './features/auth/LoginPage';
@@ -12,7 +12,7 @@ import { HumanResourcesRoute } from './features/humanResources/HumanResourcesPag
 import { ModulePage } from './features/modules/ModulePage';
 import { APP_MODULES } from './features/permissions/moduleAccess';
 import { isSeaPilotPreviewDeployment } from './features/preview/previewMode';
-import { previewSupabaseClient } from './features/preview/previewSupabaseClient';
+import { previewQuoteSupabaseClient, previewSupabaseClient } from './features/preview/previewSupabaseClient';
 import { ProceduresPage } from './features/procedures/ProceduresPage';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { PurchaseRequestsPage } from './features/purchaseRequests/PurchaseRequestsPage';
@@ -48,6 +48,17 @@ const SeaOperationsPage = lazy(() => import('./features/seaOperations/SeaOperati
 const InternalAuditsPage = lazy(() => import('./features/internalAudits/InternalAuditsPage').then((module) => ({ default: module.InternalAuditsPage })));
 const DocumentaryAuditsPage = lazy(() => import('./features/documentaryAudits/DocumentaryAuditsPage').then((module) => ({ default: module.DocumentaryAuditsPage })));
 
+function ProjectsRoute({ previewMode }: { previewMode: boolean }) {
+  const isQuoteRoute = useMatch('/modules/projects/devis');
+  const navigate = useNavigate();
+  return (
+    <ProjectsPage
+      client={previewMode && isQuoteRoute ? previewQuoteSupabaseClient : undefined}
+      onCloseQuote={isQuoteRoute ? () => navigate('/modules/projects', { replace: true }) : undefined}
+    />
+  );
+}
+
 interface AppProps {
   previewModeOverride?: boolean;
 }
@@ -76,7 +87,8 @@ export default function App({ previewModeOverride }: AppProps) {
           <Route index element={<Suspense fallback={<div className="admin-state" role="status">Chargement de votre accueil…</div>}><HomePage /></Suspense>} />
           <Route path="manual/:moduleKey?" element={<Suspense fallback={<div className="admin-state" role="status">Chargement du manuel…</div>}><UserManualPage /></Suspense>} />
           {LIFTING_SECTIONS.map((section) => <Route key={section.key} path={`modules/lifting/${section.path}`} element={<Suspense fallback={<div className="admin-state" role="status">Chargement du registre de levage…</div>}><LiftingPage section={section.key} /></Suspense>} />)}
-          {APP_MODULES.filter((module) => module.key !== 'home').map((module) => (
+          <Route path="modules/projects/devis?" element={<ProjectsRoute previewMode={previewMode} />} />
+          {APP_MODULES.filter((module) => module.key !== 'home' && module.key !== 'projects').map((module) => (
             <Route
               key={module.key}
               path={`modules/${module.key}`}
@@ -133,8 +145,6 @@ export default function App({ previewModeOverride }: AppProps) {
                   <ProceduresPage />
                 ) : module.key === 'serviceNotes' ? (
                   <ServiceNotesPage />
-                ) : module.key === 'projects' ? (
-                  <ProjectsPage />
                 ) : module.key === 'billingElements' ? (
                   <Suspense fallback={<div className="admin-state" role="status">Chargement des éléments de facturation…</div>}><BillingElementsPage /></Suspense>
                 ) : module.key === 'purchaseRequests' ? (

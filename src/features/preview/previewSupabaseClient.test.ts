@@ -1,18 +1,65 @@
 import { describe, expect, it } from 'vitest';
-import { previewSupabaseClient } from './previewSupabaseClient';
+import { previewQuoteSupabaseClient, previewSupabaseClient } from './previewSupabaseClient';
 import { fetchPlanningAbsenceBalanceContext, savePlanningLeaveRightsPeriod } from '../planning/planningAbsenceBalanceQueries';
 import { fetchFleetVessels, saveFleetVessel } from '../fleet/fleetQueries';
 import { fetchSeaOperationData, fetchSeaOperationDetail, fetchSeaOperationPlanning, saveSeaOperation } from '../seaOperations/seaOperationQueries';
 import { emptySeaOperation, emptySeaOperationWaypoint, seaOperationToday } from '../seaOperations/seaOperationModel';
 import { cloneVesselWeatherMatrix, GOURY_WEATHER_MATRIX } from '../fleet/vesselWeatherMatrix';
 import { emptyProjectLocationPlan } from '../projects/projectLocation';
-import { saveProjectLocation } from '../projects/projectMutations';
-import { fetchProjects, fetchProjectDocuments, fetchContractDocuments } from '../projects/projectQueries';
+import { EMPTY_PROJECT_WRITE_INPUT, saveProject, saveProjectLocation } from '../projects/projectMutations';
+import { fetchProjects, fetchProjectContracts, fetchProjectDocuments, fetchContractDocuments } from '../projects/projectQueries';
 import { saveProjectDocumentClassification } from '../projects/projectDocumentClassification';
 import { fetchProjectSeaOperationDocuments, saveProjectSeaOperationDocuments } from '../projects/projectSeaOperationDocumentsQueries';
 import { deleteProjectDocument, fetchProjectDocumentDeletionSnapshot } from '../projects/projectDocumentDeletion';
 
 describe('previewSupabaseClient', () => {
+  it('keeps a draft quote and its commercial terms in the project catalogue across export retries', async () => {
+    const projectRows = (await previewSupabaseClient.from('projects').select('*')).data!;
+    const contractRows = (await previewSupabaseClient.from('project_contracts').select('*')).data!;
+    const projectCount = projectRows.length;
+    const contractCount = contractRows.length;
+    const offer = {
+      ...EMPTY_PROJECT_WRITE_INPUT,
+      title: 'Devis démonstration',
+      clientId: 9101,
+      primaryVesselId: 9201,
+      deliveryPort: 'Brest',
+      redeliveryPort: 'Cherbourg',
+      charterStartsAt: '2026-12-01T08:00:00Z',
+      contractType: 'Offre Commerciale',
+      locationPlan: { ...emptyProjectLocationPlan(), charts: '7120', includeInPdf: true },
+      mobilisationFee: 1000,
+      demobilisationFee: 1100,
+      charterHire: 2000,
+      hireCurrency: 'EUR',
+      hireUnit: 'jour',
+      supplytimeData: { box19_special_fuel: 'Inclus dans le prix de la prestation' },
+    };
+    try {
+      await expect(saveProject(previewSupabaseClient, offer)).rejects.toThrow();
+      expect(projectRows).toHaveLength(projectCount);
+      const code = (await previewQuoteSupabaseClient.rpc('projects_peek_next_code', { target_prefix: 'P' })).data;
+      const saved = await saveProject(previewQuoteSupabaseClient, offer);
+      expect(saved.projectCode).toBe(code);
+      expect(await fetchProjects(previewSupabaseClient)).toContainEqual(expect.objectContaining({
+        id: saved.id, status: 'Non validé', charterStartsAt: '2026-12-01T08:00:00.000Z',
+        primaryVesselName: 'M/V Démonstration', locationPlan: expect.objectContaining({ charts: '7120', includeInPdf: true }),
+      }));
+      expect(await fetchProjectContracts(previewSupabaseClient)).toContainEqual(expect.objectContaining({
+        projectId: saved.id, mobilisationFee: 1000, demobilisationFee: 1100, charterHire: 2000, supplytimeData: offer.supplytimeData,
+      }));
+      const retry = { ...offer, projectId: saved.id, expectedUpdatedAt: saved.updatedAt, charterHire: 2100 };
+      await expect(saveProject(previewQuoteSupabaseClient, retry)).resolves.toMatchObject({ id: saved.id, projectCode: code });
+      await expect(saveProject(previewQuoteSupabaseClient, retry)).rejects.toThrow('Le projet a été modifié par un autre utilisateur.');
+      expect(projectRows).toHaveLength(projectCount + 1);
+      expect(contractRows).toHaveLength(contractCount + 1);
+      expect(await fetchProjectContracts(previewSupabaseClient)).toContainEqual(expect.objectContaining({ projectId: saved.id, charterHire: 2100 }));
+    } finally {
+      projectRows.splice(projectCount);
+      contractRows.splice(contractCount);
+    }
+  });
+
   it('synchronizes demo project ports only on an atomic save and leaves conflicts unsaved', async () => {
     const { choices } = await fetchSeaOperationPlanning(previewSupabaseClient, seaOperationToday());
     const choice = choices[0];

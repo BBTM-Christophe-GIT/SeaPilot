@@ -189,3 +189,7 @@
 @media (pointer: coarse) {
   .project-design .project-card-modify, .project-design .project-status-button, .project-status-options button { min-height: 44px; }
 }
+
+.project-editor .project-quote-emission > .is-wide {
+  grid-column: 1 / -1;
+}
