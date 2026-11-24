@@ -8,7 +8,7 @@ afterEach(cleanup);
 
 function CalendarHarness({ onChange }: { onChange: (start: string, end: string) => void }) {
   const [range, setRange] = useState(['2026-10-01', '2026-10-31']);
-  return <BillingPeriodCalendar month="2026-10" startDate={range[0]} endDate={range[1]}
+  return <BillingPeriodCalendar month={range[0].slice(0, 7)} startDate={range[0]} endDate={range[1]}
     onRangeChange={(start, end) => { onChange(start, end); setRange([start, end]); }} />;
 }
 
@@ -34,9 +34,11 @@ describe('three-month billing calendar', () => {
     await user.click(screen.getByRole('button', { name: 'lundi 2 novembre 2026' }));
     expect(onChange).toHaveBeenLastCalledWith('2026-11-02', '2026-11-02');
     expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'novembre 2026' })).toHaveClass('is-current');
     await user.click(screen.getByRole('button', { name: 'mercredi 30 septembre 2026' }));
     expect(onChange).toHaveBeenLastCalledWith('2026-09-30', '2026-11-02');
     expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(34);
+    expect(screen.getByRole('heading', { name: 'septembre 2026' })).toHaveClass('is-current');
     expect(screen.getByText('Du 30 septembre 2026 au 2 novembre 2026')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'jeudi 15 octobre 2026' }));
     expect(onChange).toHaveBeenLastCalledWith('2026-10-15', '2026-10-15');

@@ -1,0 +1,85 @@
+.project-billing-timeline {
+  min-width: 0;
+  padding: var(--sp-space-3) var(--sp-space-4);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  background: var(--sp-surface);
+}
+
+.project-billing-timeline h3 {
+  margin: 0 0 var(--sp-space-2);
+  color: var(--sp-heading);
+  font-size: var(--sp-subtitle-size);
+}
+
+.project-billing-timeline > p {
+  margin: 0;
+  color: var(--sp-muted);
+  font-size: .8125rem;
+}
+
+.project-billing-timeline > ol {
+  display: flex;
+  margin: 0;
+  padding: 0 0 var(--sp-space-2);
+  overflow-x: auto;
+  list-style: none;
+}
+
+.project-billing-timeline > ol:focus-visible {
+  outline: 2px solid var(--sp-focus);
+  outline-offset: 2px;
+}
+
+.project-billing-timeline-event {
+  --timeline-marker: var(--sp-primary);
+  position: relative;
+  display: grid;
+  flex: 0 0 min(12rem, 80%);
+  align-content: start;
+  gap: var(--sp-space-1);
+  padding: var(--sp-space-4) var(--sp-space-3) 0 0;
+  color: var(--sp-muted);
+  font-size: .75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.project-billing-timeline-event::before {
+  position: absolute;
+  inset: 5px 0 auto;
+  block-size: 1px;
+  background: var(--sp-border-strong);
+  content: '';
+}
+
+.project-billing-timeline-event::after {
+  position: absolute;
+  inset: 1px auto auto 0;
+  inline-size: 9px;
+  block-size: 9px;
+  border-radius: 50%;
+  background: var(--timeline-marker);
+  content: '';
+}
+
+.project-billing-timeline-event:last-child::before { display: none; }
+.project-billing-timeline-event.is-invoice { --timeline-marker: var(--sp-success); }
+.project-billing-timeline-event.is-end { --timeline-marker: var(--sp-category-contract); }
+.project-billing-timeline-event strong { color: var(--sp-heading); }
+.project-billing-timeline-rates { display: grid; }
+
+@container (max-width: 540px) {
+  .project-billing-timeline > ol {
+    display: block;
+    padding: 0;
+  }
+
+  .project-billing-timeline-event {
+    padding: 0 0 var(--sp-space-3) var(--sp-space-5);
+  }
+
+  .project-billing-timeline-event:last-child { padding-bottom: 0; }
+  .project-billing-timeline-event::before { inset: 4px auto -4px 4px; inline-size: 1px; block-size: auto; }
+  .project-billing-timeline-event::after { inset-block-start: 4px; }
+}

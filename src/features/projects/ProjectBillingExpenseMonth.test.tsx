@@ -174,6 +174,43 @@ describe('independent expense rebilling month', () => {
     expect(mocks.export.mock.calls[0][1]).toMatchObject({ period: { id: 20, periodMonth: '2026-10-01' }, expenses: [expect.objectContaining({ invoiceDate: '2026-08-19', billingPeriodId: 20 })] });
   });
 
+  it('synchronizes the month, invoice settings, and monthly rebilling with a full month selected in the calendar', async () => {
+    const user = userEvent.setup();
+    const november = period({ id: 25, periodMonth: '2026-11-01', invoiceNumber: 'FACTURE-NOVEMBRE' });
+    const december = period({ id: 50, periodMonth: '2026-12-01', invoiceNumber: 'FACTURE-DECEMBRE' });
+    const rebilledInDecember = expense({
+      billingPeriodId: december.id, invoiceDate: '2026-11-23', invoiceNumber: 'FOURNISSEUR-NOVEMBRE',
+    });
+    await mount(billingData({ periods: [november, december], expenses: [rebilledInDecember] }), '2026-11');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('FACTURE-NOVEMBRE');
+
+    const month = screen.getByLabelText('Mois', { exact: true });
+    const calendar = within(screen.getByRole('region', { name: 'Calendrier de facturation' }));
+    await user.click(calendar.getByRole('button', { name: 'mardi 1 décembre 2026' }));
+    expect(month).toHaveValue('2026-12');
+    expect(screen.getByLabelText('Numéro de facture')).toHaveValue('FACTURE-DECEMBRE');
+    expectExpenseCount(0);
+
+    const lastDay = calendar.getByRole('button', { name: 'jeudi 31 décembre 2026' });
+    await waitFor(() => expect(lastDay).toBeEnabled());
+    await user.click(lastDay);
+    expect(month).toHaveValue('2026-12');
+    expect(calendar.getAllByRole('button', { pressed: true })).toHaveLength(31);
+    expectExpenseCount(1);
+    expect(expenseSection().getByText('FOURNISSEUR-NOVEMBRE')).toBeVisible();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
+    await preview(user);
+    expect(mocks.export.mock.calls[0][1]).toMatchObject({
+      period: { id: december.id, periodMonth: '2026-12-01' },
+      startDate: '2026-12-01', endDate: '2026-12-31', expenses: [rebilledInDecember],
+    });
+
+    await selectMonth('2026-11');
+    expect(calendar.getByText('Du 1 novembre 2026 au 30 novembre 2026')).toBeVisible();
+    expectExpenseCount(0);
+  });
+
   it('synchronizes the expense rows, totals, and export with the selected days across months', async () => {
     const user = userEvent.setup();
     const september = period({ id: 15, periodMonth: '2026-09-01' });
@@ -201,6 +238,7 @@ describe('independent expense rebilling month', () => {
     expect(expenseSection().getByText('FIN-SEPTEMBRE')).toBeVisible();
 
     await user.click(calendar.getByRole('button', { name: 'jeudi 1 octobre 2026' }));
+    expect(screen.getByLabelText('Mois', { exact: true })).toHaveValue('2026-09');
     expectExpenseCount(2);
     expectSelectedTotal('300,00');
     expect(expenseSection().queryByText('FACTURE-ANTERIEURE')).not.toBeInTheDocument();
@@ -216,7 +254,8 @@ describe('independent expense rebilling month', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Prévisualiser le PDF' })).toBeEnabled());
     await preview(user);
     expect(mocks.export.mock.calls[0][1]).toMatchObject({
-      startDate: '2026-09-30', endDate: '2026-10-01', expenses: [septemberExpense, octoberExpense],
+      period: { id: september.id }, startDate: '2026-09-30', endDate: '2026-10-01',
+      expenses: [septemberExpense, octoberExpense],
     });
     expect(mocks.export.mock.calls[0][2]).toEqual([
       expect.objectContaining({ billingPeriodId: october.id, chargeableExpenseId: octoberExpense.id }),
