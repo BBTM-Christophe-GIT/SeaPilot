@@ -6,6 +6,8 @@ L’utilisation réalisée mensuelle et annuelle compte les jours/navires distin
 
 Le graphe Types d’opérations propose deux sources avec leurs unités explicites : **Réalisé · DPR** compte les rapports du mois, incluant les deux catégories quai et transit ; **Prévu · planning** conserve les occurrences planifiées. Les deux sources ne sont pas additionnées. Les exclusions de navires, le mois et l’année sélectionnés et le bandeau repliable restent inchangés.
 
+Le bloc **Activité de la flotte** exclut les opérations **HP** des taux d’utilisation mensuels et annuels, du nombre d’opérations du mois et des répartitions par type. L’exclusion couvre aussi les anciens projets nommés **Hors Projet** et les DPR portant une désignation hors projet en texte libre.
+
 Les sept commandes principales partagent une même grille et une hauteur de 88 px, avec adaptation sur mobile. Le bouton Actualiser est retiré ; les rechargements après modification et la reprise sur erreur restent disponibles.
 
 ## Favoris personnels

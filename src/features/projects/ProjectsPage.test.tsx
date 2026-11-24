@@ -597,21 +597,44 @@ describe('ProjectsPage', () => {
     expect(insights.getByLabelText('Période')).toHaveValue('2024-02');
   });
 
-  it('shows berth and transit DPRs under operation types without adding utilization days', async () => {
-    const { client } = createClient({ dpr_reports: { data: [
-      { id: 1, report_date: '2026-07-01', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire à quai' },
-      { id: 2, report_date: '2026-07-02', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire en transit' },
-      { id: 3, report_date: '2026-07-03', vessel_id: 12, project_id: 880, unlisted_project_name: null },
-    ], error: null } });
+  it('keeps Hors Projet out of the planned and realized fleet KPIs', async () => {
+    const legacyProject = { ...atlantiqueProjectRow, id: 882, project_code: 'SP-52', title: 'Hors Projet' };
+    const hpProject = { ...atlantiqueProjectRow, id: 883, project_code: 'HP', title: 'Essais techniques' };
+    const { client, rpc } = createClient({
+      projects: { data: [atlantiqueProjectRow, mancheProjectRow, legacyProject, hpProject], error: null },
+      dpr_reports: { data: [
+        { id: 1, report_date: '2026-07-01', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire à quai' },
+        { id: 2, report_date: '2026-07-02', vessel_id: 12, project_id: null, unlisted_project_name: 'Navire en transit' },
+        { id: 3, report_date: '2026-07-03', vessel_id: 12, project_id: 880, unlisted_project_name: null },
+        { id: 4, report_date: '2026-07-04', vessel_id: 12, project_id: 880, unlisted_project_name: null },
+        { id: 5, report_date: '2026-07-04', vessel_id: 12, project_id: hpProject.id, unlisted_project_name: null },
+        { id: 6, report_date: '2026-07-05', vessel_id: 12, project_id: legacyProject.id, unlisted_project_name: null },
+        { id: 7, report_date: '2026-07-06', vessel_id: 12, project_id: null, unlisted_project_name: 'HP - Essais techniques' },
+        { id: 8, report_date: '2026-07-07', vessel_id: 12, project_id: null, unlisted_project_name: 'Hors Projet' },
+      ], error: null },
+    });
+    const planned = atlantiquePlanningOccurrenceRows[0];
+    const previousRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name: string) => name === 'projects_planning_occurrences' ? Promise.resolve({ data: [
+      ...atlantiquePlanningOccurrenceRows,
+      { ...planned, id: 1203, catalog_project_id: legacyProject.id, starts_on: '2026-07-11', ends_on: '2026-07-13' },
+      { ...planned, id: 1204, catalog_project_id: hpProject.id, starts_on: '2026-07-14', ends_on: '2026-07-16' },
+      { ...planned, id: 1205, catalog_project_id: null, source_label: 'seapilot-hors-projet', starts_on: '2026-07-17', ends_on: '2026-07-19' },
+    ], error: null }) : previousRpc(name));
+
     render(<ProjectsPage client={client as never} roles={['direction']} />);
     const insights = within(await screen.findByRole('region', { name: 'Activité de la flotte' }));
     fireEvent.click(insights.getByRole('button', { name: 'Voir les détails' }));
-    expect(await insights.findByText('3 DPR soumis ou validés sur le mois')).toBeVisible();
+    expect(await insights.findByText('4 DPR soumis ou validés sur le mois')).toBeVisible();
     expect(insights.getByText('Navire à quai')).toBeVisible();
     expect(insights.getByText('Navire en transit')).toBeVisible();
-    expect(insights.getByLabelText('COTENTIN, 2026-07 : prévu 19 %, réalisé 3 %')).toBeVisible();
+    expect(insights.getByLabelText('COTENTIN, 2026-07 : prévu 19 %, réalisé 6 %')).toBeVisible();
+    expect(insights.getByLabelText('COTENTIN, 2026 : prévu 2 %, réalisé 1 %')).toBeVisible();
+    expect(insights.getByText('Opérations du mois').parentElement).toHaveTextContent('2 planifiées');
+    expect(insights.queryByText('Autres opérations')).not.toBeInTheDocument();
     fireEvent.click(insights.getByRole('button', { name: 'Prévu · planning' }));
     expect(insights.getByText('2 opération(s) planifiée(s) sur le mois')).toBeVisible();
+    expect(insights.getByText('Affrètement à temps')).toHaveTextContent(/Affrètement à temps\s*2$/);
     expect(insights.queryByText('Navire à quai')).not.toBeInTheDocument();
   });
 

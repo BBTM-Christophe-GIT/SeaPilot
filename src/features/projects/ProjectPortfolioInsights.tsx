@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ProjectsData } from './projectQueries';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
-import { isPortfolioKpiVessel, localCalendarDate, operationType, realizedOperationTypes, summarizeUtilization, utilization, type UtilizationDpr } from './projectPortfolioMetrics';
+import { fleetActivitySources, isPortfolioKpiVessel, localCalendarDate, operationType, realizedOperationTypes, summarizeUtilization, utilization, type UtilizationDpr } from './projectPortfolioMetrics';
 
 export function ProjectPortfolioInsights({ client, data }: { client: SupabaseClient; data: ProjectsData }) {
   const [month, setMonth] = useState(() => localCalendarDate().slice(0, 7));
@@ -33,17 +33,21 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
   const end = new Date(Date.UTC(Number(year), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
   const today = localCalendarDate();
   const vessels = useMemo(() => data.vessels.filter((vessel) => isPortfolioKpiVessel(vessel, today)).sort(compareFleetAssets), [data.vessels, today]);
+  const { operations: fleetOperations, dprs: fleetDprs } = useMemo(
+    () => fleetActivitySources(data.planningOccurrences, dprs, data.projects),
+    [data.planningOccurrences, dprs, data.projects],
+  );
   const vesselMetrics = useMemo(() => vessels.map((vessel) => ({ vessel, periods: [
-    utilization(vessel, `${month}-01`, end, data.planningOccurrences, dprs, data.projects),
-    utilization(vessel, `${year}-01-01`, `${year}-12-31`, data.planningOccurrences, dprs, data.projects),
-  ] })), [vessels, month, end, year, data.planningOccurrences, data.projects, dprs]);
+    utilization(vessel, `${month}-01`, end, fleetOperations, fleetDprs, data.projects),
+    utilization(vessel, `${year}-01-01`, `${year}-12-31`, fleetOperations, fleetDprs, data.projects),
+  ] })), [vessels, month, end, year, fleetOperations, fleetDprs, data.projects]);
   const summaries = [0, 1].map((index) => summarizeUtilization(vesselMetrics.map(({ periods }) => periods[index])));
   const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString('fr-FR', { month: 'long' });
   const realizedLabel = (rate: number) => loading ? '…' : error || !vessels.length ? '—' : `${rate} %`;
   const plannedDistribution = useMemo(() => {
     const counts = new Map<string, number>();
     const vesselIds = new Set(vessels.map((vessel) => vessel.id));
-    data.planningOccurrences.filter((operation) => {
+    fleetOperations.filter((operation) => {
       const assigned = operation.vesselIds?.length ? operation.vesselIds : operation.primaryVesselId ? [operation.primaryVesselId] : [];
       return operation.startsOn <= end && operation.endsOn >= `${month}-01` && !/annul|cancel/i.test(operation.status)
         && (!assigned.length || assigned.some((id) => vesselIds.has(id)));
@@ -52,8 +56,8 @@ export function ProjectPortfolioInsights({ client, data }: { client: SupabaseCli
       counts.set(label, (counts.get(label) || 0) + 1);
     });
     return [...counts].sort((a, b) => b[1] - a[1]);
-  }, [data.planningOccurrences, data.projects, month, end, vessels]);
-  const realizedDistribution = useMemo(() => realizedOperationTypes(dprs, data.projects, new Set(vessels.map((vessel) => vessel.id)), `${month}-01`, end), [dprs, data.projects, vessels, month, end]);
+  }, [fleetOperations, data.projects, month, end, vessels]);
+  const realizedDistribution = useMemo(() => realizedOperationTypes(fleetDprs, data.projects, new Set(vessels.map((vessel) => vessel.id)), `${month}-01`, end), [fleetDprs, data.projects, vessels, month, end]);
   const distribution = distributionSource === 'realized' ? realizedDistribution : plannedDistribution;
   const total = distribution.reduce((sum, [, count]) => sum + count, 0);
   const plannedTotal = plannedDistribution.reduce((sum, [, count]) => sum + count, 0);
