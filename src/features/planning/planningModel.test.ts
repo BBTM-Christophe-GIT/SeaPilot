@@ -24,6 +24,7 @@ import {
   timelineRange,
 } from './planningModel';
 import { getPlanningConflicts, getPlanningConflictEventIds } from './planningOverlap';
+import { PLANNING_OUT_OF_PROJECT_SOURCE } from './planningOutOfProject';
 import { planningCrewEventType } from './planningViews';
 import type { PlanningAssignmentRecord, PlanningOverview } from './planningQueries';
 
@@ -564,6 +565,7 @@ describe('planning hierarchy and side panels', () => {
         ...overview.projects,
         { ...overview.projects[0], id: 22, title: 'Mission non validée', status: 'Non validé' },
         { ...overview.projects[0], id: 23, title: 'Mission météo', status: 'Stand-by météo' },
+        { ...overview.projects[0], id: 24, title: 'HP - Entretien', status: 'Validé', sourceLabel: PLANNING_OUT_OF_PROJECT_SOURCE },
       ],
     };
 

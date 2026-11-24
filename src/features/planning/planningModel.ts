@@ -29,6 +29,7 @@ import {
 import { planningEventFunctionOnDate } from './planningFunctions';
 import { comparePlanningCrewPeriods, planningCrewPeriod } from './planningCrewOrder';
 import { comparePlanningFleetFunctions, planningFleetEffectiveFunction } from './planningFleetOrder';
+import { isPlanningOutOfProject } from './planningOutOfProject';
 
 export { addPlanningDays, daysBetween, formatPlanningDate, isoDate, rangesOverlap } from './planningDates';
 
@@ -1176,6 +1177,7 @@ export function getBillablePlanningProjects(overview: PlanningOverview, year: nu
   const range = { start: `${year}-01-01`, end: `${year}-12-31` };
   return overview.projects.filter(
     (project) =>
+      !isPlanningOutOfProject(project) &&
       project.startsOn &&
       rangesOverlap(project.startsOn, project.endsOn || project.startsOn, range.start, range.end) &&
       normalizePlanningText(project.status) === 'VALIDE',

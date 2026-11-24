@@ -7851,6 +7851,15 @@ button:disabled {
   color: #3f2700;
 }
 
+.planning-project-bar.is-out-of-project {
+  --planning-event-color: #30343b;
+  --planning-event-color-hover: var(--planning-event-color);
+  --planning-event-color-selected: var(--planning-event-color);
+  --planning-event-shadow: rgba(48, 52, 59, .25);
+  border-color: #30343b;
+  color: #fff;
+}
+
 .planning-project-bar:hover {
   background: var(--planning-event-color-hover);
   box-shadow: 0 5px 13px var(--planning-event-shadow);
@@ -7901,6 +7910,10 @@ button:disabled {
 
 .planning-project-bar.is-unvalidated .planning-project-status-rail {
   background: #d97706;
+}
+
+.planning-project-bar.is-out-of-project .planning-project-status-rail {
+  background: #666b73;
 }
 
 .planning-project-status-rail img {
@@ -17889,6 +17902,11 @@ button.planning-p12-conflict-card {
 .planning-move-preview.is-project {
   height: 20.7px;
   align-self: start;
+}
+
+.planning-move-preview.is-project.is-out-of-project {
+  border-color: #30343b;
+  background: repeating-linear-gradient(135deg, rgba(48, 52, 59, .35) 0 10px, rgba(48, 52, 59, .15) 10px 20px);
 }
 
 .planning-move-preview.is-technical-stop {

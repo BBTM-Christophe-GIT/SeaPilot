@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.120.0** ajoute **Hors Projet** dans le Planning. Les opérations
+prennent le nom saisi, le code **HP** et la couleur gris anthracite. Appliquer
+`20261124082944_planning_hors_projet.sql` avant le frontend.
+Voir [Hors Projet](./planning-quick-project.md#hors-projet).
+
 La version **3.118.1** ajoute **Devis** au ruban **Projets** pour Administration
 et Direction. Le début et la durée d’affrètement précèdent la description de
 la prestation. Le PDF exclut le récapitulatif du parcours par défaut.

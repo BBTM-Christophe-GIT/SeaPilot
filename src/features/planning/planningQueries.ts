@@ -15,6 +15,7 @@ import {
   planningEntityId,
   requiredPlanningText,
 } from './planningValidation';
+import { PLANNING_OUT_OF_PROJECT_SOURCE, planningOutOfProjectTitle } from './planningOutOfProject';
 
 const VESSEL_SELECT = 'id, name, acronym, registration_number, active, length_overall';
 const PLANNING_READ_PAGE_SIZE = 1_000;
@@ -724,6 +725,7 @@ export interface UpdatePlanningEventInput {
 export interface UpdatePlanningProjectInput {
   id: number;
   title: string;
+  outOfProject?: boolean;
   startsOn: string;
   endsOn: string;
   status: string;
@@ -2106,21 +2108,21 @@ export async function deletePlanningEvent(
 
 function planningProjectPayload(input: CreatePlanningProjectInput) {
   const vesselId = planningEntityId(input.vesselId, 'Le navire');
-  const title = requiredPlanningText(input.title, 'Le titre de l’événement');
+  const title = requiredPlanningText(input.title, input.outOfProject ? 'Le nom du projet' : 'Le titre de l’événement');
   const vesselName = requiredPlanningText(input.vesselName, 'Le nom du navire');
   assertPlanningDateRange(input.startsOn, input.endsOn);
   return {
-    title,
+    title: input.outOfProject ? planningOutOfProjectTitle(title) : title,
     starts_on: input.startsOn,
     ends_on: input.endsOn,
     status: normalizeProjectStatus(input.status),
-    event_type: input.eventType,
+    event_type: input.outOfProject ? 'operation' : input.eventType,
     responsible_name: input.responsibleName.trim() || null,
     primary_vessel_id: vesselId,
     primary_vessel_name: vesselName,
     client_name: input.clientName.trim() || null,
     description: input.description.trim() || null,
-    source_label: 'seapilot-admin',
+    source_label: input.outOfProject ? PLANNING_OUT_OF_PROJECT_SOURCE : 'seapilot-admin',
     updated_at: new Date().toISOString(),
   };
 }

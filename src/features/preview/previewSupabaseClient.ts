@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PREVIEW_LINK_CATEGORIES, PREVIEW_USEFUL_LINKS } from '../usefulLinks/usefulLinksPreview';
 import { createPlanningPreviewOverview } from '../planning/planningPreviewData';
 import { isPlanningDate, todayPlanningDate } from '../planning/planningDates';
+import { PLANNING_OUT_OF_PROJECT_SOURCE, planningOutOfProjectTitle } from '../planning/planningOutOfProject';
 import { calculatePlanningSedentaryLeaveAccrued, getPlanningLeaveRightsRange, validatePlanningLeaveCounterPeriod, validatePlanningLeaveRightsPeriod, validatePlanningSedentaryLeavePeriod } from '../planning/planningAbsenceBalance';
 import { QHSE_POLICY_ATTACHMENT_MIME_TYPES } from '../qhsePolicy/qhsePolicyAttachments';
 import { isQhsePolicyId, type QhsePolicyOwnerKind } from '../qhsePolicy/qhsePolicyModel';
@@ -2056,6 +2057,41 @@ function nextPreviewId(table: string, fallback: number): number {
   return Math.max(fallback, ...previewRows(table).map((row) => Number(row.id) || 0)) + 1;
 }
 
+function insertPreviewOutOfProject(values: Record<string, unknown>): PreviewResult {
+  const row = {
+    ...values,
+    id: nextPreviewId('planning_projects', 9602),
+    catalog_project_id: null,
+    event_type: 'operation',
+    source_label: PLANNING_OUT_OF_PROJECT_SOURCE,
+  };
+  previewRows('planning_projects').push(row);
+  return { data: row, error: null };
+}
+
+function previewPlanningProjectsQuery(): object {
+  const rows = previewRows('planning_projects');
+  const query = createPreviewQuery({ data: rows, error: null });
+  return new Proxy(query, {
+    get(target, property, receiver) {
+      if (property === 'insert') return (values: Record<string, unknown>) => values.source_label === PLANNING_OUT_OF_PROJECT_SOURCE
+        ? createPreviewQuery(insertPreviewOutOfProject(values)) : query;
+      if (property === 'update' || property === 'delete') return (values: Record<string, unknown>) => ({
+        eq(field: string, id: number) {
+          const index = rows.findIndex((row) => field === 'id' && row.id === id && row.source_label === PLANNING_OUT_OF_PROJECT_SOURCE);
+          if (index < 0) return query;
+          if (property === 'delete') {
+            rows.splice(index, 1);
+            return createPreviewQuery({ data: null, error: null });
+          }
+          return createPreviewQuery({ data: Object.assign(rows[index], values), error: null });
+        },
+      });
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
 function savePreviewProjectWithLocation(args: Record<string, unknown>): PreviewResult {
   const projects = previewRows('projects');
   const contracts = previewRows('project_contracts');
@@ -3542,6 +3578,17 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
   if (functionName === 'planning_schedule_catalog_project') {
     return createPreviewQuery(schedulePreviewProject(args));
   }
+  if (functionName === 'planning_create_out_of_project') {
+    const vessel = previewVessel(Number(args.target_primary_vessel_id));
+    return createPreviewQuery(insertPreviewOutOfProject({
+      title: planningOutOfProjectTitle(String(args.target_title || '')),
+      starts_on: args.target_starts_on,
+      ends_on: args.target_starts_on,
+      primary_vessel_id: vessel.id,
+      primary_vessel_name: vessel.name,
+      status: 'Brouillon',
+    }));
+  }
   if (functionName === 'planning_create_and_schedule_project' || functionName === 'planning_create_quick_project') {
     if (functionName === 'planning_create_quick_project') args = { ...args, target_status: 'Brouillon' };
     const vessel = previewVessel(Number(args.target_primary_vessel_id));
@@ -3599,7 +3646,7 @@ export const previewSupabaseClient = {
   resolveProcessPerformanceTaskLinks: resolvePerformancePreviewDashboardLinks,
   from: (table: string) => employmentContractPreview.from(table) || performancePreviewTable(table) || (table === 'admin_people_directory'
     ? createPreviewQuery({ data: visiblePreviewRows('people'), error: null })
-    : table === 'vessels' ? createPreviewVesselQuery() : table in PREVIEW_ROWS
+    : table === 'vessels' ? createPreviewVesselQuery() : table === 'planning_projects' ? previewPlanningProjectsQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),
   rpc: (functionName: string, args?: Record<string, unknown>) => previewRpc(functionName, args),

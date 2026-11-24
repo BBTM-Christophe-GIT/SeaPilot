@@ -24,3 +24,17 @@ seule), intégration dans les deux vues et maintien de l'URL ; tests SQL sous le
 cinq rôles authentifiés, catalogue, contrat et navire liés, numérotation,
 navire inactif ou d'une autre société, titre vide, date absente et rollback.
 Les fixtures SQL sont intégralement annulées en fin de test.
+
+## Hors Projet
+
+Dans **Nouvelle opération**, choisissez **Hors Projet**, saisissez un nom et
+validez. Le planning ajoute une opération d’une journée sur le navire et à la
+date sélectionnés. Le même code **HP** et la couleur gris anthracite s’affichent
+dans les vues **Flotte** et **Projet**, y compris après renommage.
+
+Les profils Administration, Direction et Armement peuvent créer et modifier
+ces opérations. Chaque opération possède son propre identifiant dans le
+planning. Elle est enregistrée sans fiche commerciale ni contrat associé et
+reste hors de la file **À facturer**.
+
+Appliquer `20261124082944_planning_hors_projet.sql` avant le déploiement du frontend.

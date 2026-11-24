@@ -203,6 +203,17 @@ const planningProjectRow = {
   status: 'Confirmé',
   source_label: 'seapilot',
 };
+const outOfProjectRow = {
+  ...planningProjectRow,
+  id: 604,
+  catalog_project_id: null,
+  title: 'HP - Essais de sécurité',
+  starts_on: '2026-07-22',
+  ends_on: '2026-07-22',
+  event_type: 'operation',
+  status: 'Brouillon',
+  source_label: 'seapilot-hors-projet',
+};
 const medicalDocumentRow = {
   id: 400,
   person_id: 11,
@@ -930,7 +941,7 @@ describe('PlanningPage cockpit', () => {
       starts_on: '2026-07-15',
       ends_on: '2026-07-15',
     };
-    const { client } = createClient({ projects: [planningProjectRow, oneDay, clippedProject, adjacentProject] });
+    const { client } = createClient({ projects: [planningProjectRow, oneDay, clippedProject, adjacentProject, outOfProjectRow] });
     const { container } = render(<PlanningPage client={client as never} roles={['admin']} />);
     const oneDayName = /^Transit P601 - Inspection et assistance portuaire,/;
     const oneDayBar = await screen.findByRole('button', { name: oneDayName });
@@ -944,6 +955,11 @@ describe('PlanningPage cockpit', () => {
     expect(oneDayCaption).toHaveTextContent('Inspection et assistance portuaire');
     expect(oneDayCaption).toBeVisible();
     expect(within(oneDayBar).getByText('P601')).toBeVisible();
+    const outOfProjectName = /^Hors Projet HP - Essais de sécurité,/;
+    const outOfProjectBar = screen.getByRole('button', { name: outOfProjectName });
+    expect(outOfProjectBar).toHaveClass('is-out-of-project');
+    expect(within(outOfProjectBar).getByText('HP')).toBeVisible();
+    expect(outOfProjectBar.nextElementSibling).toHaveTextContent('Essais de sécurité');
     const multiDayBar = screen.getByRole('button', { name: /Transit Transit Cherbourg/ });
     const clippedBar = screen.getByRole('button', { name: /^Transit P602 - Mission commencée hors période,/ });
     const adjacentBar = screen.getByRole('button', { name: /^Transit P603 - Inspection et assistance portuaire,/ });
@@ -967,6 +983,7 @@ describe('PlanningPage cockpit', () => {
     expect(calendar.style.getPropertyValue('--planning-day-width')).toBe('62px');
     const projectBar = screen.getByRole('button', { name: oneDayName });
     expect(projectBar.nextElementSibling).toHaveTextContent('Inspection et assistance portuaire');
+    expect(screen.getByRole('button', { name: outOfProjectName })).toHaveClass('is-out-of-project');
   });
 
   it.each(['marin', 'capitaine'] as const)('keeps the published project view read-only for %s', async (role) => {
@@ -975,7 +992,7 @@ describe('PlanningPage cockpit', () => {
     const oneDay = { ...planningProjectRow, title: 'P600 - Remorquage portuaire', ends_on: planningProjectRow.starts_on };
     const { client, rpc, updateProject, deleteProject } = createClient({
       versions: [{ id: 1, publication_id: 1, version_number: 1, comment: '', created_at: '2026-07-13T10:00:00Z', created_by: 'user-publish', created_by_name: 'Direction BBTM' }],
-      publishedSnapshot: { assignments: [], days: [], periods: [], projects: [oneDay], handovers: [], derogations: [] },
+      publishedSnapshot: { assignments: [], days: [], periods: [], projects: [oneDay, outOfProjectRow], handovers: [], derogations: [] },
     });
     render(<MemoryRouter><Routes><Route element={<Outlet context={{ currentPerson: { id: role === 'capitaine' ? 10 : 11 }, roles: [role], client, previewMode: false }} />}>
       <Route path="/" element={<PlanningPage />} />
@@ -988,6 +1005,10 @@ describe('PlanningPage cockpit', () => {
     expect(bar.nextElementSibling).toBeVisible();
     expect(bar).toHaveAttribute('draggable', 'false');
     expect(bar.querySelector('.planning-resize-handle')).toBeNull();
+    const outOfProjectBar = screen.getByRole('button', { name: /^Hors Projet HP - Essais de sécurité,/ });
+    expect(outOfProjectBar).toHaveClass('is-out-of-project');
+    expect(outOfProjectBar).toHaveAttribute('draggable', 'false');
+    expect(outOfProjectBar.querySelector('.planning-resize-handle')).toBeNull();
     expect(screen.queryByRole('button', { name: /Ajouter un projet|Nouveau projet/ })).not.toBeInTheDocument();
     fireEvent.contextMenu(bar);
     expect(screen.queryByRole('menuitem', { name: /Modifier|Supprimer|Dupliquer|Annuler/ })).not.toBeInTheDocument();
@@ -1362,6 +1383,50 @@ describe('PlanningPage cockpit', () => {
     } finally {
       window.history.replaceState({}, '', previousUrl);
     }
+  });
+
+  it('keeps the HP code and anthracite treatment after renaming or duplicating an out-of-project operation', async () => {
+    const user = userEvent.setup();
+    const renamed = { ...outOfProjectRow, title: 'HP - Exercices en mer', status: 'Validé' };
+    const duplicated = { ...renamed, id: 605, title: 'HP - Exercices en mer (copie)', status: 'Non validé' };
+    const { client, updateProject, insertProject } = createClient({
+      projects: [outOfProjectRow],
+      updatedProject: renamed,
+      createdProject: duplicated,
+    });
+    render(<PlanningPage client={client as never} roles={['admin']} />);
+
+    const bar = await screen.findByRole('button', { name: /HP - Essais de sécurité/ });
+    await user.dblClick(bar);
+    const editor = within(screen.getByRole('dialog'));
+    expect(editor.getByLabelText('Code projet')).toHaveValue('HP');
+    expect(editor.getByLabelText('Code projet')).toHaveAttribute('readonly');
+    const name = editor.getByLabelText('Nom du projet');
+    expect(name).toHaveValue('Essais de sécurité');
+    await user.clear(name);
+    await user.type(name, 'Exercices en mer');
+    await user.selectOptions(editor.getByLabelText('Statut'), 'Validé');
+    await user.click(editor.getByRole('button', { name: 'Enregistrer' }));
+    expect(updateProject).toHaveBeenCalledWith(expect.objectContaining({
+      title: renamed.title,
+      status: renamed.status,
+      event_type: 'operation',
+      source_label: 'seapilot-hors-projet',
+    }));
+
+    const renamedBar = await screen.findByRole('button', { name: /HP - Exercices en mer,/ });
+    expect(renamedBar).toHaveClass('is-out-of-project');
+    await user.dblClick(renamedBar);
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Dupliquer' }));
+    const copyEditor = within(screen.getByRole('dialog'));
+    expect(copyEditor.getByLabelText('Nom du projet')).toHaveValue('Exercices en mer (copie)');
+    await user.click(copyEditor.getByRole('button', { name: 'Enregistrer' }));
+    expect(insertProject).toHaveBeenCalledWith(expect.objectContaining({
+      title: duplicated.title,
+      event_type: 'operation',
+      source_label: 'seapilot-hors-projet',
+    }));
+    expect(await screen.findByRole('button', { name: /HP - Exercices en mer \(copie\),/ })).toHaveClass('is-out-of-project');
   });
 
   it('keeps fleet filters active and avoids a full reload after an event update', async () => {

@@ -37,6 +37,11 @@ import { planningStaffingBoardKey } from './planningStaffingQueries';
 import { planningEventFunctionOnDate, planningShortFunctionLabel, planningTemporaryFunctionSegments } from './planningFunctions';
 import { samePlanningLaneSelection, shallowPlanningEqual, withStablePlanningHandlers } from './planningRendering';
 import { planningCrewContextsByDate, planningTimelineDateLabels, planningTimelineDocumentsByPerson } from './planningTimelineData';
+import {
+  isPlanningOutOfProject,
+  PLANNING_OUT_OF_PROJECT_CODE,
+  planningOutOfProjectName,
+} from './planningOutOfProject';
 import './planningContractDepartures.css';
 
 export const PlanningFleetTimelineRow = withStablePlanningHandlers(PlanningFleetTimelineRowContent);
@@ -230,7 +235,7 @@ function PlanningFleetTimelineRowContent({
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [personDropOver, setPersonDropOver] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
-  const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
+  const [movePreview, setMovePreview] = useState<{ startsOn: string; endsOn: string; outOfProject: boolean } | null>(null);
   const [visitResizePreview, setVisitResizePreview] = useState<{ id: number; startsOn: string; endsOn: string } | null>(null);
   const [draggingVisitId, setDraggingVisitId] = useState<number | null>(null);
   const [visitMovePreview, setVisitMovePreview] = useState<{ startsOn: string; endsOn: string } | null>(null);
@@ -352,7 +357,11 @@ function PlanningFleetTimelineRowContent({
     event.dataTransfer.dropEffect = 'move';
     if (draggingId !== null) {
       const project = lane.projects.find((item) => item.id === draggingId);
-      if (project) setMovePreview({ startsOn: date, endsOn: addPlanningDays(date, daysBetween(project.startsOn, project.endsOn)) });
+      if (project) setMovePreview({
+        startsOn: date,
+        endsOn: addPlanningDays(date, daysBetween(project.startsOn, project.endsOn)),
+        outOfProject: isPlanningOutOfProject(project),
+      });
     }
     if (draggingVisitId !== null) {
       const visit = visits.find((item) => item.id === draggingVisitId);
@@ -514,7 +523,7 @@ function PlanningFleetTimelineRowContent({
         return placement ? (
           <span
             aria-hidden="true"
-            className="planning-move-preview is-project"
+            className={`planning-move-preview is-project${movePreview.outOfProject ? ' is-out-of-project' : ''}`}
             style={{
               gridColumn: `${placement.start + 1} / span ${placement.span}`,
               gridRow: hasExpandedNames ? moveProjectStack + 1 : 1,
@@ -544,7 +553,11 @@ function PlanningFleetTimelineRowContent({
         if (!placement) return null;
         const isPending = pendingId === `project-${project.id}`;
         const stack = projectStack.stackById.get(project.id) || 0;
-        const { code, name } = splitProjectTitle(project.title);
+        const outOfProject = isPlanningOutOfProject(project);
+        const typeLabel = outOfProject ? 'Hors Projet' : planningFleetEventTypeLabel(project.eventType);
+        const { code, name } = outOfProject
+          ? { code: PLANNING_OUT_OF_PROJECT_CODE, name: planningOutOfProjectName(project.title) }
+          : splitProjectTitle(project.title);
         const caption = name ? projectCaptions.get(project.id) : undefined;
         const gridPlacement = {
           gridColumn: `${placement.start + 1} / span ${placement.span}`,
@@ -553,8 +566,8 @@ function PlanningFleetTimelineRowContent({
         const bar = (
           <button
             aria-busy={isPending}
-            aria-label={`${planningFleetEventTypeLabel(project.eventType)} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
-            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
+            aria-label={`${typeLabel} ${project.title}, ${project.status}${project.cancelledAt ? ', annulée' : ''}, du ${formatPlanningDate(startsOn)} au ${formatPlanningDate(endsOn)}`}
+            className={`planning-project-bar is-${project.eventType} is-${projectStatusTone(project.status)}${outOfProject ? ' is-out-of-project' : ''}${project.cancelledAt ? ' is-cancelled' : ''}${draggingId === project.id ? ' is-dragging' : ''}${selectedId === `project-${project.id}` ? ' is-selected' : ''}${isPending ? ' is-pending' : ''}${preview ? ' is-resize-preview' : ''}`}
             data-project-id={project.id}
             data-project-start={placement.start}
             data-project-stack={stack}
@@ -578,18 +591,18 @@ function PlanningFleetTimelineRowContent({
               ...gridPlacement,
               marginTop: !hasExpandedNames && (projectStack.count > 1 || maxVisitStack) ? (7 + stack * 27) * 0.9 : undefined,
             }}
-            title={`${planningFleetEventTypeLabel(project.eventType)} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
+            title={`${typeLabel} · ${project.title}\n${project.status}${project.cancelledAt ? ' · Annulée' : ''}${project.responsibleName ? `\nResponsable : ${project.responsibleName}` : ''}`}
             type="button"
           >
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-start" onPointerDown={(event) => beginResize(event, project, 'start')} /> : null}
             <span className={`planning-project-title${caption || (code && !name) ? ' is-code' : ''}`}>
-              {caption ? code || planningFleetEventTypeLabel(project.eventType) : project.title}
+              {caption ? code || typeLabel : project.title}
             </span>
             {name ? <>
               <span aria-hidden="true" className="planning-project-title planning-project-title-measure" data-text={project.title} />
               <span aria-hidden="true" className="planning-mission-caption planning-mission-caption-measure" data-text={name} />
             </> : null}
-            <small>{planningFleetEventTypeLabel(project.eventType)}</small>
+            <small>{typeLabel}</small>
             <span className="planning-project-status-rail"><img alt="" src={projectStatusIcon(project)} /></span>
             {editable ? <span aria-hidden="true" className="planning-resize-handle is-end" onPointerDown={(event) => beginResize(event, project, 'end')} /> : null}
           </button>
