@@ -73,7 +73,7 @@ describe('FleetPage', () => {
       vi.mocked(downloadFleetListPdfs).mockReset().mockResolvedValue(undefined);
     });
 
-    it('selects active vessels across register views and exports only the chosen columns in both languages', async () => {
+    it('opens with no selections and exports only the manually chosen vessel, column and languages', async () => {
       const user = userEvent.setup();
       const secondVessel = { ...baseVessel, id: 4, name: 'ROZEL' };
       const archivedVessel = { ...baseVessel, id: 5, name: 'ANCIEN NAVIRE', active: false };
@@ -88,19 +88,21 @@ describe('FleetPage', () => {
       expect(menu.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
       await user.click(menu.getByRole('button', { name: 'Flotte' }));
       const dialog = within(screen.getByRole('dialog', { name: 'Exporter la flotte' }));
+      for (const checkbox of dialog.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+      expect(dialog.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
       const shipOptions = within(dialog.getByRole('group', { name: 'Navires actifs' }));
+      expect(shipOptions.getAllByRole('checkbox')).toHaveLength(2);
+      await user.click(shipOptions.getByRole('button', { name: 'Tout sélectionner' }));
       expect(shipOptions.getByRole('checkbox', { name: baseVessel.name })).toBeChecked();
       expect(shipOptions.getByRole('checkbox', { name: secondVessel.name })).toBeChecked();
-      expect(shipOptions.getAllByRole('checkbox')).toHaveLength(2);
       await user.click(shipOptions.getByRole('button', { name: 'Tout désélectionner' }));
+      expect(shipOptions.getByRole('checkbox', { name: baseVessel.name })).not.toBeChecked();
+      await user.click(shipOptions.getByRole('checkbox', { name: secondVessel.name }));
       expect(dialog.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
-      await user.click(shipOptions.getByRole('button', { name: 'Tout sélectionner' }));
-      await user.click(shipOptions.getByRole('checkbox', { name: baseVessel.name }));
 
       const columns = within(dialog.getByRole('group', { name: 'Caractéristiques' }));
-      await user.click(columns.getByRole('button', { name: 'Tout désélectionner' }));
       await user.click(columns.getByRole('checkbox', { name: 'N° IMO' }));
-      expect(dialog.getByRole('checkbox', { name: 'Français' })).toBeChecked();
+      await user.click(dialog.getByRole('checkbox', { name: 'Français' }));
       await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
       await user.click(dialog.getByRole('button', { name: 'Télécharger les PDF (.zip)' }));
 
@@ -112,7 +114,7 @@ describe('FleetPage', () => {
       );
     });
 
-    it('handles an unavailable export, keeps the selection, and retries the English PDF', async () => {
+    it('retries an English PDF with vessel names only and resets selections on reopening', async () => {
       vi.mocked(downloadFleetListPdfs).mockRejectedValueOnce(new Error('Réduisez la sélection pour tenir sur une page.'));
       const user = userEvent.setup();
       render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['direction']} /></MemoryRouter>);
@@ -121,17 +123,22 @@ describe('FleetPage', () => {
       const dialogElement = screen.getByRole('dialog', { name: 'Exporter la flotte' });
       const dialog = within(dialogElement);
       const submit = dialog.getByRole('button', { name: 'Télécharger le PDF' });
-      await user.click(dialog.getByRole('checkbox', { name: 'Français' }));
-      expect(submit).toBeDisabled();
       await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
+      expect(submit).toBeDisabled();
+      await user.click(dialog.getByRole('checkbox', { name: baseVessel.name }));
       await user.click(submit);
       expect(await dialog.findByRole('alert')).toHaveTextContent('Réduisez la sélection');
       expect(dialog.getByRole('checkbox', { name: 'Anglais' })).toBeChecked();
       await user.click(submit);
       expect(await dialog.findByRole('status')).toHaveTextContent('Le PDF est prêt.');
-      expect(downloadFleetListPdfs).toHaveBeenLastCalledWith([baseVessel], expect.any(Array), ['en']);
+      expect(downloadFleetListPdfs).toHaveBeenLastCalledWith([baseVessel], [], ['en']);
       fireEvent(dialogElement, new Event('cancel', { cancelable: true }));
       expect(screen.queryByRole('dialog', { name: 'Exporter la flotte' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Flotte' }));
+      const reopened = within(screen.getByRole('dialog', { name: 'Exporter la flotte' }));
+      for (const checkbox of reopened.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+      expect(reopened.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
     });
   });
 

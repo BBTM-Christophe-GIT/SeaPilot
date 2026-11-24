@@ -106,7 +106,3 @@ export const FLEET_LIST_COLUMNS = [
 ] as const;
 
 export type FleetListColumnKey = typeof FLEET_LIST_COLUMNS[number]['key'];
-
-export const DEFAULT_FLEET_LIST_COLUMNS: FleetListColumnKey[] = [
-  'typeLabel', 'flagState', 'registrationNumber', 'lengthOverall', 'maxSpeedKnots', 'maxPeople',
-];

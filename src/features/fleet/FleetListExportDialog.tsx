@@ -1,7 +1,6 @@
 import { FileDown, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
-  DEFAULT_FLEET_LIST_COLUMNS,
   FLEET_LIST_COLUMNS,
   type FleetListColumnKey,
   type FleetListLanguage,
@@ -22,9 +21,9 @@ export function FleetListExportDialog({ onClose, vessels }: { onClose: () => voi
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
-  const [vesselIds, setVesselIds] = useState(() => vessels.map((vessel) => vessel.id));
-  const [columnKeys, setColumnKeys] = useState<FleetListColumnKey[]>(() => [...DEFAULT_FLEET_LIST_COLUMNS]);
-  const [languageKeys, setLanguageKeys] = useState<FleetListLanguage[]>(['fr']);
+  const [vesselIds, setVesselIds] = useState<number[]>([]);
+  const [columnKeys, setColumnKeys] = useState<FleetListColumnKey[]>([]);
+  const [languageKeys, setLanguageKeys] = useState<FleetListLanguage[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [feedback, setFeedback] = useState<{ message: string; error: boolean } | null>(null);
   const selectedVessels = vessels.filter((vessel) => vesselIds.includes(vessel.id));
@@ -73,7 +72,7 @@ export function FleetListExportDialog({ onClose, vessels }: { onClose: () => voi
             <FileDown aria-hidden="true" size={23} />
             <div>
               <h2 id={titleId}>Exporter la flotte</h2>
-              <p id={descriptionId}>Choisissez les navires et les colonnes du tableau. Chaque PDF est au format A4 sur une page.</p>
+              <p id={descriptionId}>Choisissez au moins un navire et une langue. Les caractéristiques sont facultatives. Chaque PDF tient sur une page A4.</p>
             </div>
           </div>
           <button aria-label="Fermer la fenêtre" disabled={isExporting} onClick={onClose} type="button"><X aria-hidden="true" size={18} /></button>

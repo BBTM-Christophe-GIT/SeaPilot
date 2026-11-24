@@ -103,14 +103,18 @@ for (const profile of profiles) {
 
       const dialog = page.getByRole('dialog', { name: 'Exporter la flotte', exact: true });
       const vessels = dialog.getByRole('group', { name: 'Navires actifs', exact: true });
-      await expect(vessels.getByRole('checkbox', { name: 'CI VESSEL ASSIGNED', exact: true })).toBeChecked();
-      const unassigned = vessels.getByRole('checkbox', { name: 'CI VESSEL UNASSIGNED', exact: true });
-      await expect(unassigned).toBeChecked();
+      await expect(vessels.getByRole('checkbox', { name: 'CI VESSEL UNASSIGNED', exact: true })).toBeVisible();
       await expect(dialog.getByRole('checkbox', { name: 'CI VESSEL FOREIGN', exact: true })).toHaveCount(0);
-      await unassigned.uncheck();
+      await expect(dialog.getByRole('checkbox', { checked: true })).toHaveCount(0);
+
+      const submit = dialog.getByRole('button', { name: 'Télécharger le PDF', exact: true });
+      await expect(submit).toBeDisabled();
+      await vessels.getByRole('checkbox', { name: 'CI VESSEL ASSIGNED', exact: true }).check();
+      await dialog.getByRole('checkbox', { name: 'Français', exact: true }).check();
+      await expect(submit).toBeEnabled();
 
       const downloading = page.waitForEvent('download');
-      await dialog.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
+      await submit.click();
       const download = await downloading;
       expect(download.suggestedFilename()).toBe('Flotte-BBTM-FR.pdf');
       expect(await download.failure()).toBeNull();

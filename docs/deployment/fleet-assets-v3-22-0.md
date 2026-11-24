@@ -52,13 +52,14 @@ Le retour arrière applicatif consiste à redéployer le client précédent. Con
 ## Export du tableau de flotte
 
 Dans **Opérations → Navires**, ouvrir **Flotte** dans la barre d’actions.
-Tous les navires actifs accessibles au compte sont présélectionnés, indépendamment
-de la recherche et de la catégorie affichée. Choisir les navires et les
-caractéristiques à exporter. Le nom du navire figure toujours en première colonne.
+La fenêtre s’ouvre avec toutes les cases décochées. Elle liste les navires actifs
+accessibles au compte, indépendamment de la recherche et de la catégorie
+affichée. Choisir au moins un navire et une langue. Les caractéristiques sont
+facultatives. Le nom du navire figure toujours en première colonne.
 
-Le français est sélectionné à l’ouverture. Choisir le français, l’anglais ou
-les deux. Une seule langue télécharge directement le PDF. L’export dans les deux
-langues télécharge un ZIP contenant les deux PDF.
+Choisir le français, l’anglais ou les deux. Une seule langue télécharge
+directement le PDF. L’export dans les deux langues télécharge un ZIP contenant
+les deux PDF.
 
 Chaque tableau utilise le logo et la charte BBTM sur une page A4 sans pied de
 page. La mise en page s’adapte à la sélection. Si elle est trop dense pour
