@@ -18,8 +18,8 @@ describe('FleetVesselSheet', () => {
     expect(sheet).toHaveClass('app-dialog--modal');
     const dialog = within(sheet);
     expect(await dialog.findByText('750 kW')).toBeVisible();
-    expect(dialog.getByText('30.62 m')).toBeVisible();
-    expect(dialog.getByRole('heading', { name: 'Identification' })).toBeVisible();
+    expect(dialog.getByText('30,62 m')).toBeVisible();
+    expect(dialog.getByRole('heading', { name: 'Identification maritime' })).toBeVisible();
     expect(dialog.getByRole('heading', { name: 'Dimensions et tonnage' })).toBeVisible();
     expect(dialog.getByRole('heading', { name: 'Navigation et conformité' }).querySelector('svg')).not.toBeNull();
     expect(dialog.queryByText('MMSI')).not.toBeInTheDocument();

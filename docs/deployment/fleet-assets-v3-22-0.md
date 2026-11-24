@@ -6,7 +6,7 @@
 - La migration importe ou actualise les 14 lignes non vides du fichier IQY `BBTM - Flotte` et conserve les identifiants, versions et dates de la source SharePoint.
 - La classification suit la règle métier exacte : `Armement - Cherbourg` est un bureau, `YARD - Le Havre` est un quai, toutes les autres lignes sont des navires.
 - Chaque navire possède une fiche structurée, une photo et son propre onglet `Décision d’effectif`. Les bureaux et quais n’exposent ni décision d’effectif ni brochure.
-- `Éditer brochure` génère à la demande un PDF de trois pages aux couleurs BBTM. Le document ne contient aucune marque SeaPilot et n’est pas persisté dans Supabase.
+- La commande **Éditer brochure** génère un PDF BBTM à la demande. Le fichier est téléchargé directement par le navigateur.
 - Le client charge `jsPDF` et son module de tableaux uniquement au moment de l’édition d’une brochure.
 
 ## Base de données
@@ -36,13 +36,27 @@ d’été en millimètres. Les administrateurs peuvent les renseigner dans
 Les valeurs historiques de déplacement lège restent disponibles pour la
 brochure et l’export de flotte.
 
+## Formats et langues des brochures
+
+- Le format **A4 multipage** réunit une couverture BBTM et les tableaux sur les pages suivantes. Les textes longs peuvent continuer sur une page supplémentaire.
+- Le format **A4 plié en deux** s’imprime sur une feuille A4 paysage à taille réelle en recto verso, avec retournement sur le bord court. La face extérieure présente la couverture à droite, avec une image pleine largeur pour les photos de couverture au format paysage, et un dos vierge à gauche. Le verso contient les tableaux et les visuels complémentaires. Les descriptions qui ne tiennent pas dans les deux volets sont abrégées avec un renvoi à la brochure multipage.
+- Les deux formats existent en français et en anglais. Dans **Navires → Modifier → Brochure**, un administrateur peut adapter le sous-titre, la présentation, le titre des missions et leur liste dans chaque langue. Le nom provient de la fiche navire. Les traductions anglaises des descriptions techniques se renseignent dans la même section.
+- Dans **Navires → Trame des navires**, un administrateur renomme et réordonne les rubriques et les champs de la société. La trame s’applique aux fiches et aux deux formats de brochure. Les libellés peuvent différer selon la langue. Les valeurs techniques restent propres à chaque navire.
+- Les champs internes (type d’actif, type source, acronyme, assureur et dotation médicale) restent sur les fiches.
+
+Appliquer les migrations **20261124133202_fleet_vessel_layouts.sql** et
+**20261124135502_fleet_vessel_bilingual_brochure_cover.sql** avant le déploiement Vercel.
+Les sociétés sans personnalisation utilisent les rubriques standard. La base
+conserve les textes français déjà saisis et sépare les compléments anglais
+et le titre des missions dans la colonne **brochure_cover**.
+
 ## Vérification
 
 1. Vérifier 14 lignes source : 12 navires, 1 bureau et 1 quai.
 2. Ouvrir `Navires > GOURY` et contrôler la photo, l’IMO `9213870`, la jauge `293 UMS` et la puissance `750 kW`.
 3. Ouvrir `Décision d’effectif` et vérifier que les situations sont limitées au navire sélectionné et que le message de déconnexion du Planning est visible.
 4. Ouvrir les catégories Bureaux et Quais et confirmer l’absence du bouton brochure et de l’onglet de décision d’effectif.
-5. Éditer la brochure GOURY, rendre les trois pages et rechercher `SeaPilot` dans le texte extrait : aucune occurrence ne doit être trouvée.
+5. Générer les quatre variantes du Goury et de l’Hirondelle de la Manche. Vérifier les tableaux, les visuels et leurs encarts, la couverture pliée à droite, son image en pleine largeur et le dos vierge.
 6. Vérifier l’interface à 1440 px et 390 px sans débordement horizontal.
 
 ## Retour arrière

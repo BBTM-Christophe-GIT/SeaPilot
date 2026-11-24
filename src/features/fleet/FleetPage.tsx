@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  Anchor, Archive, Building2, CloudSun, Edit3, FileDown, ImagePlus, LayoutGrid, MapPin, Plus,
+  Anchor, Archive, Building2, CloudSun, Edit3, FileDown, ImagePlus, LayoutGrid, ListOrdered, MapPin, Plus,
   RefreshCw, RotateCcw, Search, Ship, UsersRound, Warehouse, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
@@ -16,7 +17,12 @@ import { ManningTab } from '../planning/PlanningP11Panel';
 import { fetchPlanningP11Data } from '../planning/planningP11Queries';
 import type { PlanningP11Data } from '../planning/planningP11';
 import { EMPTY_PLANNING_OVERVIEW } from '../planning/usePlanningOverview';
-import { downloadFleetBrochure } from './fleetBrochure';
+import { downloadFleetBrochure, type FleetBrochureFormat } from './fleetBrochure';
+import { FleetBrochureCoverFields } from './FleetBrochureCoverFields';
+import { FleetLayoutEditor } from './FleetLayoutEditor';
+import { DEFAULT_FLEET_LAYOUT, hasValidEnglishBrochureMissions, type FleetBrochureLanguage, type FleetLayout } from './fleetLayout';
+import { fetchFleetLayout, saveFleetLayout } from './fleetLayoutQueries';
+import { resolveFleetCoverPhotos } from './fleetMedia';
 import { FleetCapacityPlans } from './FleetCapacityPlans';
 import { FleetCapacitySectionFields } from './FleetCapacitySections';
 import { createFleetCapacitySectionDrafts, parseFleetCapacitySections, type FleetCapacitySectionDraft } from './fleetCapacityModel';
@@ -26,7 +32,7 @@ import { fleetFuelTankLabel, fleetMainFuelCapacityLiters, isFleetFuelTankCapacit
 import { VesselWeatherMatrixEditor } from './VesselWeatherMatrixEditor';
 import { FleetVesselOverview } from './FleetVesselOverview';
 import {
-  archiveFleetVessel, fetchFleetVessels, resolveFleetVesselPhotoUrl, restoreFleetVessel,
+  archiveFleetVessel, fetchFleetVessels, restoreFleetVessel,
   saveFleetVessel, uploadFleetVesselPhoto, MAX_FLEET_DRAFT_METERS, type FleetAssetKind, type FleetVessel,
   type SaveFleetVesselInput,
 } from './fleetQueries';
@@ -56,7 +62,7 @@ const EMPTY_VESSEL: FleetVesselForm = {
   name: '', acronym: '', assetKind: 'vessel', typeLabel: '', unitTypeLabel: '', registrationNumber: '',
   imoNumber: '', registrationPort: '', callSign: '', mmsi: '', grossTonnage: '', maxPeople: null,
   crewMembers: '', medicalDotation: '', lengthOverall: '', flagState: '', brochureSubtitle: '',
-  brochureSummary: '', brochureOperations: '', builtYear: null, classificationLabel: '', navigationCategory: '',
+  brochureSummary: '', brochureOperations: '', brochureCover: {}, builtYear: null, classificationLabel: '', navigationCategory: '',
   beamOverallM: null, draftMeters: null, netTonnage: null, summerFreeboardMm: null,
   deadweightTonnes: null, safeManning: null, mainEngine: '',
   mainEnginePowerKw: null, bowThrusterPowerKw: null, gensets: '', maxSpeedKnots: null,
@@ -76,7 +82,7 @@ function vesselForm(vessel?: FleetVessel): FleetVesselForm {
     mmsi: vessel.mmsi, grossTonnage: vessel.grossTonnage, maxPeople: vessel.maxPeople,
     crewMembers: vessel.crewMembers, medicalDotation: vessel.medicalDotation, lengthOverall: vessel.lengthOverall,
     flagState: vessel.flagState, brochureSubtitle: vessel.brochureSubtitle, brochureSummary: vessel.brochureSummary,
-    brochureOperations: vessel.brochureOperations.join('\n'), builtYear: vessel.builtYear,
+    brochureOperations: vessel.brochureOperations.join('\n'), brochureCover: vessel.brochureCover, builtYear: vessel.builtYear,
     classificationLabel: vessel.classificationLabel, navigationCategory: vessel.navigationCategory,
     beamOverallM: vessel.beamOverallM, draftMeters: vessel.draftMeters ?? null,
     netTonnage: vessel.netTonnage ?? null, summerFreeboardMm: vessel.summerFreeboardMm ?? null,
@@ -131,7 +137,15 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   const [search, setSearch] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [photoUrl, setPhotoUrl] = useState('');
+  const [photo, setPhoto] = useState<{ id: number; urls: string[]; index: number }>();
+  const [fleetLayouts, setFleetLayouts] = useState<Record<number, FleetLayout>>({});
+  const [layoutEditor, setLayoutEditor] = useState<number | null>(null);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutError, setLayoutError] = useState('');
+  const [brochureVessel, setBrochureVessel] = useState<FleetVessel | null>(null);
+  const [brochureFormat, setBrochureFormat] = useState<FleetBrochureFormat>('a4');
+  const [brochureLanguage, setBrochureLanguage] = useState<FleetBrochureLanguage>('fr');
+  const [brochureError, setBrochureError] = useState('');
   const [form, setForm] = useState<FleetVesselForm | null>(null);
   const [showFleetExport, setShowFleetExport] = useState(false);
   const [matrixReady, setMatrixReady] = useState(true);
@@ -147,17 +161,24 @@ export function FleetPage({ client, roles }: FleetPageProps) {
   const dailyTankName = form?.fuel.dailyTankName.trim() || null;
   const dailyFuelNameReady = !form?.fuel.dailyTankEnabled || dailyTankName === null || isFleetFuelTankName(dailyTankName);
   const capacitySections = parseFleetCapacitySections(form?.capacitySections ?? []);
-  const vesselFormReady = matrixReady && fuelNamesReady && dailyFuelNameReady && capacitySections.error === null;
+  const vesselFormReady = matrixReady && fuelNamesReady && dailyFuelNameReady && capacitySections.error === null
+    && hasValidEnglishBrochureMissions(form?.brochureCover?.en?.operations);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
       const [fleetRows, p11Data] = await Promise.all([fetchFleetVessels(effectiveClient), fetchPlanningP11Data(effectiveClient)]);
+      const companies = [...new Set(fleetRows.map(vessel => vessel.companyId))];
+      const loadedLayouts = await Promise.allSettled(companies.map(async companyId =>
+        [companyId, await fetchFleetLayout(effectiveClient, companyId)] as const));
+      setFleetLayouts(Object.fromEntries(loadedLayouts.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])));
       setVessels(fleetRows);
       setP11(p11Data);
       setSelectedId((current) => current && fleetRows.some((vessel) => vessel.id === current)
         ? current : fleetRows.find((vessel) => vessel.assetKind === 'vessel')?.id || fleetRows[0]?.id || null);
-      setFeedback(null);
+      setFeedback(loadedLayouts.some(result => result.status === 'rejected')
+        ? { message: 'Impossible de charger la trame des brochures. Actualisez les actifs pour réessayer.', error: true }
+        : null);
     } catch (error) {
       setFeedback({ message: planningErrorMessage(error, 'Impossible de charger le référentiel des actifs.'), error: true });
     } finally { setIsLoading(false); }
@@ -175,7 +196,9 @@ export function FleetPage({ client, roles }: FleetPageProps) {
         .toLocaleLowerCase('fr-FR').includes(term)));
   }, [assetKind, baseVisible, search]);
   const selected = vessels.find((vessel) => vessel.id === selectedId) || null;
-  const selectedPhotoUrl = selected?.assetKind === 'vessel' ? photoUrl : '';
+  const selectedPhotoUrl = photo && selected?.assetKind === 'vessel' && photo.id === selected.id ? photo.urls[photo.index] : '';
+  const layoutCompany = selected?.companyId ?? vessels[0]?.companyId;
+  const selectedLayout = layoutCompany == null ? undefined : fleetLayouts[layoutCompany];
 
   useEffect(() => {
     if (!selected || selected.assetKind === assetKind) return;
@@ -189,11 +212,9 @@ export function FleetPage({ client, roles }: FleetPageProps) {
 
   useEffect(() => {
     let active = true;
-    setPhotoUrl('');
-    if (!selected || selected.assetKind !== 'vessel') return () => { active = false; };
-    void resolveFleetVesselPhotoUrl(effectiveClient, selected)
-      .then((url) => { if (active) setPhotoUrl(url); })
-      .catch(() => { if (active) setPhotoUrl(''); });
+    if (!selected || selected.assetKind !== 'vessel') return;
+    void resolveFleetCoverPhotos(effectiveClient, selected)
+      .then((urls) => { if (active) setPhoto({ id: selected.id, urls, index: 0 }); });
     return () => { active = false; };
   }, [effectiveClient, selected]);
 
@@ -251,15 +272,35 @@ export function FleetPage({ client, roles }: FleetPageProps) {
     } finally { setIsSaving(false); }
   }
 
-  async function editBrochure() {
-    if (!selected || selected.assetKind !== 'vessel') return;
+  async function editBrochure(event: FormEvent) {
+    event.preventDefault();
+    if (!brochureVessel || isGenerating) return;
     setIsGenerating(true);
+    setBrochureError('');
     try {
-      await downloadFleetBrochure(selected, photoUrl);
-      setFeedback({ message: `La brochure de ${selected.name} a été éditée.`, error: false });
+      const [primary = '', ...fallbackPhotoUrls] = await resolveFleetCoverPhotos(effectiveClient, brochureVessel);
+      await downloadFleetBrochure(brochureVessel, primary, {
+        format: brochureFormat, language: brochureLanguage, layout: fleetLayouts[brochureVessel.companyId] ?? DEFAULT_FLEET_LAYOUT, fallbackPhotoUrls,
+      });
+      setBrochureVessel(null);
+      setFeedback({ message: `La brochure de ${brochureVessel.name} a été éditée.`, error: false });
     } catch (error) {
-      setFeedback({ message: planningErrorMessage(error, 'Impossible d’éditer la brochure.'), error: true });
+      setBrochureError(planningErrorMessage(error, 'Impossible d’éditer la brochure.'));
     } finally { setIsGenerating(false); }
+  }
+
+  async function submitLayout(layout: FleetLayout) {
+    if (layoutEditor == null || !canManage || layoutSaving) return;
+    setLayoutSaving(true);
+    setLayoutError('');
+    try {
+      const saved = await saveFleetLayout(effectiveClient, layoutEditor, layout);
+      setFleetLayouts(current => ({ ...current, [layoutEditor]: saved }));
+      setLayoutEditor(null);
+      setFeedback({ message: 'La trame commune des navires a été enregistrée.', error: false });
+    } catch (error) {
+      setLayoutError(planningErrorMessage(error, 'Impossible d’enregistrer la trame commune.'));
+    } finally { setLayoutSaving(false); }
   }
 
   function chooseKind(kind: FleetAssetKind) {
@@ -277,6 +318,9 @@ export function FleetPage({ client, roles }: FleetPageProps) {
     <ModuleRibbon ariaLabel="Menu des navires" singleRow>
       <ModuleRibbonGroup label="Référentiel">
         {canManage ? <ModuleRibbonCommand icon={<Plus aria-hidden="true" size={22} />} label="Ajouter" onClick={() => { setForm(vesselForm()); setMatrixReady(true); setPhotoFile(null); }} /> : null}
+        {canManage ? <ModuleRibbonCommand aria-haspopup="dialog" disabled={isLoading || !selectedLayout}
+          icon={<ListOrdered aria-hidden="true" size={22} />} label="Trame des navires"
+          onClick={() => { setLayoutError(''); setLayoutEditor(layoutCompany ?? null); }} /> : null}
         <ModuleRibbonCommand aria-label="Actualiser les actifs" disabled={isLoading} icon={<RefreshCw aria-hidden="true" size={22} />} label="Actualiser" onClick={() => void load()} />
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Exports">
@@ -301,7 +345,8 @@ export function FleetPage({ client, roles }: FleetPageProps) {
       <article className="fleet-detail">{selected ? <>
         <header className="fleet-asset-header">
           <div className={`fleet-asset-thumbnail${selectedPhotoUrl ? ' has-photo' : ''}`}>
-            {selectedPhotoUrl ? <img alt={`Photo du navire ${selected.name}`} src={selectedPhotoUrl} />
+            {selectedPhotoUrl ? <img alt={`Photo du navire ${selected.name}`} src={selectedPhotoUrl} onError={() =>
+              setPhoto(current => current?.id === selected.id ? { ...current, index: current.index + 1 } : current)} />
               : <AssetIcon kind={selected.assetKind} size={28} />}
           </div>
           <div className="fleet-asset-identity">
@@ -314,7 +359,10 @@ export function FleetPage({ client, roles }: FleetPageProps) {
             </div>
           </div>
           {selected.assetKind === 'vessel' || canManage ? <div className="fleet-asset-actions">
-            {selected.assetKind === 'vessel' ? <button className="sp-button sp-button--secondary" disabled={isGenerating} onClick={() => void editBrochure()} type="button">
+            {selected.assetKind === 'vessel' ? <button aria-haspopup="dialog" className="sp-button sp-button--secondary" disabled={isGenerating || isLoading} onClick={() => {
+              setBrochureError('');
+              setBrochureVessel(selected);
+            }} type="button">
               <FileDown aria-hidden="true" size={15} />{isGenerating ? 'Édition…' : 'Éditer brochure'}
             </button> : null}
             {canManage ? <>
@@ -344,6 +392,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
         {detailTab === 'weather' && selected.assetKind === 'vessel' ? <div className="fleet-weather-matrix-panel"><VesselWeatherMatrixEditor key={selected.id} value={selected.weatherMatrix} vesselName={selected.name} /></div> : detailTab === 'manning' && selected.assetKind === 'vessel' ? <div className="fleet-manning-panel"><p className="fleet-disconnected-note">Référentiel propre à ce navire. Son contrôle dans le Planning est temporairement désactivé.</p><ManningTab client={effectiveClient} data={p11} editable={canManage} fixedVesselId={selected.id} linkToPlanning={false} onReload={async () => setP11(await fetchPlanningP11Data(effectiveClient))} overview={manningOverview} range={range} setFeedback={(message, error = false) => setFeedback({ message, error })} /></div> :
           <FleetVesselOverview
             vessel={selected}
+            layout={selectedLayout}
             plans={selected.assetKind === 'vessel' ? <FleetCapacityPlans key={selected.id} client={effectiveClient} vessel={selected} canManage={canManage} /> : null}
           />
         }
@@ -351,18 +400,39 @@ export function FleetPage({ client, roles }: FleetPageProps) {
     </div>
 
     {showFleetExport ? <FleetListExportDialog onClose={() => setShowFleetExport(false)} vessels={exportVessels} /> : null}
+    {layoutEditor != null && fleetLayouts[layoutEditor] ? <FleetLayoutEditor error={layoutError} layout={fleetLayouts[layoutEditor]}
+      onClose={() => setLayoutEditor(null)} onSave={layout => void submitLayout(layout)} saving={layoutSaving} /> : null}
+    {brochureVessel ? <AppDialog eyebrow={brochureVessel.name} icon={<FileDown aria-hidden="true" size={20} />} isBusy={isGenerating}
+      onClose={() => setBrochureVessel(null)} onSubmit={editBrochure} size="sm" title="Éditer la brochure"
+      footer={<>
+        <button className="sp-button sp-button--secondary" disabled={isGenerating} onClick={() => setBrochureVessel(null)} type="button">Annuler</button>
+        <button className="sp-button sp-button--primary" disabled={isGenerating} type="submit">{isGenerating ? 'Édition…' : 'Télécharger le PDF'}</button>
+      </>}>
+      <div className="fleet-brochure-options">
+        <label>Format<select disabled={isGenerating} value={brochureFormat} onChange={event => setBrochureFormat(event.target.value as FleetBrochureFormat)}>
+          <option value="a4">A4 multipage</option><option value="folded">A4 plié en deux</option>
+        </select></label>
+        <label>Langue<select disabled={isGenerating} value={brochureLanguage} onChange={event => setBrochureLanguage(event.target.value as FleetBrochureLanguage)}>
+          <option value="fr">Français</option><option value="en">Anglais</option>
+        </select></label>
+        {brochureFormat === 'folded' ? <p>A4 paysage, recto verso, taille réelle. Retourner sur le bord court.</p> : null}
+        {brochureError ? <p role="alert">{brochureError}</p> : null}
+      </div>
+    </AppDialog> : null}
 
     {form ? <div className="fleet-dialog-backdrop" role="presentation"><form aria-label={form.id ? 'Modifier l’actif' : 'Ajouter un actif'} aria-modal="true" className={`fleet-dialog is-wide${form.assetKind === 'vessel' ? ' has-weather-matrix' : ''}`} onSubmit={submitVessel} role="dialog"><header><div><AssetIcon kind={form.assetKind} size={19} /><span><small>Référentiel BBTM</small><h2>{form.id ? 'Modifier l’actif' : 'Ajouter un actif'}</h2></span></div><button aria-label="Fermer" onClick={() => setForm(null)} type="button"><X size={18} /></button></header><div className="fleet-dialog-grid">
       <label>Type d’actif<select onChange={(event) => { setForm({ ...form, assetKind: event.target.value as FleetAssetKind }); setMatrixReady(true); }} value={form.assetKind}>{ASSET_KINDS.map((kind) => <option key={kind.key} value={kind.key}>{kind.singular}</option>)}</select></label><label>Nom<input autoFocus minLength={2} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} /></label><label>Acronyme<input onChange={(event) => setForm({ ...form, acronym: event.target.value })} value={form.acronym} /></label><label>Type / désignation<input onChange={(event) => setForm({ ...form, typeLabel: event.target.value })} value={form.typeLabel} /></label>
       {form.assetKind === 'vessel' ? <><label className="is-wide fleet-photo-field"><ImagePlus size={18} /><span>Photo du navire<small>JPEG, PNG ou WebP · 10 Mo maximum</small></span><input accept="image/jpeg,image/png,image/webp" aria-label="Photo du navire" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} type="file" /></label><h3 className="is-wide">Identification maritime</h3><label>Immatriculation<input onChange={(event) => setForm({ ...form, registrationNumber: event.target.value })} value={form.registrationNumber} /></label><label>IMO<input onChange={(event) => setForm({ ...form, imoNumber: event.target.value })} value={form.imoNumber} /></label><label>Port d’immatriculation<input onChange={(event) => setForm({ ...form, registrationPort: event.target.value })} value={form.registrationPort} /></label><label>Indicatif d’appel<input onChange={(event) => setForm({ ...form, callSign: event.target.value })} value={form.callSign} /></label><label>MMSI<input onChange={(event) => setForm({ ...form, mmsi: event.target.value })} value={form.mmsi} /></label><label>Pavillon<input onChange={(event) => setForm({ ...form, flagState: event.target.value })} value={form.flagState} /></label><h3 className="is-wide">Caractéristiques</h3><label>Jauge brute<input onChange={(event) => setForm({ ...form, grossTonnage: event.target.value })} value={form.grossTonnage} /></label><label>Longueur hors tout<input onChange={(event) => setForm({ ...form, lengthOverall: event.target.value })} value={form.lengthOverall} /></label><label>Largeur hors tout (m){numberInput(form.beamOverallM, (value) => setForm({ ...form, beamOverallM: value }), 'Largeur hors tout')}</label><label>Tirant d’eau (m)<input aria-label="Tirant d’eau (m)" type="number" min={0} max={MAX_FLEET_DRAFT_METERS} step="any" value={form.draftMeters ?? ''} onChange={(event) => setForm({ ...form, draftMeters: event.target.value ? Number(event.target.value) : null })} /></label><label>Année de construction{numberInput(form.builtYear, (value) => setForm({ ...form, builtYear: value }), 'Année de construction')}</label><label>Jauge nette{numberInput(form.netTonnage, (value) => setForm({ ...form, netTonnage: value }), 'Jauge nette')}</label>
-      <label>Hauteur du Franc Bord - Été (mm){numberInput(form.summerFreeboardMm, (value) => setForm({ ...form, summerFreeboardMm: value }), 'Hauteur du Franc Bord - Été (mm)')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label><label className="is-wide">Dotation médicale<input onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })} value={form.medicalDotation} /></label><h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Aménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
+      <label>Hauteur du Franc Bord - Été (mm){numberInput(form.summerFreeboardMm, (value) => setForm({ ...form, summerFreeboardMm: value }), 'Hauteur du Franc Bord - Été (mm)')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label><label className="is-wide">Dotation médicale<input onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })} value={form.medicalDotation} /></label><h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Emménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
         <h3>Capacités</h3>
         <FleetFuelFields value={form.fuel} disabled={isSaving} namesReady={fuelNamesReady} dailyNameReady={dailyFuelNameReady}
           onChange={fuel => setForm(current => current ? { ...current, fuel } : null)} />
         <FleetCapacitySectionFields sections={form.capacitySections} disabled={isSaving} error={capacitySections.error}
           onChange={sections => setForm(current => current ? { ...current, capacitySections: sections, capacitySectionsChanged: true } : null)} />
       </section>
-      <h3 className="is-wide">Brochure</h3><label className="is-wide">Sous-titre<input onChange={(event) => setForm({ ...form, brochureSubtitle: event.target.value })} value={form.brochureSubtitle} /></label><label className="is-wide">Présentation<textarea onChange={(event) => setForm({ ...form, brochureSummary: event.target.value })} value={form.brochureSummary} /></label><label className="is-wide">Usages opérationnels (un par ligne)<textarea rows={4} onChange={(event) => setForm({ ...form, brochureOperations: event.target.value })} value={form.brochureOperations} /></label></> : null}
+      <FleetBrochureCoverFields cover={form.brochureCover ?? {}} operations={form.brochureOperations} subtitle={form.brochureSubtitle}
+        summary={form.brochureSummary} onFrenchChange={(key, value) => setForm(current => current ? { ...current, [key]: value } : null)}
+        onCoverChange={brochureCover => setForm(current => current ? { ...current, brochureCover } : null)} /></> : null}
       {form.assetKind === 'vessel' ? <VesselWeatherMatrixEditor disabled={isSaving} key={form.id || 'new'} onChange={(weatherMatrix) => setForm((current) => current ? { ...current, weatherMatrix } : null)} onValidationChange={setMatrixReady} value={form.weatherMatrix} vesselName={form.name} /> : null}
     </div><footer><button onClick={() => setForm(null)} type="button">Annuler</button><button disabled={isSaving || (form.assetKind === 'vessel' && !vesselFormReady)} type="submit">{isSaving ? 'Enregistrement…' : 'Enregistrer'}</button></footer></form></div> : null}
   </section>;
