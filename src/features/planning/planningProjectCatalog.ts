@@ -3,6 +3,7 @@ import { normalizeProjectStatus } from '../projects/projectStatus';
 import { compareProjectCodesNewestFirst } from '../../lib/projectCode';
 import { mapPlanningProjectRows, type PlanningProjectRecord } from './planningQueries';
 import { projectDescriptionToPlainText } from '../projects/projectDescription';
+import { PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH } from './planningOutOfProject';
 
 export interface PlanningProjectCatalogRecord {
   id: number;
@@ -141,6 +142,26 @@ export async function createQuickPlanningProject(
   const row = firstRpcRow(data);
   const project = row ? mapPlanningProjectRows([row as never])[0] : undefined;
   if (!project) throw new Error('Le projet créé n’a pas pu être relu dans le planning.');
+  return project;
+}
+
+export async function createOutOfProjectPlanningOperation(
+  client: SupabaseClient,
+  input: { title: string; vesselId: number; startsOn: string },
+): Promise<PlanningProjectRecord> {
+  const title = input.title.trim();
+  if (!title || title.length > PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH) {
+    throw new Error(`Le nom du projet doit contenir entre 1 et ${PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH} caractères.`);
+  }
+  const { data, error } = await client.rpc('planning_create_out_of_project', {
+    target_title: title,
+    target_primary_vessel_id: input.vesselId,
+    target_starts_on: input.startsOn,
+  });
+  if (error) throw rpcError(error, 'Impossible de créer cette opération hors projet.');
+  const row = firstRpcRow(data);
+  const project = row ? mapPlanningProjectRows([row as never])[0] : undefined;
+  if (!project) throw new Error('L’opération créée n’a pas pu être relue dans le planning.');
   return project;
 }
 

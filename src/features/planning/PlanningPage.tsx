@@ -148,6 +148,12 @@ import type {
 import { fetchProjectPlanningOccurrences } from '../projects/projectQueries';
 import type { PlanningProjectCatalogRecord } from './planningProjectCatalog';
 import {
+  isPlanningOutOfProject,
+  PLANNING_OUT_OF_PROJECT_CODE,
+  PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH,
+  planningOutOfProjectName,
+} from './planningOutOfProject';
+import {
   buildPlanningGridPaste,
   isPlanningGridStatus,
   normalizePlanningGridStatus,
@@ -243,6 +249,7 @@ interface EventFormState {
 
 interface ProjectFormState {
   title: string;
+  outOfProject: boolean;
   startsOn: string;
   endsOn: string;
   status: string;
@@ -351,6 +358,7 @@ const EMPTY_ASSIGNMENT: AssignmentFormState = {
 
 const EMPTY_PROJECT_FORM: ProjectFormState = {
   title: '',
+  outOfProject: false,
   startsOn: '',
   endsOn: '',
   status: 'Non validé',
@@ -360,6 +368,22 @@ const EMPTY_PROJECT_FORM: ProjectFormState = {
   clientName: '',
   description: '',
 };
+
+function projectFormFromRecord(project: PlanningProjectRecord): ProjectFormState {
+  const outOfProject = isPlanningOutOfProject(project);
+  return {
+    title: outOfProject ? planningOutOfProjectName(project.title) : project.title,
+    outOfProject,
+    startsOn: project.startsOn,
+    endsOn: project.endsOn,
+    status: project.status,
+    eventType: project.eventType,
+    vesselId: String(project.primaryVesselId || ''),
+    responsibleName: project.responsibleName,
+    clientName: project.clientName,
+    description: project.description,
+  };
+}
 
 const PLANNING_STATUSES = ['En Mer', 'A Terre', 'Extra', 'Repos', 'Vacance', 'Congés Paternité', 'Arrêt Maladie', 'Accident du Travail', 'Arrêt de travail', 'Formation'];
 const FLEET_EVENT_TYPES: PlanningFleetEventType[] = ['operation', 'transit', 'maintenance', 'unavailability'];
@@ -676,17 +700,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setSelectedProjectDocumentsError('');
       setSelectedTimelineId(`project-${project.id}`);
       setSelectedProject(project);
-      setProjectForm({
-        title: project.title,
-        startsOn: project.startsOn,
-        endsOn: project.endsOn,
-        status: project.status,
-        eventType: project.eventType,
-        vesselId: String(project.primaryVesselId || ''),
-        responsibleName: project.responsibleName,
-        clientName: project.clientName,
-        description: project.description,
-      });
+      setProjectForm(projectFormFromRecord(project));
       setIsProjectQuick(false);
       setIsProjectOpen(true);
     });
@@ -1886,17 +1900,12 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
   }
 
   function duplicateProject(project: PlanningProjectRecord) {
-    setProjectForm({
-      title: `${project.title} (copie)`,
-      startsOn: project.startsOn,
-      endsOn: project.endsOn,
-      status: 'Non validé',
-      eventType: project.eventType,
-      vesselId: String(project.primaryVesselId || ''),
-      responsibleName: project.responsibleName,
-      clientName: project.clientName,
-      description: project.description,
-    });
+    const form = projectFormFromRecord(project);
+    const suffix = ' (copie)';
+    const title = form.outOfProject && form.title.length + suffix.length > PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH
+      ? form.title
+      : `${form.title}${suffix}`;
+    setProjectForm({ ...form, title, status: 'Non validé' });
     setSelectedProject(null);
     setProjectContextMenu(null);
     setIsProjectQuick(false);
@@ -2104,17 +2113,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
       setIsProjectOpen(false);
       return;
     }
-    setProjectForm({
-      title: project.title,
-      startsOn: project.startsOn,
-      endsOn: project.endsOn,
-      status: project.status,
-      eventType: project.eventType,
-      vesselId: String(project.primaryVesselId || ''),
-      responsibleName: project.responsibleName,
-      clientName: project.clientName,
-      description: project.description,
-    });
+    setProjectForm(projectFormFromRecord(project));
     setIsProjectQuick(false);
     setIsProjectOpen(true);
   }
@@ -2170,9 +2169,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         const projects = await fetchPlanningProjects(effectiveClient);
         updateOverview((current) => ({ ...current, projects }));
       } else {
+        const { title, outOfProject } = projectFormFromRecord(project);
         const saved = await updatePlanningProject(effectiveClient, {
           id: project.id,
-          title: optimistic.title,
+          title,
+          outOfProject,
           startsOn: optimistic.startsOn,
           endsOn: optimistic.endsOn,
           status: optimistic.status,
@@ -2222,9 +2223,11 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
         const projects = await fetchPlanningProjects(effectiveClient);
         updateOverview((current) => ({ ...current, projects }));
       } else {
+        const { title, outOfProject } = projectFormFromRecord(project);
         const saved = await updatePlanningProject(effectiveClient, {
           id: project.id,
-          title: optimistic.title,
+          title,
+          outOfProject,
           startsOn,
           endsOn,
           status: optimistic.status,
@@ -2330,6 +2333,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
     if (!canEditPlanning) return setErrorMessage('Votre rôle dispose d’un accès en lecture seule.');
     const vessel = activeVessels.find((item) => String(item.id) === form.vesselId);
     if (!vessel) return setErrorMessage('Sélectionnez un navire actif.');
+    if (form.outOfProject && !form.title.trim()) return setErrorMessage('Le nom du projet est obligatoire.');
     if (selectedProject && selectedProject.primaryVesselId !== vessel.id && !window.confirm(`Déplacer ${selectedProject.title} vers ${vessel.name} ?`)) return;
     setIsSaving(true);
     try {
@@ -3097,7 +3101,7 @@ export function PlanningPage({ client, roles, assistantFeatureEnabled, predictio
           editable={canEditPlanning}
           onClose={() => setProjectCellContext(null)}
           onCreateProject={createProjectFromPlanning}
-          onQuickProjectCreated={(project) => {
+          onOperationCreated={(project) => {
             updateOverview((current) => ({ ...current, projects: [...current.projects, project] }));
             setSelectedTimelineId(`project-${project.id}`);
             setProjectCellContext(null);
@@ -3539,18 +3543,18 @@ function PlanningProjectDialog({ project, form, activeVessels, documents, docume
       variant="drawer"
     >
       <div className="planning-dialog is-shared-dialog is-detail">
-        <dl><div><dt>Type</dt><dd>{planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl>
+        <dl><div><dt>Type</dt><dd>{form.outOfProject ? 'Hors Projet' : planningFleetEventTypeLabel(project.eventType)}</dd></div><div><dt>Statut</dt><dd>{project.status}</dd></div><div><dt>Période</dt><dd>{formatPlanningDate(project.startsOn)} au {formatPlanningDate(project.endsOn)}</dd></div><div><dt>Navire</dt><dd>{project.primaryVesselName || 'Non renseigné'}</dd></div><div><dt>Responsable</dt><dd>{project.responsibleName || 'Non renseigné'}</dd></div><div><dt>Client</dt><dd>{project.clientName || 'Non renseigné'}</dd></div><div><dt>Description</dt><dd>{project.description || 'Aucune description'}</dd></div></dl>
         <PlanningOperationDocuments documents={documents} error={documentsError} />
       </div>
     </AppDialog>
   );
   return (
     <AppDialog
-      eyebrow={isQuick ? 'Formulaire rapide' : 'Formulaire complet'}
+      eyebrow={form.outOfProject ? 'Hors Projet' : isQuick ? 'Formulaire rapide' : 'Formulaire complet'}
       footer={(
         <div className="planning-dialog-footer-split">
           {project ? <span><button className="is-danger" disabled={isSaving || Boolean(project.cancelledAt)} onClick={onCancel} type="button">{project.cancelledAt ? 'Événement annulé' : 'Annuler l’événement'}</button><button className="is-secondary" disabled={isSaving} onClick={onDuplicate} type="button"><Copy aria-hidden="true" size={15} />Dupliquer</button></span> : isQuick ? <button className="is-secondary" onClick={onExpand} type="button">Formulaire complet</button> : <span />}
-          <span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving} type="submit">Enregistrer</button></span>
+          <span><button className="is-secondary" onClick={onClose} type="button">Fermer</button><button disabled={isSaving || (form.outOfProject && !form.title.trim())} type="submit">Enregistrer</button></span>
         </div>
       )}
       icon={<Ship aria-hidden="true" size={20} />}
@@ -3563,9 +3567,9 @@ function PlanningProjectDialog({ project, form, activeVessels, documents, docume
     >
       <div className="planning-dialog is-shared-dialog">
         <div className="planning-dialog-grid">
-          <label className="is-wide">Titre<input required value={form.title} onChange={(event) => onChange({ ...form, title: event.target.value })} /></label>
+          <label className="is-wide">{form.outOfProject ? 'Nom du projet' : 'Titre'}<input maxLength={form.outOfProject ? PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH : undefined} required value={form.title} onChange={(event) => onChange({ ...form, title: event.target.value })} /></label>
           <label>Navire<select required value={form.vesselId} onChange={(event) => onChange({ ...form, vesselId: event.target.value })}><option value="">Choisir</option>{activeVessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vesselOptionLabel(vessel)}</option>)}</select></label>
-          <label>Type<select value={form.eventType} onChange={(event) => onChange({ ...form, eventType: event.target.value as PlanningFleetEventType })}>{FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>)}</select></label>
+          {form.outOfProject ? <label>Code projet<input readOnly value={PLANNING_OUT_OF_PROJECT_CODE} /></label> : <label>Type<select value={form.eventType} onChange={(event) => onChange({ ...form, eventType: event.target.value as PlanningFleetEventType })}>{FLEET_EVENT_TYPES.map((type) => <option key={type} value={type}>{planningFleetEventTypeLabel(type)}</option>)}</select></label>}
           <label>Début<input required type="date" value={form.startsOn} onChange={(event) => onChange({ ...form, startsOn: event.target.value, endsOn: isQuick ? event.target.value : form.endsOn })} /></label>
           <label>Statut<select value={form.status} onChange={(event) => onChange({ ...form, status: event.target.value })}>{PROJECT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
           {!isQuick ? <><label>Fin<input required type="date" value={form.endsOn} onChange={(event) => onChange({ ...form, endsOn: event.target.value })} /></label><label className="is-wide">Client<input value={form.clientName} onChange={(event) => onChange({ ...form, clientName: event.target.value })} /></label><label className="is-wide">Description<textarea rows={4} value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} /></label></> : null}

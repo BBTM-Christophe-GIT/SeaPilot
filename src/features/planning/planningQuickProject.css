@@ -1,5 +1,5 @@
 .planning-project-picker .planning-project-picker-tools {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
 }
 
 .planning-project-picker > .planning-quick-project-form {

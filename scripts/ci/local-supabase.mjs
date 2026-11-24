@@ -105,6 +105,7 @@ const apiSessionTests = new Set([
 const assertionTests = [
   'assignment_vessel_read_window_test.sql',
   'planning_sedentary_leave_test.sql',
+  'planning_hors_projet_test.sql',
   'fleet_vessel_capacities_test.sql',
   'fleet_vessel_measurements_test.sql',
   'sea_operation_suroit_sludges_test.sql',

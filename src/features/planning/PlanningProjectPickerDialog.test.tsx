@@ -31,7 +31,7 @@ function renderPicker(overrides: Partial<React.ComponentProps<typeof PlanningPro
     editable: true,
     onClose: vi.fn(),
     onCreateProject: vi.fn(),
-    onQuickProjectCreated: vi.fn(),
+    onOperationCreated: vi.fn(),
     onSelectProject: vi.fn(),
     vessel,
     ...overrides,
@@ -79,6 +79,7 @@ describe('PlanningProjectPickerDialog', () => {
     expect(await screen.findByText('Mode lecture seule')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Créer un nouveau projet' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Projet rapide' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Hors Projet' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Continuer' })).toBeDisabled();
   });
 
@@ -93,10 +94,40 @@ describe('PlanningProjectPickerDialog', () => {
     await user.type(screen.getByLabelText('Titre du projet'), '  Essai rapide  ');
     rpc.mockResolvedValueOnce({ data: [{ id: 991, catalog_project_id: 801, title: 'P268 - Essai rapide', status: 'Brouillon', starts_on: '2026-07-18', ends_on: '2026-07-18', primary_vessel_id: 1, primary_vessel_name: 'GOURY', event_type: 'operation' }], error: null });
     await user.keyboard('{Enter}');
-    await waitFor(() => expect(props.onQuickProjectCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 991, catalogProjectId: 801, status: 'Brouillon' })));
+    await waitFor(() => expect(props.onOperationCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 991, catalogProjectId: 801, status: 'Brouillon' })));
     expect(rpc).toHaveBeenLastCalledWith('planning_create_quick_project', { target_title: 'Essai rapide', target_primary_vessel_id: 1, target_starts_on: '2026-07-18' });
     expect(props.onCreateProject).not.toHaveBeenCalled();
     expect(props.onSelectProject).not.toHaveBeenCalled();
+  });
+
+  it('creates a named HP operation for a planning editor without commercial rights', async () => {
+    const user = userEvent.setup();
+    const { client, rpc } = createClient();
+    const { props } = renderPicker({ canCreateProject: false, client: client as never });
+    await screen.findByRole('option', { name: /P267/ });
+    expect(screen.getByRole('button', { name: 'Projet rapide' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Hors Projet' }));
+
+    const name = screen.getByLabelText('Nom du projet');
+    const submit = screen.getByRole('button', { name: 'Créer l’opération' });
+    expect(name).toHaveFocus();
+    expect(screen.getByText('HP', { exact: true })).toBeInTheDocument();
+    await user.type(name, '   ');
+    expect(submit).toBeDisabled();
+    await user.type(name, 'Entretien du pont');
+    rpc.mockResolvedValueOnce({ data: [{
+      id: 992, catalog_project_id: null, title: 'HP - Entretien du pont',
+      status: 'Brouillon', source_label: 'seapilot-hors-projet', event_type: 'operation',
+      starts_on: '2026-07-18', ends_on: '2026-07-18', primary_vessel_id: 1,
+    }], error: null });
+
+    await user.click(submit);
+    expect(rpc).toHaveBeenLastCalledWith('planning_create_out_of_project', {
+      target_title: 'Entretien du pont', target_primary_vessel_id: 1, target_starts_on: '2026-07-18',
+    });
+    expect(props.onOperationCreated).toHaveBeenCalledWith(expect.objectContaining({
+      id: 992, title: 'HP - Entretien du pont', catalogProjectId: null,
+    }));
   });
 
   it('keeps the title on failure and prevents duplicate submissions while saving', async () => {
@@ -116,6 +147,6 @@ describe('PlanningProjectPickerDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Échec réseau');
     expect(screen.getByLabelText('Titre du projet')).toHaveValue('Mission');
     expect(screen.getByRole('button', { name: 'Créer le projet' })).toBeEnabled();
-    expect(props.onQuickProjectCreated).not.toHaveBeenCalled();
+    expect(props.onOperationCreated).not.toHaveBeenCalled();
   });
 });

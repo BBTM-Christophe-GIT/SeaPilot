@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { daysBetween, formatPlanningDate } from './planningDates';
 import {
   fetchPlanningProjectCatalog,
+  createOutOfProjectPlanningOperation,
   createQuickPlanningProject,
   type PlanningProjectCatalogRecord,
 } from './planningProjectCatalog';
+import { PLANNING_OUT_OF_PROJECT_CODE, PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH } from './planningOutOfProject';
 import type { PlanningProjectRecord, PlanningVessel } from './planningQueries';
 import './planningQuickProject.css';
 
@@ -17,7 +19,7 @@ interface PlanningProjectPickerDialogProps {
   editable: boolean;
   onClose: () => void;
   onCreateProject: () => void;
-  onQuickProjectCreated: (project: PlanningProjectRecord) => void;
+  onOperationCreated: (project: PlanningProjectRecord) => void;
   onSelectProject: (project: PlanningProjectCatalogRecord) => void;
   vessel: PlanningVessel;
 }
@@ -42,7 +44,7 @@ export function PlanningProjectPickerDialog({
   editable,
   onClose,
   onCreateProject,
-  onQuickProjectCreated,
+  onOperationCreated,
   onSelectProject,
   vessel,
 }: PlanningProjectPickerDialogProps) {
@@ -50,24 +52,34 @@ export function PlanningProjectPickerDialog({
   const [query, setQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [isQuickProject, setIsQuickProject] = useState(false);
+  const [creationMode, setCreationMode] = useState<'quick-project' | 'out-of-project' | null>(null);
   const [title, setTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const canCreate = canCreateProject && editable;
+  const isOutOfProject = creationMode === 'out-of-project';
+  const canSubmit = isOutOfProject ? editable : canCreate;
 
-  async function submitQuickProject(event: FormEvent<HTMLFormElement>) {
+  function changeCreationMode(mode: typeof creationMode) {
+    setTitle('');
+    setErrorMessage('');
+    setCreationMode(mode);
+  }
+
+  async function submitOperation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canCreate || savingRef.current || !title.trim()) return;
+    if (!creationMode || !canSubmit || savingRef.current || !title.trim()) return;
     savingRef.current = true;
     setIsSaving(true);
     setErrorMessage('');
     try {
-      const project = await createQuickPlanningProject(client, { title, vesselId: vessel.id, startsOn: date });
-      onQuickProjectCreated(project);
+      const createOperation = isOutOfProject ? createOutOfProjectPlanningOperation : createQuickPlanningProject;
+      const project = await createOperation(client, { title, vesselId: vessel.id, startsOn: date });
+      onOperationCreated(project);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Impossible de créer ce projet rapide.');
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de créer cette opération.');
     } finally {
       savingRef.current = false;
       setIsSaving(false);
@@ -81,7 +93,7 @@ export function PlanningProjectPickerDialog({
         if (active) setProjects(loadedProjects);
       })
       .catch((error) => {
-        if (active) setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les projets.');
+        if (active) setCatalogError(error instanceof Error ? error.message : 'Impossible de charger les projets.');
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -104,10 +116,11 @@ export function PlanningProjectPickerDialog({
   }, [projects, query]);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) || null;
+  const visibleError = creationMode ? errorMessage : catalogError;
 
   return (
     <div className="planning-project-picker-backdrop" role="presentation">
-      <section aria-label="Rattacher l’opération à un projet" aria-modal="true" className="planning-project-picker" role="dialog">
+      <section aria-label={isOutOfProject ? 'Nouvelle opération hors projet' : 'Rattacher l’opération à un projet'} aria-modal="true" className="planning-project-picker" role="dialog">
         <header>
           <span>
             <strong>Nouvelle opération</strong>
@@ -124,13 +137,17 @@ export function PlanningProjectPickerDialog({
           </div>
         </header>
 
-        {isQuickProject ? (
-          <form className="planning-quick-project-form" id="planning-quick-project" onSubmit={(event) => void submitQuickProject(event)}>
-            <h2>Projet rapide</h2>
-            <p>Indiquez le titre : le projet recevra automatiquement un numéro Pxxx et sera enregistré en brouillon.</p>
-            <label htmlFor="planning-quick-project-title">Titre du projet</label>
-            <input autoFocus disabled={isSaving} id="planning-quick-project-title" maxLength={300} onChange={(event) => setTitle(event.target.value)} required value={title} />
-            <small>Il apparaîtra sur {vessel.name} le {formatPlanningDate(date)}, pour une journée, et dans la liste des projets. Vous pourrez le compléter ensuite.</small>
+        {creationMode ? (
+          <form className="planning-quick-project-form" id="planning-operation-creation" onSubmit={(event) => void submitOperation(event)}>
+            <h2>{isOutOfProject ? 'Hors Projet' : 'Projet rapide'}</h2>
+            <p>{isOutOfProject
+              ? <>Code projet <strong>{PLANNING_OUT_OF_PROJECT_CODE}</strong> · Gris anthracite</>
+              : 'Indiquez le titre : le projet recevra automatiquement un numéro Pxxx et sera enregistré en brouillon.'}</p>
+            <label htmlFor="planning-operation-creation-title">{isOutOfProject ? 'Nom du projet' : 'Titre du projet'}</label>
+            <input autoFocus disabled={isSaving} id="planning-operation-creation-title" maxLength={isOutOfProject ? PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH : 300} onChange={(event) => setTitle(event.target.value)} required value={title} />
+            <small>{isOutOfProject
+              ? <>L’opération sera ajoutée à {vessel.name} le {formatPlanningDate(date)}, pour une journée.</>
+              : <>Il apparaîtra sur {vessel.name} le {formatPlanningDate(date)}, pour une journée, et dans la liste des projets. Vous pourrez le compléter ensuite.</>}</small>
           </form>
         ) : <main className="planning-project-picker-catalog">
           <div className="planning-project-picker-tools">
@@ -155,9 +172,13 @@ export function PlanningProjectPickerDialog({
               <Plus aria-hidden="true" size={18} />
               Créer un nouveau projet
             </button>
-            <button className="is-create" disabled={!canCreate} onClick={() => { setErrorMessage(''); setIsQuickProject(true); }} type="button">
+            <button className="is-create" disabled={!canCreate} onClick={() => changeCreationMode('quick-project')} type="button">
               <Plus aria-hidden="true" size={18} />
               Projet rapide
+            </button>
+            <button className="is-create" disabled={!editable} onClick={() => changeCreationMode('out-of-project')} type="button">
+              <Plus aria-hidden="true" size={18} />
+              Hors Projet
             </button>
           </div>
 
@@ -200,12 +221,12 @@ export function PlanningProjectPickerDialog({
           ) : null}
         </main>}
 
-        {errorMessage ? <p className="planning-project-picker-error" role="alert">{errorMessage}</p> : null}
+        {visibleError ? <p className="planning-project-picker-error" role="alert">{visibleError}</p> : null}
         <footer>
-          <p><Info aria-hidden="true" size={17} />{isQuickProject ? 'Après la création, vous restez sur le planning.' : 'Chaque opération reste reliée au Projet/Contrat sélectionné.'}</p>
+          <p><Info aria-hidden="true" size={17} />{creationMode ? 'Après la création, vous restez sur le planning.' : 'Sélectionnez un Projet/Contrat ou créez une opération hors projet.'}</p>
           <span>
-            <button className="is-secondary" disabled={isSaving} onClick={isQuickProject ? () => { setIsQuickProject(false); setErrorMessage(''); } : onClose} type="button">{isQuickProject ? 'Retour' : 'Annuler'}</button>
-            {isQuickProject ? <button disabled={!canCreate || isSaving || !title.trim()} form="planning-quick-project" type="submit">{isSaving ? 'Création…' : 'Créer le projet'}</button> : <button
+            <button className="is-secondary" disabled={isSaving} onClick={creationMode ? () => changeCreationMode(null) : onClose} type="button">{creationMode ? 'Retour' : 'Annuler'}</button>
+            {creationMode ? <button disabled={!canSubmit || isSaving || !title.trim()} form="planning-operation-creation" type="submit">{isSaving ? 'Création…' : isOutOfProject ? 'Créer l’opération' : 'Créer le projet'}</button> : <button
               disabled={!editable || selectedProject === null}
               onClick={() => selectedProject && onSelectProject(selectedProject)}
               type="button"
