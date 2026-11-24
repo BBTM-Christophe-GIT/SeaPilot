@@ -23,6 +23,19 @@ La migration :
 
 La photo GOURY et ses caractéristiques techniques initiales proviennent de la brochure BBTM 2024 fournie pour la recette.
 
+## Vue d’ensemble du navire
+
+La fiche regroupe les champs par catégorie. Les métadonnées d’import SharePoint
+sont conservées dans la base pour le suivi de la source.
+
+Appliquer `20261124074903_fleet_vessel_net_tonnage_summer_freeboard.sql` avant
+de déployer le client en production. La migration ajoute deux champs
+facultatifs à `public.vessels` pour la jauge nette et la hauteur du franc-bord
+d’été en millimètres. Les administrateurs peuvent les renseigner dans
+**Navires → Modifier**. Ils apparaissent dans **Dimensions et tonnage**.
+Les valeurs historiques de déplacement lège restent disponibles pour la
+brochure et l’export de flotte.
+
 ## Vérification
 
 1. Vérifier 14 lignes source : 12 navires, 1 bureau et 1 quai.

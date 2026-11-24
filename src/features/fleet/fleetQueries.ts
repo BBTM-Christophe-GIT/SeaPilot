@@ -16,7 +16,7 @@ const FLEET_VESSEL_SELECT = [
   'photo_storage_bucket', 'photo_storage_path', 'illustration_storage_bucket',
   'illustration_storage_path', 'illustration_thumbnail_url', 'brochure_subtitle', 'brochure_summary',
   'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
-  'beam_overall_m', 'draft_m', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
+  'beam_overall_m', 'draft_m', 'summer_freeboard_mm', 'net_tonnage', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'fuel_tank_names', 'daily_fuel_tank_capacity_liters', 'daily_fuel_tank_name',
   'capacity_sections', 'hidden_fuel_tank_keys',
@@ -66,6 +66,8 @@ interface FleetVesselRow {
   navigation_category: string | null;
   beam_overall_m: number | string | null;
   draft_m?: number | string | null;
+  summer_freeboard_mm?: number | string | null;
+  net_tonnage?: number | string | null;
   weather_matrix?: unknown;
   lightship_tonnes: number | string | null;
   deadweight_tonnes: number | string | null;
@@ -133,6 +135,8 @@ export interface FleetVessel extends FleetFuelCapacity {
   navigationCategory: string;
   beamOverallM: number | null;
   draftMeters?: number | null;
+  summerFreeboardMm?: number | null;
+  netTonnage?: number | null;
   weatherMatrix?: VesselWeatherMatrix | null;
   lightshipTonnes: number | null;
   deadweightTonnes: number | null;
@@ -177,8 +181,10 @@ export interface SaveFleetVesselInput extends Partial<FleetFuelCapacity> {
   navigationCategory: string;
   beamOverallM: number | null;
   draftMeters?: number | null;
+  summerFreeboardMm?: number | null;
+  netTonnage?: number | null;
   weatherMatrix?: VesselWeatherMatrix | null;
-  lightshipTonnes: number | null;
+  lightshipTonnes?: number | null;
   deadweightTonnes: number | null;
   safeManning: number | null;
   mainEngine: string;
@@ -234,7 +240,9 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     brochureSubtitle: row.brochure_subtitle || '', brochureSummary: row.brochure_summary || '',
     brochureOperations: row.brochure_operations || [], builtYear: numberOrNull(row.built_year),
     classificationLabel: row.classification_label || '', navigationCategory: row.navigation_category || '',
-    beamOverallM: numberOrNull(row.beam_overall_m), draftMeters: numberOrNull(row.draft_m), lightshipTonnes: numberOrNull(row.lightship_tonnes),
+    beamOverallM: numberOrNull(row.beam_overall_m), draftMeters: numberOrNull(row.draft_m),
+    summerFreeboardMm: numberOrNull(row.summer_freeboard_mm), netTonnage: numberOrNull(row.net_tonnage),
+    lightshipTonnes: numberOrNull(row.lightship_tonnes),
     ...(row.weather_matrix === undefined ? {} : { weatherMatrix }),
     deadweightTonnes: numberOrNull(row.deadweight_tonnes), safeManning: numberOrNull(row.safe_manning),
     mainEngine: row.main_engine || '', mainEnginePowerKw: numberOrNull(row.main_engine_power_kw),
@@ -266,6 +274,12 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
   if (name.length < 2) throw new Error('Le nom doit contenir au moins deux caractères.');
   if (input.draftMeters != null && (!Number.isFinite(input.draftMeters) || input.draftMeters <= 0 || input.draftMeters > MAX_FLEET_DRAFT_METERS)) {
     throw new Error(`Le tirant d’eau doit être supérieur à 0 et inférieur ou égal à ${MAX_FLEET_DRAFT_METERS} m.`);
+  }
+  if (input.netTonnage != null && (!Number.isFinite(input.netTonnage) || input.netTonnage < 0)) {
+    throw new Error('La jauge nette doit être un nombre positif ou nul.');
+  }
+  if (input.summerFreeboardMm != null && (!Number.isFinite(input.summerFreeboardMm) || input.summerFreeboardMm < 0)) {
+    throw new Error('La hauteur du franc-bord d’été doit être un nombre positif ou nul, en millimètres.');
   }
   if (input.weatherMatrix != null && !isVesselWeatherMatrix(input.weatherMatrix)) throw new Error('La matrice Hs × période du navire est invalide.');
   if (input.fuelTankCapacitiesLiters != null && !isFleetFuelTankList(input.fuelTankCapacitiesLiters)) {
@@ -304,8 +318,11 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     built_year: input.builtYear, classification_label: optional(input.classificationLabel),
     navigation_category: optional(input.navigationCategory), beam_overall_m: input.beamOverallM,
     ...(input.draftMeters === undefined ? {} : { draft_m: input.draftMeters }),
+    ...(input.summerFreeboardMm === undefined ? {} : { summer_freeboard_mm: input.summerFreeboardMm }),
+    ...(input.netTonnage === undefined ? {} : { net_tonnage: input.netTonnage }),
     ...(input.weatherMatrix === undefined ? {} : { weather_matrix: input.weatherMatrix === null ? null : parseVesselWeatherMatrix(input.weatherMatrix) }),
-    lightship_tonnes: input.lightshipTonnes, deadweight_tonnes: input.deadweightTonnes, safe_manning: input.safeManning,
+    ...(input.lightshipTonnes === undefined ? {} : { lightship_tonnes: input.lightshipTonnes }),
+    deadweight_tonnes: input.deadweightTonnes, safe_manning: input.safeManning,
     main_engine: optional(input.mainEngine), main_engine_power_kw: input.mainEnginePowerKw,
     bow_thruster_power_kw: input.bowThrusterPowerKw, gensets: optional(input.gensets), max_speed_knots: input.maxSpeedKnots,
     bollard_pull_tonnes: input.bollardPullTonnes,

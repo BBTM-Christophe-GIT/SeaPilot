@@ -8,7 +8,7 @@ const EMPTY_INPUT: SaveFleetVesselInput = {
   imoNumber: '', registrationPort: '', callSign: '', mmsi: '', grossTonnage: '', maxPeople: null,
   crewMembers: '', medicalDotation: '', lengthOverall: '', flagState: '', brochureSubtitle: '',
   brochureSummary: '', brochureOperations: '', builtYear: null, classificationLabel: '', navigationCategory: '',
-  beamOverallM: null, lightshipTonnes: null, deadweightTonnes: null, safeManning: null, mainEngine: '',
+  beamOverallM: null, deadweightTonnes: null, safeManning: null, mainEngine: '',
   mainEnginePowerKw: null, bowThrusterPowerKw: null, gensets: '', maxSpeedKnots: null,
   bollardPullTonnes: null, fuelCapacityM3: null, rangeDescription: '', deckEquipment: '',
   electronicsCommunications: '', accommodation: '', liabilityInsurer: '',
@@ -175,6 +175,51 @@ describe('fleetQueries', () => {
     expect(update.mock.lastCall?.[0]).not.toHaveProperty('draft_m');
     await saveFleetVessel(client, { ...EMPTY_INPUT, id: 1, name: 'Navire test', draftMeters: 50 });
     expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ draft_m: 50 }));
+  });
+
+  it('reads the net tonnage and summer freeboard independently from lightship displacement', async () => {
+    const order = vi.fn().mockResolvedValue({ data: [
+      { id: 1, company_id: 1, name: 'Navire neuf', active: true, net_tonnage: '93', summer_freeboard_mm: '745.5', lightship_tonnes: '400' },
+      { id: 2, company_id: 1, name: 'Navire historique', active: true, lightship_tonnes: '285' },
+    ], error: null });
+    const select = vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ order }) });
+    const client = { from: vi.fn().mockReturnValue({ select }) } as unknown as SupabaseClient;
+
+    await expect(fetchFleetVessels(client)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 1, netTonnage: 93, summerFreeboardMm: 745.5, lightshipTonnes: 400 }),
+      expect.objectContaining({ id: 2, netTonnage: null, summerFreeboardMm: null, lightshipTonnes: 285 }),
+    ]));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('net_tonnage'));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('summer_freeboard_mm'));
+  });
+
+  it('writes and clears the new measurements without overwriting lightship displacement', async () => {
+    const single = vi.fn().mockResolvedValue({ data: { id: 1, company_id: 1, name: 'Navire test', active: true,
+      net_tonnage: 93, summer_freeboard_mm: 745.5, lightship_tonnes: 400 }, error: null });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) }) });
+    const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, id: 1, name: 'Navire test' };
+
+    await expect(saveFleetVessel(client, { ...input, netTonnage: 93, summerFreeboardMm: 745.5 }))
+      .resolves.toMatchObject({ netTonnage: 93, summerFreeboardMm: 745.5, lightshipTonnes: 400 });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ net_tonnage: 93, summer_freeboard_mm: 745.5 }));
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('lightship_tonnes');
+
+    await saveFleetVessel(client, { ...input, netTonnage: null, summerFreeboardMm: null });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ net_tonnage: null, summer_freeboard_mm: null }));
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('lightship_tonnes');
+
+    await saveFleetVessel(client, input);
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('net_tonnage');
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('summer_freeboard_mm');
+  });
+
+  it.each([-1, Infinity, NaN])('rejects invalid tonnage and freeboard %s before any write', async (value) => {
+    const client = { from: vi.fn() } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, name: 'Navire test' };
+    await expect(saveFleetVessel(client, { ...input, netTonnage: value })).rejects.toThrow('La jauge nette');
+    await expect(saveFleetVessel(client, { ...input, summerFreeboardMm: value })).rejects.toThrow('La hauteur du franc-bord');
+    expect(client.from).not.toHaveBeenCalled();
   });
 
   it('keeps existing photographs and additional illustrations independently reusable', async () => {

@@ -90,6 +90,14 @@ for (const profile of profiles) {
   test.describe(profile.label, () => {
     test('flotte : exporter les navires du référentiel de sa société', async ({ page }) => {
       await signIn(page, profile, '/modules/fleet');
+      await page.getByRole('button', { name: /^CI VESSEL ASSIGNED\b/ }).click();
+      const detail = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'CI VESSEL ASSIGNED', exact: true }) });
+      await expect(detail.getByRole('tab', { name: 'Vue d’ensemble', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(detail.getByRole('heading', { name: 'Identification maritime', exact: true })).toBeVisible();
+      await expect(detail.getByRole('heading', { name: 'Capacités', exact: true })).toBeVisible();
+      await expect(detail.getByRole('heading', { name: 'Source BBTM - Flotte', exact: true })).toHaveCount(0);
+      await expect(detail.getByRole('button', { name: 'Modifier', exact: true })).toHaveCount(0);
+
       const menu = page.getByRole('navigation', { name: 'Menu des navires', exact: true });
       await menu.getByRole('button', { name: 'Flotte', exact: true }).click();
 
