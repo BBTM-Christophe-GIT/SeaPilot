@@ -55,6 +55,7 @@ function ProjectsRoute({ previewMode }: { previewMode: boolean }) {
     <ProjectsPage
       client={previewMode && isQuoteRoute ? previewQuoteSupabaseClient : undefined}
       onCloseQuote={isQuoteRoute ? () => navigate('/modules/projects', { replace: true }) : undefined}
+      onOpenQuote={isQuoteRoute ? undefined : () => navigate('/modules/projects/devis')}
     />
   );
 }

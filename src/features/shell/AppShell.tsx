@@ -51,7 +51,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useMatch } from 'react-router-dom';
 import { ReleaseNotes } from '../releaseNotes/ReleaseNotes';
 import { LIFTING_SECTIONS } from '../lifting/liftingSections';
 import './liftingNavigationLinks.css';
@@ -477,12 +477,13 @@ export function AppShell({ rolesOverride, client = supabase, previewMode = false
   const activeVisibleModules = visibleModules;
   const canOpenRegulatoryLibrary = activeVisibleModules.some((module) => module.key === 'regulatoryLibrary');
   const canCreateQuotes = roles.some((role) => role === 'admin' || role === 'direction');
-  const isQuoteRoute = location.pathname.replace(/\/+$/, '').toLowerCase() === '/modules/projects/devis';
-  const isRequestedModuleDenied = requestedModule
-    ? !activeVisibleModules.some((module) => module.key === requestedModule.key)
-      || (isQuoteRoute && !canCreateQuotes)
+  const isQuoteRoute = useMatch('/modules/projects/devis') !== null;
+  const isRequestedModuleDenied = isQuoteRoute
+    ? !canCreateQuotes || !activeVisibleModules.some((module) => module.key === 'projects')
+    : Boolean(requestedModule && (
+      !activeVisibleModules.some((module) => module.key === requestedModule.key)
       || (requestedModule.family === 'Bibliothèque Réglementaire' && !canOpenRegulatoryLibrary)
-    : false;
+    ));
   const groupedModules = useMemo(
     () =>
       NAVIGATION_FAMILIES.map((family) => ({

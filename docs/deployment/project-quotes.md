@@ -1,7 +1,8 @@
 # Devis et offres commerciales
 
-Dans **Opérations → Devis**, les profils Administration et Direction disposant
-de l’accès à Projets peuvent créer une offre. Le devis rejoint le portefeuille
+Les profils Administration et Direction disposant de l’accès à Projets peuvent
+ouvrir le formulaire depuis **Opérations → Devis** ou le bouton **Devis** du ruban
+**Projets**. Le devis rejoint le portefeuille
 Projets au statut **Non validé**. Le code est attribué à l’enregistrement.
 L’identité de l’armateur reprend la valeur par défaut de Nouveau projet.
 
@@ -14,8 +15,9 @@ L’identité de l’armateur reprend la valeur par défaut de Nouveau projet.
    **Conditions détaillées**, le PDF affiche le total HT si le loyer journalier
    et la durée sont renseignés. Ce total additionne les frais de mobilisation
    et de démobilisation et le loyer multiplié par le nombre de jours.
-4. Dans **Émission du document**, choisir le récapitulatif du parcours, la carte
-   et les brochures à joindre, puis cliquer sur **Exporter l’offre commerciale**.
+4. Dans **Émission du document**, sélectionner la carte et les brochures à
+   joindre et, au besoin, un récapitulatif du parcours. **Sans récapitulatif**
+   est le choix par défaut. Cliquer sur **Exporter l’offre commerciale**.
    L’export enregistre le devis et verse l’offre PDF dans le dossier Projet.
    Les brochures choisies sont intégrées à l’offre et téléchargeables chacune
    en PDF.

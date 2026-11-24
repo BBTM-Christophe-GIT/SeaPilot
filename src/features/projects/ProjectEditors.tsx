@@ -92,7 +92,7 @@ import {
   BAREBOAT_DELIVERY_TRUCK_LABEL,
   deriveBareboatCertificateFields,
 } from './projectBareboatContract';
-import { cloneProjectLocationPlan, emptyProjectLocationPlan } from './projectLocation';
+import { cloneProjectLocationPlan, emptyProjectLocationPlan, type ProjectLocationPlan } from './projectLocation';
 import { ProjectLocationEditor } from './ProjectLocationEditor';
 import { projectLocationRouteEtas } from './projectLocationRouteEtas';
 import { ProjectQuoteEmission } from './ProjectQuoteEmission';
@@ -668,6 +668,18 @@ export function ProjectEditor({
 
   function update<K extends keyof ProjectWriteInput>(key: K, value: ProjectWriteInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateQuoteLocationOptions(options: Pick<Partial<ProjectLocationPlan>, 'includeInPdf' | 'includeVoyageEstimateInPdf'>) {
+    setForm((current) => {
+      const locationPlan = {
+        ...(current.locationPlan ?? { ...emptyProjectLocationPlan(), includeVoyageEstimateInPdf: false }),
+        etd: current.charterStartsAt,
+        ...options,
+      };
+      if (locationPlan.includeVoyageEstimateInPdf === undefined) delete locationPlan.includeVoyageEstimateInPdf;
+      return { ...current, locationPlan };
+    });
   }
 
   function updateTowedAsset<K extends keyof ProjectTowedAssetWriteInput>(
@@ -1561,6 +1573,40 @@ export function ProjectEditor({
                   </span>
                 </Field>
               ) : null}
+              {isQuote ? (
+                <>
+                  <Field label="Début d’affrètement">
+                    <input
+                      onChange={(event) => {
+                        const charterStartsAt = event.target.value;
+                        setForm((current) => ({
+                          ...current,
+                          charterStartsAt,
+                          locationPlan: current.locationPlan
+                            ? projectLocationRouteEtas({ ...current.locationPlan, etd: charterStartsAt }, selectedVessel?.maxSpeedKnots)
+                            : current.locationPlan,
+                        }));
+                      }}
+                      type="datetime-local"
+                      value={form.charterStartsAt}
+                    />
+                  </Field>
+                  <Field label="Durée de l’affrètement en jours">
+                    <input
+                      min="1"
+                      name={COMMERCIAL_QUOTE_DURATION_DAYS_KEY}
+                      onChange={(event) => update('supplytimeData', {
+                        ...form.supplytimeData,
+                        [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: event.target.value,
+                      })}
+                      ref={charterDurationInput}
+                      step="1"
+                      type="number"
+                      value={form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY] ?? ''}
+                    />
+                  </Field>
+                </>
+              ) : null}
               {isCommercialOffer && commercialConditionsMode === 'structured' ? (
                 <RichField label="Description de la prestation incluse dans le loyer d’affrètement">
                   <div className="project-service-rich-field">
@@ -1627,47 +1673,15 @@ export function ProjectEditor({
                 <Field label="Loyer en prolongation"><input min="0" onChange={(event) => update('extensionHire', optionalNumber(event.target.value))} step="0.01" type="number" value={form.extensionHire ?? ''} /></Field>
               ) : null}
               {isQuote ? (
-                <>
-                  <Field label="Fuel" wide>
-                    <select
-                      onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
-                      value={form.supplytimeData.box19_special_fuel}
-                    >
-                      <option value={QUOTE_FUEL_EXCLUDED}>{QUOTE_FUEL_EXCLUDED}</option>
-                      <option value={QUOTE_FUEL_INCLUDED}>{QUOTE_FUEL_INCLUDED}</option>
-                    </select>
-                  </Field>
-                  <Field label="Début d’affrètement">
-                    <input
-                      onChange={(event) => {
-                        const charterStartsAt = event.target.value;
-                        setForm((current) => ({
-                          ...current,
-                          charterStartsAt,
-                          locationPlan: current.locationPlan
-                            ? projectLocationRouteEtas({ ...current.locationPlan, etd: charterStartsAt }, selectedVessel?.maxSpeedKnots)
-                            : current.locationPlan,
-                        }));
-                      }}
-                      type="datetime-local"
-                      value={form.charterStartsAt}
-                    />
-                  </Field>
-                  <Field label="Durée de l’affrètement en jours">
-                    <input
-                      min="1"
-                      name={COMMERCIAL_QUOTE_DURATION_DAYS_KEY}
-                      onChange={(event) => update('supplytimeData', {
-                        ...form.supplytimeData,
-                        [COMMERCIAL_QUOTE_DURATION_DAYS_KEY]: event.target.value,
-                      })}
-                      ref={charterDurationInput}
-                      step="1"
-                      type="number"
-                      value={form.supplytimeData[COMMERCIAL_QUOTE_DURATION_DAYS_KEY] ?? ''}
-                    />
-                  </Field>
-                </>
+                <Field label="Fuel" wide>
+                  <select
+                    onChange={(event) => update('supplytimeData', { ...form.supplytimeData, box19_special_fuel: event.target.value })}
+                    value={form.supplytimeData.box19_special_fuel}
+                  >
+                    <option value={QUOTE_FUEL_EXCLUDED}>{QUOTE_FUEL_EXCLUDED}</option>
+                    <option value={QUOTE_FUEL_INCLUDED}>{QUOTE_FUEL_INCLUDED}</option>
+                  </select>
+                </Field>
               ) : !isCharter ? (
               <Field label="Fuel" wide>
                 <input
@@ -1768,7 +1782,12 @@ export function ProjectEditor({
                 fixedEtd={isQuote ? form.charterStartsAt : undefined}
                 fuelReference={fuelReference}
                 key={form.projectId || 'new'}
-                onChange={(value) => update('locationPlan', value)}
+                onChange={(value) => setForm((current) => ({
+                  ...current,
+                  locationPlan: isQuote && !current.locationPlan
+                    ? { ...value, includeVoyageEstimateInPdf: false }
+                    : value,
+                }))}
                 projectId={form.projectId ? String(form.projectId) : undefined}
                 towing={isTowage}
                 value={form.locationPlan}
@@ -1789,16 +1808,8 @@ export function ProjectEditor({
                 fuelReference={fuelReference}
                 isSaving={isSaving}
                 onExportingChange={handleQuoteExportingChange}
-                onIncludeLocationChange={(includeInPdf) => setForm((current) => ({
-                  ...current,
-                  locationPlan: { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt, includeInPdf },
-                }))}
-                onVoyageRecapChange={(includeVoyageEstimateInPdf) => setForm((current) => {
-                  const locationPlan = { ...(current.locationPlan ?? emptyProjectLocationPlan()), etd: current.charterStartsAt };
-                  if (includeVoyageEstimateInPdf === undefined) delete locationPlan.includeVoyageEstimateInPdf;
-                  else locationPlan.includeVoyageEstimateInPdf = includeVoyageEstimateInPdf;
-                  return { ...current, locationPlan };
-                })}
+                onIncludeLocationChange={(includeInPdf) => updateQuoteLocationOptions({ includeInPdf })}
+                onVoyageRecapChange={(includeVoyageEstimateInPdf) => updateQuoteLocationOptions({ includeVoyageEstimateInPdf })}
                 prepareExport={() => saveProjectForm(true)}
                 projectClient={selectedClientContact}
                 vessel={selectedVessel}

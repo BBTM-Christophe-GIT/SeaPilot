@@ -20,7 +20,7 @@ function SessionProbe() {
   return <div data-testid="session-user">{session?.user.id || 'signed-out'}</div>;
 }
 
-function renderQuoteRoute(role: RoleKey, projectsVisible: boolean) {
+function renderQuoteRoute(role: RoleKey, projectsVisible: boolean, path = '/modules/projects/devis') {
   const user = { id: `${role}-quote-fixture`, email: `${role}.quote@example.test` };
   const permissionsForRole = vi.fn().mockResolvedValue({
     data: APP_MODULES.map((module) => ({
@@ -43,7 +43,7 @@ function renderQuoteRoute(role: RoleKey, projectsVisible: boolean) {
       throw new Error(`Unexpected table: ${table}`);
     }),
   };
-  render(<AuthProvider client={client as never}><MemoryRouter initialEntries={['/modules/projects/devis']}><Routes>
+  render(<AuthProvider client={client as never}><MemoryRouter initialEntries={[path]}><Routes>
     <Route element={<RequireAuth />}><Route element={<AppShell client={client as never} />}>
       <Route path="modules/projects/devis" element={<RoleProbe />} />
     </Route></Route>
@@ -74,6 +74,12 @@ describe('AppShell', () => {
     expect(await screen.findByText('Acces refuse pour ce module.')).toBeInTheDocument();
     expect(screen.queryByTestId('effective-roles')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Devis' })).not.toBeInTheDocument();
+  });
+
+  it('denies an encoded Devis URL to Armement even when Projets is visible', async () => {
+    renderQuoteRoute('armement', true, '/modules/projects/%64evis');
+    expect(await screen.findByText('Acces refuse pour ce module.')).toBeInTheDocument();
+    expect(screen.queryByTestId('effective-roles')).not.toBeInTheDocument();
   });
 
   it('renders the private application navigation', async () => {

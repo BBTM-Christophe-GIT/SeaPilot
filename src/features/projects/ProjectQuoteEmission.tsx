@@ -44,6 +44,7 @@ export function ProjectQuoteEmission({
   const [exportedPdfs, setExportedPdfs] = useState<GeneratedProjectDocument[]>([]);
   const vessels = brochureVessels.filter((item) => fleetAssetKind(item) === 'vessel').sort(compareFleetAssets);
   const disabled = isSaving || isExporting;
+  const voyageRecap = form.locationPlan ? form.locationPlan.includeVoyageEstimateInPdf : false;
 
   async function download(document: GeneratedProjectDocument) {
     const { downloadGeneratedProjectDocument } = await import('./projectDocumentGeneration');
@@ -108,11 +109,10 @@ export function ProjectQuoteEmission({
         Joindre la localisation au PDF
       </label>
       <div aria-label="Récapitulatif du parcours dans le PDF" className="project-quote-voyage-options is-wide" role="radiogroup">
-        <strong>Récapitulatif du parcours dans le PDF</strong>
         {voyageRecapOptions.map(({ label, value }) => (
           <label className="project-editor-check is-wide" key={label}>
             <input
-              checked={form.locationPlan?.includeVoyageEstimateInPdf === value}
+              checked={voyageRecap === value}
               disabled={disabled}
               name="quote-location-pdf-recap"
               onChange={() => onVoyageRecapChange(value)}
