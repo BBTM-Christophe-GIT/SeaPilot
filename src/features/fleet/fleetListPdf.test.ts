@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import JSZip from 'jszip';
 import { PDFDocument } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_FLEET_LIST_COLUMNS, FLEET_LIST_COLUMNS } from './fleetList';
+import { FLEET_LIST_COLUMNS } from './fleetList';
 import { buildFleetListPdf, downloadFleetListPdfs } from './fleetListPdf';
 import type { FleetVessel } from './fleetQueries';
 
@@ -58,9 +58,10 @@ describe('fleet list PDF', () => {
       { ...vessel, id: 50, assetKind: 'office' as const, name: 'BUREAU BBTM' },
       { ...vessel, id: 51, active: false, name: 'NAVIRE ARCHIVE' },
     ];
+    const columns = ['typeLabel', 'flagState', 'registrationNumber', 'lengthOverall', 'maxSpeedKnots', 'maxPeople'] as const;
     const [french, english] = await Promise.all([
-      buildFleetListPdf(selection, DEFAULT_FLEET_LIST_COLUMNS, 'fr'),
-      buildFleetListPdf(selection, DEFAULT_FLEET_LIST_COLUMNS, 'en'),
+      buildFleetListPdf(selection, columns, 'fr'),
+      buildFleetListPdf(selection, columns, 'en'),
     ]);
     for (const [blob, title] of [[french, 'Flotte BBTM'], [english, 'BBTM Fleet']] as const) {
       const data = await blob.arrayBuffer();

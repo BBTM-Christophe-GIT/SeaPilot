@@ -23,6 +23,19 @@ La migration :
 
 La photo GOURY et ses caractéristiques techniques initiales proviennent de la brochure BBTM 2024 fournie pour la recette.
 
+## Vue d’ensemble du navire
+
+La fiche regroupe les champs par catégorie. Les métadonnées d’import SharePoint
+sont conservées dans la base pour le suivi de la source.
+
+Appliquer `20261124074903_fleet_vessel_net_tonnage_summer_freeboard.sql` avant
+de déployer le client en production. La migration ajoute deux champs
+facultatifs à `public.vessels` pour la jauge nette et la hauteur du franc-bord
+d’été en millimètres. Les administrateurs peuvent les renseigner dans
+**Navires → Modifier**. Ils apparaissent dans **Dimensions et tonnage**.
+Les valeurs historiques de déplacement lège restent disponibles pour la
+brochure et l’export de flotte.
+
 ## Vérification
 
 1. Vérifier 14 lignes source : 12 navires, 1 bureau et 1 quai.
@@ -39,13 +52,14 @@ Le retour arrière applicatif consiste à redéployer le client précédent. Con
 ## Export du tableau de flotte
 
 Dans **Opérations → Navires**, ouvrir **Flotte** dans la barre d’actions.
-Tous les navires actifs accessibles au compte sont présélectionnés, indépendamment
-de la recherche et de la catégorie affichée. Choisir les navires et les
-caractéristiques à exporter. Le nom du navire figure toujours en première colonne.
+La fenêtre s’ouvre avec toutes les cases décochées. Elle liste les navires actifs
+accessibles au compte, indépendamment de la recherche et de la catégorie
+affichée. Choisir au moins un navire et une langue. Les caractéristiques sont
+facultatives. Le nom du navire figure toujours en première colonne.
 
-Le français est sélectionné à l’ouverture. Choisir le français, l’anglais ou
-les deux. Une seule langue télécharge directement le PDF. L’export dans les deux
-langues télécharge un ZIP contenant les deux PDF.
+Choisir le français, l’anglais ou les deux. Une seule langue télécharge
+directement le PDF. L’export dans les deux langues télécharge un ZIP contenant
+les deux PDF.
 
 Chaque tableau utilise le logo et la charte BBTM sur une page A4 sans pied de
 page. La mise en page s’adapte à la sélection. Si elle est trop dense pour

@@ -73,7 +73,7 @@ describe('FleetPage', () => {
       vi.mocked(downloadFleetListPdfs).mockReset().mockResolvedValue(undefined);
     });
 
-    it('selects active vessels across register views and exports only the chosen columns in both languages', async () => {
+    it('opens with no selections and exports only the manually chosen vessel, column and languages', async () => {
       const user = userEvent.setup();
       const secondVessel = { ...baseVessel, id: 4, name: 'ROZEL' };
       const archivedVessel = { ...baseVessel, id: 5, name: 'ANCIEN NAVIRE', active: false };
@@ -88,19 +88,21 @@ describe('FleetPage', () => {
       expect(menu.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
       await user.click(menu.getByRole('button', { name: 'Flotte' }));
       const dialog = within(screen.getByRole('dialog', { name: 'Exporter la flotte' }));
+      for (const checkbox of dialog.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+      expect(dialog.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
       const shipOptions = within(dialog.getByRole('group', { name: 'Navires actifs' }));
+      expect(shipOptions.getAllByRole('checkbox')).toHaveLength(2);
+      await user.click(shipOptions.getByRole('button', { name: 'Tout sélectionner' }));
       expect(shipOptions.getByRole('checkbox', { name: baseVessel.name })).toBeChecked();
       expect(shipOptions.getByRole('checkbox', { name: secondVessel.name })).toBeChecked();
-      expect(shipOptions.getAllByRole('checkbox')).toHaveLength(2);
       await user.click(shipOptions.getByRole('button', { name: 'Tout désélectionner' }));
+      expect(shipOptions.getByRole('checkbox', { name: baseVessel.name })).not.toBeChecked();
+      await user.click(shipOptions.getByRole('checkbox', { name: secondVessel.name }));
       expect(dialog.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
-      await user.click(shipOptions.getByRole('button', { name: 'Tout sélectionner' }));
-      await user.click(shipOptions.getByRole('checkbox', { name: baseVessel.name }));
 
       const columns = within(dialog.getByRole('group', { name: 'Caractéristiques' }));
-      await user.click(columns.getByRole('button', { name: 'Tout désélectionner' }));
       await user.click(columns.getByRole('checkbox', { name: 'N° IMO' }));
-      expect(dialog.getByRole('checkbox', { name: 'Français' })).toBeChecked();
+      await user.click(dialog.getByRole('checkbox', { name: 'Français' }));
       await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
       await user.click(dialog.getByRole('button', { name: 'Télécharger les PDF (.zip)' }));
 
@@ -112,7 +114,7 @@ describe('FleetPage', () => {
       );
     });
 
-    it('handles an unavailable export, keeps the selection, and retries the English PDF', async () => {
+    it('retries an English PDF with vessel names only and resets selections on reopening', async () => {
       vi.mocked(downloadFleetListPdfs).mockRejectedValueOnce(new Error('Réduisez la sélection pour tenir sur une page.'));
       const user = userEvent.setup();
       render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['direction']} /></MemoryRouter>);
@@ -121,17 +123,22 @@ describe('FleetPage', () => {
       const dialogElement = screen.getByRole('dialog', { name: 'Exporter la flotte' });
       const dialog = within(dialogElement);
       const submit = dialog.getByRole('button', { name: 'Télécharger le PDF' });
-      await user.click(dialog.getByRole('checkbox', { name: 'Français' }));
-      expect(submit).toBeDisabled();
       await user.click(dialog.getByRole('checkbox', { name: 'Anglais' }));
+      expect(submit).toBeDisabled();
+      await user.click(dialog.getByRole('checkbox', { name: baseVessel.name }));
       await user.click(submit);
       expect(await dialog.findByRole('alert')).toHaveTextContent('Réduisez la sélection');
       expect(dialog.getByRole('checkbox', { name: 'Anglais' })).toBeChecked();
       await user.click(submit);
       expect(await dialog.findByRole('status')).toHaveTextContent('Le PDF est prêt.');
-      expect(downloadFleetListPdfs).toHaveBeenLastCalledWith([baseVessel], expect.any(Array), ['en']);
+      expect(downloadFleetListPdfs).toHaveBeenLastCalledWith([baseVessel], [], ['en']);
       fireEvent(dialogElement, new Event('cancel', { cancelable: true }));
       expect(screen.queryByRole('dialog', { name: 'Exporter la flotte' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Flotte' }));
+      const reopened = within(screen.getByRole('dialog', { name: 'Exporter la flotte' }));
+      for (const checkbox of reopened.getAllByRole('checkbox')) expect(checkbox).not.toBeChecked();
+      expect(reopened.getByRole('button', { name: 'Télécharger le PDF' })).toBeDisabled();
     });
   });
 
@@ -154,8 +161,34 @@ describe('FleetPage', () => {
     expect(screen.queryByRole('button', { name: 'Éditer brochure' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Décision d’effectif' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Capacités' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Source BBTM - Flotte' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Modifier' }));
     expect(within(screen.getByRole('dialog')).queryByRole('region', { name: 'Capacités' })).not.toBeInTheDocument();
+  });
+
+  it('groups vessel details under illustrated categories and hides the populated source record', async () => {
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+
+    const detail = within(screen.getByRole('article'));
+    expect(detail.getByRole('tab', { name: 'Vue d’ensemble' })).toHaveAttribute('aria-selected', 'true');
+    const fieldsByCategory = [
+      ['Identification maritime', '934968'],
+      ['Dimensions et tonnage', '8.5 m'],
+      ['Propulsion et performances', 'CATERPILLAR C3512 B'],
+      ['Navigation et conformité', 'DNV'],
+      ['Équipage et sécurité', 'Dotation B'],
+      ['Équipements et aménagements', 'Grue de pont'],
+      ['Capacités', '110 000 L'],
+    ];
+    for (const [category, value] of fieldsByCategory) {
+      const heading = detail.getByRole('heading', { name: category });
+      expect(heading.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+      expect(detail.getByRole('region', { name: category })).toHaveTextContent(value);
+    }
+    expect(detail.queryByRole('heading', { name: 'Source BBTM - Flotte' })).not.toBeInTheDocument();
+    expect(detail.queryByText(/Élément SharePoint|Version source|Libellé actif source|Sortie de flotte source|Identifiant source|Dernière modification source/)).not.toBeInTheDocument();
+    expect(detail.queryByText(baseVessel.sourceGuid)).not.toBeInTheDocument();
   });
 
   it('edits the BBTM brochure from the vessel detail', async () => {
@@ -342,40 +375,62 @@ describe('FleetPage', () => {
     expect(details.queryByRole('region', { name: 'Eau douce' })).not.toBeInTheDocument();
   });
 
-  it('keeps an unknown vessel draft empty and saves an explicitly entered measurement', async () => {
+  it('saves draft, net tonnage and summer freeboard separately from legacy lightship tonnage', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'GOURY' });
     expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('—');
+    expect(screen.getByText('Jauge nette', { selector: 'dt' }).nextElementSibling).toHaveTextContent('—');
+    expect(screen.getByText('Hauteur du Franc Bord - Été', { selector: 'dt' }).nextElementSibling).toHaveTextContent('—');
+    expect(screen.queryByText(/Jauge lège/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Modifier' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
-    const input = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
-    expect(input).toHaveValue(null);
-    expect(input).toHaveAttribute('max', '50');
-    await user.type(input, '3.25');
-    const saved = { ...baseVessel, draftMeters: 3.25 };
+    const draft = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
+    const netTonnage = dialog.getByRole('spinbutton', { name: 'Jauge nette' });
+    const freeboard = dialog.getByRole('spinbutton', { name: 'Hauteur du Franc Bord - Été (mm)' });
+    expect(draft).toHaveValue(null);
+    expect(draft).toHaveAttribute('max', '50');
+    expect(netTonnage).toHaveValue(null);
+    expect(freeboard).toHaveValue(null);
+    expect(dialog.queryByRole('spinbutton', { name: /Jauge lège/ })).not.toBeInTheDocument();
+    await user.type(draft, '3.25');
+    await user.type(netTonnage, '91');
+    await user.type(freeboard, '875');
+    const measurements = { draftMeters: 3.25, netTonnage: 91, summerFreeboardMm: 875 };
+    const saved = { ...baseVessel, ...measurements };
     vi.mocked(saveFleetVessel).mockResolvedValue(saved);
     vi.mocked(fetchFleetVessels).mockResolvedValue([saved, office, quay]);
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
     expect(await screen.findByText('Navire enregistré.')).toBeInTheDocument();
-    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 1, draftMeters: 3.25 }));
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 1, ...measurements }));
     expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('3.25 m');
+    expect(screen.getByText('Jauge nette', { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^91$/);
+    expect(screen.getByText('Hauteur du Franc Bord - Été', { selector: 'dt' }).nextElementSibling).toHaveTextContent('875 mm');
   });
 
-  it('prefills the saved draft and lets the user clear it to an unknown value', async () => {
+  it('prefills saved measurements and lets the user clear them to unknown values', async () => {
     const user = userEvent.setup();
-    vi.mocked(fetchFleetVessels).mockResolvedValue([{ ...baseVessel, draftMeters: 3.5 }, office, quay]);
+    vi.mocked(fetchFleetVessels).mockResolvedValue([{
+      ...baseVessel, draftMeters: 3.5, netTonnage: 91, summerFreeboardMm: 875,
+    }, office, quay]);
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'GOURY' });
     await user.click(screen.getByRole('button', { name: 'Modifier' }));
     const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
-    const input = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
-    expect(input).toHaveValue(3.5);
-    await user.clear(input);
-    vi.mocked(saveFleetVessel).mockResolvedValue({ ...baseVessel, draftMeters: null });
+    const draft = dialog.getByRole('spinbutton', { name: 'Tirant d’eau (m)' });
+    const netTonnage = dialog.getByRole('spinbutton', { name: 'Jauge nette' });
+    const freeboard = dialog.getByRole('spinbutton', { name: 'Hauteur du Franc Bord - Été (mm)' });
+    expect(draft).toHaveValue(3.5);
+    expect(netTonnage).toHaveValue(91);
+    expect(freeboard).toHaveValue(875);
+    await user.clear(draft);
+    await user.clear(netTonnage);
+    await user.clear(freeboard);
+    const cleared = { draftMeters: null, netTonnage: null, summerFreeboardMm: null };
+    vi.mocked(saveFleetVessel).mockResolvedValue({ ...baseVessel, ...cleared });
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
     await screen.findByText('Navire enregistré.');
-    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ draftMeters: null }));
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(cleared));
   });
 
   it('saves a vessel matrix only through the usual save action and can discard its changes', async () => {
@@ -410,7 +465,8 @@ describe('FleetPage', () => {
   it.each(['marin', 'capitaine'] as const)('exposes the saved capacities and matrix read-only for a real %s profile fixture', async (role) => {
     const user = userEvent.setup();
     vi.mocked(fetchFleetVessels).mockResolvedValue([{
-      ...baseVessel, weatherMatrix: GOURY_WEATHER_MATRIX, fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
+      ...baseVessel, netTonnage: 91, summerFreeboardMm: 875, weatherMatrix: GOURY_WEATHER_MATRIX,
+      fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
       dailyFuelTankName: role === 'capitaine' ? 'Caisse service' : null,
       capacitySections: [{ name: 'Eau douce', tanks: [{
         id: '8d2ac1e5-e963-4d04-8672-2a092841b402', name: 'Réserve', capacityLiters: 650, showInSoutes: true,
@@ -420,6 +476,11 @@ describe('FleetPage', () => {
     await screen.findByRole('heading', { name: 'GOURY' });
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Identification maritime' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Source BBTM - Flotte' })).not.toBeInTheDocument();
+    const dimensions = within(screen.getByRole('region', { name: 'Dimensions et tonnage' }));
+    expect(dimensions.getByText('Jauge nette', { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^91$/);
+    expect(dimensions.getByText('Hauteur du Franc Bord - Été', { selector: 'dt' }).nextElementSibling).toHaveTextContent('875 mm');
     const fuel = within(screen.getByRole('region', { name: 'Carburant' }));
     expect(fuel.getByText('12 000 L')).toBeVisible();
     expect(fuel.getByText(role === 'capitaine' ? 'Caisse service' : 'Caisse journalière')).toBeVisible();
@@ -435,6 +496,8 @@ describe('FleetPage', () => {
     expect(within(table).queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Appliquer le modèle GOURY' })).not.toBeInTheDocument();
     expect(saveFleetVessel).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('tab', { name: 'Vue d’ensemble' }));
+    expect(screen.getByRole('heading', { name: 'Identification maritime' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: /Bureaux\s*1/ }));
     expect(screen.queryByRole('tab', { name: 'Conditions météo limites' })).not.toBeInTheDocument();
     expect(screen.queryByRole('table', { name: /Matrice Hs/ })).not.toBeInTheDocument();

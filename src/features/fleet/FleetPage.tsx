@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  Anchor, Archive, Building2, Edit3, FileDown, ImagePlus, MapPin, Plus,
-  RefreshCw, RotateCcw, Search, Ship, Warehouse, X,
+  Anchor, Archive, Building2, CloudSun, Edit3, FileDown, ImagePlus, LayoutGrid, MapPin, Plus,
+  RefreshCw, RotateCcw, Search, Ship, UsersRound, Warehouse, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -30,10 +30,16 @@ import {
   saveFleetVessel, uploadFleetVesselPhoto, MAX_FLEET_DRAFT_METERS, type FleetAssetKind, type FleetVessel,
   type SaveFleetVesselInput,
 } from './fleetQueries';
+import './fleetOverview.css';
 
 interface FleetPageProps { client?: SupabaseClient; roles?: RoleKey[] }
 type FleetDetailTab = 'overview' | 'manning' | 'weather';
-type FleetVesselForm = Omit<SaveFleetVesselInput, keyof FleetFuelCapacity | 'capacitySections'> & {
+type FleetVesselForm = Omit<
+  SaveFleetVesselInput,
+  keyof FleetFuelCapacity | 'capacitySections' | 'lightshipTonnes' | 'netTonnage' | 'summerFreeboardMm'
+> & {
+  netTonnage: number | null;
+  summerFreeboardMm: number | null;
   fuel: FleetFuelDraft;
   capacitySections: FleetCapacitySectionDraft[];
   capacitySectionsChanged: boolean;
@@ -51,7 +57,8 @@ const EMPTY_VESSEL: FleetVesselForm = {
   imoNumber: '', registrationPort: '', callSign: '', mmsi: '', grossTonnage: '', maxPeople: null,
   crewMembers: '', medicalDotation: '', lengthOverall: '', flagState: '', brochureSubtitle: '',
   brochureSummary: '', brochureOperations: '', builtYear: null, classificationLabel: '', navigationCategory: '',
-  beamOverallM: null, draftMeters: null, lightshipTonnes: null, deadweightTonnes: null, safeManning: null, mainEngine: '',
+  beamOverallM: null, draftMeters: null, netTonnage: null, summerFreeboardMm: null,
+  deadweightTonnes: null, safeManning: null, mainEngine: '',
   mainEnginePowerKw: null, bowThrusterPowerKw: null, gensets: '', maxSpeedKnots: null,
   bollardPullTonnes: null, rangeDescription: '', deckEquipment: '',
   fuel: { tankCapacities: [], tankNames: [], dailyTankEnabled: false, dailyTankCapacity: null, dailyTankName: '', legacyCapacity: null, hiddenTankKeys: [] },
@@ -71,7 +78,8 @@ function vesselForm(vessel?: FleetVessel): FleetVesselForm {
     flagState: vessel.flagState, brochureSubtitle: vessel.brochureSubtitle, brochureSummary: vessel.brochureSummary,
     brochureOperations: vessel.brochureOperations.join('\n'), builtYear: vessel.builtYear,
     classificationLabel: vessel.classificationLabel, navigationCategory: vessel.navigationCategory,
-    beamOverallM: vessel.beamOverallM, draftMeters: vessel.draftMeters ?? null, lightshipTonnes: vessel.lightshipTonnes,
+    beamOverallM: vessel.beamOverallM, draftMeters: vessel.draftMeters ?? null,
+    netTonnage: vessel.netTonnage ?? null, summerFreeboardMm: vessel.summerFreeboardMm ?? null,
     deadweightTonnes: vessel.deadweightTonnes, safeManning: vessel.safeManning, mainEngine: vessel.mainEngine,
     mainEnginePowerKw: vessel.mainEnginePowerKw, bowThrusterPowerKw: vessel.bowThrusterPowerKw,
     gensets: vessel.gensets, maxSpeedKnots: vessel.maxSpeedKnots, bollardPullTonnes: vessel.bollardPullTonnes,
@@ -167,6 +175,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
         .toLocaleLowerCase('fr-FR').includes(term)));
   }, [assetKind, baseVisible, search]);
   const selected = vessels.find((vessel) => vessel.id === selectedId) || null;
+  const selectedPhotoUrl = selected?.assetKind === 'vessel' ? photoUrl : '';
 
   useEffect(() => {
     if (!selected || selected.assetKind === assetKind) return;
@@ -290,18 +299,54 @@ export function FleetPage({ client, roles }: FleetPageProps) {
       </aside>
 
       <article className="fleet-detail">{selected ? <>
-        {selected.assetKind === 'vessel' ? <div className={`fleet-vessel-photo${photoUrl ? '' : ' is-empty'}`}>{photoUrl ? <img alt={`Photo du navire ${selected.name}`} src={photoUrl} /> : <><Ship aria-hidden="true" size={42} /><span>Photo du navire à ajouter</span></>}<span className="fleet-photo-gradient" /></div> : <div className={`fleet-place-hero is-${selected.assetKind}`}><AssetIcon kind={selected.assetKind} size={42} /><span>{ASSET_KINDS.find((kind) => kind.key === selected.assetKind)?.singular}</span></div>}
-        <header className="fleet-detail-heading"><div><small>Fiche {ASSET_KINDS.find((kind) => kind.key === selected.assetKind)?.singular.toLocaleLowerCase('fr-FR')}</small><h2>{selected.name}</h2><p>{selected.typeLabel || selected.unitTypeLabel || 'Type non renseigné'}</p><span className={`fleet-status${selected.active ? ' is-active' : ''}`}>{selected.active ? 'Actif' : `Retiré${selected.fleetExitOn ? ` le ${displayDate(selected.fleetExitOn)}` : ''}`}</span></div><div>{selected.assetKind === 'vessel' ? <button disabled={isGenerating} onClick={() => void editBrochure()} type="button"><FileDown size={15} />{isGenerating ? 'Édition…' : 'Éditer brochure'}</button> : null}{canManage ? <><button onClick={() => { setForm(vesselForm(selected)); setMatrixReady(true); setPhotoFile(null); }} type="button"><Edit3 size={15} />Modifier</button><button className="is-danger" disabled={isSaving} onClick={() => void toggleArchived(selected)} type="button">{selected.active ? <Archive size={15} /> : <RotateCcw size={15} />}{selected.active ? 'Retirer' : 'Réintégrer'}</button></> : null}</div></header>
+        <header className="fleet-asset-header">
+          <div className={`fleet-asset-thumbnail${selectedPhotoUrl ? ' has-photo' : ''}`}>
+            {selectedPhotoUrl ? <img alt={`Photo du navire ${selected.name}`} src={selectedPhotoUrl} />
+              : <AssetIcon kind={selected.assetKind} size={28} />}
+          </div>
+          <div className="fleet-asset-identity">
+            <h2>{selected.name}</h2>
+            <div>
+              <p>{selected.typeLabel || selected.unitTypeLabel || 'Type non renseigné'}</p>
+              <span className={`fleet-status${selected.active ? ' is-active' : ''}`}>
+                {selected.active ? 'Actif' : `Retiré${selected.fleetExitOn ? ` le ${displayDate(selected.fleetExitOn)}` : ''}`}
+              </span>
+            </div>
+          </div>
+          {selected.assetKind === 'vessel' || canManage ? <div className="fleet-asset-actions">
+            {selected.assetKind === 'vessel' ? <button className="sp-button sp-button--secondary" disabled={isGenerating} onClick={() => void editBrochure()} type="button">
+              <FileDown aria-hidden="true" size={15} />{isGenerating ? 'Édition…' : 'Éditer brochure'}
+            </button> : null}
+            {canManage ? <>
+              <button className="sp-button sp-button--secondary" onClick={() => { setForm(vesselForm(selected)); setMatrixReady(true); setPhotoFile(null); }} type="button">
+                <Edit3 aria-hidden="true" size={15} />Modifier
+              </button>
+              <button className="sp-button sp-button--danger" disabled={isSaving} onClick={() => void toggleArchived(selected)} type="button">
+                {selected.active ? <Archive aria-hidden="true" size={15} /> : <RotateCcw aria-hidden="true" size={15} />}
+                {selected.active ? 'Retirer' : 'Réintégrer'}
+              </button>
+            </> : null}
+          </div> : null}
+        </header>
 
-        {selected.assetKind === 'vessel' ? <nav aria-label="Sections du navire" className="fleet-detail-tabs"><button aria-selected={detailTab === 'overview'} className={detailTab === 'overview' ? 'is-active' : ''} onClick={() => setDetailTab('overview')} role="tab" type="button">Vue d’ensemble</button><button aria-selected={detailTab === 'manning'} className={detailTab === 'manning' ? 'is-active' : ''} onClick={() => setDetailTab('manning')} role="tab" type="button">Décision d’effectif</button><button aria-selected={detailTab === 'weather'} className={detailTab === 'weather' ? 'is-active' : ''} onClick={() => setDetailTab('weather')} role="tab" type="button">Conditions météo limites</button></nav> : null}
+        {selected.assetKind === 'vessel' ? <nav aria-label="Sections du navire" className="fleet-detail-tabs">
+          <button aria-selected={detailTab === 'overview'} className={detailTab === 'overview' ? 'is-active' : ''} onClick={() => setDetailTab('overview')} role="tab" type="button">
+            <LayoutGrid aria-hidden="true" size={16} />Vue d’ensemble
+          </button>
+          <button aria-selected={detailTab === 'manning'} className={detailTab === 'manning' ? 'is-active' : ''} onClick={() => setDetailTab('manning')} role="tab" type="button">
+            <UsersRound aria-hidden="true" size={16} />Décision d’effectif
+          </button>
+          <button aria-selected={detailTab === 'weather'} className={detailTab === 'weather' ? 'is-active' : ''} onClick={() => setDetailTab('weather')} role="tab" type="button">
+            <CloudSun aria-hidden="true" size={16} />Conditions météo limites
+          </button>
+        </nav> : null}
 
-        {detailTab === 'weather' && selected.assetKind === 'vessel' ? <div className="fleet-weather-matrix-panel"><VesselWeatherMatrixEditor key={selected.id} value={selected.weatherMatrix} vesselName={selected.name} /></div> : detailTab === 'manning' && selected.assetKind === 'vessel' ? <div className="fleet-manning-panel"><p className="fleet-disconnected-note">Référentiel propre à ce navire. Son contrôle dans le Planning est temporairement désactivé.</p><ManningTab client={effectiveClient} data={p11} editable={canManage} fixedVesselId={selected.id} linkToPlanning={false} onReload={async () => setP11(await fetchPlanningP11Data(effectiveClient))} overview={manningOverview} range={range} setFeedback={(message, error = false) => setFeedback({ message, error })} /></div> : <>
+        {detailTab === 'weather' && selected.assetKind === 'vessel' ? <div className="fleet-weather-matrix-panel"><VesselWeatherMatrixEditor key={selected.id} value={selected.weatherMatrix} vesselName={selected.name} /></div> : detailTab === 'manning' && selected.assetKind === 'vessel' ? <div className="fleet-manning-panel"><p className="fleet-disconnected-note">Référentiel propre à ce navire. Son contrôle dans le Planning est temporairement désactivé.</p><ManningTab client={effectiveClient} data={p11} editable={canManage} fixedVesselId={selected.id} linkToPlanning={false} onReload={async () => setP11(await fetchPlanningP11Data(effectiveClient))} overview={manningOverview} range={range} setFeedback={(message, error = false) => setFeedback({ message, error })} /></div> :
           <FleetVesselOverview
             vessel={selected}
             plans={selected.assetKind === 'vessel' ? <FleetCapacityPlans key={selected.id} client={effectiveClient} vessel={selected} canManage={canManage} /> : null}
           />
-          <section className="fleet-detail-section is-source"><h3>Source BBTM - Flotte</h3><dl className="fleet-detail-grid"><div><dt>Élément SharePoint</dt><dd>{selected.sharePointItemId || '—'}</dd></div><div><dt>Version source</dt><dd>{selected.sourceEtag || '—'}</dd></div><div><dt>Libellé actif source</dt><dd>{selected.sourceActiveLabel || '—'}</dd></div><div><dt>Sortie de flotte source</dt><dd>{displayDate(selected.sourceFleetExitAt)}</dd></div><div className="is-wide"><dt>Identifiant source</dt><dd>{selected.sourceGuid || '—'}</dd></div><div className="is-wide"><dt>Dernière modification source</dt><dd>{displayDate(selected.sourceModifiedAt)}</dd></div></dl></section>
-        </>}
+        }
       </> : <div className="fleet-empty-detail"><MapPin size={28} /><p>Sélectionnez un élément.</p></div>}</article>
     </div>
 
@@ -309,7 +354,8 @@ export function FleetPage({ client, roles }: FleetPageProps) {
 
     {form ? <div className="fleet-dialog-backdrop" role="presentation"><form aria-label={form.id ? 'Modifier l’actif' : 'Ajouter un actif'} aria-modal="true" className={`fleet-dialog is-wide${form.assetKind === 'vessel' ? ' has-weather-matrix' : ''}`} onSubmit={submitVessel} role="dialog"><header><div><AssetIcon kind={form.assetKind} size={19} /><span><small>Référentiel BBTM</small><h2>{form.id ? 'Modifier l’actif' : 'Ajouter un actif'}</h2></span></div><button aria-label="Fermer" onClick={() => setForm(null)} type="button"><X size={18} /></button></header><div className="fleet-dialog-grid">
       <label>Type d’actif<select onChange={(event) => { setForm({ ...form, assetKind: event.target.value as FleetAssetKind }); setMatrixReady(true); }} value={form.assetKind}>{ASSET_KINDS.map((kind) => <option key={kind.key} value={kind.key}>{kind.singular}</option>)}</select></label><label>Nom<input autoFocus minLength={2} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} /></label><label>Acronyme<input onChange={(event) => setForm({ ...form, acronym: event.target.value })} value={form.acronym} /></label><label>Type / désignation<input onChange={(event) => setForm({ ...form, typeLabel: event.target.value })} value={form.typeLabel} /></label>
-      {form.assetKind === 'vessel' ? <><label className="is-wide fleet-photo-field"><ImagePlus size={18} /><span>Photo du navire<small>JPEG, PNG ou WebP · 10 Mo maximum</small></span><input accept="image/jpeg,image/png,image/webp" aria-label="Photo du navire" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} type="file" /></label><h3 className="is-wide">Identification maritime</h3><label>Immatriculation<input onChange={(event) => setForm({ ...form, registrationNumber: event.target.value })} value={form.registrationNumber} /></label><label>IMO<input onChange={(event) => setForm({ ...form, imoNumber: event.target.value })} value={form.imoNumber} /></label><label>Port d’immatriculation<input onChange={(event) => setForm({ ...form, registrationPort: event.target.value })} value={form.registrationPort} /></label><label>Indicatif d’appel<input onChange={(event) => setForm({ ...form, callSign: event.target.value })} value={form.callSign} /></label><label>MMSI<input onChange={(event) => setForm({ ...form, mmsi: event.target.value })} value={form.mmsi} /></label><label>Pavillon<input onChange={(event) => setForm({ ...form, flagState: event.target.value })} value={form.flagState} /></label><h3 className="is-wide">Caractéristiques</h3><label>Jauge brute<input onChange={(event) => setForm({ ...form, grossTonnage: event.target.value })} value={form.grossTonnage} /></label><label>Longueur hors tout<input onChange={(event) => setForm({ ...form, lengthOverall: event.target.value })} value={form.lengthOverall} /></label><label>Largeur hors tout (m){numberInput(form.beamOverallM, (value) => setForm({ ...form, beamOverallM: value }), 'Largeur hors tout')}</label><label>Tirant d’eau (m)<input aria-label="Tirant d’eau (m)" type="number" min={0} max={MAX_FLEET_DRAFT_METERS} step="any" value={form.draftMeters ?? ''} onChange={(event) => setForm({ ...form, draftMeters: event.target.value ? Number(event.target.value) : null })} /></label><label>Année de construction{numberInput(form.builtYear, (value) => setForm({ ...form, builtYear: value }), 'Année de construction')}</label><label>Jauge lège (t){numberInput(form.lightshipTonnes, (value) => setForm({ ...form, lightshipTonnes: value }), 'Jauge lège')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label><label className="is-wide">Dotation médicale<input onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })} value={form.medicalDotation} /></label><h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Aménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
+      {form.assetKind === 'vessel' ? <><label className="is-wide fleet-photo-field"><ImagePlus size={18} /><span>Photo du navire<small>JPEG, PNG ou WebP · 10 Mo maximum</small></span><input accept="image/jpeg,image/png,image/webp" aria-label="Photo du navire" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} type="file" /></label><h3 className="is-wide">Identification maritime</h3><label>Immatriculation<input onChange={(event) => setForm({ ...form, registrationNumber: event.target.value })} value={form.registrationNumber} /></label><label>IMO<input onChange={(event) => setForm({ ...form, imoNumber: event.target.value })} value={form.imoNumber} /></label><label>Port d’immatriculation<input onChange={(event) => setForm({ ...form, registrationPort: event.target.value })} value={form.registrationPort} /></label><label>Indicatif d’appel<input onChange={(event) => setForm({ ...form, callSign: event.target.value })} value={form.callSign} /></label><label>MMSI<input onChange={(event) => setForm({ ...form, mmsi: event.target.value })} value={form.mmsi} /></label><label>Pavillon<input onChange={(event) => setForm({ ...form, flagState: event.target.value })} value={form.flagState} /></label><h3 className="is-wide">Caractéristiques</h3><label>Jauge brute<input onChange={(event) => setForm({ ...form, grossTonnage: event.target.value })} value={form.grossTonnage} /></label><label>Longueur hors tout<input onChange={(event) => setForm({ ...form, lengthOverall: event.target.value })} value={form.lengthOverall} /></label><label>Largeur hors tout (m){numberInput(form.beamOverallM, (value) => setForm({ ...form, beamOverallM: value }), 'Largeur hors tout')}</label><label>Tirant d’eau (m)<input aria-label="Tirant d’eau (m)" type="number" min={0} max={MAX_FLEET_DRAFT_METERS} step="any" value={form.draftMeters ?? ''} onChange={(event) => setForm({ ...form, draftMeters: event.target.value ? Number(event.target.value) : null })} /></label><label>Année de construction{numberInput(form.builtYear, (value) => setForm({ ...form, builtYear: value }), 'Année de construction')}</label><label>Jauge nette{numberInput(form.netTonnage, (value) => setForm({ ...form, netTonnage: value }), 'Jauge nette')}</label>
+      <label>Hauteur du Franc Bord - Été (mm){numberInput(form.summerFreeboardMm, (value) => setForm({ ...form, summerFreeboardMm: value }), 'Hauteur du Franc Bord - Été (mm)')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label><label className="is-wide">Dotation médicale<input onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })} value={form.medicalDotation} /></label><h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Aménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
         <h3>Capacités</h3>
         <FleetFuelFields value={form.fuel} disabled={isSaving} namesReady={fuelNamesReady} dailyNameReady={dailyFuelNameReady}
           onChange={fuel => setForm(current => current ? { ...current, fuel } : null)} />
