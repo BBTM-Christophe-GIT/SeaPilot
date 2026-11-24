@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.121.0** ajoute les brochures BBTM françaises et anglaises, en A4
+multipage ou sur une feuille A4 pliée. La trame des catégories et des champs est
+partagée par société. Appliquer les deux migrations du
+[guide Navires](fleet-assets-v3-22-0.md) avant la mise en production.
+
 La version **3.120.1** exclut les opérations **HP** et les DPR hors projet des
 taux, des compteurs et des répartitions du bloc **Activité de la flotte**.
 Voir [KPI du portefeuille Projet](./project-kpis-personal-favorites.md#utilisation-et-types-dopérations).

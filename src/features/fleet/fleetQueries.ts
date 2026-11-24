@@ -1,4 +1,5 @@
 import { compareFleetAssets } from './fleetDisplay';
+import { hasValidEnglishBrochureMissions, normalizeFleetBrochureCover, type FleetBrochureCoverSettings } from './fleetLayout';
 import { parseFleetCapacitySections, type FleetCapacitySection } from './fleetCapacityModel';
 import { FLEET_DAILY_FUEL_TANK_NAME_ERROR, FLEET_FUEL_TANK_NAMES_ERROR, isFleetFuelTankCapacity, isFleetFuelTankList, isFleetFuelTankName, isFleetFuelTankNames, isFleetHiddenFuelTankKeys, MAX_FLEET_FUEL_TANKS, type FleetFuelCapacity } from './fleetFuel';
 import { isVesselWeatherMatrix, parseVesselWeatherMatrix, type VesselWeatherMatrix } from './vesselWeatherMatrix';
@@ -15,7 +16,7 @@ const FLEET_VESSEL_SELECT = [
   'source_guid', 'source_etag', 'source_active_label', 'source_fleet_exit_at', 'photo_url',
   'photo_storage_bucket', 'photo_storage_path', 'illustration_storage_bucket',
   'illustration_storage_path', 'illustration_thumbnail_url', 'brochure_subtitle', 'brochure_summary',
-  'brochure_operations', 'built_year', 'classification_label', 'navigation_category',
+  'brochure_operations', 'brochure_cover', 'built_year', 'classification_label', 'navigation_category',
   'beam_overall_m', 'draft_m', 'summer_freeboard_mm', 'net_tonnage', 'lightship_tonnes', 'deadweight_tonnes', 'safe_manning', 'main_engine',
   'main_engine_power_kw', 'bow_thruster_power_kw', 'gensets', 'max_speed_knots',
   'bollard_pull_tonnes', 'fuel_capacity_m3', 'fuel_tank_capacities_liters', 'fuel_tank_names', 'daily_fuel_tank_capacity_liters', 'daily_fuel_tank_name',
@@ -61,6 +62,7 @@ interface FleetVesselRow {
   brochure_subtitle: string | null;
   brochure_summary: string | null;
   brochure_operations: string[] | null;
+  brochure_cover?: unknown;
   built_year: number | string | null;
   classification_label: string | null;
   navigation_category: string | null;
@@ -130,6 +132,7 @@ export interface FleetVessel extends FleetFuelCapacity {
   brochureSubtitle: string;
   brochureSummary: string;
   brochureOperations: string[];
+  brochureCover?: FleetBrochureCoverSettings;
   builtYear: number | null;
   classificationLabel: string;
   navigationCategory: string;
@@ -176,6 +179,7 @@ export interface SaveFleetVesselInput extends Partial<FleetFuelCapacity> {
   brochureSubtitle: string;
   brochureSummary: string;
   brochureOperations: string;
+  brochureCover?: FleetBrochureCoverSettings;
   builtYear: number | null;
   classificationLabel: string;
   navigationCategory: string;
@@ -238,7 +242,7 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     illustrationStorageBucket: row.illustration_storage_bucket || '', illustrationStoragePath: row.illustration_storage_path || '',
     illustrationThumbnailUrl: row.illustration_thumbnail_url || '',
     brochureSubtitle: row.brochure_subtitle || '', brochureSummary: row.brochure_summary || '',
-    brochureOperations: row.brochure_operations || [], builtYear: numberOrNull(row.built_year),
+    brochureOperations: row.brochure_operations || [], brochureCover: normalizeFleetBrochureCover(row.brochure_cover), builtYear: numberOrNull(row.built_year),
     classificationLabel: row.classification_label || '', navigationCategory: row.navigation_category || '',
     beamOverallM: numberOrNull(row.beam_overall_m), draftMeters: numberOrNull(row.draft_m),
     summerFreeboardMm: numberOrNull(row.summer_freeboard_mm), netTonnage: numberOrNull(row.net_tonnage),
@@ -272,6 +276,9 @@ export async function fetchFleetVessel(client: SupabaseClient, vesselId: number)
 export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVesselInput): Promise<FleetVessel> {
   const name = input.name.trim();
   if (name.length < 2) throw new Error('Le nom doit contenir au moins deux caractères.');
+  if (!hasValidEnglishBrochureMissions(input.brochureCover?.en?.operations)) {
+    throw new Error('Saisissez au plus 24 missions en anglais, de 100 caractères chacune.');
+  }
   if (input.draftMeters != null && (!Number.isFinite(input.draftMeters) || input.draftMeters <= 0 || input.draftMeters > MAX_FLEET_DRAFT_METERS)) {
     throw new Error(`Le tirant d’eau doit être supérieur à 0 et inférieur ou égal à ${MAX_FLEET_DRAFT_METERS} m.`);
   }
@@ -315,6 +322,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     length_overall: optional(input.lengthOverall), flag_state: optional(input.flagState),
     brochure_subtitle: optional(input.brochureSubtitle), brochure_summary: optional(input.brochureSummary),
     brochure_operations: input.brochureOperations.split(/\r?\n|;/).map((value) => value.trim()).filter(Boolean),
+    ...(input.brochureCover === undefined ? {} : { brochure_cover: normalizeFleetBrochureCover(input.brochureCover) }),
     built_year: input.builtYear, classification_label: optional(input.classificationLabel),
     navigation_category: optional(input.navigationCategory), beam_overall_m: input.beamOverallM,
     ...(input.draftMeters === undefined ? {} : { draft_m: input.draftMeters }),

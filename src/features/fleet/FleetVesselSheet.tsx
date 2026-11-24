@@ -3,10 +3,12 @@ import { Anchor, Building2, Ship } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AppDialog } from '../../components/AppDialog';
 import { FleetVesselOverview } from './FleetVesselOverview';
+import { fetchFleetLayout } from './fleetLayoutQueries';
+import type { FleetLayout } from './fleetLayout';
 import { fetchFleetVessel, type FleetVessel } from './fleetQueries';
 import './fleetVesselSheet.css';
 
-type VesselSheetState = { status: 'loading' | 'error' } | { status: 'ready'; vessel: FleetVessel | null };
+type VesselSheetState = { status: 'loading' | 'error' } | { status: 'ready'; vessel: FleetVessel | null; layout?: FleetLayout };
 
 export function FleetVesselSheet({ client, vesselId, vesselName, onClose }: {
   client: SupabaseClient;
@@ -19,10 +21,17 @@ export function FleetVesselSheet({ client, vesselId, vesselName, onClose }: {
 
   useEffect(() => {
     let active = true;
-    void fetchFleetVessel(client, vesselId).then(
-      (vessel) => { if (active) setState({ status: 'ready', vessel }); },
-      () => { if (active) setState({ status: 'error' }); },
-    );
+    async function load() {
+      try {
+        const vessel = await fetchFleetVessel(client, vesselId);
+        const layout = vessel?.assetKind === 'vessel' && Number.isFinite(vessel.companyId)
+          ? await fetchFleetLayout(client, vessel.companyId).catch(() => undefined) : undefined;
+        if (active) setState({ status: 'ready', vessel, layout });
+      } catch {
+        if (active) setState({ status: 'error' });
+      }
+    }
+    void load();
     return () => { active = false; };
   }, [attempt, client, vesselId]);
 
@@ -37,7 +46,7 @@ export function FleetVesselSheet({ client, vesselId, vesselName, onClose }: {
           {type ? <span>{type}</span> : null}
           <span className={`fleet-status${vessel.active ? ' is-active' : ''}`}>{vessel.active ? 'Actif' : 'Retiré'}</span>
         </div>
-        <FleetVesselOverview compact vessel={vessel} />
+        <FleetVesselOverview compact layout={state.status === 'ready' ? state.layout : undefined} vessel={vessel} />
       </> : state.status === 'loading' ? <p role="status">Chargement de la fiche…</p> : <>
         <p role="status">{state.status === 'error' ? 'Impossible de charger la fiche du navire.' : 'Fiche du navire indisponible.'}</p>
         {state.status === 'error' ? <button className="sp-button sp-button--secondary" onClick={() => {

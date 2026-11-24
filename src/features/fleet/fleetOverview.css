@@ -162,3 +162,30 @@
   .fleet-overview-grid,
   .fleet-overview-tanks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+.fleet-brochure-options {
+  display: grid;
+  gap: var(--sp-space-3);
+}
+
+.fleet-brochure-options label {
+  display: grid;
+  gap: var(--sp-space-1);
+  color: var(--sp-heading);
+  font-weight: 650;
+}
+
+.fleet-brochure-options select {
+  min-height: 44px;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  padding-inline: var(--sp-space-2);
+  font: inherit;
+}
+
+.fleet-brochure-options p {
+  margin: 0;
+  color: var(--sp-muted);
+}

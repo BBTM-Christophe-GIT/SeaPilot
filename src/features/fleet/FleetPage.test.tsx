@@ -7,6 +7,8 @@ import { FleetPage } from './FleetPage';
 import type { FleetVessel } from './fleetQueries';
 import { fetchPlanningP11Data } from '../planning/planningP11Queries';
 import { downloadFleetBrochure } from './fleetBrochure';
+import { DEFAULT_FLEET_LAYOUT } from './fleetLayout';
+import { fetchFleetLayout, saveFleetLayout } from './fleetLayoutQueries';
 import { downloadFleetListPdfs } from './fleetListPdf';
 import { fetchFleetVessels, resolveFleetVesselPhotoUrl, saveFleetVessel } from './fleetQueries';
 import { createEmptyVesselWeatherMatrix, GOURY_WEATHER_MATRIX, vesselHsRange, vesselPeriodRange } from './vesselWeatherMatrix';
@@ -17,6 +19,7 @@ vi.mock('./fleetQueries', async (importOriginal) => {
 });
 vi.mock('../planning/planningP11Queries', () => ({ fetchPlanningP11Data: vi.fn() }));
 vi.mock('./fleetBrochure', () => ({ downloadFleetBrochure: vi.fn() }));
+vi.mock('./fleetLayoutQueries', () => ({ fetchFleetLayout: vi.fn(), saveFleetLayout: vi.fn() }));
 vi.mock('./fleetListPdf', () => ({ downloadFleetListPdfs: vi.fn() }));
 vi.mock('./FleetCapacityPlans', () => ({ FleetCapacityPlans: () => <section aria-label="Plans" /> }));
 
@@ -44,7 +47,9 @@ describe('FleetPage', () => {
     vi.mocked(fetchFleetVessels).mockResolvedValue([baseVessel, office, quay]);
     vi.mocked(fetchPlanningP11Data).mockResolvedValue({ rotations: [], templates: [], matrices: [], certificates: [] });
     vi.mocked(resolveFleetVesselPhotoUrl).mockResolvedValue('/vessels/goury.jpg');
-    vi.mocked(downloadFleetBrochure).mockResolvedValue(undefined);
+    vi.mocked(downloadFleetBrochure).mockReset().mockResolvedValue(undefined);
+    vi.mocked(fetchFleetLayout).mockResolvedValue(DEFAULT_FLEET_LAYOUT);
+    vi.mocked(saveFleetLayout).mockReset().mockImplementation(async (_client, _companyId, layout) => layout);
     vi.mocked(saveFleetVessel).mockReset();
   });
 
@@ -174,11 +179,11 @@ describe('FleetPage', () => {
     expect(detail.getByRole('tab', { name: 'Vue d’ensemble' })).toHaveAttribute('aria-selected', 'true');
     const fieldsByCategory = [
       ['Identification maritime', '934968'],
-      ['Dimensions et tonnage', '8.5 m'],
+      ['Dimensions et tonnage', '8,5 m'],
       ['Propulsion et performances', 'CATERPILLAR C3512 B'],
       ['Navigation et conformité', 'DNV'],
       ['Équipage et sécurité', 'Dotation B'],
-      ['Équipements et aménagements', 'Grue de pont'],
+      ['Équipements et emménagements', 'Grue de pont'],
       ['Capacités', '110 000 L'],
     ];
     for (const [category, value] of fieldsByCategory) {
@@ -196,8 +201,37 @@ describe('FleetPage', () => {
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'GOURY' });
     await user.click(screen.getByRole('button', { name: 'Éditer brochure' }));
-    expect(downloadFleetBrochure).toHaveBeenCalledWith(baseVessel, '/vessels/goury.jpg');
+    const dialog = within(screen.getByRole('dialog', { name: 'Éditer la brochure' }));
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Format' }), 'folded');
+    await user.selectOptions(dialog.getByRole('combobox', { name: 'Langue' }), 'en');
+    await user.click(dialog.getByRole('button', { name: 'Télécharger le PDF' }));
     expect(await screen.findByText('La brochure de GOURY a été éditée.')).toBeInTheDocument();
+    expect(downloadFleetBrochure).toHaveBeenCalledWith(baseVessel, '/vessels/goury.jpg', {
+      format: 'folded', language: 'en', layout: DEFAULT_FLEET_LAYOUT, fallbackPhotoUrls: expect.any(Array),
+    });
+  });
+
+  it('uses an administered category label on all vessels and in their brochures', async () => {
+    const user = userEvent.setup();
+    const client = {} as SupabaseClient;
+    vi.mocked(fetchFleetVessels).mockResolvedValue([baseVessel, { ...baseVessel, id: 4, name: 'HIRONDELLE' }]);
+    render(<MemoryRouter><FleetPage client={client} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    await user.click(screen.getByRole('button', { name: 'Trame des navires' }));
+    const editor = within(screen.getByRole('dialog', { name: 'Organisation des fiches navire' }));
+    fireEvent.change(editor.getByRole('textbox', { name: 'Nom de la rubrique' }), { target: { value: 'Identité de l’unité' } });
+    await user.click(editor.getByRole('button', { name: 'Enregistrer' }));
+    expect(await screen.findByRole('heading', { name: 'Identité de l’unité' })).toBeVisible();
+    expect(saveFleetLayout).toHaveBeenCalledWith(client, 1, expect.arrayContaining([expect.objectContaining({
+      id: 'identity', label: 'Identité de l’unité',
+    })]));
+    await user.click(screen.getByRole('button', { name: /HIRONDELLE/ }));
+    await screen.findByRole('heading', { name: 'HIRONDELLE' });
+    expect(screen.getByRole('heading', { name: 'Identité de l’unité' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Éditer brochure' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Éditer la brochure' })).getByRole('button', { name: 'Télécharger le PDF' }));
+    await waitFor(() => expect(downloadFleetBrochure).toHaveBeenCalledWith(expect.objectContaining({ name: 'HIRONDELLE' }),
+      expect.any(String), expect.objectContaining({ layout: expect.arrayContaining([expect.objectContaining({ label: 'Identité de l’unité' })]) })));
   });
 
   it('configures the main tanks in liters and keeps the daily tank separate from the total', async () => {
@@ -403,7 +437,7 @@ describe('FleetPage', () => {
     await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
     expect(await screen.findByText('Navire enregistré.')).toBeInTheDocument();
     expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 1, ...measurements }));
-    expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('3.25 m');
+    expect(screen.getByText('Tirant d’eau', { selector: 'dt' }).nextElementSibling).toHaveTextContent('3,25 m');
     expect(screen.getByText('Jauge nette', { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^91$/);
     expect(screen.getByText('Hauteur du Franc Bord - Été', { selector: 'dt' }).nextElementSibling).toHaveTextContent('875 mm');
   });

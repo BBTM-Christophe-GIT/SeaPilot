@@ -108,6 +108,7 @@ const assertionTests = [
   'planning_hors_projet_test.sql',
   'fleet_vessel_capacities_test.sql',
   'fleet_vessel_measurements_test.sql',
+  'fleet_vessel_layouts_test.sql',
   'sea_operation_suroit_sludges_test.sql',
   'dpr_dashboard_access_scope_test.sql',
   'hr_document_captain_upload_test.sql',

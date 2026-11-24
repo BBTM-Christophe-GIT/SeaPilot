@@ -3642,10 +3642,22 @@ function previewRpc(functionName: string, args: Record<string, unknown> = {}): o
 
 const employmentContractPreview = createEmploymentContractPreview({ people: () => PREVIEW_ROWS.people, signaturePng: previewSignaturePng });
 
+let previewFleetLayout: unknown = null;
+function previewFleetLayoutTable() {
+  return {
+    select: () => createPreviewQuery({ data: previewFleetLayout, error: null }),
+    upsert: ({ layout }: { layout: unknown }) => {
+      previewFleetLayout = { layout };
+      return createPreviewQuery({ data: previewFleetLayout, error: null });
+    },
+  };
+}
+
 export const previewSupabaseClient = {
   resolveProcessPerformanceTaskLinks: resolvePerformancePreviewDashboardLinks,
   from: (table: string) => employmentContractPreview.from(table) || performancePreviewTable(table) || (table === 'admin_people_directory'
     ? createPreviewQuery({ data: visiblePreviewRows('people'), error: null })
+    : table === 'fleet_vessel_layouts' ? previewFleetLayoutTable()
     : table === 'vessels' ? createPreviewVesselQuery() : table === 'planning_projects' ? previewPlanningProjectsQuery() : table in PREVIEW_ROWS
     ? createPreviewQuery({ data: visiblePreviewRows(table), error: null }, table === 'useful_links' || table === 'useful_link_categories')
     : createPreviewQuery({ data: null, error: PREVIEW_WRITE_ERROR })),

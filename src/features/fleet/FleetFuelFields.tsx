@@ -103,11 +103,11 @@ export function FleetFuelFields({ value, onChange, disabled, namesReady, dailyNa
   </section>;
 }
 
-export function FleetFuelDetails({ vessel, filledOnly = false }: { vessel: FleetFuelCapacity; filledOnly?: boolean }) {
+export function FleetFuelDetails({ vessel, filledOnly = false, hideHeading = false }: { vessel: FleetFuelCapacity; filledOnly?: boolean; hideHeading?: boolean }) {
   const capacities = vessel.fuelTankCapacitiesLiters ?? [];
   const total = fleetMainFuelCapacityLiters(vessel);
   return <section className="fleet-capacity-subsection" aria-label="Carburant">
-    <h4>Carburant</h4>
+    {hideHeading ? null : <h4>Carburant</h4>}
     <dl className="fleet-detail-grid">
       {!filledOnly || capacities.length ? <div><dt>Nombre de cuves principales</dt><dd>{capacities.length || '—'}</dd></div> : null}
       {!filledOnly || total !== null ? <div><dt>{!capacities.length && total !== null ? 'Capacité historique' : 'Capacité totale des cuves principales'}</dt><dd>{formatFleetCapacityLiters(total)}</dd></div> : null}
