@@ -1,5 +1,10 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.118.1** ajoute **Devis** au ruban **Projets** pour Administration
+et Direction. Le début et la durée d’affrètement précèdent la description de
+la prestation. Le PDF exclut le récapitulatif du parcours par défaut.
+Voir [Devis et offres commerciales](./project-quotes.md).
+
 La version **3.118.0** ajoute **Opérations → Devis** pour créer une offre à partir
 du formulaire Projets. Le PDF calcule le total HT à partir de la durée, du loyer
 journalier et des frais, et peut intégrer la carte et les brochures des navires.

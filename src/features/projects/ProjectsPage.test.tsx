@@ -702,15 +702,18 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('heading', { name: 'Campagne Atlantique 2026' })).toBeVisible();
   });
 
-  it.each(['marin', 'capitaine'] as const)('keeps project lifecycle actions read-only for the real %s role fixture', async (role) => {
+  it.each(['marin', 'capitaine', 'armement'] as const)('keeps project lifecycle actions read-only for the real %s role fixture', async (role) => {
     const user = userEvent.setup();
     const { client, rpc } = createClient();
-    const page = render(<ProjectsPage client={client as never} roles={[role]} />);
+    const onOpenQuote = vi.fn();
+    const page = render(<ProjectsPage client={client as never} onOpenQuote={onOpenQuote} roles={[role]} />);
     await screen.findByRole('button', { name: 'P1086 Campagne Atlantique 2026' });
     expect(screen.queryByRole('button', { name: 'Modifier P1086' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier le statut du dossier P1086' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Nouveau projet' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Devis' })).not.toBeInTheDocument();
+    expect(onOpenQuote).not.toHaveBeenCalled();
     expect(page.container.querySelector('button button')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'P1086 Campagne Atlantique 2026' }));
     expect(screen.queryByRole('button', { name: 'Modifier le statut de P1086' })).not.toBeInTheDocument();
@@ -939,6 +942,20 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('searchbox', { name: 'Rechercher un client' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Fermer' }));
     expect(screen.getByRole('button', { name: 'Remorqués' })).toBeInTheDocument();
+  });
+
+  it.each(['admin', 'direction'] as const)('opens Devis from the Projets command ribbon for %s', async (role) => {
+    const user = userEvent.setup();
+    const { client } = createClient();
+    const onOpenQuote = vi.fn();
+    render(<ProjectsPage client={client as never} onOpenQuote={onOpenQuote} roles={[role]} />);
+
+    const ribbon = within(await screen.findByRole('navigation', { name: 'Commandes du module Projets' }));
+    const projectCommands = within(ribbon.getByRole('group', { name: 'Projet' }));
+    const quoteAction = projectCommands.getByRole('button', { name: 'Devis' });
+    expect(quoteAction).toBeEnabled();
+    await user.click(quoteAction);
+    expect(onOpenQuote).toHaveBeenCalledTimes(1);
   });
 
   it('shows only the contractual hire alongside period, status and contract type in the permanent project banner', async () => {

@@ -7,7 +7,6 @@ import { localTodayIso } from './projectBareboatContract';
 import { DEFAULT_PROJECT_OWNER_IDENTITY } from './projectContractOptions';
 import { COMMERCIAL_QUOTE_DURATION_DAYS_KEY } from './projectCommercialOffer';
 import { QUOTE_FUEL_EXCLUDED, QUOTE_FUEL_INCLUDED } from './projectQuoteTerms';
-import type { ProjectQuoteEmission } from './ProjectQuoteEmission';
 import type { ComponentProps } from 'react';
 import type { SeaOperationWaypointMapEditor } from '../seaOperations/SeaOperationWaypointMapEditor';
 
@@ -20,7 +19,10 @@ const mutationMocks = vi.hoisted(() => ({
   saveProjectTowedAsset: vi.fn(),
 }));
 const locationMapMock = vi.hoisted(() => vi.fn());
-const finishQuoteExport = vi.hoisted(() => vi.fn());
+const quoteExportMocks = vi.hoisted(() => ({
+  buildProjectQuoteExport: vi.fn(),
+  storeGeneratedProjectDocument: vi.fn(),
+}));
 vi.mock('../seaOperations/SeaOperationWaypointMapEditor', () => ({
   SeaOperationWaypointMapEditor: (props: ComponentProps<typeof SeaOperationWaypointMapEditor>) => {
     locationMapMock(props);
@@ -38,34 +40,21 @@ vi.mock('./projectMutations', async (importOriginal) => ({
   saveProjectTowedAsset: mutationMocks.saveProjectTowedAsset,
 }));
 
-vi.mock('./ProjectQuoteEmission', () => ({
-  ProjectQuoteEmission: ({ form, onExportingChange, onIncludeLocationChange, onVoyageRecapChange, prepareExport }: ComponentProps<typeof ProjectQuoteEmission>) => (
-    <>
-      <label>
-        <input
-          checked={form.locationPlan?.includeInPdf ?? false}
-          onChange={(event) => onIncludeLocationChange(event.target.checked)}
-          type="checkbox"
-        />
-        Joindre la localisation au PDF
-      </label>
-      <button onClick={() => onVoyageRecapChange(true)} type="button">Inclure l’estimation de carburant</button>
-      <button
-        onClick={async () => {
-          onExportingChange(true);
-          try {
-            if (await prepareExport()) await finishQuoteExport();
-          } finally {
-            onExportingChange(false);
-          }
-        }}
-        type="button"
-      >
-        Exporter l'offre commerciale
-      </button>
-    </>
-  ),
+vi.mock('./projectQuoteExport', () => ({
+  buildProjectQuoteExport: quoteExportMocks.buildProjectQuoteExport,
 }));
+
+vi.mock('./projectDocumentStorage', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./projectDocumentStorage')>(),
+  storeGeneratedProjectDocument: quoteExportMocks.storeGeneratedProjectDocument,
+}));
+
+const quoteExportResult = {
+  offer: { blob: new Blob([], { type: 'application/pdf' }), fileName: 'OC-145.pdf', mimeType: 'application/pdf' },
+  pdfs: [],
+};
+quoteExportMocks.buildProjectQuoteExport.mockResolvedValue(quoteExportResult);
+quoteExportMocks.storeGeneratedProjectDocument.mockResolvedValue(undefined);
 
 mutationMocks.saveProjectContractDetails.mockResolvedValue(undefined);
 mutationMocks.saveProjectPlanningOccurrence.mockResolvedValue(901);
@@ -121,13 +110,16 @@ describe('ProjectEditor devis', () => {
     const offer = within(dialog.getByRole('group', { name: '3 Offre Commerciale' }));
     expect(offer.queryByRole('combobox', { name: 'Port de livraison' })).not.toBeInTheDocument();
     expect(offer.queryByRole('combobox', { name: 'Port de restitution' })).not.toBeInTheDocument();
-    expect(offer.getByLabelText('Début d’affrètement')).toBeVisible();
+    const charterStart = offer.getByLabelText('Début d’affrètement');
+    const duration = offer.getByLabelText('Durée de l’affrètement en jours');
+    const includedService = offer.getByLabelText('Description de la prestation incluse dans le loyer d’affrètement');
+    expect(charterStart.compareDocumentPosition(duration) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(duration.compareDocumentPosition(includedService) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const label of ['Identité armateur', 'Navire secondaire', 'Devise des frais']) {
       expect(offer.queryByLabelText(label)).not.toBeInTheDocument();
     }
     await user.selectOptions(offer.getByLabelText('Navire principal *'), '1');
-    fireEvent.change(offer.getByLabelText('Début d’affrètement'), { target: { value: '2026-11-25T09:00' } });
-    const duration = offer.getByLabelText('Durée de l’affrètement en jours');
+    fireEvent.change(charterStart, { target: { value: '2026-11-25T09:00' } });
     await user.type(duration, '0');
     await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
     expect(dialog.getByRole('alert')).toHaveTextContent('Saisissez une durée d’affrètement en jours entiers, supérieure à zéro.');
@@ -139,6 +131,8 @@ describe('ProjectEditor devis', () => {
     await user.selectOptions(offer.getByLabelText('Fuel'), QUOTE_FUEL_INCLUDED);
     await user.click(offer.getByRole('radio', { name: /Description libre et annexes/ }));
     expect(offer.getByLabelText('Ajouter des pièces jointes aux conditions')).toBeVisible();
+    expect(charterStart).toBeVisible();
+    expect(duration).toHaveValue(5);
     await user.click(offer.getByRole('radio', { name: /Conditions détaillées/ }));
     expect(offer.getByLabelText('Frais de mobilisation')).toHaveValue(350);
     await user.click(steps.getByRole('button', { name: /Localisation/ }));
@@ -155,7 +149,10 @@ describe('ProjectEditor devis', () => {
     expect(location.queryByLabelText('Joindre la localisation au PDF')).not.toBeInTheDocument();
     await user.click(steps.getByRole('button', { name: /Émission du document/ }));
     await user.click(dialog.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
-    await user.click(dialog.getByRole('button', { name: 'Inclure l’estimation de carburant' }));
+    const voyageRecap = within(dialog.getByRole('radiogroup', { name: 'Récapitulatif du parcours dans le PDF' }));
+    expect(voyageRecap.queryByText('Récapitulatif du parcours dans le PDF')).not.toBeInTheDocument();
+    expect(voyageRecap.getByRole('radio', { name: 'Sans récapitulatif' })).toBeChecked();
+    await user.click(voyageRecap.getByRole('radio', { name: 'Distance, durée, carburant, coût et CO₂' }));
     expect(dialog.queryByRole('complementary', { name: 'Complétude du document' })).not.toBeInTheDocument();
     await user.click(dialog.getByRole('button', { name: 'Créer le devis' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(savedProject));
@@ -183,7 +180,11 @@ describe('ProjectEditor devis', () => {
     const first = { id: 145, projectCode: 'P145', title: 'Offre portuaire', updatedAt: '2026-11-23T10:30:00Z' };
     const second = { ...first, updatedAt: '2026-11-23T10:31:00Z' };
     let allowExportToFinish!: () => void;
-    finishQuoteExport.mockReturnValueOnce(new Promise<void>((resolve) => { allowExportToFinish = resolve; }));
+    const continueExport = new Promise<void>((resolve) => { allowExportToFinish = resolve; });
+    quoteExportMocks.buildProjectQuoteExport.mockImplementationOnce(async () => {
+      await continueExport;
+      return quoteExportResult;
+    });
     mutationMocks.saveProject.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
     render(<ProjectEditor
       client={{ rpc: vi.fn().mockResolvedValue({ data: 'P144', error: null }) } as never}
@@ -196,21 +197,32 @@ describe('ProjectEditor devis', () => {
     await user.click(steps.getByRole('button', { name: /Offre Commerciale/ }));
     await user.selectOptions(dialog.getByLabelText('Navire principal *'), '1');
     await user.click(steps.getByRole('button', { name: /Émission du document/ }));
-    const exportButton = dialog.getByRole('button', { name: "Exporter l'offre commerciale" });
-    await user.click(exportButton);
+    await user.click(dialog.getByRole('checkbox', { name: 'Joindre la localisation au PDF' }));
+    expect(dialog.getByRole('radio', { name: 'Sans récapitulatif' })).toBeChecked();
+    await user.click(dialog.getByRole('button', { name: 'Exporter l’offre commerciale' }));
     await waitFor(() => expect(dialog.getByLabelText('Code projet')).toHaveValue(first.projectCode));
+    await waitFor(() => expect(quoteExportMocks.buildProjectQuoteExport).toHaveBeenCalledTimes(1));
+    expect(quoteExportMocks.buildProjectQuoteExport.mock.calls[0][1].offer.project.locationPlan).toEqual(
+      expect.objectContaining({ includeInPdf: true, includeVoyageEstimateInPdf: false }),
+    );
     const closeButton = dialog.getByRole('button', { name: 'Fermer' });
     expect(closeButton).toBeDisabled();
     expect(dialog.getByRole('button', { name: 'Enregistrer le devis' })).toBeDisabled();
     await act(async () => allowExportToFinish());
-    expect(closeButton).toBeEnabled();
-    await user.click(exportButton);
+    await waitFor(() => expect(closeButton).toBeEnabled());
+    await user.click(dialog.getByRole('radio', { name: 'Distance et durée' }));
+    await user.click(dialog.getByRole('button', { name: 'Exporter l’offre commerciale' }));
     await waitFor(() => expect(mutationMocks.saveProject).toHaveBeenCalledTimes(2));
     expect(mutationMocks.saveProject).toHaveBeenNthCalledWith(2, expect.anything(), expect.objectContaining({
       expectedUpdatedAt: first.updatedAt,
       projectId: first.id,
     }));
+    await waitFor(() => expect(quoteExportMocks.buildProjectQuoteExport).toHaveBeenCalledTimes(2));
+    const navigationPlan = quoteExportMocks.buildProjectQuoteExport.mock.calls[1][1].offer.project.locationPlan;
+    expect(navigationPlan).toMatchObject({ includeInPdf: true });
+    expect(navigationPlan).not.toHaveProperty('includeVoyageEstimateInPdf');
     expect(onSaved).not.toHaveBeenCalled();
+    await waitFor(() => expect(closeButton).toBeEnabled());
     await user.click(closeButton);
     expect(onClose).toHaveBeenCalledWith(second);
   });

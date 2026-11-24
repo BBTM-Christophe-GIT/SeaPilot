@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  FilePlus2,
   FileText,
   Files,
   Download,
@@ -107,6 +108,7 @@ import {
 interface ProjectsPageProps {
   client?: SupabaseClient;
   onCloseQuote?: () => void;
+  onOpenQuote?: () => void;
   roles?: RoleKey[];
 }
 
@@ -1119,7 +1121,7 @@ function ProjectDetail({
   );
 }
 
-export function ProjectsPage({ client, onCloseQuote, roles }: ProjectsPageProps) {
+export function ProjectsPage({ client, onCloseQuote, onOpenQuote, roles }: ProjectsPageProps) {
   const outletContext = useOutletContext<AppShellOutletContext | undefined>();
   const effectiveClient = client || outletContext?.client || supabase;
   const effectiveRoles = roles || outletContext?.roles || [];
@@ -1716,6 +1718,14 @@ export function ProjectsPage({ client, onCloseQuote, roles }: ProjectsPageProps)
       <ModuleRibbon ariaLabel="Commandes du module Projets" className="project-production-ribbon" singleRow>
         <ModuleRibbonGroup label="Projet">
           <ProjectRibbonButton disabled={!isManager || changingProjectState || mapSaving} icon={<Plus size={22} />} label="Nouveau projet" onClick={() => openProjectEditor()} />
+          {isManager && onOpenQuote ? (
+            <ProjectRibbonButton
+              disabled={changingProjectState || mapSaving}
+              icon={<FilePlus2 size={22} />}
+              label="Devis"
+              onClick={() => { if (allowMapLeave()) onOpenQuote(); }}
+            />
+          ) : null}
           <ProjectRibbonButton disabled={!isManager || !selectedProject || Boolean(selectedProject.archivedAt) || changingProjectState || mapSaving} icon={<Archive size={22} />} label="Archiver le projet" onClick={() => { if (selectedProject && allowMapLeave()) { setMutationError(''); setClosingProject(selectedProject); } }} />
         </ModuleRibbonGroup>
         <ModuleRibbonGroup label="Catalogue">
