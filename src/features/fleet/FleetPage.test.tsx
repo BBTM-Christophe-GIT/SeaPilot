@@ -234,6 +234,26 @@ describe('FleetPage', () => {
       expect.any(String), expect.objectContaining({ layout: expect.arrayContaining([expect.objectContaining({ label: 'Identité de l’unité' })]) })));
   });
 
+  it('validates editable English cover missions and saves the text on the vessel', async () => {
+    const user = userEvent.setup();
+    vi.mocked(saveFleetVessel).mockResolvedValue(baseVessel);
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await screen.findByRole('heading', { name: 'GOURY' });
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const operations = dialog.getByRole('textbox', { name: 'Usages opérationnels en anglais (un par ligne)' });
+    const save = dialog.getByRole('button', { name: 'Enregistrer' });
+    fireEvent.change(operations, { target: { value: 'x'.repeat(101) } });
+    expect(operations).toBeInvalid();
+    expect(save).toBeDisabled();
+    fireEvent.change(operations, { target: { value: 'Offshore support\nDiving support' } });
+    expect(operations).toBeValid();
+    await user.click(save);
+    expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      name: 'GOURY', brochureCover: { en: { operations: ['Offshore support', 'Diving support'] } },
+    }));
+  });
+
   it('configures the main tanks in liters and keeps the daily tank separate from the total', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);

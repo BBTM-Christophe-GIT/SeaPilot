@@ -83,7 +83,7 @@ export function FleetBrochureCoverFields({ subtitle, summary, operations, cover,
               aria-invalid={invalidMissions || undefined}
               onChange={(event) => {
                 const lines = event.currentTarget.value.split('\n');
-                event.currentTarget.setCustomValidity(excessiveMissions(lines) ? MISSIONS_LIMIT : '');
+                event.currentTarget.setCustomValidity(!hasValidEnglishBrochureMissions(lines) ? MISSIONS_LIMIT : '');
                 updateEnglish({ operations: lines });
               }}
               rows={4}
