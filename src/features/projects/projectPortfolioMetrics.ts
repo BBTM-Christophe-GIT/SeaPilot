@@ -1,8 +1,31 @@
 import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
 import { BAREBOAT_CONTRACT_TYPE, normalizeProjectContractType } from './projectContractOptions';
+import { isPlanningOutOfProject, PLANNING_OUT_OF_PROJECT_CODE } from '../planning/planningOutOfProject';
 export interface UtilizationDpr { id: number; report_date: string; vessel_id: number | null; project_id: number | null; unlisted_project_name?: string | null }
 const DAY = 86_400_000;
 const EXCLUDED_KPI_VESSELS = new Set(['BBTM2710', 'TAMARIS', 'ECREHOUEL']);
+const OUT_OF_PROJECT_DPR_CODE = new RegExp(`^${PLANNING_OUT_OF_PROJECT_CODE}(?:\\s*[-–—·:]|$)`, 'i');
+
+function isOutOfProjectLabel(label?: string | null): boolean {
+  return label?.trim().replace(/\s+/g, ' ').toLowerCase() === 'hors projet';
+}
+
+export function fleetActivitySources(
+  operations: ProjectPlanningOccurrenceRecord[],
+  dprs: UtilizationDpr[],
+  projects: ProjectRecord[],
+) {
+  const outOfProjectIds = new Set(projects
+    .filter((project) => project.projectCode.trim().toUpperCase() === PLANNING_OUT_OF_PROJECT_CODE || isOutOfProjectLabel(project.title))
+    .map((project) => project.id));
+
+  return {
+    operations: operations.filter((operation) => !isPlanningOutOfProject(operation) && !outOfProjectIds.has(operation.projectId)),
+    dprs: dprs.filter((dpr) => dpr.project_id === null
+      ? !isOutOfProjectLabel(dpr.unlisted_project_name) && !OUT_OF_PROJECT_DPR_CODE.test(dpr.unlisted_project_name?.trim() ?? '')
+      : !outOfProjectIds.has(dpr.project_id)),
+  };
+}
 
 export function localCalendarDate(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

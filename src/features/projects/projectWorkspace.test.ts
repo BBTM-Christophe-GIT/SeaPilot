@@ -1,10 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { billingReferenceScope, billingReferenceScopeLabel } from './projectBillingReferences';
-import { utilization, calendarDays, isPortfolioKpiVessel, localCalendarDate, nonOperationalProject, operationType, realizedOperationTypes, summarizeUtilization } from './projectPortfolioMetrics';
+import { utilization, calendarDays, fleetActivitySources, isPortfolioKpiVessel, localCalendarDate, nonOperationalProject, operationType, realizedOperationTypes, summarizeUtilization } from './projectPortfolioMetrics';
 import { countDailyOperations, type ProjectBillingDpr } from './projectBilling';
 import type { ProjectPlanningOccurrenceRecord, ProjectRecord, VesselRecord } from './projectQueries';
+import { PLANNING_OUT_OF_PROJECT_SOURCE } from '../planning/planningOutOfProject';
 
 describe('project workspace business rules', () => {
+  it('excludes the native HP marker and explicit HP designations from fleet KPI inputs', () => {
+    const projects = [
+      { id: 1, projectCode: ' hp ', title: 'Entretien' },
+      { id: 2, projectCode: 'SP-52', title: ' HORS   PROJET ' },
+      { id: 3, projectCode: 'P267', title: 'Essais hors projet Atlantique' },
+    ] as ProjectRecord[];
+    const operations = [
+      { id: 11, projectId: 1, sourceLabel: 'sharepoint' },
+      { id: 12, projectId: 2, sourceLabel: 'sharepoint' },
+      { id: 13, projectId: 3, sourceLabel: 'seapilot-projects' },
+      { id: 14, projectId: 0, sourceLabel: PLANNING_OUT_OF_PROJECT_SOURCE },
+    ] as ProjectPlanningOccurrenceRecord[];
+    const dprs = [
+      { id: 21, project_id: 2, unlisted_project_name: null },
+      { id: 22, project_id: null, unlisted_project_name: ' hp — Entretien ' },
+      { id: 23, project_id: null, unlisted_project_name: 'Hors Projet' },
+      { id: 24, project_id: null, unlisted_project_name: 'HPX - Opération' },
+      { id: 25, project_id: 3, unlisted_project_name: null },
+    ].map((dpr) => ({ ...dpr, vessel_id: 12, report_date: '2026-07-01' }));
+
+    expect(fleetActivitySources(operations, dprs, projects)).toEqual({
+      operations: [operations[2]],
+      dprs: [dprs[3], dprs[4]],
+    });
+  });
+
   it('excludes berth and transit projects from realized utilization while retaining a real operation on the same day', () => {
     const projects = [{ id: 1, title: 'Navire à quai' }, { id: 2, title: 'Navire en transit' }, { id: 3, title: 'Bouées SOMME' }] as ProjectRecord[];
     const report = (id: number, date: string, project_id: number | null, unlisted_project_name?: string) => ({ id, report_date: date, vessel_id: 12, project_id, unlisted_project_name });
