@@ -22,7 +22,7 @@ import {
 } from './fleetCertificateQueries';
 import { getFleetCertificateCategoryPath, indexFleetCertificateCategories, type FleetCertificateCategoryIndex, type FleetCertificateCategoryOption } from './fleetCertificateCategories';
 import {
-  fetchFleetCertificateCategories, fetchFleetCertificateVessels, saveFleetCertificateCategory,
+  fetchFleetCertificateCategories, fetchFleetCertificateVessels, getFleetCertificateVesselLabel, saveFleetCertificateCategory,
   type FleetCertificateCatalogCategory, type FleetCertificateVessel, type SaveFleetCertificateCategoryInput,
 } from './fleetCertificateCategoryQueries';
 import { FleetCertificateCategoryDialog } from './FleetCertificateCategoryDialog';
@@ -45,11 +45,6 @@ import {
 import { FleetCertificateLibraryTree } from './FleetCertificateLibraryTree';
 import { FleetCertificateVersionsPanel } from './FleetCertificateVersionsPanel';
 import {
-  createDefaultFleetCertificateDocumentPath,
-  FleetCertificateDocumentFields,
-  type FleetCertificateDocumentPath,
-} from './FleetCertificateDocumentFields';
-import {
   FleetCertificateReportDialog,
   resolveFleetCertificateReportSelection,
   type FleetCertificateReportSelection,
@@ -57,6 +52,7 @@ import {
 import { FleetCertificateDeadlinesByScope, FleetCertificateFindingsByScope } from './FleetCertificateScopeViews';
 import { FleetCertificateVisitCalendar } from './FleetCertificateVisitCalendar';
 import { FleetCertificateVisitForm } from './FleetCertificateVisitForm';
+import { FleetCertificateVisitTargetForm } from './FleetCertificateVisitTargetForm';
 import { FleetFindingRichTextEditor } from './FleetFindingRichTextEditor';
 import { sanitizeFleetFindingActionHtml } from './fleetFindingRichText';
 import {
@@ -216,7 +212,9 @@ function DocumentForm({ certificates, documentNames, vessels, catalog, onClose, 
   onSave: (input: Omit<CreateFleetCertificateDocumentInput, 'file'>, file: File | null) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
-  const vesselLabels = useMemo(() => vessels.flatMap((item) => [item.name, item.acronym]), [vessels]);
+  const vesselLabels = useMemo(() => [...new Set(vessels.flatMap((item) => [
+    item.name, item.acronym, getFleetCertificateVesselLabel(item.name),
+  ]))], [vessels]);
   const suggestedNames = useMemo(() => Array.from(new Set([...documentNames, ...certificates.map((item) => item.documentTitle)]
     .map((name) => normalizeFleetCertificateDocumentName(name, vesselLabels)).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right, 'fr')), [certificates, documentNames, vesselLabels]);
@@ -257,7 +255,7 @@ function DocumentForm({ certificates, documentNames, vessels, catalog, onClose, 
     <div className="fcx-form-grid">
       <label>Navire<select name="vesselId" onChange={(event) => { setVesselId(event.target.value); setCategoryKey(''); }} required value={vesselId}>
         {!vessels.length && <option value="">Aucun navire disponible</option>}
-        {vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{vessel.name}</option>)}
+        {vessels.map((vessel) => <option key={vessel.id} value={vessel.id}>{getFleetCertificateVesselLabel(vessel.name)}</option>)}
       </select></label>
       <label>Catégorie<select disabled={!categories.length} name="category" onChange={(event) => setCategoryKey(event.target.value)} required value={selectedCategory?.key ?? ''}>
         <option disabled value="">{categories.length ? 'Sélectionner une catégorie' : 'Aucune catégorie active'}</option>
@@ -377,21 +375,6 @@ function DocumentMetadataForm({ certificate, certificates, documentNames, vessel
   </form></Modal>;
 }
 
-function VisitTargetForm({ certificates, onClose, onSelect }: {
-  certificates: FleetCertificateRecord[];
-  onClose: () => void;
-  onSelect: (certificateId: number) => void;
-}) {
-  const [path, setPath] = useState<FleetCertificateDocumentPath>(() => createDefaultFleetCertificateDocumentPath(certificates));
-  const selectedCertificate = certificates.find((certificate) => certificate.id === path.certificateId);
-  return <Modal title="Choisir le document de la visite" onClose={onClose}><form className="fcx-form fcx-visit-target-form" onSubmit={(event) => { event.preventDefault(); if (path.certificateId) onSelect(path.certificateId); }}>
-    <div className="fcx-dialog-section-title"><span>1</span><div><h3>Document concerné</h3><p>Sélectionnez successivement le navire, la catégorie puis le document.</p></div></div>
-    <FleetCertificateDocumentFields certificates={certificates} onChange={setPath} value={path} />
-    {selectedCertificate ? <p className="fcx-visit-target-summary"><CalendarPlus size={18} /><span><small>Visite à programmer</small><b>{selectedCertificate.documentTitle}</b><em>{selectedCertificate.vesselName} · {selectedCertificate.categoryLabel}</em></span></p> : null}
-    <footer><button onClick={onClose} type="button">Annuler</button><button className="fcx-primary" type="submit">Continuer</button></footer>
-  </form></Modal>;
-}
-
 type FleetCertificateWorkspaceTab = 'findings' | 'deadlines' | 'visits' | 'preview';
 
 function formatFileSize(value: number | null): string {
@@ -493,8 +476,9 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'finding' | 'finding-edit' | 'document' | 'metadata' | 'categories' | 'renewal' | 'report' | 'visit-target' | 'visit' | null>(null);
+  const [modal, setModal] = useState<'finding' | 'finding-edit' | 'document' | 'metadata' | 'categories' | 'renewal' | 'report' | 'visit-target' | 'visit-document' | 'visit' | null>(null);
   const [visitCertificateId, setVisitCertificateId] = useState<number | null>(null);
+  const [visitVesselId, setVisitVesselId] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [progressDraft, setProgressDraft] = useState(0);
   const [isSavingFollowup, setIsSavingFollowup] = useState(false);
@@ -556,7 +540,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     return () => { active = false; };
   }, [load, loadCatalog]);
 
-  async function openCatalogModal(next: 'document' | 'metadata' | 'categories') {
+  async function openCatalogModal(next: 'document' | 'metadata' | 'categories' | 'visit-target') {
     if (!manager || catalogLoading) return;
     if (catalogReady) {
       setModal(next);
@@ -571,6 +555,11 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     } finally {
       setCatalogLoading(false);
     }
+  }
+
+  function openVisitTarget() {
+    setVisitVesselId(null);
+    void openCatalogModal('visit-target');
   }
 
   async function updateCategory(input: SaveFleetCertificateCategoryInput) {
@@ -923,7 +912,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       <ModuleRibbonGroup label="Gestion documentaire">
         {manager ? <ModuleRibbonCommand disabled={catalogLoading} icon={<FilePlus2 aria-hidden="true" size={22} />} label="Ajouter un document" onClick={() => void openCatalogModal('document')} /> : null}
         {manager ? <ModuleRibbonCommand disabled={catalogLoading} icon={<FolderCog aria-hidden="true" size={22} />} label="Gérer les catégories" onClick={() => void openCatalogModal('categories')} /> : null}
-        {manager ? <ModuleRibbonCommand icon={<CalendarPlus aria-hidden="true" size={22} />} label="Programmer une visite" onClick={() => setModal('visit-target')} /> : null}
+        {manager ? <ModuleRibbonCommand disabled={catalogLoading} icon={<CalendarPlus aria-hidden="true" size={22} />} label="Programmer une visite" onClick={openVisitTarget} /> : null}
       </ModuleRibbonGroup>
       <ModuleRibbonGroup label="Rapports">
         <ModuleRibbonCommand icon={<FileText aria-hidden="true" size={22} />} label="Générer un rapport" onClick={() => setModal('report')} />
@@ -963,7 +952,7 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
 
           {activeTab === 'deadlines' ? <div className="fcx-deadline-workspace"><header><div><span>Échéances à venir</span><h2>Documents à renouveler</h2><p>Documents échus ou arrivant à échéance dans les 90 jours</p></div><strong>{deadlineCertificates.length}</strong></header><FleetCertificateDeadlinesByScope certificates={deadlineCertificates} daysFromToday={daysFromToday} formatDate={formatDate} onSelectDocument={selectCertificate} /></div> : null}
 
-          {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={() => setModal('visit-target')} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
+          {activeTab === 'visits' ? <FleetCertificateVisitCalendar embedded canManage={manager} onSchedule={openVisitTarget} onSelectDocument={(certificateId) => { const certificate = certificates.find((item) => item.id === certificateId); if (certificate) selectCertificate(certificate); }} visits={scopedVisits} /> : null}
 
           {activeTab === 'preview' ? <>{renewalPreview || pendingPreviewUnresolved ? <section className="fcx-preview-status" aria-label="Aperçu du document reçu">
               {!renewalPreview || renewalPreview.loading ? <p role="status">Document reçu. Chargement de sa nouvelle version…</p> : <p role="alert">{renewalPreview.error}</p>}
@@ -1040,9 +1029,10 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
       categories={categoryCatalog} companyId={categoryCatalog[0]?.companyId ?? vessels[0]?.companyId}
       onClose={() => setModal(null)} onSave={updateCategory}
     />}
-    {manager && modal === 'document' && <DocumentForm
+    {manager && (modal === 'document' || modal === 'visit-document') && <DocumentForm
       catalog={categoryCatalog} certificates={certificates} documentNames={documentNames}
-      onClose={() => setModal(null)} onSave={addDocument} vessels={vessels}
+      onClose={() => setModal(modal === 'visit-document' ? 'visit-target' : null)} onSave={addDocument}
+      vessels={modal === 'visit-document' ? vessels.filter((vessel) => vessel.id === visitVesselId) : vessels}
     />}
     {manager && modal === 'metadata' && selectedCertificate && <DocumentMetadataForm
       catalog={categoryCatalog} certificate={selectedCertificate} certificates={certificates} documentNames={documentNames}
@@ -1054,7 +1044,12 @@ export function FleetCertificatesPage({ client, roles }: FleetCertificatesPagePr
     />}
     {modal === 'renewal' && selectedCertificate && <RenewalForm certificate={selectedCertificate} onClose={() => setModal(null)} onSave={(form) => submitRenewal(selectedCertificate, form)} />}
     {modal === 'report' && <FleetCertificateReportDialog certificates={active} findings={findings} onClose={() => setModal(null)} onGenerate={generateReport} />}
-    {modal === 'visit-target' && <VisitTargetForm certificates={active} onClose={() => setModal(null)} onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }} />}
+    {manager && modal === 'visit-target' && <FleetCertificateVisitTargetForm
+      certificates={active} vessels={vessels} initialVesselId={visitVesselId}
+      onClose={() => setModal(null)}
+      onSelect={(certificateId) => { setVisitCertificateId(certificateId); setModal('visit'); }}
+      onAddDocument={(vesselId) => { setVisitVesselId(vesselId); setModal('visit-document'); }}
+    />}
     {modal === 'visit' && certificates.find((certificate) => certificate.id === visitCertificateId) && <FleetCertificateVisitForm certificate={certificates.find((certificate) => certificate.id === visitCertificateId)!} providers={providers} onClose={() => setModal(null)} onExport={generateVisitReport} onSave={(input) => run(() => saveFleetCertificateVisit(effectiveClient, input).then(() => undefined), 'Visite prestataire programmée.')} />}
   </main>;
 }

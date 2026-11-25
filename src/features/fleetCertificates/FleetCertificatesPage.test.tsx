@@ -715,9 +715,9 @@ describe('FleetCertificatesPage', () => {
     const dialog = within(screen.getByRole('dialog', { name: 'Ajouter un document' }));
     const vessel = dialog.getByRole('combobox', { name: 'Navire' });
     const category = dialog.getByRole('combobox', { name: 'Catégorie' });
-    expect(within(vessel).getAllByRole('option').map((option) => option.textContent)).toEqual(['GOURY', 'SUROIT', "L'ILE DE FRANCE"]);
+    expect(within(vessel).getAllByRole('option').map((option) => option.textContent)).toEqual(['GOURY', 'SUROIT', 'ILE DE FRANCE']);
     await user.selectOptions(category, '06-incendie');
-    await user.selectOptions(vessel, '349');
+    await user.selectOptions(vessel, within(vessel).getByRole('option', { name: 'ILE DE FRANCE' }));
     expect(category).toHaveValue('');
     expect(dialog.queryByRole('option', { name: '06 - Incendie' })).not.toBeInTheDocument();
     await user.selectOptions(category, 'fluvial-certificats-navigation');
@@ -967,7 +967,8 @@ describe('FleetCertificatesPage', () => {
     render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
     await user.click(await screen.findByRole('button', { name: 'Programmer une visite' }));
     const targetDialog = screen.getByRole('dialog');
-    expect(within(targetDialog).getByRole('combobox', { name: 'Navire' })).toHaveValue('GOURY');
+    const vessel = within(targetDialog).getByRole('combobox', { name: 'Navire' });
+    expect(within(vessel).getByRole('option', { selected: true })).toHaveTextContent('GOURY');
     expect(within(targetDialog).getByRole('combobox', { name: 'Catégorie' })).toHaveValue('02-securite');
     await user.selectOptions(within(targetDialog).getByRole('combobox', { name: 'Document' }), '42');
     await user.click(within(targetDialog).getByRole('button', { name: 'Continuer' }));
@@ -992,6 +993,48 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: /02 - Centre de Sécurité des Navires/ }));
     await user.click(within(library).getByRole('button', { name: 'Programmer une visite pour Certificat de Franc-Bord' }));
     expect(screen.getByRole('dialog', { name: 'Programmer une visite prestataire' })).toBeInTheDocument();
+  });
+
+  it('lists ILE DE FRANCE for a visit and resumes scheduling after its first document is added', async () => {
+    const user = userEvent.setup();
+    const { client, rpc, certificateRead } = createClient();
+    const initialRpc = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (name, args) => {
+      if (name === 'create_fleet_certificate_line') {
+        certificateRead.mockResolvedValue({ data: [...certificates, {
+          ...certificates[0], id: 44, vessel_id: 349, vessel_name: "L'ILE DE FRANCE",
+          vessel: { acronym: 'IDF', navigation_category: 'FLUVIAL' },
+          category_key: 'fluvial-certificats-navigation', category_label: 'Certificats de navigation',
+          document_title: 'Certificat de bateau', title: 'Certificat de bateau',
+          status: 'missing', storage_bucket: null, storage_path: null,
+        }], error: null });
+        return { data: 44, error: null };
+      }
+      return initialRpc(name, args);
+    });
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Programmer une visite' }));
+    const target = within(screen.getByRole('dialog', { name: 'Document de la visite' }));
+    await user.selectOptions(target.getByLabelText('Navire'), target.getByRole('option', { name: 'ILE DE FRANCE' }));
+    await user.click(target.getByRole('button', { name: 'Ajouter un document' }));
+
+    const document = within(screen.getByRole('dialog', { name: 'Ajouter un document' }));
+    expect(document.getByLabelText('Navire')).toHaveValue('349');
+    expect(document.getByRole('option', { name: 'ILE DE FRANCE', selected: true })).toBeInTheDocument();
+    await user.selectOptions(document.getByLabelText('Catégorie'), 'fluvial-certificats-navigation');
+    await user.type(document.getByLabelText('Nom du document'), 'Certificat de bateau');
+    await user.click(document.getByRole('button', { name: 'Ajouter la ligne' }));
+
+    const resumedTarget = within(await screen.findByRole('dialog', { name: 'Document de la visite' }));
+    expect(resumedTarget.getByRole('option', { name: 'ILE DE FRANCE', selected: true })).toBeInTheDocument();
+    expect(resumedTarget.getByLabelText('Document')).toHaveValue('44');
+    await user.click(resumedTarget.getByRole('button', { name: 'Continuer' }));
+    const visit = within(screen.getByRole('dialog', { name: 'Programmer une visite prestataire' }));
+    expect(visit.getByLabelText('Objet')).toHaveValue('Visite Certificat de bateau');
+    expect(visit.getByText('ILE DE FRANCE · Certificats de navigation')).toBeInTheDocument();
+    await user.click(visit.getByRole('button', { name: 'Enregistrer la visite' }));
+    expect(rpc).toHaveBeenCalledWith('save_fleet_certificate_visit', expect.objectContaining({ p_certificate_id: 44 }));
+    expect(await screen.findByText('Visite prestataire programmée.')).toBeInTheDocument();
   });
 
   it('resolves every report perimeter independently from the current workspace selection', () => {
