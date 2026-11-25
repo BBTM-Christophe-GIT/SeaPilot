@@ -1,5 +1,12 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.122.1** affiche **ILE DE FRANCE** dans les listes
+**Ajouter un document** et **Programmer une visite**. Depuis le sélecteur
+de visite, un navire sans document propose l’ajout de sa première ligne
+avec le navire présélectionné, puis reprend la programmation. Le ruban
+utilise la disposition commune sur une rangée, avec les noms des groupes
+visibles sous les commandes.
+
 La version **3.122.0** propose **Gérer les catégories** dans le ruban de
 **Certificats flotte**. Les gestionnaires peuvent ajouter, renommer, archiver
 et réactiver les catégories des navires maritimes ou fluviaux. Une catégorie

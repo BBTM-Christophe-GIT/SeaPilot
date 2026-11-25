@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { compareFleetAssets, type FleetAssetKind } from '../fleet/fleetDisplay';
+import { compareFleetAssets, normalizeFleetName, type FleetAssetKind } from '../fleet/fleetDisplay';
 import type { FleetCertificateCategoryOption } from './fleetCertificateCategories';
 
 export type FleetCertificateVesselType = 'maritime' | 'fluvial';
@@ -17,6 +17,10 @@ export interface FleetCertificateVessel {
   lengthOverall: string | null;
   vesselType: FleetCertificateVesselType;
   assetKind: FleetAssetKind;
+}
+
+export function getFleetCertificateVesselLabel(name: string): string {
+  return normalizeFleetName(name).replace('’', "'") === "L'ILE DE FRANCE" ? 'ILE DE FRANCE' : name;
 }
 
 export interface FleetCertificateCatalogCategory extends FleetCertificateCategoryOption {
