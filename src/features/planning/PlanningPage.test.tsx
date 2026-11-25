@@ -1385,7 +1385,7 @@ describe('PlanningPage cockpit', () => {
     }
   });
 
-  it('keeps the HP code and anthracite treatment after renaming or duplicating an out-of-project operation', async () => {
+  it('keeps the HP code and out-of-project styling after renaming or duplicating an out-of-project operation', async () => {
     const user = userEvent.setup();
     const renamed = { ...outOfProjectRow, title: 'HP - Exercices en mer', status: 'Validé' };
     const duplicated = { ...renamed, id: 605, title: 'HP - Exercices en mer (copie)', status: 'Non validé' };
