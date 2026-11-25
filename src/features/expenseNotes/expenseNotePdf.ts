@@ -1,3 +1,4 @@
+import { formatExpenseNoteReference } from '../../../supabase/functions/_shared/expenseNoteReference';
 import { FUEL_LABELS, type ExpenseNote } from './expenseNoteModel';
 
 async function receiptImage(file: File): Promise<Uint8Array> {
@@ -18,7 +19,9 @@ async function receiptImage(file: File): Promise<Uint8Array> {
 }
 
 export async function generateExpenseNotePdf(note: ExpenseNote, files: File[]): Promise<Blob> {
-  const [{ jsPDF }, { autoTable }, { PDFDocument }] = await Promise.all([import('jspdf'), import('jspdf-autotable'), import('pdf-lib')]);
+  const [{ jsPDF }, { autoTable }, { PDFDocument }, reference] = await Promise.all([
+    import('jspdf'), import('jspdf-autotable'), import('pdf-lib'), formatExpenseNoteReference(note.id),
+  ]);
   const summary = new jsPDF();
   const money = (value: number) => `${Number(value).toFixed(2).replace('.', ',')} EUR`;
   summary.setFillColor(12, 38, 61);
@@ -32,7 +35,7 @@ export async function generateExpenseNotePdf(note: ExpenseNote, files: File[]): 
     startY: 42, theme: 'striped', styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak' },
     columnStyles: { 0: { cellWidth: 42, fontStyle: 'bold' } },
     body: [
-      ['Référence', note.id], ['Émetteur', note.issuer_name], ['Saisi par', note.creator_name], ['Navire', note.vessel_name],
+      ['Référence', reference], ['Émetteur', note.issuer_name], ['Saisi par', note.creator_name], ['Navire', note.vessel_name],
       ['Objet', note.title], ['Mode de paiement', note.payment_method], ['Montant', money(note.amount)],
       ['Description', note.description || 'Sans commentaire'], ['Justificatifs', String(note.receipt_count)],
     ],

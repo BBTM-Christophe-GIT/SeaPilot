@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSmtpExpenseMailer, ExpenseMailError, type ExpenseMailInput, type ExpenseMailMessage, type ExpenseSmtpOptions } from '../functions/expense-note-send/mailer';
 
 const ID = 'aa100000-0000-4000-8000-000000000001';
+const REFERENCE = 'N5UWLV93V3';
 const TO = 'accounting@example.test';
 const input: ExpenseMailInput = { noteId: ID, issuerName: 'Test NDF', pdf: new TextEncoder().encode('%PDF-1.7\nsynthetic fixture') };
 const ENV: Record<string, string> = {
@@ -58,13 +59,20 @@ describe('server-side expense SMTP delivery', () => {
     const message = test.sendMail.mock.calls[0][0];
     expect(message.to).toBe(TO); expect(message.envelope).toEqual({ from: ENV.NDF_EMAIL_USER, to: [TO] });
     expect(message.subject).not.toMatch(/[\r\n\u0000]/); expect(message).not.toHaveProperty('bcc');
+    expect(message.subject).toContain(`[NDF ${REFERENCE}]`);
+    expect(message.text).toBe(`Note de frais en pièce jointe.\nRéférence SeaPilot : ${REFERENCE}`);
     expect(message.messageId).toBe(`<ndf-${ID}@sea-pilot-ten.vercel.app>`);
-    expect(message.attachments).toEqual([{ filename: `NDF-${ID}.pdf`, content: Buffer.from(input.pdf), contentType: 'application/pdf', contentDisposition: 'attachment' }]);
+    expect(message.attachments).toEqual([{ filename: `NDF-${REFERENCE}.pdf`, content: Buffer.from(input.pdf), contentType: 'application/pdf', contentDisposition: 'attachment' }]);
     expect(message.disableFileAccess).toBe(true); expect(message.disableUrlAccess).toBe(true);
   });
-  it('reuses the same message identifier across legitimate retries', async () => {
-    const test = setup(); await test.mailer.send(input); await test.mailer.send(input);
-    expect(test.sendMail.mock.calls[0][0].messageId).toBe(test.sendMail.mock.calls[1][0].messageId);
+  it('reuses the same message identifier and short reference across legitimate retries', async () => {
+    const test = setup();
+    await test.mailer.send(input);
+    await test.mailer.send({ ...input, noteId: ID.toUpperCase() });
+    const first = test.sendMail.mock.calls[0][0];
+    const retried = test.sendMail.mock.calls[1][0];
+    expect(retried.messageId).toBe(first.messageId);
+    expect(retried.text).toBe(first.text);
   });
   it.each([
     { ...input, noteId: '../other\r\nBcc: victim' },
@@ -107,6 +115,7 @@ describe('server-side expense SMTP delivery', () => {
     vi.useFakeTimers();
     const test = setup(); test.sendMail.mockImplementation(() => new Promise(() => {}));
     const send = expect(test.mailer.send(input)).rejects.toMatchObject({ definite: false });
+    await vi.waitFor(() => expect(test.sendMail).toHaveBeenCalledOnce());
     await vi.advanceTimersByTimeAsync(35_000); await send;
     expect(test.close).toHaveBeenCalledOnce(); expect(test.sendMail).toHaveBeenCalledOnce();
   });
@@ -132,7 +141,7 @@ describe('server-side expense SMTP delivery', () => {
     expect(mime).not.toMatch(/\r?\nBcc:/i);
     expect(mime).toContain(`To: ${TO}\r\n`);
     expect(unfolded).toContain(`Message-ID: <ndf-${ID}@sea-pilot-ten.vercel.app>\r\n`);
-    expect(unfolded).toContain(`Content-Type: application/pdf; name=NDF-${ID}.pdf`);
+    expect(unfolded).toContain(`Content-Type: application/pdf; name=NDF-${REFERENCE}.pdf`);
     expect(mime).toContain('Content-Transfer-Encoding: base64');
     expect(mime).toContain(Buffer.from(input.pdf).toString('base64'));
     expect(mime).not.toContain(ENV.NDF_EMAIL_APP_PASSWORD);

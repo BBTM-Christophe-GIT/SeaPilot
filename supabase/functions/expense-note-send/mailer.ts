@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { formatExpenseNoteReference } from '../_shared/expenseNoteReference.ts';
 import { MAX_EXPENSE_PDF_BYTES } from './blobPdf.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -86,6 +87,7 @@ export function createSmtpExpenseMailer(
         throw new ExpenseMailError('Le document comptable est invalide ou dépasse la limite d’envoi de 4 Mo.', true, 422);
       }
       const id = input.noteId.toLowerCase();
+      const reference = await formatExpenseNoteReference(id);
       const issuer = String(input.issuerName).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) || 'SeaPilot';
       let transport: ExpenseMailTransport;
       try {
@@ -105,11 +107,11 @@ export function createSmtpExpenseMailer(
           transport.sendMail({
             from: { name: 'SeaPilot — Notes de frais', address: settings.user }, to: settings.to,
             envelope: { from: settings.user, to: [settings.to] },
-            subject: `Note de frais - ${issuer} [NDF ${id.slice(0, 8)}]`,
-            text: `Note de frais en pièce jointe.\nRéférence SeaPilot : ${id}`,
+            subject: `Note de frais - ${issuer} [NDF ${reference}]`,
+            text: `Note de frais en pièce jointe.\nRéférence SeaPilot : ${reference}`,
             messageId: `<ndf-${id}@sea-pilot-ten.vercel.app>`,
             disableFileAccess: true, disableUrlAccess: true,
-            attachments: [{ filename: `NDF-${id}.pdf`, content: Buffer.from(input.pdf), contentType: 'application/pdf', contentDisposition: 'attachment' }],
+            attachments: [{ filename: `NDF-${reference}.pdf`, content: Buffer.from(input.pdf), contentType: 'application/pdf', contentDisposition: 'attachment' }],
           }),
           new Promise<never>((_, reject) => {
             deadline = setTimeout(() => reject(safeMailError(null)), SEND_TIMEOUT_MS);

@@ -1,5 +1,9 @@
 # Notes de frais — v3.45.0
 
+## Référence comptable
+
+La référence d’affichage compte dix caractères et combine lettres majuscules et chiffres. Elle est calculée à partir de l’identifiant interne de la note. Elle figure dans le PDF des nouvelles émissions, le nom du fichier téléchargé et les courriels envoyés à la comptabilité. Les PDF archivés avant ce changement conservent la référence imprimée lors de leur émission.
+
 ## Reprise de transmission
 
 Le bouton **Transmettre** réutilise la note et son PDF déjà émis. Chaque tentative recharge l'état de livraison, même si le serveur refuse l'envoi : une réception incertaine apparaît alors « Transmission à vérifier » et ne conserve pas un bouton de reprise issu d'un ancien état. Après un succès confirmé, la note apparaît transmise immédiatement ; un échec de lecture de l'historique ne transforme pas cet envoi en erreur et ne propose pas de renvoyer la pièce.
@@ -77,8 +81,9 @@ refusée n'ouvre jamais un téléchargement Storage. L'index inclut à nouveau s
 lecteur et sa configuration de courtier existante. Aucun secret Blob supplémentaire
 n'est requis dans Supabase, aucun document source n'est remplacé.
 
-Pour déployer ce correctif serveur, inclure `index.ts`, `handler.ts`, `mailer.ts`, `blobPdf.ts`,
-`deno.json` et leur dépendance `../document-drive/googleDrive.ts`, en conservant
+Pour déployer le service serveur, inclure `index.ts`, `handler.ts`, `mailer.ts`, `blobPdf.ts`,
+`deno.json` et leurs dépendances `../document-drive/googleDrive.ts` et
+`../_shared/expenseNoteReference.ts`, en conservant
 `verify_jwt = true`. Livrer d'abord l'API documentaire Vercel. La vérification de
 routage du service déployé se limite à une requête anonyme refusée ; ne pas appeler
 le traitement authentifié sur une note réelle pour tester un envoi.
