@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FleetCertificatesPage } from './FleetCertificatesPage';
+import { FLEET_CERTIFICATE_CATEGORY_CATALOG } from './fleetCertificateCategories';
 import { compareFleetFindingsByTypeDueYearAndTitle, compareFleetFindingTitles } from './fleetCertificateFindings';
 import { resolveFleetCertificateReportSelection } from './FleetCertificateReportDialog';
 import {
@@ -48,6 +49,23 @@ const findings = [{
   responsible_person_id: 9303, responsible_name: 'Luc MARTIN', created_at: '2026-07-16T09:14:00Z', updated_at: '2026-08-10T15:20:00Z',
 }];
 
+const vesselRows = [
+  { id: 4, company_id: 1, name: 'SUROIT', acronym: 'SUR', overall_length_m: '18,6', vessel_type: 'maritime', asset_kind: 'vessel' },
+  { id: 349, company_id: 1, name: "L'ILE DE FRANCE", acronym: 'IDF', overall_length_m: '16', vessel_type: 'fluvial', asset_kind: 'vessel' },
+  { id: 1, company_id: 1, name: 'GOURY', acronym: 'GRY', overall_length_m: '30,62', vessel_type: 'maritime', asset_kind: 'vessel' },
+];
+
+const categoryRows = [
+  ...FLEET_CERTIFICATE_CATEGORY_CATALOG.map((category, index) => ({
+    id: index + 1, company_id: 1, vessel_type: 'maritime', category_key: category.key,
+    category_label: category.label, parent_key: category.parentKey ?? null, is_active: true,
+  })),
+  { id: 31, company_id: 1, vessel_type: 'maritime', category_key: '02-securite',
+    category_label: '02 - Centre de Sécurité des Navires', parent_key: null, is_active: true },
+  { id: 32, company_id: 1, vessel_type: 'fluvial', category_key: 'fluvial-certificats-navigation',
+    category_label: 'Certificats de navigation', parent_key: null, is_active: true },
+];
+
 const providers = [{
   id: 8, name: 'SERVAUX', address: '5 Quai de Guinée', city: 'Le Havre', phone: '02 32 74 95 80', company_email: null,
   specialties: [{ id: 801, name: 'Visite Radeaux', active: true }, { id: 802, name: 'Visite Equipements Incendie', active: true }],
@@ -71,7 +89,26 @@ function createClient(
   }> = certificates,
   versionRows: Array<Record<string, unknown>> = [],
 ) {
-  const rpc = vi.fn().mockResolvedValue({ data: 42, error: null });
+  const rpc = vi.fn().mockImplementation(async (name: string, _args?: Record<string, unknown>) => ({
+    data: name === 'list_fleet_certificate_vessels' ? vesselRows : 42, error: null,
+  }));
+  const catalog = categoryRows.map((row) => ({ ...row }));
+  const categoryInsert = vi.fn((fields: Omit<(typeof catalog)[number], 'id'>) => {
+    const row = { ...fields, id: 100 + catalog.length };
+    catalog.push(row);
+    return { select: () => ({ single: async () => ({ data: row, error: null }) }) };
+  });
+  const categoryUpdate = vi.fn((fields: Pick<(typeof catalog)[number], 'category_label' | 'parent_key' | 'is_active'>) => ({
+    eq: (_idColumn: string, id: number) => ({
+      eq: () => ({
+        eq: () => ({
+          select: () => ({
+            single: async () => ({ data: Object.assign(catalog.find((row) => row.id === id)!, fields), error: null }),
+          }),
+        }),
+      }),
+    }),
+  }));
   const findingUpdateEq = vi.fn().mockResolvedValue({ error: null });
   const findingUpdate = vi.fn().mockReturnValue({ eq: findingUpdateEq });
   const attachmentInsert = vi.fn().mockResolvedValue({ error: null });
@@ -90,10 +127,11 @@ function createClient(
       if (table === 'service_providers') return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: providers, error: null }) }) }) }) };
       if (table === 'fleet_certificate_visits') return { select: vi.fn().mockReturnValue({ neq: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: visits, error: null }) }) }) };
       if (table === 'fleet_certificate_document_names') return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [{ name: 'Permis de Navigation' }, { name: 'Certificat de Franc-Bord' }], error: null }) }) };
+      if (table === 'fleet_certificate_categories') return { select: async () => ({ data: catalog, error: null }), insert: categoryInsert, update: categoryUpdate };
       throw new Error(`Unexpected table ${table}`);
     }),
   };
-  return { attachmentInsert, client, certificateRead, versionRead, findingUpdate, findingUpdateEq, rpc, storageApi };
+  return { attachmentInsert, client, certificateRead, versionRead, findingUpdate, findingUpdateEq, rpc, storageApi, categoryInsert, categoryUpdate };
 }
 
 function renewalFixture({ alreadyReceived = false, concurrent = false } = {}) {
@@ -116,6 +154,7 @@ function renewalFixture({ alreadyReceived = false, concurrent = false } = {}) {
   const fixture = createClient(findings, [], [current, { ...certificates[1] }], versionRows);
   fixture.storageApi.createSignedUrl.mockImplementation(async (path: string) => ({ data: { signedUrl: `https://signed.test/${encodeURIComponent(path)}` }, error: null }));
   fixture.rpc.mockImplementation(async (name, args) => {
+    if (name === 'list_fleet_certificate_vessels') return { data: vesselRows, error: null };
     if (name === 'submit_fleet_certificate_renewal') {
       receive(args.p_storage_path, args.p_original_file_name);
       if (concurrent) versionRows.push({ ...versionRows[1], id: 8999, version_no: 3, storage_path: '1/GRY/42/renewals/another-deposit.pdf' });
@@ -550,7 +589,7 @@ describe('FleetCertificatesPage', () => {
     await user.type(screen.getByRole('textbox', { name: 'Note de suivi' }), 'Traitement réalisé à bord');
     await user.click(screen.getByRole('button', { name: 'Ajouter' }));
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls.filter(([name]) => name === 'save_fleet_certificate_finding_followup')).toHaveLength(1);
     expect(rpc).toHaveBeenCalledWith('save_fleet_certificate_finding_followup', {
       p_finding_id: 81,
       p_progress: 80,
@@ -665,6 +704,58 @@ describe('FleetCertificatesPage', () => {
     await user.click(within(library).getByRole('button', { name: 'Prévisualiser Certificat de Franc-Bord' }));
     expect(await screen.findByRole('heading', { name: 'Informations du document' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gérer les catégories' })).not.toBeInTheDocument();
+    expect(client.rpc).not.toHaveBeenCalledWith('list_fleet_certificate_vessels');
+  });
+
+  it('adds a first document line to the fluvial vessel with its own category list', async () => {
+    const user = userEvent.setup(); const { client, rpc } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['direction']} />);
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un document' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Ajouter un document' }));
+    const vessel = dialog.getByRole('combobox', { name: 'Navire' });
+    const category = dialog.getByRole('combobox', { name: 'Catégorie' });
+    expect(within(vessel).getAllByRole('option').map((option) => option.textContent)).toEqual(['GOURY', 'SUROIT', "L'ILE DE FRANCE"]);
+    await user.selectOptions(category, '06-incendie');
+    await user.selectOptions(vessel, '349');
+    expect(category).toHaveValue('');
+    expect(dialog.queryByRole('option', { name: '06 - Incendie' })).not.toBeInTheDocument();
+    await user.selectOptions(category, 'fluvial-certificats-navigation');
+    await user.type(dialog.getByLabelText('Nom du document'), 'Certificat de bateau');
+    await user.click(dialog.getByRole('button', { name: 'Ajouter la ligne' }));
+    expect(rpc).toHaveBeenCalledWith('create_fleet_certificate_line', expect.objectContaining({
+      p_vessel_id: 349,
+      p_category_key: 'fluvial-certificats-navigation',
+      p_category_label: 'Certificats de navigation',
+      p_document_title: 'Certificat de bateau',
+    }));
+    expect(await screen.findByText('Ligne de suivi ajoutée.')).toBeInTheDocument();
+  });
+
+  it('lets a manager create, rename and archive a fluvial category from the ribbon', async () => {
+    const user = userEvent.setup(); const { client, categoryInsert } = createClient();
+    render(<FleetCertificatesPage client={client as never} roles={['armement']} />);
+    await user.click(await screen.findByRole('button', { name: 'Gérer les catégories' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Gérer les catégories' }));
+    await user.selectOptions(dialog.getByLabelText('Type de navire'), 'fluvial');
+    expect(dialog.queryByText('06 - Incendie')).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('button', { name: 'Ajouter une catégorie' }));
+    await user.type(dialog.getByLabelText('Libellé'), 'Documents techniques');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    expect(await dialog.findByText('Catégorie ajoutée.')).toBeInTheDocument();
+    expect(categoryInsert).toHaveBeenCalledWith(expect.objectContaining({ vessel_type: 'fluvial', category_label: 'Documents techniques' }));
+    await user.click(dialog.getByRole('button', { name: 'Modifier Documents techniques' }));
+    await user.clear(dialog.getByLabelText('Libellé'));
+    await user.type(dialog.getByLabelText('Libellé'), 'Dossier technique');
+    await user.click(dialog.getByRole('button', { name: 'Enregistrer' }));
+    await user.click(await dialog.findByRole('button', { name: 'Archiver Dossier technique' }));
+    expect(await dialog.findByText('Catégorie archivée.')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Ajouter un document' }));
+    const documentForm = within(screen.getByRole('dialog', { name: 'Ajouter un document' }));
+    await user.selectOptions(documentForm.getByRole('combobox', { name: 'Navire' }), '349');
+    expect(documentForm.queryByRole('option', { name: 'Dossier technique' })).not.toBeInTheDocument();
+    expect(documentForm.getByRole('option', { name: 'Certificats de navigation' })).toBeInTheDocument();
   });
 
   it('exposes the new document workflow to fleet managers', async () => {

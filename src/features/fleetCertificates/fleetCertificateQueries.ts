@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { FleetCertificateVesselType } from './fleetCertificateCategoryQueries';
 
 export const FLEET_CERTIFICATE_BUCKET = 'fleet-certificates';
 
@@ -33,7 +34,7 @@ const FLEET_CERTIFICATE_SELECT = [
   'is_active_fleet',
   'notes',
   'updated_at',
-  'vessel:vessels!fleet_certificates_vessel_id_fkey(acronym)',
+  'vessel:vessels!fleet_certificates_vessel_id_fkey(acronym, navigation_category, type_label)',
 ].join(', ');
 
 export type FleetCertificateStatus = 'valid' | 'renew_due' | 'expired' | 'missing' | 'pending_validation';
@@ -46,6 +47,12 @@ export type FleetCertificateWorkflowStatus =
   | 'pending_validation'
   | 'validated'
   | 'cancelled';
+
+interface CertificateVesselRelation {
+  acronym: string | null;
+  navigation_category?: string | null;
+  type_label?: string | null;
+}
 
 interface FleetCertificateRow {
   id: number;
@@ -78,7 +85,7 @@ interface FleetCertificateRow {
   is_active_fleet: boolean | null;
   notes: string | null;
   updated_at: string | null;
-  vessel: { acronym: string | null } | Array<{ acronym: string | null }> | null;
+  vessel: CertificateVesselRelation | CertificateVesselRelation[] | null;
 }
 
 interface FleetCertificateVersionRow {
@@ -104,6 +111,7 @@ export interface FleetCertificateRecord {
   vesselId: number | null;
   vesselName: string;
   vesselAcronym: string;
+  vesselType?: FleetCertificateVesselType;
   categoryKey: string;
   categoryLabel: string;
   documentTitle: string;
@@ -229,11 +237,6 @@ function normalizeWorkflowStatus(status: string | null): FleetCertificateWorkflo
     : 'not_started';
 }
 
-function relationAcronym(relation: FleetCertificateRow['vessel']): string {
-  const vessel = Array.isArray(relation) ? relation[0] : relation;
-  return vessel?.acronym?.trim() || '';
-}
-
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right, 'fr'));
 }
@@ -296,39 +299,45 @@ export function getEffectiveFleetCertificateStatus(
 }
 
 export function mapFleetCertificateRows(rows: FleetCertificateRow[]): FleetCertificateRecord[] {
-  return rows.map((row) => ({
-    id: row.id,
-    companyId: row.company_id,
-    vesselId: row.vessel_id,
-    vesselName: nullableText(row.vessel_name) || 'Navire non renseigné',
-    vesselAcronym: relationAcronym(row.vessel),
-    categoryKey: row.category_key || 'certificate',
-    categoryLabel: nullableText(row.category_label) || getFleetCertificateCategoryLabel(row.category_key || 'certificate'),
-    documentTitle: nullableText(row.document_title) || row.title,
-    title: row.title,
-    status: normalizeStatus(row.status),
-    issuedOn: nullableText(row.issued_on),
-    expiresOn: nullableText(row.expires_on),
-    plannedOn: nullableText(row.planned_on),
-    alarmOn: nullableText(row.alarm_on),
-    providerName: nullableText(row.provider_name),
-    visitLocation: nullableText(row.visit_location),
-    workflowStatus: normalizeWorkflowStatus(row.workflow_status),
-    renewalNotes: nullableText(row.renewal_notes),
-    renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-issued-year',
-    originalFileName: nullableText(row.original_file_name),
-    fileName: nullableText(row.file_name),
-    sourceLabel: nullableText(row.source_label),
-    fileUrl: nullableText(row.file_url),
-    storageBucket: nullableText(row.storage_bucket),
-    storagePath: nullableText(row.storage_path),
-    mimeType: nullableText(row.mime_type),
-    fileSizeBytes: row.file_size_bytes,
-    currentVersionNo: row.current_version_no ?? 1,
-    isActiveFleet: row.is_active_fleet !== false,
-    notes: nullableText(row.notes),
-    updatedAt: nullableText(row.updated_at),
-  }));
+  return rows.map((row) => {
+    const vessel = Array.isArray(row.vessel) ? row.vessel[0] : row.vessel;
+    const navigation = vessel?.navigation_category?.trim().toLowerCase();
+    const isFluvial = navigation === 'fluvial' || (!navigation && vessel?.type_label?.toLowerCase().includes('fluvial'));
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      vesselId: row.vessel_id,
+      vesselName: nullableText(row.vessel_name) || 'Navire non renseigné',
+      vesselAcronym: vessel?.acronym?.trim() || '',
+      ...(isFluvial ? { vesselType: 'fluvial' as const } : {}),
+      categoryKey: row.category_key || 'certificate',
+      categoryLabel: nullableText(row.category_label) || getFleetCertificateCategoryLabel(row.category_key || 'certificate'),
+      documentTitle: nullableText(row.document_title) || row.title,
+      title: row.title,
+      status: normalizeStatus(row.status),
+      issuedOn: nullableText(row.issued_on),
+      expiresOn: nullableText(row.expires_on),
+      plannedOn: nullableText(row.planned_on),
+      alarmOn: nullableText(row.alarm_on),
+      providerName: nullableText(row.provider_name),
+      visitLocation: nullableText(row.visit_location),
+      workflowStatus: normalizeWorkflowStatus(row.workflow_status),
+      renewalNotes: nullableText(row.renewal_notes),
+      renamingRuleKey: nullableText(row.renaming_rule_key) || 'vessel-title-issued-year',
+      originalFileName: nullableText(row.original_file_name),
+      fileName: nullableText(row.file_name),
+      sourceLabel: nullableText(row.source_label),
+      fileUrl: nullableText(row.file_url),
+      storageBucket: nullableText(row.storage_bucket),
+      storagePath: nullableText(row.storage_path),
+      mimeType: nullableText(row.mime_type),
+      fileSizeBytes: row.file_size_bytes,
+      currentVersionNo: row.current_version_no ?? 1,
+      isActiveFleet: row.is_active_fleet !== false,
+      notes: nullableText(row.notes),
+      updatedAt: nullableText(row.updated_at),
+    };
+  });
 }
 
 export function buildFleetCertificateMetrics(

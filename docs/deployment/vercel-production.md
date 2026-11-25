@@ -1,5 +1,19 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.122.0** propose **Gérer les catégories** dans le ruban de
+**Certificats flotte**. Les gestionnaires peuvent ajouter, renommer, archiver
+et réactiver les catégories des navires maritimes ou fluviaux. Une catégorie
+archivée reste visible sur les documents déjà classés. **Ajouter un document**
+propose les navires actifs dès leur première saisie, dont L’Île de France, et
+filtre les catégories actives selon leur type.
+
+Appliquer la migration `20261125142023_fleet_certificate_vessel_categories.sql` avant le déploiement
+du frontend. Elle reprend les catégories maritimes actuelles et initialise
+six catégories fluviales modifiables. La recette SQL
+`supabase/tests/fleet_certificate_vessel_categories_test.sql` vérifie les droits
+de gestion, les profils Capitaine et Marin et le parcours de publication des
+rapports de levage.
+
 La version **3.121.1** affiche les opérations **Hors Projet** en fuchsia
 dans les vues Flotte et Projet du Planning. Aucune migration requise.
 

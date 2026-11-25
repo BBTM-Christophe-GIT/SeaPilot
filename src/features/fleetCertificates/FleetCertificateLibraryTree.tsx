@@ -8,12 +8,13 @@ import {
   type FleetCertificateRecord,
 } from './fleetCertificateQueries';
 import {
-  getFleetCertificateCategory,
-  getFleetCertificateCategoryParent,
+  getFleetCertificateCategoryPath,
+  type FleetCertificateCategoryIndex,
 } from './fleetCertificateCategories';
 
 interface FleetCertificateLibraryTreeProps {
   certificates: FleetCertificateRecord[];
+  categoryIndex?: FleetCertificateCategoryIndex;
   formatDate: (value: string) => string;
   findingCountByCertificate: ReadonlyMap<number, number>;
   revealMatches: boolean;
@@ -57,6 +58,7 @@ const EMPTY_SELECTION = new Set<number>();
 export function buildFleetCertificateLibraryTree(
   certificates: FleetCertificateRecord[],
   findingCountByCertificate: ReadonlyMap<number, number>,
+  categoryIndex?: FleetCertificateCategoryIndex,
 ): FleetCertificateLibraryVesselBranch[] {
   const vessels = new Map<string, { name: string; certificates: FleetCertificateRecord[] }>();
 
@@ -70,11 +72,7 @@ export function buildFleetCertificateLibraryTree(
   return Array.from(vessels, ([key, vessel]) => {
     const categories = new Map<string, FleetCertificateLibraryCategoryBranch>();
     vessel.certificates.forEach((certificate) => {
-      const resolvedCategory = getFleetCertificateCategory(
-        certificate.categoryKey || certificate.categoryLabel,
-        certificate.categoryLabel,
-      );
-      const parentCategory = getFleetCertificateCategoryParent(resolvedCategory);
+      const { category: resolvedCategory, parent: parentCategory } = getFleetCertificateCategoryPath(certificate, categoryIndex);
       const topLevelCategory = parentCategory || resolvedCategory;
       const category = categories.get(topLevelCategory.key) || {
         key: `${key}:${topLevelCategory.key}`,
@@ -146,6 +144,7 @@ function toggleKey(current: Set<string>, key: string): Set<string> {
 
 export function FleetCertificateLibraryTree({
   certificates,
+  categoryIndex,
   formatDate,
   findingCountByCertificate,
   revealMatches,
@@ -165,8 +164,8 @@ export function FleetCertificateLibraryTree({
   onToggleSelection,
 }: FleetCertificateLibraryTreeProps) {
   const branches = useMemo(
-    () => buildFleetCertificateLibraryTree(certificates, findingCountByCertificate),
-    [certificates, findingCountByCertificate],
+    () => buildFleetCertificateLibraryTree(certificates, findingCountByCertificate, categoryIndex),
+    [certificates, findingCountByCertificate, categoryIndex],
   );
   const allVesselKeys = useMemo(() => branches.map((vessel) => vessel.key), [branches]);
   const allCategoryKeys = useMemo(
