@@ -3,7 +3,10 @@ docs/
 output/
 outputs/
 tmp/
-supabase/
+supabase/**
+!supabase/functions/
+!supabase/functions/_shared/
+!supabase/functions/_shared/expenseNoteReference.ts
 .git/
 .github/
 .vercel/

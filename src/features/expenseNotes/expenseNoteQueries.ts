@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatExpenseNoteReference } from '../../../supabase/functions/_shared/expenseNoteReference';
 import { compareFleetAssets } from '../fleet/fleetDisplay';
 import { ExpenseInputError, PAYMENT_METHODS, validateExpenseFiles, type ExpenseNote, type ExpenseNoteInput } from './expenseNoteModel';
 
@@ -103,10 +104,11 @@ export async function transmitExpenseNote(client: SupabaseClient, id: string): P
 export async function downloadExpenseNote(client: SupabaseClient, note: ExpenseNote): Promise<void> {
   const { data, error } = await client.storage.from(EXPENSE_PDF_BUCKET).download(note.pdf_path);
   if (error || !data) throw error || new Error('PDF indisponible.');
+  const reference = await formatExpenseNoteReference(note.id);
   const url = URL.createObjectURL(data);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `NDF-${note.expense_on}-${note.id.slice(0, 8)}.pdf`;
+  link.download = `NDF-${note.expense_on}-${reference}.pdf`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

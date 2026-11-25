@@ -5,6 +5,25 @@ import { generateExpenseNotePdf } from './expenseNotePdf';
 import { EXPENSE_NOTE_PREVIEW } from './expenseNotePreview';
 
 describe('expense PDF archive', () => {
+  it.each([
+    ['aabbccdd-1234-4abc-8def-0123456789a1', 'NGMHRG0KK1'],
+    ['aabbccdd-1234-4abc-8def-0123456789a2', 'NAL4KQH9M2'],
+  ])('prints a short reference for note %s', async (id, reference) => {
+    const output = await generateExpenseNotePdf({ ...EXPENSE_NOTE_PREVIEW[0], id }, []);
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = getDocument({ data: new Uint8Array(await output.arrayBuffer()), useSystemFonts: true });
+    try {
+      const page = await (await task.promise).getPage(1);
+      const text = (await page.getTextContent()).items.flatMap((item) => 'str' in item && item.str.trim() ? [item.str.trim()] : []);
+      const label = text.indexOf('Référence');
+      expect(label).toBeGreaterThanOrEqual(0);
+      expect(text[label + 1]).toBe(reference);
+      expect(text.join(' ')).not.toContain(id);
+    } finally {
+      await task.destroy();
+    }
+  });
+
   it('preserves PDF receipt pages before the note summary', async () => {
     const receipt = await PDFDocument.create(); receipt.addPage([222, 333]); receipt.addPage([444, 555]);
     const file = new File([new Uint8Array(await receipt.save())], 'recu.pdf', { type: 'application/pdf' });
