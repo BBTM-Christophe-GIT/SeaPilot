@@ -29,7 +29,7 @@ Les fixtures SQL sont intégralement annulées en fin de test.
 
 Dans **Nouvelle opération**, choisissez **Hors Projet**, saisissez un nom et
 validez. Le planning ajoute une opération d’une journée sur le navire et à la
-date sélectionnés. Le même code **HP** et la couleur gris anthracite s’affichent
+date sélectionnés. Le code **HP** et la couleur fuchsia s’affichent
 dans les vues **Flotte** et **Projet**, y compris après renommage.
 
 Les profils Administration, Direction et Armement peuvent créer et modifier

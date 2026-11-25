@@ -141,7 +141,7 @@ export function PlanningProjectPickerDialog({
           <form className="planning-quick-project-form" id="planning-operation-creation" onSubmit={(event) => void submitOperation(event)}>
             <h2>{isOutOfProject ? 'Hors Projet' : 'Projet rapide'}</h2>
             <p>{isOutOfProject
-              ? <>Code projet <strong>{PLANNING_OUT_OF_PROJECT_CODE}</strong> · Gris anthracite</>
+              ? <>Code projet <strong>{PLANNING_OUT_OF_PROJECT_CODE}</strong> · Fuchsia</>
               : 'Indiquez le titre : le projet recevra automatiquement un numéro Pxxx et sera enregistré en brouillon.'}</p>
             <label htmlFor="planning-operation-creation-title">{isOutOfProject ? 'Nom du projet' : 'Titre du projet'}</label>
             <input autoFocus disabled={isSaving} id="planning-operation-creation-title" maxLength={isOutOfProject ? PLANNING_OUT_OF_PROJECT_NAME_MAX_LENGTH : 300} onChange={(event) => setTitle(event.target.value)} required value={title} />

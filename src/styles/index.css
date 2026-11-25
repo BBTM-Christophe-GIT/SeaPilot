@@ -6918,6 +6918,7 @@ button:disabled {
   --planning-event-operation-hover: #0f58bd;
   --planning-event-operation-selected: #0b4698;
   --planning-event-operation-shadow: rgba(23, 105, 220, .28);
+  --planning-event-out-of-project: #c026a7;
   --planning-event-maintenance: #bd5b0a;
   --planning-event-maintenance-hover: #9d4706;
   --planning-event-maintenance-selected: #7d3504;
@@ -7852,11 +7853,11 @@ button:disabled {
 }
 
 .planning-project-bar.is-out-of-project {
-  --planning-event-color: #30343b;
+  --planning-event-color: var(--planning-event-out-of-project);
   --planning-event-color-hover: var(--planning-event-color);
   --planning-event-color-selected: var(--planning-event-color);
-  --planning-event-shadow: rgba(48, 52, 59, .25);
-  border-color: #30343b;
+  --planning-event-shadow: color-mix(in srgb, var(--planning-event-color) 25%, transparent);
+  border-color: var(--planning-event-color);
   color: #fff;
 }
 
@@ -7913,7 +7914,7 @@ button:disabled {
 }
 
 .planning-project-bar.is-out-of-project .planning-project-status-rail {
-  background: #666b73;
+  background: #f472d0;
 }
 
 .planning-project-status-rail img {
@@ -17905,8 +17906,12 @@ button.planning-p12-conflict-card {
 }
 
 .planning-move-preview.is-project.is-out-of-project {
-  border-color: #30343b;
-  background: repeating-linear-gradient(135deg, rgba(48, 52, 59, .35) 0 10px, rgba(48, 52, 59, .15) 10px 20px);
+  border-color: var(--planning-event-out-of-project);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--planning-event-out-of-project) 35%, transparent) 0 10px,
+    color-mix(in srgb, var(--planning-event-out-of-project) 15%, transparent) 10px 20px
+  );
 }
 
 .planning-move-preview.is-technical-stop {

@@ -1,5 +1,8 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.121.1** affiche les opérations **Hors Projet** en fuchsia
+dans les vues Flotte et Projet du Planning. Aucune migration requise.
+
 La version **3.121.0** ajoute les brochures BBTM françaises et anglaises, en A4
 multipage ou sur une feuille A4 pliée. La trame des catégories et des champs est
 partagée par société. Appliquer les deux migrations du
