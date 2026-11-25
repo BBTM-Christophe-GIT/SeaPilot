@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
+import { indexFleetCertificateCategories } from './fleetCertificateCategories';
 import {
   buildFleetCertificateLibraryTree,
   FleetCertificateLibraryTree,
@@ -17,6 +18,24 @@ const certificate = {
 } as FleetCertificateRecord;
 
 describe('fleet certificate library tree', () => {
+  it('shows a renamed archived category and its parent from the document’s own vessel catalog', () => {
+    const fluvial = {
+      ...certificate, companyId: 1, vesselType: 'fluvial' as const,
+      categoryKey: 'controle', categoryLabel: 'Ancien libellé',
+    };
+    const categoryIndex = indexFleetCertificateCategories([
+      { id: 1, companyId: 1, vesselType: 'maritime', key: 'controle', label: 'Contrôle maritime', isActive: true },
+      { id: 2, companyId: 1, vesselType: 'fluvial', key: 'controle', label: 'Contrôle fluvial', parentKey: 'navigation', isActive: false },
+      { id: 3, companyId: 1, vesselType: 'fluvial', key: 'navigation', label: 'Navigation fluviale', isActive: false },
+    ]);
+    const tree = buildFleetCertificateLibraryTree([fluvial], new Map(), categoryIndex);
+
+    expect(tree[0].categories[0]).toMatchObject({
+      label: 'Navigation fluviale',
+      subcategories: [{ label: 'Contrôle fluvial', certificates: [fluvial] }],
+    });
+  });
+
   it('places an LSA subcategory beneath its parent category', () => {
     const tree = buildFleetCertificateLibraryTree([certificate], new Map([[42, 2]]));
 

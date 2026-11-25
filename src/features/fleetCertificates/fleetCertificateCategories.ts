@@ -1,5 +1,6 @@
 import type { FleetCertificateRecord } from './fleetCertificateQueries';
 import { isLsaCategory } from '../lsa/lsaModel';
+import type { FleetCertificateCatalogCategory } from './fleetCertificateCategoryQueries';
 
 export interface FleetCertificateCategoryOption {
   key: string;
@@ -56,6 +57,27 @@ export function getFleetCertificateCategoryParent(
   category: FleetCertificateCategoryOption,
 ): FleetCertificateCategoryOption | null {
   return category.parentKey ? categoryByKey.get(category.parentKey) || null : null;
+}
+
+export function indexFleetCertificateCategories(categories: FleetCertificateCatalogCategory[]) {
+  return new Map(categories.map((category) => [
+    `${category.companyId}:${category.vesselType}:${category.key}`, category,
+  ]));
+}
+
+export type FleetCertificateCategoryIndex = ReturnType<typeof indexFleetCertificateCategories>;
+
+export function getFleetCertificateCategoryPath(
+  certificate: FleetCertificateRecord,
+  catalog?: FleetCertificateCategoryIndex,
+) {
+  const scope = `${certificate.companyId}:${certificate.vesselType ?? 'maritime'}:`;
+  const legacy = getFleetCertificateCategory(certificate.categoryKey || certificate.categoryLabel, certificate.categoryLabel);
+  const category = catalog?.get(scope + certificate.categoryKey) ?? catalog?.get(scope + legacy.key) ?? legacy;
+  const parent = category.parentKey
+    ? catalog?.get(scope + category.parentKey) ?? getFleetCertificateCategoryParent(category)
+    : null;
+  return { category, parent };
 }
 
 export function getFleetCertificateCategoryOptions(

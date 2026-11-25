@@ -1,0 +1,122 @@
+.fleet-certificate-category-dialog {
+  display: grid;
+  gap: var(--sp-space-4);
+}
+
+.fleet-certificate-category-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--sp-space-3);
+  min-width: 0;
+}
+
+fieldset.fleet-certificate-category-fields {
+  margin: 0;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  padding: var(--sp-space-4);
+}
+
+.fleet-certificate-category-fields legend {
+  padding: 0 var(--sp-space-2);
+  color: var(--sp-heading);
+  font-weight: 650;
+}
+
+.fleet-certificate-category-fields label {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: var(--sp-space-1);
+  color: var(--sp-text);
+  font-size: var(--sp-subtitle-size);
+  font-weight: 650;
+}
+
+.fleet-certificate-category-fields :is(input, select) {
+  min-width: 0;
+  min-height: var(--sp-control-height);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  padding: 0 var(--sp-space-3);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.fleet-certificate-category-label {
+  grid-column: 1 / -1;
+}
+
+.fleet-certificate-category-list {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-panel-radius);
+  padding: 0;
+  list-style: none;
+}
+
+.fleet-certificate-category-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-space-2);
+  padding: var(--sp-space-2) var(--sp-space-3);
+}
+
+.fleet-certificate-category-list li + li {
+  border-top: 1px solid var(--sp-border);
+}
+
+.fleet-certificate-category-list .is-child {
+  padding-inline-start: var(--sp-space-6);
+  background: var(--sp-surface-subtle);
+}
+
+.fleet-certificate-category-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fleet-certificate-category-list li > span > small {
+  display: block;
+  color: var(--sp-muted);
+}
+
+.fleet-certificate-category-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--sp-space-2);
+}
+
+.fleet-certificate-category-actions button:disabled {
+  opacity: 0.58;
+}
+
+.fleet-certificate-category-dialog p {
+  margin: 0;
+}
+
+.fleet-certificate-category-notice {
+  color: var(--sp-success);
+}
+
+.fleet-certificate-category-error {
+  color: var(--sp-danger);
+}
+
+@media (pointer: coarse) {
+  .fleet-certificate-category-fields :is(input, select),
+  .fleet-certificate-category-dialog .fleet-certificate-category-actions button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 440px) {
+  .fleet-certificate-category-list li {
+    align-items: start;
+    flex-direction: column;
+  }
+}
