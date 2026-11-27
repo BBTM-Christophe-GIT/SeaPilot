@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.125.1** étend la carte de l’inventaire Pharmacie à la hauteur de son contenu et resserre les lignes, avec une disposition adaptée aux écrans étroits. Voir [Inventaire Pharmacie](./pharmacy-inventory.md).
+
 La version **3.125.0** ajoute les réponses communes à plusieurs références et la colonne **Photo** de la grille d’audit interne. Les photos de la grille apparaissent aussi dans les écarts liés et dans les exports. Appliquer `20261127133547_internal_audit_shared_responses_observation_photos.sql` avant le frontend. Voir [Audit ISM Interne](./internal-audits.md#réponses-communes-et-photos-de-la-grille).
 
 La version **3.124.1** ajoute la saisie de quantité dans la colonne **À bord** de l’inventaire Pharmacie. Le bon calcule les manques à partir des stocks renseignés. Appliquer `20261127140000_pharmacy_first_stock_count.sql` avant le frontend. Voir [Inventaire Pharmacie](./pharmacy-inventory.md).
