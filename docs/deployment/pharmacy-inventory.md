@@ -1,6 +1,6 @@
 # Inventaire Pharmacie
 
-Le module **Registres → Inventaire Pharmacie** suit les articles et les documents de contrôle par navire. L’interface est conçue pour un portable de 15 pouces, avec synthèse, recherche et filtres immédiatement visibles, en-tête fixe et défilement limité à la liste.
+Le module **Registres → Inventaire Pharmacie** suit les articles et les documents de contrôle par navire. La carte grandit avec le tableau et défile avec la page. Sur ordinateur, les en-têtes de colonne restent visibles pendant le défilement. Le nom, le lot, les unités et les indications de conditionnement s’alignent lorsque la place le permet. Sur écran étroit, chaque article regroupe ses champs sous leur libellé. L’option **Inclure les articles retirés** reste accessible près des filtres.
 
 ## Dotations Division 217
 

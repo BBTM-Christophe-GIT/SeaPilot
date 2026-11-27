@@ -49,6 +49,12 @@ function ItemStatus({ item }: { item: PharmacyItem }) {
     {stock === 'low' ? <span className="pharmacy-stock-low">Stock insuffisant</span> : stock === 'unknown' ? <span className="pharmacy-stock-unknown">Stock à vérifier</span> : expiry === 'none' && !item.outside_dotation ? '—' : null}
   </div>;
 }
+function QuantityDetails({ values }: { values: Array<string | null | undefined> }) {
+  const details = values.filter(Boolean);
+  return details.length ? <small className="pharmacy-quantity-details">
+    {details.map((detail, index) => <Fragment key={index}>{index > 0 ? ' · ' : ''}<span>{detail}</span></Fragment>)}
+  </small> : null;
+}
 function InlineStockQuantity({ designation, initialValue = '', unit, busy, onSave }: {
   designation: string; initialValue?: string; unit?: string | null; busy: boolean; onSave: (quantity: number) => void;
 }) {
@@ -66,10 +72,10 @@ function InlineStockQuantity({ designation, initialValue = '', unit, busy, onSav
       inputMode="decimal" maxLength={24} placeholder="—" value={value} disabled={busy}
       onChange={(event) => { setValue(event.target.value); setInvalid(false); }}
       onKeyDown={(event) => { if (event.key === 'Escape') { setValue(initialValue); setInvalid(false); } }} />
+    {unit ? <small className="pharmacy-stock-unit">{unit}</small> : null}
     <button className="sp-button sp-button--secondary" aria-label={`Enregistrer la quantité de ${designation}`}
       title="Enregistrer la quantité" disabled={busy || !changed} type="submit"><Check aria-hidden="true" size={16} /></button>
-    {unit ? <small>{unit}</small> : null}
-    {invalid ? <small role="alert">Saisissez un nombre positif ou zéro.</small> : null}
+    {invalid ? <small className="pharmacy-stock-error" role="alert">Saisissez un nombre positif ou zéro.</small> : null}
   </form>;
 }
 
@@ -578,41 +584,47 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
           <label className="pharmacy-filter-field">État des articles<select aria-label="État des articles" value={filter} onChange={(event) => setFilter(event.target.value as ItemFilter)}>{Object.entries(FILTER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="pharmacy-search"><Search size={16} aria-hidden="true" /><input aria-label="Rechercher un article" placeholder="Article, marque, lot…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         </div>
-        <div className="pharmacy-table-scroll" tabIndex={0} role="region" aria-label="Tableau de l’inventaire pharmacie" aria-busy={loading}>
-          <table className={`pharmacy-table${manager ? ' has-row-actions' : ''}`}><thead><tr><th scope="col">Article / lot</th><th scope="col">À bord</th><th scope="col">Dotation</th><th scope="col">Péremption</th><th scope="col">État</th><th scope="col"><span className="pharmacy-sr-only">Actions</span></th></tr></thead>
-            {loading ? <tbody><tr><td colSpan={6} className="pharmacy-empty" role="status">Chargement des articles…</td></tr></tbody> : !vessel ? <tbody><tr><td colSpan={6} className="pharmacy-empty">Aucun navire accessible pour votre profil.</td></tr></tbody> : <>
-              <tbody className="pharmacy-dotation-group" data-pharmacy-dotation={pharmacyDotationKey(medicalDotation)}><tr className="pharmacy-dotation-row"><th colSpan={6}><span>Type de dotation médicale</span><strong>{pharmacyDotationLabel(medicalDotation)}</strong></th></tr></tbody>
+        <div className="pharmacy-inventory-options"><span aria-live="polite">{stockNotice || `${filtered.length} / ${showInactive ? sectionItems.length : active.length} articles`}</span><label className="pharmacy-checkbox"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Inclure les articles retirés</label></div>
+        <div role="region" aria-label="Tableau de l’inventaire pharmacie" aria-busy={loading}>
+          <table role="table" className={`pharmacy-table${manager ? ' has-row-actions' : ''}`}><thead role="rowgroup"><tr role="row"><th scope="col">Article / lot</th><th scope="col">À bord</th><th scope="col">Dotation</th><th scope="col">Péremption</th><th scope="col">État</th><th scope="col"><span className="pharmacy-sr-only">Actions</span></th></tr></thead>
+            {loading ? <tbody role="rowgroup"><tr role="row"><td role="cell" colSpan={6} className="pharmacy-empty"><span role="status">Chargement des articles…</span></td></tr></tbody> : !vessel ? <tbody role="rowgroup"><tr role="row"><td role="cell" colSpan={6} className="pharmacy-empty">Aucun navire accessible pour votre profil.</td></tr></tbody> : <>
+              <tbody role="rowgroup" className="pharmacy-dotation-group" data-pharmacy-dotation={pharmacyDotationKey(medicalDotation)}><tr role="row" className="pharmacy-dotation-row"><th colSpan={6}><div className="pharmacy-dotation-title"><span>Type de dotation médicale</span><strong>{pharmacyDotationLabel(medicalDotation)}</strong></div></th></tr></tbody>
               {sectionOptions.filter((section) => medicalSection === 'all' || section === medicalSection).map((section) => {
                 const branchGroups = groups.filter((group) => group.medical_section === section);
                 const branchMissingStocks = missingStocks.filter((entry) => entry.medical_section === section);
-                return <Fragment key={section}><tbody><tr className="pharmacy-branch-row" data-pharmacy-section={section}><th colSpan={6}>{pharmacyMedicalSectionLabel(section)}</th></tr></tbody>
-                {branchGroups.length ? branchGroups.map((group) => <tbody key={group.key}>
-              <tr className="pharmacy-category-row"><th scope="rowgroup" colSpan={6}><div><span><strong>{group.category}</strong></span><em>{group.items.length} article{group.items.length > 1 ? 's' : ''}</em></div></th></tr>
-              {!group.items.length ? <tr><td className="pharmacy-empty pharmacy-empty-category" colSpan={6}>{dotationItems.some((item) => pharmacyMedicalSection(item.medical_section) === group.medical_section && categoryKey(item.category) === categoryKey(group.category)) ? 'Aucun article affiché sur ce navire avec les filtres actuels.' : 'Aucun article enregistré sur ce navire.'}</td></tr> : group.items.map((item) => {
+                return <Fragment key={section}><tbody role="rowgroup"><tr role="row" className="pharmacy-branch-row" data-pharmacy-section={section}><th colSpan={6}>{pharmacyMedicalSectionLabel(section)}</th></tr></tbody>
+                {branchGroups.length ? branchGroups.map((group) => <tbody role="rowgroup" key={group.key}>
+              <tr role="row" className="pharmacy-category-row"><th scope="rowgroup" colSpan={6}><div><span><strong>{group.category}</strong></span><em>{group.items.length} article{group.items.length > 1 ? 's' : ''}</em></div></th></tr>
+              {!group.items.length ? <tr role="row"><td role="cell" className="pharmacy-empty pharmacy-empty-category" colSpan={6}>{dotationItems.some((item) => pharmacyMedicalSection(item.medical_section) === group.medical_section && categoryKey(item.category) === categoryKey(group.category)) ? 'Aucun article affiché sur ce navire avec les filtres actuels.' : 'Aucun article enregistré sur ce navire.'}</td></tr> : group.items.map((item) => {
                 const reference = regulatoryForItem(item);
                 const dosage = item.stock_quantity != null ? pharmacyItemStrength(item) : item.strength;
                 const details = [item.brand, item.lot_number ? `Lot ${item.lot_number}` : ''].filter(Boolean).join(' · ');
-                return <tr data-pharmacy-item={item.id} key={item.id} className={`${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}>
-                  <td>
+                return <tr role="row" data-pharmacy-item={item.id} key={item.id} className={`pharmacy-item-row ${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}>
+                  <td role="cell">
                     <div className="pharmacy-item-name">
                       <button className="pharmacy-item-title" onClick={() => setSelected(item)} type="button">{item.designation || item.brand || 'Article sans désignation'}</button>
+                      <small>{details || item.category || 'Sans catégorie'}</small>
                       {item.outside_dotation ? <em>(hors dotation obligatoire)</em> : null}
                     </div>
-                    <small>{details || item.category || 'Sans catégorie'}</small>
                   </td>
-                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>
+                  <td role="cell" data-label="À bord" className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>
                     {manager && item.active ? <InlineStockQuantity key={item.revision} designation={item.designation || item.brand}
                       initialValue={item.stock_quantity?.toString().replace('.', ',') ?? item.quantity}
                       unit={item.stock_unit} busy={busy} onSave={(quantity) => void saveOnboardQuantity(quantity, item)} />
                       : pharmacyQuantityLabel(item, 'stock')}
-                    {dosage ? <small>{dosage} par unité</small> : null}
-                    {item.package_size ? <small>{item.package_size} par boîte</small> : null}
-                    {item.stock_packaging ? <small>{item.stock_packaging}</small> : null}
+                    <QuantityDetails values={[dosage ? dosage + ' par unité' : null, item.package_size ? item.package_size + ' par boîte' : null, item.stock_packaging]} />
                   </td>
-                  <td>{item.outside_dotation ? '—' : <>{pharmacyQuantityLabel(item, 'required')}{reference?.packaging ? <small>{reference.packaging}</small> : item.required_strength ? <small>{item.required_strength} par unité</small> : null}{item.required_package_size ? <small>{item.required_package_size} par boîte</small> : null}{reference?.regulatory_notes ? <small>{reference.regulatory_notes}</small> : null}</>}</td>
-                  <td>{formatPharmacyItemExpiry(item)}{!item.no_expiry && item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td>
-                  <td><ItemStatus item={item} /></td>
-                  <td>{manager ? <div className="pharmacy-row-actions">
+                  <td role="cell" data-label="Dotation">{item.outside_dotation ? '—' : <>
+                    {pharmacyQuantityLabel(item, 'required')}
+                    <QuantityDetails values={[
+                      reference?.packaging || (item.required_strength ? item.required_strength + ' par unité' : null),
+                      item.required_package_size ? item.required_package_size + ' par boîte' : null,
+                      reference?.regulatory_notes,
+                    ]} />
+                  </>}</td>
+                  <td role="cell" data-label="Péremption">{formatPharmacyItemExpiry(item)}{!item.no_expiry && item.expiry_precision === 'month' && item.expires_on ? <small className="pharmacy-expiry-detail">Mois indiqué</small> : null}</td>
+                  <td role="cell" data-label="État"><ItemStatus item={item} /></td>
+                  <td role="cell">{manager ? <div className="pharmacy-row-actions">
                     <button className="sp-button sp-button--secondary" aria-label={`Modifier ${item.designation || item.brand}`} disabled={busy} onClick={() => { setFormError(''); setEditor({ item }); }} type="button"><Pencil aria-hidden="true" size={16} /></button>
                     <button className="sp-button sp-button--secondary" aria-label={`Supprimer ${item.designation || item.brand || 'Article sans désignation'}`} title={item.active ? 'Supprimer de l’inventaire' : 'Article déjà retiré'} disabled={busy || !item.active} onClick={() => {
                       if (busy || loading || !vessel || !item.active || item.vessel_id !== vesselId) return;
@@ -622,20 +634,27 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                   </div> : <button className="pharmacy-icon-button" aria-label={`Détails ${item.designation || item.brand}`} onClick={() => setSelected(item)} type="button"><ChevronDown size={16} /></button>}</td>
                 </tr>;
               })}
-            </tbody>) : branchMissingStocks.length ? null : <tbody><tr><td className="pharmacy-empty" colSpan={6}>Aucun article ne correspond aux filtres dans cette branche.</td></tr></tbody>}
-              {branchMissingStocks.length ? <tbody>
-                <tr className="pharmacy-branch-row"><th scope="rowgroup" colSpan={6}>Dotation commune · stock à renseigner</th></tr>
-                {branchMissingStocks.map((entry) => <tr key={JSON.stringify([entry.medical_section, entry.designation_key])}>
-                  <td><strong>{entry.designation}</strong><small>{[pharmacyMedicalSectionLabel(entry.medical_section), entry.category].filter(Boolean).join(' · ')}</small></td>
-                  <td>{manager && isCurrentDotation ? <>
+            </tbody>) : branchMissingStocks.length ? null : <tbody role="rowgroup"><tr role="row"><td role="cell" className="pharmacy-empty" colSpan={6}>Aucun article ne correspond aux filtres dans cette branche.</td></tr></tbody>}
+              {branchMissingStocks.length ? <tbody role="rowgroup">
+                <tr role="row" className="pharmacy-branch-row"><th scope="rowgroup" colSpan={6}>Dotation commune · stock à renseigner</th></tr>
+                {branchMissingStocks.map((entry) => <tr role="row" className="pharmacy-item-row" key={JSON.stringify([entry.medical_section, entry.designation_key])}>
+                  <td role="cell"><div className="pharmacy-item-name"><strong>{entry.designation}</strong><small>{[pharmacyMedicalSectionLabel(entry.medical_section), entry.category].filter(Boolean).join(' · ')}</small></div></td>
+                  <td role="cell" data-label="À bord">{manager && isCurrentDotation ? <>
                     <InlineStockQuantity designation={entry.designation} unit={entry.required_stock_unit} busy={busy}
                       onSave={(quantity) => void saveOnboardQuantity(quantity, undefined, entry)} />
-                    {entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}
+                    <QuantityDetails values={[entry.required_strength ? entry.required_strength + ' par unité' : null]} />
                   </> : '—'}</td>
-                  <td>{entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}{entry.packaging ? <small>{entry.packaging}</small> : entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}{entry.required_package_size ? <small>{entry.required_package_size} par boîte</small> : null}{entry.regulatory_notes ? <small>{entry.regulatory_notes}</small> : null}</td>
-                  <td>—</td>
-                  <td><span className="pharmacy-badge is-unknown">Stock à renseigner</span></td>
-                  <td>{manager && isCurrentDotation ? <div className="pharmacy-row-actions">
+                  <td role="cell" data-label="Dotation">
+                    {entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}
+                    <QuantityDetails values={[
+                      entry.packaging || (entry.required_strength ? entry.required_strength + ' par unité' : null),
+                      entry.required_package_size ? entry.required_package_size + ' par boîte' : null,
+                      entry.regulatory_notes,
+                    ]} />
+                  </td>
+                  <td role="cell" data-label="Péremption">—</td>
+                  <td role="cell" data-label="État"><span className="pharmacy-badge is-unknown">Stock à renseigner</span></td>
+                  <td role="cell">{manager && isCurrentDotation ? <div className="pharmacy-row-actions">
                     <button className="sp-button sp-button--secondary" aria-label={`Modifier ${entry.designation}`} title="Modifier le stock" disabled={busy} onClick={() => { setFormError(''); setEditor({ requirement: entry }); }} type="button"><Pencil aria-hidden="true" size={16} /></button>
                     <button className="sp-button sp-button--secondary" aria-label={`Supprimer ${entry.designation}`} title="Aucun stock enregistré pour cette référence" disabled type="button"><Trash2 aria-hidden="true" size={16} /></button>
                   </div> : null}</td>
@@ -646,7 +665,6 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
             </>}
           </table>
         </div>
-        <footer className="pharmacy-table-footer"><span aria-live="polite">{stockNotice || `${filtered.length} / ${showInactive ? sectionItems.length : active.length} articles`}</span><label className="pharmacy-checkbox"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Inclure les articles retirés</label></footer>
       </div>
       <aside className="pharmacy-side-panel" aria-label="Contrôle et détails du navire">
         <section className="pharmacy-control-card"><header><span className="pharmacy-control-icon"><FileCheck2 size={21} /></span><div><h2>Contrôle Pharmacie</h2><p>Document du navire</p></div></header><span className={`pharmacy-badge is-${currentControl ? controlStatus : 'unknown'}`}>{controlText}</span><dl><div><dt>Échéance</dt><dd>{currentControl ? formatPharmacyDate(currentControl.expires_on) : 'Non renseignée'}</dd></div><div><dt>Dernier contrôle</dt><dd>{currentControl?.issued_on ? formatPharmacyDate(currentControl.issued_on) : 'Non renseigné'}</dd></div></dl>{currentControl ? <button className="secondary-button pharmacy-full-width" disabled={busy} onClick={() => void download(currentControl)} type="button"><Download size={15} /> Télécharger le document</button> : <p className="pharmacy-no-document">Aucun document déposé pour ce navire.</p>}{manager ? <button className="primary-button pharmacy-full-width" disabled={busy || loading} onClick={() => { setFormError(''); setControlOpen(true); }} type="button"><FileUp size={15} /> {currentControl ? 'Nouveau contrôle' : 'Déposer le document'}</button> : null}<p className="pharmacy-control-rule"><BellRing size={14} /> Alerte 30 jours avant l’échéance. Les échéances dépassées restent signalées.</p></section>
