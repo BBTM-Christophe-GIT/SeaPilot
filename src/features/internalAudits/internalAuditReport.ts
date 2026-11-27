@@ -231,10 +231,15 @@ async function buildAuditPdf(
   const pale: [number, number, number] = [237, 245, 246];
   const draftColor: [number, number, number] = [152, 81, 27];
   const auditDate = input.audit.performedOn ? formatAuditDate(input.audit.performedOn) : 'Audit non débuté';
+  const findingCounts = { major: 0, minor: 0, remark: 0 };
+  for (const { finding } of data.findings) findingCounts[finding.severity] += 1;
+  const findingBreakdown = `${findingCounts.major} majeure${findingCounts.major > 1 ? 's' : ''}, `
+    + `${findingCounts.minor} mineure${findingCounts.minor > 1 ? 's' : ''}, `
+    + `${findingCounts.remark} remarque${findingCounts.remark > 1 ? 's' : ''}`;
   let currentSection = ({ grid: '01 - Grille d’audit', summary: '02 - Synthèse', chart: '03 - Graphique' })[sections[0]];
   let cursor = 41;
 
-  function drawHeader(withSection = true) {
+  function drawHeader() {
     pdf.setFillColor(...navy);
     pdf.rect(0, 0, width, 2, 'F');
     if (logo) pdf.addImage(logo, 'PNG', margin, 7, 15, 15, 'bbtm-logo');
@@ -243,12 +248,12 @@ async function buildAuditPdf(
     pdf.setFontSize(16);
     pdf.setTextColor(...navy);
     pdf.text(templateMode ? 'Modèle de grille ISM Interne'
-      : gridOnly && withSection ? 'Grille d’audit ISM Interne' : 'Audit ISM Interne', titleX, 13);
+      : gridOnly ? 'Grille d’audit ISM Interne' : 'Audit ISM Interne', titleX, 13);
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(8);
     pdf.setTextColor(...muted);
     pdf.text(cleanText(templateMode ? `BBTM - ${input.site.name} - Version ${input.audit.templateVersion}`
-      : withSection ? `BBTM - ${input.site.name} - Campagne ${input.audit.year}` : `BBTM - Campagne ${input.audit.year}`), titleX, 19, { maxWidth: 165 });
+      : `Année : ${input.audit.year}`), titleX, 19, { maxWidth: 165 });
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
     pdf.setTextColor(...(data.draft && !templateMode ? draftColor : navy));
@@ -256,7 +261,6 @@ async function buildAuditPdf(
     pdf.setDrawColor(210, 223, 229);
     pdf.setLineWidth(0.25);
     pdf.line(margin, 26, width - margin, 26);
-    if (!withSection) return;
     pdf.setFontSize(13);
     pdf.setTextColor(...navy);
     pdf.text(cleanText(currentSection), margin, 34);
@@ -306,8 +310,7 @@ async function buildAuditPdf(
     ensureSpace(24);
     const values = [
       ['Score de l’audit', auditReportPercent(data.score.percentage), `${auditReportNumber(data.score.earnedPoints)} / ${auditReportNumber(data.score.maxPoints)} points applicables`],
-      ['Réponses conservées', `${data.score.answeredCount} / ${data.score.totalCount}`, `${data.score.excludedCount} réponse(s) N/A - hors calcul`],
-      ...(!gridOnly ? [['Écarts émis', String(data.findings.length), `${data.findings.filter(({ finding }) => finding.severity === 'major').length} majeure(s), ${data.findings.filter(({ finding }) => finding.severity === 'minor').length} mineure(s), ${data.findings.filter(({ finding }) => finding.severity === 'remark').length} remarque(s)`]] : []),
+      ['Écarts émis', String(data.findings.length), findingBreakdown],
     ];
     const cardWidth = (usableWidth - (values.length - 1) * 6) / values.length;
     values.forEach(([label, value, description], index) => {
@@ -346,15 +349,20 @@ async function buildAuditPdf(
   }
 
   function drawCover() {
-    drawHeader(false);
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(28); pdf.setTextColor(...navy);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(12); pdf.setTextColor(...navy);
+    pdf.text('Audit ISM interne', margin, 18);
+    pdf.setFontSize(28);
     const name = pdf.splitTextToSize(cleanText(input.site.name), usableWidth) as string[];
-    pdf.text(name, margin, 41);
-    const dateY = 50 + (name.length - 1) * 11.4;
+    pdf.text(name, margin, 33);
+    const dateY = 42 + (name.length - 1) * 11.4;
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(11); pdf.setTextColor(...muted);
     pdf.text(input.audit.performedOn ? `Date de l’audit : ${auditDate}` : auditDate, margin, dateY);
+    if (data.draft) {
+      pdf.setFontSize(8); pdf.setTextColor(...draftColor);
+      pdf.text('Brouillon - réponses non finalisées', margin, dateY + 5);
+    }
 
-    const panelY = dateY + 8;
+    const panelY = dateY + 11;
     const panelWidth = 88;
     const isVessel = input.site.kind === 'vessel';
     if (isVessel) {
@@ -382,7 +390,7 @@ async function buildAuditPdf(
     }
     const scoreY = isVessel ? panelY + 70 : panelY;
     pdf.setFillColor(...pale);
-    pdf.roundedRect(margin, scoreY, panelWidth, 33, 2, 2, 'F');
+    pdf.roundedRect(margin, scoreY, panelWidth, 38, 2, 2, 'F');
     pdf.setFont('helvetica', 'bold'); pdf.setFontSize(9); pdf.setTextColor(...navy);
     pdf.text('Score global de l’audit', margin + 5, scoreY + 7);
     pdf.setFontSize(27); pdf.setTextColor(...internalAuditScoreColor(data.score.percentage));
@@ -390,12 +398,14 @@ async function buildAuditPdf(
     pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...muted);
     pdf.text(cleanText(`${auditReportNumber(data.score.earnedPoints)} / ${auditReportNumber(data.score.maxPoints)} points applicables`),
       margin + 5, scoreY + 27);
+    pdf.text(`Écarts : ${findingBreakdown}`, margin + 5, scoreY + 33);
     const auditor = pdf.splitTextToSize(cleanText(`Auditeur : ${input.audit.auditorName || 'Non renseigné'}`), panelWidth) as string[];
-    pdf.text(auditor, margin, scoreY + 40);
+    pdf.text(auditor, margin, scoreY + 45);
     pdf.text(cleanText(`Grille : ${input.audit.templateName} - version ${input.audit.templateVersion}`),
-      margin, scoreY + 40 + auditor.length * 4, { maxWidth: panelWidth });
+      margin, scoreY + 45 + auditor.length * 4, { maxWidth: panelWidth });
     const radarX = margin + panelWidth + 7;
-    drawInternalAuditRadar(pdf, chapterScores, { x: radarX, y: panelY, width: width - margin - radarX, height: 190 - panelY });
+    const radarY = dateY - 8;
+    drawInternalAuditRadar(pdf, chapterScores, { x: radarX, y: radarY, width: width - margin - radarX, height: 190 - radarY }, { labelLayout: 'radial' });
   }
 
   if (mode === 'report') {

@@ -385,7 +385,7 @@ describe('InternalAuditsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     await user.click(screen.getByRole('button', { name: 'Imprimer la grille' }));
     await waitFor(() => expect(reportExports.print).toHaveBeenCalledOnce());
-    expect(reportExports.print.mock.calls[0][0]).toMatchObject({ audit: fixture.audits[1], site: fixture.sites[3], findings: [], events: [], loadSignature: expect.any(Function) });
+    expect(reportExports.print.mock.calls[0][0]).toMatchObject({ audit: fixture.audits[1], site: fixture.sites[3], findings: fixture.findings, events: [], loadSignature: expect.any(Function) });
     await reportExports.print.mock.calls[0][0].loadSignature(fixture.audits[1].participants![0]);
     expect(queries.loadAuditParticipantSignature).toHaveBeenCalledWith(expect.anything(), fixture.audits[1].participants![0]);
     expect(reportExports.pdf).not.toHaveBeenCalled();

@@ -242,6 +242,8 @@ describe('internal audit PDF export', () => {
     expect(report.filename).toBe('Grille_Audit_ISM_Interne_LE_ROZEL_2026_Brouillon.pdf');
     expect(proof.content).toContain('TRACE_LAST_QUESTION');
     expect(proof.content).toContain('BROUILLON');
+    expect(proof.content).toContain('Écarts émis');
+    expect(proof.content).toContain('1 majeure, 0 mineure, 0 remarque');
     expect(proof.content).not.toContain('TRACE_TREATMENT');
     expect(proof.content).not.toContain('02 - Synth');
     expect(proof.content).not.toContain('03 - Graphique');
@@ -293,7 +295,7 @@ describe('internal audit PDF export', () => {
     expect(chart).toContain('5. Responsabilit');
     expect(chart).toContain('capitaine');
   });
-  it('embeds the black BBTM logo and the vessel photo on the dated audit cover', async () => {
+  it('shows the dated vessel cover with a photo and findings counts, and puts the logo on interior pages', async () => {
     const logo = await readFile('public/bbtm-report-logo.png');
     const qaDirectory = process.env.AUDIT_REPORT_QA_OUTPUT;
     const image = qaDirectory ? await readFile(join(qaDirectory, 'qa-photo-base64.txt'), 'utf8') : png;
@@ -302,14 +304,27 @@ describe('internal audit PDF export', () => {
     vi.stubGlobal('document', { baseURI: 'https://seapilot.test/' });
     vi.stubGlobal('fetch', fetchLogo);
     try {
-      const report = await buildInternalAuditReport(input({ loadVesselPhoto, sections: ['grid', 'summary', 'chart'] }));
+      const report = await buildInternalAuditReport(input({
+        loadVesselPhoto, sections: ['grid', 'summary', 'chart'],
+        findings: [finding, { ...finding, id: 'major-2' }, { ...finding, id: 'minor', severity: 'minor' },
+          { ...finding, id: 'remark', severity: 'remark' }],
+      }));
       const proof = await pdfProof(report.blob);
       const cover = pageContent(proof.document, 0);
       expect(fetchLogo).toHaveBeenCalledWith('/bbtm-report-logo.png');
       expect(loadVesselPhoto).toHaveBeenCalledOnce();
-      expect(cover.match(/\/I\d+ Do/g)).toHaveLength(2);
-      expect(pageContent(proof.document, 1).match(/\/I\d+ Do/g)?.length).toBeGreaterThan(0);
+      expect(cover.match(/\/I\d+ Do/g)).toHaveLength(1);
+      expect(cover).not.toContain('Année : 2026');
+      expect(cover).not.toContain('AUDIT RÉALISÉ');
+      const gridPage = pageContent(proof.document, 1);
+      expect(gridPage.match(/\/I\d+ Do/g)?.length).toBeGreaterThan(0);
+      expect(gridPage).toContain('Année : 2026');
+      expect(gridPage).not.toContain('Campagne');
+      expect(gridPage).toContain('Score de l');
+      expect(gridPage).toContain('Écarts émis');
+      expect(gridPage).not.toContain('Réponses conservées');
       expect(cover).toContain('Score global de');
+      expect(cover).toContain('Écarts : 2 majeures, 1 mineure, 1 remarque');
       expect(cover).toContain(formatAuditDate(audit.performedOn!));
       expect(cover).toContain('capitaine');
       expect(cover).not.toContain('Photo du navire indisponible');

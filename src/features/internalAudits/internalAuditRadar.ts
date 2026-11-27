@@ -21,6 +21,16 @@ interface RadarLabel {
   height: number;
 }
 
+type LabelAlignment = 'left' | 'center' | 'right';
+
+interface RadialLabel extends RadarLabel {
+  x: number;
+  y: number;
+  align: LabelAlignment;
+  left: number;
+  right: number;
+}
+
 const levels = [20, 40, 60, 80, 100];
 const grid: Color = [216, 226, 238];
 const outline: Color = [191, 205, 222];
@@ -42,7 +52,12 @@ function polygon(pdf: jsPDF, points: readonly Point[], style: 'F' | 'S') {
   pdf.lines(offsets, x, y, [1, 1], style, true);
 }
 
-export function drawInternalAuditRadar(pdf: jsPDF, chapters: readonly RadarChapter[], bounds: RadarBounds): void {
+export function drawInternalAuditRadar(
+  pdf: jsPDF,
+  chapters: readonly RadarChapter[],
+  bounds: RadarBounds,
+  options: { labelLayout?: 'radial' } = {},
+): void {
   const { x, y, width, height } = bounds;
   const centerX = x + width / 2;
   if (!chapters.length) {
@@ -55,21 +70,56 @@ export function drawInternalAuditRadar(pdf: jsPDF, chapters: readonly RadarChapt
   const bottomIndex = count % 2 === 0 ? count / 2 : -1;
   const angles = chapters.map((_, index) => -Math.PI / 2 + index * 2 * Math.PI / count);
   const sideByIndex = chapters.map((_, index) => index === 0 || index === bottomIndex ? 0 : index < count / 2 ? 1 : -1);
-  const maxRadius = Math.min(width * .25, height * .43);
+  const radial = options.labelLayout === 'radial';
+  const maxRadius = Math.min(width * .25, height * (radial ? .32 : .43));
   const railWidth = Math.min(65, width / 2 - maxRadius - 7);
   let fontSize = width < 145 ? 8 : 9;
 
+  function scoreLabel(index: number): string {
+    const value = chapters[index].percentage;
+    return value === null ? 'N/A' : numberFormat.format(value) + ' %';
+  }
+
+  function measureLabel(index: number, labelWidth: number): RadarLabel {
+    const title = chapters[index].section.replace(/[\u2010-\u2015\u2212]/g, '-').replace(/[\u00a0\u202f]/g, ' ');
+    const lines: string[] = pdf.splitTextToSize(title, labelWidth);
+    return { index, lines, height: fontSize * .42 * (lines.length + 1.2) };
+  }
+
+  function measureRadialLabels(): RadialLabel[] {
+    pdf.setFont('helvetica', 'bold').setFontSize(fontSize);
+    const anchorRadius = maxRadius + Math.min(9, width * .1, height * .1);
+    return angles.map((angle, index) => {
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      const side = sideByIndex[index];
+      const labelX = centerX + dx * anchorRadius;
+      const labelWidth = side === 0 ? Math.min(84, width - 2) : Math.min(53, width / 2 - Math.abs(labelX - centerX) - 1);
+      const label = measureLabel(index, labelWidth);
+      const scoreWidth = pdf.getTextWidth(scoreLabel(index)) * (fontSize + 1) / fontSize;
+      const textWidth = Math.max(scoreWidth, ...label.lines.map((line) => pdf.getTextWidth(line)));
+      const left = labelX - textWidth * (1 - side) / 2;
+      const labelY = y + height / 2 + dy * anchorRadius - label.height * (1 - dy * (1 - Math.abs(dx))) / 2;
+      return { ...label, x: labelX, y: labelY, left, right: left + textWidth,
+        align: side === 0 ? 'center' : side > 0 ? 'left' : 'right' };
+    });
+  }
+
+  function radialLabelsFit(labels: RadialLabel[]): boolean {
+    const gap = fontSize * .2;
+    return labels.every((label, index) => label.left >= x && label.right <= x + width
+      && label.y >= y && label.y + label.height <= y + height
+      && labels.slice(0, index).every((other) => label.right + gap <= other.left || other.right + gap <= label.left
+        || label.y + label.height + gap <= other.y || other.y + other.height + gap <= label.y));
+  }
+
   function measureLabels() {
     pdf.setFont('helvetica', 'bold').setFontSize(fontSize);
-    const lineHeight = fontSize * .42;
-    const labels = chapters.map(({ section }, index): RadarLabel => {
-      const title = section.replace(/[\u2010-\u2015\u2212]/g, '-').replace(/[\u00a0\u202f]/g, ' ');
+    const labels = chapters.map((_, index) => {
       const labelWidth = sideByIndex[index] === 0 ? Math.min(2 * maxRadius, 110) : railWidth;
-      const lines: string[] = pdf.splitTextToSize(title, labelWidth);
-      return { index, lines, height: lineHeight * (lines.length + 1.2) };
+      return measureLabel(index, labelWidth);
     });
     return {
-      lineHeight,
       topLabel: labels[0],
       bottomLabel: labels[bottomIndex],
       rightLabels: labels.filter(({ index }) => sideByIndex[index] === 1),
@@ -79,16 +129,22 @@ export function drawInternalAuditRadar(pdf: jsPDF, chapters: readonly RadarChapt
 
   const railGap = Math.min(labelGap, height / count * .2);
   const railHeight = (labels: RadarLabel[]) => labels.reduce((total, label) => total + label.height + railGap, 0);
-  let labels = measureLabels();
-  while (Math.max(railHeight(labels.rightLabels), railHeight(labels.leftLabels)) > height - 2
-    || labels.topLabel.height + (labels.bottomLabel?.height ?? 0) > height * .4) {
+  let radialLabels = radial ? measureRadialLabels() : null;
+  while (radialLabels && !radialLabelsFit(radialLabels)) {
+    if (fontSize * .9 < 6) return drawInternalAuditRadar(pdf, chapters, bounds);
+    fontSize *= .9;
+    radialLabels = measureRadialLabels();
+  }
+  let labels = radial ? null : measureLabels();
+  while (labels && (Math.max(railHeight(labels.rightLabels), railHeight(labels.leftLabels)) > height - 2
+    || labels.topLabel.height + (labels.bottomLabel?.height ?? 0) > height * .4)) {
     fontSize *= .9;
     labels = measureLabels();
   }
-  const { topLabel, bottomLabel, rightLabels, leftLabels, lineHeight } = labels;
 
-  const plotTop = y + topLabel.height + labelGap;
-  const plotBottom = y + height - (bottomLabel ? bottomLabel.height + labelGap : 0);
+  const lineHeight = fontSize * .42;
+  const plotTop = y + (labels ? labels.topLabel.height + labelGap : 0);
+  const plotBottom = y + height - (labels?.bottomLabel ? labels.bottomLabel.height + labelGap : 0);
   const centerY = (plotTop + plotBottom) / 2;
   const radius = Math.min(maxRadius, (plotBottom - plotTop) / 2);
   function point(index: number, level: number): Point {
@@ -123,13 +179,11 @@ export function drawInternalAuditRadar(pdf: jsPDF, chapters: readonly RadarChapt
     pdf.circle(...value, 1.5, 'F');
   });
 
-  function drawLabel(label: RadarLabel, labelX: number, top: number, align: 'left' | 'center' | 'right') {
-    const value = chapters[label.index].percentage;
-    pdf.setFont('helvetica', 'bold').setFontSize(fontSize).setTextColor(...internalAuditScoreColor(value));
+  function drawLabel(label: RadarLabel, labelX: number, top: number, align: LabelAlignment) {
+    pdf.setFont('helvetica', 'bold').setFontSize(fontSize).setTextColor(...internalAuditScoreColor(chapters[label.index].percentage));
     label.lines.forEach((line, index) => pdf.text(line, labelX, top + (index + .8) * lineHeight, { align }));
     pdf.setFontSize(fontSize + 1);
-    pdf.text(value === null ? 'N/A' : numberFormat.format(value) + ' %', labelX,
-      top + (label.lines.length + 1) * lineHeight, { align });
+    pdf.text(scoreLabel(label.index), labelX, top + (label.lines.length + 1) * lineHeight, { align });
   }
 
   function drawRail(labels: RadarLabel[], side: -1 | 1) {
@@ -153,8 +207,13 @@ export function drawInternalAuditRadar(pdf: jsPDF, chapters: readonly RadarChapt
     });
   }
 
-  drawLabel(topLabel, centerX, centerY - radius - topLabel.height - labelGap, 'center');
-  if (bottomLabel) drawLabel(bottomLabel, centerX, centerY + radius + labelGap, 'center');
-  drawRail(rightLabels, 1);
-  drawRail(leftLabels, -1);
+  if (radialLabels) {
+    radialLabels.forEach((label) => drawLabel(label, label.x, label.y, label.align));
+  } else if (labels) {
+    const { topLabel, bottomLabel, rightLabels, leftLabels } = labels;
+    drawLabel(topLabel, centerX, centerY - radius - topLabel.height - labelGap, 'center');
+    if (bottomLabel) drawLabel(bottomLabel, centerX, centerY + radius + labelGap, 'center');
+    drawRail(rightLabels, 1);
+    drawRail(leftLabels, -1);
+  }
 }

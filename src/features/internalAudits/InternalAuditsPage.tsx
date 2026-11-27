@@ -335,12 +335,12 @@ export function InternalAuditsPage() {
   async function printGrid() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges) return;
     await mutate(async () => {
-      await openInternalAuditGridPrintPreview({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: [], events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) });
+      await openInternalAuditGridPrintPreview({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) });
     }, 'Grille ouverte dans un aperçu PDF. Utilisez la commande Imprimer de votre navigateur.');
   }
   async function exportGrid() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges) return;
-    await mutate(async () => { await downloadInternalAuditGridReport({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: [], events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) }); }, 'Grille PDF exportée.');
+    await mutate(async () => { await downloadInternalAuditGridReport({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) }); }, 'Grille PDF exportée.');
   }
   async function exportTemplate() {
     if (!selectedTemplate || hasUnsavedChanges) return;
