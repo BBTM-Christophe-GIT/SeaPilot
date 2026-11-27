@@ -18,6 +18,8 @@ declare
   stock constant jsonb := '{"designation":"Furosémide","medical_section":"medicines","stock_quantity":2,
     "stock_unit":"ampoule","strength":"20 mg / 2 ml","brand":"Marque fixture","package_size":3,"required_quantity":"999",
     "required_stock_quantity":999,"update_dotation_requirement":true}';
+  first_count constant jsonb := '{"designation":"Furosémide","medical_section":"medicines","medical_dotation":"DOTATION B",
+    "stock_quantity":0,"initialize_stock_quantity":true}';
 begin
   assert not has_table_privilege('authenticated', 'pharmacy_private.d217_catalog', 'SELECT'),
     'The official catalog can only be read through a vessel-scoped RPC';
@@ -25,6 +27,8 @@ begin
     'Connected users cannot change the regulatory catalog';
   assert not has_function_privilege('anon', 'public.list_pharmacy_dotation_requirements(bigint)', 'EXECUTE'),
     'Anonymous accounts cannot list vessel dotations';
+  assert not has_function_privilege('anon', 'public.save_pharmacy_item(bigint,jsonb,bigint,integer)', 'EXECUTE'),
+    'Anonymous accounts cannot enter first stock counts';
 
   insert into public.companies(code, name) values('d217-test', 'Division 217 fixture') returning id into company;
   insert into public.companies(code, name) values('d217-other', 'Division 217 other company') returning id into foreign_company;
@@ -87,7 +91,16 @@ begin
   assert found, 'The admin can enable the bag from the vessel record';
   assert (select medical_emergency_bag from public.pharmacy_available_vessels() where id = assigned_vessel),
     'The pharmacy vessel RPC reflects the saved bag selection';
-  base_lot := public.save_pharmacy_item(assigned_vessel, stock);
+  perform public.save_pharmacy_item(assigned_vessel, stock || '{"outside_dotation":true}');
+  perform public.save_pharmacy_item(assigned_vessel, stock || '{"active":false}');
+  base_lot := public.save_pharmacy_item(assigned_vessel, first_count);
+  assert (select stock_quantity = 0 and brand = '' and stock_packaging is null and required_stock_quantity = 4
+    from public.pharmacy_inventory where id = base_lot), 'A zero first count is distinct from a blank count and leaves other stock fields blank';
+  begin
+    perform public.save_pharmacy_item(assigned_vessel, first_count || '{"designation":"  FUROSEMIDE  ","stock_quantity":3}');
+    raise exception 'A retried first count created a second active lot for the same reference';
+  exception when serialization_failure then null; end;
+  perform public.save_pharmacy_item(assigned_vessel, stock, base_lot, 1);
 
   perform set_config('request.jwt.claim.sub', 'd2170000-0000-4000-8000-000000000002', true);
   assert (select can_manage and medical_emergency_bag from public.pharmacy_available_vessels() where id = assigned_vessel),
@@ -103,9 +116,13 @@ begin
     perform public.list_pharmacy_dotation_requirements(unassigned_vessel);
     raise exception 'A captain read an unassigned vessel dotation';
   exception when insufficient_privilege then null; end;
+  begin
+    perform public.save_pharmacy_item(unassigned_vessel, first_count);
+    raise exception 'A captain entered the stock count of an unassigned vessel';
+  exception when insufficient_privilege then null; end;
   bag_lot := public.save_pharmacy_item(assigned_vessel, stock || jsonb_build_object(
     'medical_dotation', bag_key, 'brand', 'Marque sac', 'stock_quantity', 1, 'stock_packaging', 'Emballage du sac',
-    'expires_on', today + 3, 'expiry_precision', 'day'));
+    'expires_on', today + 3, 'expiry_precision', 'day', 'initialize_stock_quantity', true));
   assert (select stock_quantity = 1 and package_size = 3 and stock_packaging = 'Emballage du sac' and brand = 'Marque sac'
     and required_stock_quantity = 4 and required_quantity = '4' and medical_dotation = bag_key
     from public.pharmacy_inventory where id = bag_lot), 'Onboard stock is saved and the official quantity remains authoritative';
@@ -122,6 +139,10 @@ begin
   begin
     perform public.save_pharmacy_item(assigned_vessel, stock || jsonb_build_object('medical_dotation', bag_key), bag_lot, 1);
     raise exception 'A sailor edited the bag stock';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.save_pharmacy_item(assigned_vessel, first_count);
+    raise exception 'A sailor entered a first count or could check for a competing count';
   exception when insufficient_privilege then null; end;
   update public.vessels set medical_emergency_bag = false where id = assigned_vessel;
   assert not found, 'The sailor cannot change the vessel settings';

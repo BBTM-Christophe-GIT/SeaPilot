@@ -16,7 +16,7 @@ const requirement = (designation: string, fields: Partial<PharmacyDotationRequir
 });
 
 describe('pharmacy purchase order', () => {
-  it('keeps emergency bag stock distinct and reviews a reference without counted stock', () => {
+  it('keeps emergency bag stock distinct and only orders stock counted as missing', () => {
     const base = requirement('Compresse', {
       medical_section: 'equipment', catalog_code: 'E001', applicability: 'standard',
       required_stock_quantity: 4, required_stock_unit: 'paquet', required_quantity: '4', packaging: 'Paquet de 5',
@@ -24,9 +24,11 @@ describe('pharmacy purchase order', () => {
     const bag = { ...base, dotation_key: PHARMACY_EMERGENCY_BAG_KEY };
     const items = [lot('Compresse', { medical_section: 'equipment', stock_quantity: 4, stock_unit: 'paquet' })];
     expect(buildPharmacyPurchaseOrderLines(items, [base, bag], dotation, issuedOn)).toEqual([]);
-    expect(buildPharmacyPurchaseOrderLines(items, [base, bag], dotation, issuedOn, true)).toMatchObject([
-      { dotation: 'Sac Médical d’Urgence', designation: 'Compresse', quantity: null, unit: 'paquet',
-        canExclude: true, canSkipReview: true, requiredQuantity: '4 paquets', presentation: 'Paquet de 5' },
+    expect(buildPharmacyPurchaseOrderLines(items, [base, bag], dotation, issuedOn, true)).toEqual([]);
+    const bagCount = lot('Compresse', { id: 2, medical_dotation: PHARMACY_EMERGENCY_BAG_KEY, medical_section: 'equipment', stock_quantity: 0 });
+    expect(buildPharmacyPurchaseOrderLines([...items, bagCount], [base, bag], dotation, issuedOn, true)).toMatchObject([
+      { dotation: 'Sac Médical d’Urgence', designation: 'Compresse', quantity: 4, unit: 'paquet',
+        quantityNeedsReview: false, requiredQuantity: '4 paquets', presentation: 'Paquet de 5' },
     ]);
   });
   it('requires a deliberate order quantity for expired lots with a conditional reference', () => {
@@ -49,6 +51,60 @@ describe('pharmacy purchase order', () => {
       { designation: 'Comprimés', quantity: 1, unit: 'boîte', reason: 'Manquant', quantityNeedsReview: false },
       { designation: 'Flacons', quantity: 1, unit: 'boîte', reason: 'Manquant', quantityNeedsReview: false },
     ]);
+  });
+
+  it('applies the presentation of a standard catalogue reference to a structured count without contradictory fields', () => {
+    const reference = requirement('Produit du catalogue', {
+      catalog_code: 'M001', applicability: 'standard', required_quantity: '10', required_stock_quantity: 10,
+      required_stock_unit: 'comprimé', required_strength: '500 mg',
+    });
+    const counted = lot(reference.designation, { stock_quantity: 9 });
+    expect(buildPharmacyPurchaseOrderLines([counted], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: 1, unit: 'boîte', reason: 'Manquant', stockQuantity: '9 comprimés', quantityNeedsReview: false },
+    ]);
+    expect(buildPharmacyPurchaseOrderLines([{ ...counted, stock_quantity: 0, package_size: 4 }], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: 3, unit: 'boîte', reason: 'Manquant', stockQuantity: '0 comprimé', quantityNeedsReview: false },
+    ]);
+    expect(buildPharmacyPurchaseOrderLines([{ ...counted, stock_quantity: 8 }], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: null, unit: 'boîte', reason: 'Manquant', quantityNeedsReview: true },
+    ]);
+    expect(buildPharmacyPurchaseOrderLines([{ ...counted, stock_unit: 'boîte' }], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: null, reason: 'Stock à vérifier', canSkipReview: true },
+    ]);
+    expect(buildPharmacyPurchaseOrderLines([{ ...counted, strength: '250 mg' }], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: null, reason: 'Stock à vérifier', canSkipReview: true },
+    ]);
+  });
+
+  it('omits uncounted catalogue stock but keeps expired lots for review', () => {
+    const referenceFields = {
+      catalog_code: 'M001', applicability: 'standard', required_quantity: '1', required_stock_quantity: 1,
+      required_stock_unit: 'flacon', required_strength: '500 mL',
+    } as const;
+    const requirements = [requirement('Non compté', referenceFields), requirement('Sans fiche', referenceFields),
+      requirement('Périmé', referenceFields), requirement('Compté', referenceFields)];
+    const items = [lot('Non compté', { notes: 'MANQUANT' }), lot('Compté', { id: 2, stock_quantity: 0 }),
+      lot('Périmé', { id: 3, expires_on: '2025-07-01' })];
+    expect(buildPharmacyPurchaseOrderLines(items, requirements, dotation, issuedOn)).toMatchObject([
+      { designation: 'Compté', quantity: 1, unit: 'boîte', quantityNeedsReview: false },
+      { designation: 'Périmé', quantity: null, reason: 'Périmé' },
+    ]);
+  });
+
+  it('converts counted boxes to the regulatory unit only at a known compatible box size', () => {
+    const reference = requirement('Comprimés du catalogue', {
+      catalog_code: 'M001', applicability: 'standard', required_quantity: '11', required_stock_quantity: 11,
+      required_stock_unit: 'comprimé', required_strength: '500 mg',
+    });
+    const item = lot(reference.designation, { stock_quantity: 2, stock_unit: 'boîte', package_size: 5, strength: '500 mg' });
+    expect(buildPharmacyPurchaseOrderLines([item], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: 1, unit: 'boîte', reason: 'Manquant', stockQuantity: '10 comprimés', quantityNeedsReview: false },
+    ]);
+    for (const unresolved of [{ ...item, package_size: null }, { ...item, strength: '250 mg' }]) {
+      expect(buildPharmacyPurchaseOrderLines([unresolved], [reference], dotation, issuedOn)).toMatchObject([
+        { quantity: null, reason: 'Stock à vérifier', canSkipReview: true },
+      ]);
+    }
   });
 
   it('converts expired and missing equivalent volumes into the required dosage before counting boxes', () => {

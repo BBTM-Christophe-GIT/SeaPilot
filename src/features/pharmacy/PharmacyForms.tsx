@@ -77,7 +77,7 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
     || requirement.strength.trim() !== originalRequirement.strength.trim() || requirement.packageSize !== originalRequirement.packageSize);
   const suggestions = categoryRecords ? [...new Set(categoryRecords.filter((category) => draft.medical_section && pharmacyMedicalSection(category.medical_section) === draft.medical_section).map((category) => category.name))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true })) : categories;
   const update = <K extends keyof PharmacyItemDraft>(key: K, value: PharmacyItemDraft[K]) => setDraft((old) => ({ ...old, [key]: value }));
-  return <AppDialog title={item ? 'Modifier l’article' : 'Ajouter un article'} eyebrow="Inventaire Pharmacie" icon={<PharmacyIcon size={20} />} isBusy={busy} onClose={onClose} size="lg"
+  return <AppDialog title={item || initialDesignation ? 'Modifier l’article' : 'Ajouter un article'} eyebrow="Inventaire Pharmacie" icon={<PharmacyIcon size={20} />} isBusy={busy} onClose={onClose} size="lg"
     onSubmit={(event) => {
       event.preventDefault();
       if (!draft.medical_section) { setBranchError('Choisissez la branche de l’article.'); return; }
@@ -108,7 +108,7 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
         <label>Type de dotation médicale<input aria-label="Type de dotation médicale" readOnly value={pharmacyDotationLabel(draft.medical_dotation)} /><span className="pharmacy-item-help">{item ? 'Le type enregistré avec cet article est conservé.' : 'Le type est celui affecté au navire dans la Flotte.'}</span></label>
         <label>Branche<select aria-label="Branche" disabled={Boolean(regulatory)} required value={draft.medical_section || ''} onChange={(event) => { setDraft((previous) => ({ ...previous, medical_section: event.target.value as PharmacyMedicalSection, category: '', category_id: null })); setBranchError(''); }}><option value="" disabled>Choisir une branche</option>{(Object.entries(PHARMACY_MEDICAL_SECTIONS) as [PharmacyMedicalSection, string][]).filter(([section]) => section !== 'unclassified' || (item && pharmacyMedicalSection(item.medical_section) === 'unclassified')).map(([section, label]) => <option key={section} value={section}>{label}</option>)}</select></label>
         <label className="pharmacy-item-wide-on-small">Catégorie<input list="pharmacy-categories" maxLength={200} title={draft.category || undefined} value={draft.category} onChange={(event) => update('category', event.target.value)} /><datalist id="pharmacy-categories">{suggestions.map((category) => <option key={category} value={category} />)}</datalist></label>
-        {!item ? <label className="pharmacy-item-wide">Section d’origine<input maxLength={300} value={draft.section} onChange={(event) => update('section', event.target.value)} /></label> : null}
+        {!item && !initialDesignation ? <label className="pharmacy-item-wide">Section d’origine<input maxLength={300} value={draft.section} onChange={(event) => update('section', event.target.value)} /></label> : null}
       </div>
       <div className="pharmacy-item-fields">
         <label className="pharmacy-item-wide-on-small">Désignation<input required readOnly={Boolean(regulatory)} maxLength={500} value={draft.designation} onChange={(event) => update('designation', event.target.value)} /></label>
