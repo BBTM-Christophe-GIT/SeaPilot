@@ -85,4 +85,16 @@ describe('bon de commande Pharmacie PDF', () => {
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.at(-1)?.text).toContain('Dernier mot');
   });
+
+  it('starts a row with a full-length stock packaging description without leaving an empty first page', async () => {
+    const packaging = 'conditionnement '.repeat(32).slice(0, 496) + ' FIN';
+    const lines = [{ ...medicine, stockQuantity: `98 · ${packaging}` }];
+    const { blob } = await buildPharmacyPurchaseOrderPdf({ ...input, lines });
+    const pages = await readPages(blob);
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages[0].text).toContain('Principe actif');
+    expect(pages[0].text).toContain('Paracétamol');
+    expect(pages.at(-1)?.text).toContain('FIN');
+    expect(pages.at(-1)?.text).toContain('Camille DUPONT');
+  });
 });

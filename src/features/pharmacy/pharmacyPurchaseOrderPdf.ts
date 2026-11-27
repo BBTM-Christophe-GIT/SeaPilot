@@ -236,9 +236,11 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array) {
   const signatureHeight = Math.max(MIN_SIGNATURE_HEIGHT, 10 + signer.length * LEADING);
   const orderEndHeight = 4 + signatureHeight + (needsReview ? 5 : 0);
   let y = drawPageHeader(doc, input, width);
+  let pageHasRows = false;
   const newPage = () => {
     doc.addPage();
     y = drawPageHeader(doc, input, width);
+    pageHasRows = false;
   };
 
   groups.forEach((group, groupIndex) => {
@@ -294,7 +296,7 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array) {
         const cellLines = Math.max(1, ...cells.map((cell) => cell.length));
         const categoryNeeded = lineIndex === 0;
         const precedingHeight = (hasHeading ? 0 : SECTION_HEIGHT + headerHeight) + (categoryNeeded ? categoryHeight : 0);
-        if (y + precedingHeight + rowHeight(cellLines) > rowBottom) {
+        if (pageHasRows && y + precedingHeight + rowHeight(cellLines) > rowBottom) {
           newPage();
           drawHeading();
           drawCategory();
@@ -310,6 +312,7 @@ function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array) {
           if (capacity < 1) throw new Error('Les informations du navire sont trop longues pour le bon de commande.');
           const count = Math.min(cellLines - offset, capacity);
           drawRow(cells.map((cell) => cell.slice(offset, offset + count)), rowHeight(count));
+          pageHasRows = true;
           offset += count;
           if (offset < cellLines) {
             newPage();
