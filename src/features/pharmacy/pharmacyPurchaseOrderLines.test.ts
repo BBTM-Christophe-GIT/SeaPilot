@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankPharmacyItem, pharmacyDesignationKey, type PharmacyDotationRequirement, type PharmacyItem } from './pharmacyModel';
+import { PHARMACY_EMERGENCY_BAG_KEY, blankPharmacyItem, pharmacyDesignationKey, type PharmacyDotationRequirement, type PharmacyItem } from './pharmacyModel';
 import { buildPharmacyPurchaseOrderLines } from './pharmacyPurchaseOrderLines';
 
 const issuedOn = '2026-11-10';
@@ -16,6 +16,29 @@ const requirement = (designation: string, fields: Partial<PharmacyDotationRequir
 });
 
 describe('pharmacy purchase order', () => {
+  it('keeps emergency bag stock distinct and reviews a reference without counted stock', () => {
+    const base = requirement('Compresse', {
+      medical_section: 'equipment', catalog_code: 'E001', applicability: 'standard',
+      required_stock_quantity: 4, required_stock_unit: 'paquet', required_quantity: '4', packaging: 'Paquet de 5',
+    });
+    const bag = { ...base, dotation_key: PHARMACY_EMERGENCY_BAG_KEY };
+    const items = [lot('Compresse', { medical_section: 'equipment', stock_quantity: 4, stock_unit: 'paquet' })];
+    expect(buildPharmacyPurchaseOrderLines(items, [base, bag], dotation, issuedOn)).toEqual([]);
+    expect(buildPharmacyPurchaseOrderLines(items, [base, bag], dotation, issuedOn, true)).toMatchObject([
+      { dotation: 'Sac Médical d’Urgence', designation: 'Compresse', quantity: null, unit: 'paquet',
+        canExclude: true, canSkipReview: true, requiredQuantity: '4 paquets', presentation: 'Paquet de 5' },
+    ]);
+  });
+  it('requires a deliberate order quantity for expired lots with a conditional reference', () => {
+    const reference = requirement('Produit à vérifier', {
+      catalog_code: 'M001', applicability: 'conditional', regulatory_notes: 'Présentation à vérifier',
+      required_stock_quantity: 4, required_stock_unit: 'ampoule', required_quantity: '4',
+    });
+    const item = lot(reference.designation, { expires_on: '2024-03-10', stock_quantity: 4, stock_unit: 'ampoule', package_size: 4 });
+    expect(buildPharmacyPurchaseOrderLines([item], [reference], dotation, issuedOn)).toMatchObject([
+      { quantity: null, canSkipReview: true, reason: 'Périmé · référence à vérifier', remarks: 'Présentation à vérifier' },
+    ]);
+  });
   it('orders one box for one missing tablet or bottle even without a recorded box size', () => {
     const items = [
       lot('Comprimés', { quantity: '9 comprimés', required_quantity: '10 comprimés' }),

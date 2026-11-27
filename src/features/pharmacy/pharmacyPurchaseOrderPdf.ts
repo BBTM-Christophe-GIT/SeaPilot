@@ -1,14 +1,27 @@
 import { jsPDF } from 'jspdf';
 import stampUrl from './assets/bbtm-pharmacy-stamp.jpg?url';
-import { formatPharmacyDate, formatPharmacyStockQuantity, pharmacyDaysUntil } from './pharmacyModel';
+import {
+  formatPharmacyDate, formatPharmacyStockQuantity, pharmacyDaysUntil, pharmacyDotationKey, pharmacyMedicalSection,
+  type PharmacyMedicalSection,
+} from './pharmacyModel';
 
-type OrderLine = {
+export type PharmacyPurchaseOrderPdfLine = {
   designation: string;
   brand?: string;
   requiredStrength: string;
   quantity: number;
   unit: string;
   quantityNeedsReview?: boolean;
+  dotation?: string;
+  section?: PharmacyMedicalSection | null;
+  category?: string;
+  administrationRoute?: string;
+  presentation?: string;
+  requiredQuantity?: string;
+  stockQuantity?: string;
+  expiry?: string;
+  classification?: string;
+  remarks?: string;
 };
 
 export interface PharmacyPurchaseOrderPdfInput {
@@ -17,70 +30,164 @@ export interface PharmacyPurchaseOrderPdfInput {
   registrationNumber: string | null;
   imoNumber?: string | null;
   medicalDotation: string;
+  medicalEmergencyBag?: boolean;
+  armament?: string | null;
+  flagState?: string | null;
+  registrationPort?: string | null;
   signerName: string;
   signerFunction: string | null;
   signature: Uint8Array;
-  lines: readonly OrderLine[];
+  lines: readonly PharmacyPurchaseOrderPdfLine[];
 }
 
-const NAVY = '#102A43';
-const GREEN = '#116449';
-const MUTED = '#4C6173';
-const RULE = '#D6E0E7';
-const LIGHT = '#F1F6F8';
-const ALT = '#F8FAFB';
+const NAVY = '#17365A';
+const YELLOW = '#FFF200';
+const RED = '#923632';
+const BLACK = '#000000';
 const WHITE = '#FFFFFF';
-const MARGIN = 14;
-const HEADER_HEIGHT = 8;
+const MARGIN = 19;
+const PAGE_BOTTOM = 185;
+const CELL_PADDING = 1.5;
+const FONT_SIZE = 9;
+const LEADING = 3.8;
 const FONT_TO_MM = 25.4 / 72;
-const PANEL_GAP = 8;
+const SECTION_HEIGHT = 8;
+const MIN_SIGNATURE_HEIGHT = 24;
 
-type PageLayout = {
-  format: 'a4' | 'a3' | 'a2';
-  panels: number;
-  size: number;
-  leading: number;
-  padding: number;
+const sections: Record<PharmacyMedicalSection, { heading: string; order: number }> = {
+  medicines: { heading: 'I. Registre des médicaments', order: 0 },
+  equipment: { heading: 'II. Matériel médical et objets de pansement', order: 1 },
+  unclassified: { heading: 'III. Articles à classer', order: 2 },
 };
 
-const PAGE_LAYOUTS: readonly PageLayout[] = [
-  { format: 'a4', panels: 1, size: 9.5, leading: 4.1, padding: 2 },
-  { format: 'a4', panels: 1, size: 8.5, leading: 3.7, padding: 1.25 },
-  { format: 'a3', panels: 1, size: 9.5, leading: 4.1, padding: 1.25 },
-  { format: 'a3', panels: 2, size: 8.5, leading: 3.7, padding: 1.25 },
-  { format: 'a2', panels: 2, size: 9.5, leading: 4.1, padding: 1.25 },
-  { format: 'a2', panels: 2, size: 8.5, leading: 3.35, padding: 0.65 },
-  { format: 'a2', panels: 3, size: 8.5, leading: 3.15, padding: 0.5 },
+type OrderLine = PharmacyPurchaseOrderPdfLine;
+type OrderColumn = {
+  heading: string;
+  width: number;
+  value: (line: OrderLine) => string | undefined;
+  align?: 'left' | 'center';
+};
+
+function orderQuantity(line: OrderLine) {
+  return formatPharmacyStockQuantity(line.quantity, line.unit) + (line.quantityNeedsReview ? ' *' : '');
+}
+
+function expiry(line: OrderLine) {
+  const value = line.expiry;
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatPharmacyDate(value) : value;
+}
+
+const requiredColumn = { heading: 'Quantité\nréglementaire', value: (line: OrderLine) => line.requiredQuantity };
+const stockColumn = { heading: 'Quantité\nexistante', value: (line: OrderLine) => line.stockQuantity };
+const expiryColumn = { heading: 'Date de\npéremption', value: expiry };
+const orderColumn = { heading: 'Quantité\nà commander', value: orderQuantity };
+
+const medicineColumns: readonly OrderColumn[] = [
+  { heading: 'Principe actif\nDénomination commune\ninternationale', width: 0.204, value: (line) => line.designation, align: 'left' },
+  { heading: 'Nom de spécialité\nou générique', width: 0.124, value: (line) => line.brand, align: 'left' },
+  { heading: 'Voie\nd’administration', width: 0.103, value: (line) => line.administrationRoute },
+  { heading: 'Forme -\nComposition', width: 0.182, value: (line) => [
+    line.presentation || line.requiredStrength,
+    line.remarks ? `Remarques : ${line.remarks}` : '',
+  ].filter(Boolean).join('\n'), align: 'left' },
+  { ...requiredColumn, width: 0.086 },
+  { ...stockColumn, width: 0.068 },
+  { ...expiryColumn, width: 0.075 },
+  { heading: 'Liste', width: 0.063, value: (line) => line.classification },
+  { ...orderColumn, width: 0.095 },
+];
+const equipmentColumns: readonly OrderColumn[] = [
+  { heading: 'Article', width: 0.228, value: (line) => line.designation, align: 'left' },
+  { heading: 'Marque / Modèle', width: 0.12, value: (line) => line.brand, align: 'left' },
+  { heading: 'Présentation', width: 0.145, value: (line) => line.presentation || line.requiredStrength, align: 'left' },
+  { ...requiredColumn, width: 0.091 },
+  { ...stockColumn, width: 0.071 },
+  { ...expiryColumn, width: 0.076 },
+  { heading: 'Remarques', width: 0.172, value: (line) => line.remarks, align: 'left' },
+  { ...orderColumn, width: 0.097 },
 ];
 
-function setType(doc: jsPDF, size: number, bold = false, color = NAVY) {
-  doc.setFont('helvetica', bold ? 'bold' : 'normal');
+type OrderGroup = { dotation: string; section: PharmacyMedicalSection; categories: Map<string, OrderLine[]> };
+
+function groupLines(input: PharmacyPurchaseOrderPdfInput): OrderGroup[] {
+  const groups = new Map<string, OrderGroup>();
+  for (const line of input.lines) {
+    const dotation = line.dotation?.trim() || input.medicalDotation;
+    const section = pharmacyMedicalSection(line.section);
+    const key = JSON.stringify([pharmacyDotationKey(dotation), section]);
+    const group = groups.get(key) ?? { dotation, section, categories: new Map<string, OrderLine[]>() };
+    const category = line.category?.trim() || '';
+    const articles = group.categories.get(category) ?? [];
+    articles.push(line);
+    group.categories.set(category, articles);
+    groups.set(key, group);
+  }
+  const base = pharmacyDotationKey(input.medicalDotation);
+  const isSupplement = (group: OrderGroup) => Number(pharmacyDotationKey(group.dotation) !== base);
+  return [...groups.values()].sort((a, b) => isSupplement(a) - isSupplement(b) || sections[a.section].order - sections[b.section].order);
+}
+
+function setType(doc: jsPDF, size: number, style: 'normal' | 'bold' | 'italic' = 'normal', color = BLACK) {
+  doc.setFont('helvetica', style);
   doc.setFontSize(size);
   doc.setTextColor(color);
 }
 
 function wrap(doc: jsPDF, value: string, width: number): string[] {
-  return doc.splitTextToSize(value.replace(/[\s\u00a0\u202f]+/gu, ' ').trim() || '–', width);
+  return value.replaceAll('≥', '>=').replaceAll('≤', '<=').split(/\r?\n/).flatMap((paragraph: string) =>
+    doc.splitTextToSize(paragraph.replace(/\s+/gu, ' ').trim(), width) as string[]);
 }
 
-function printLines(doc: jsPDF, lines: string[], x: number, y: number, leading: number, align: 'left' | 'center' = 'left') {
-  doc.text(lines, x, y, { align, lineHeightFactor: leading / (doc.getFontSize() * FONT_TO_MM) });
+function drawLines(doc: jsPDF, lines: string[], x: number, y: number, align: 'left' | 'center' = 'left') {
+  doc.text(lines, x, y, { align, lineHeightFactor: LEADING / (doc.getFontSize() * FONT_TO_MM) });
 }
 
-function splitPanels<Row extends { height: number }>(rows: Row[], panelHeight: number, count: number): Row[][] | null {
-  const panels: Row[][] = [[]];
-  let height = 0;
-  for (const row of rows) {
-    if (row.height > panelHeight) return null;
-    if (height + row.height > panelHeight) {
-      if (panels.length >= count) return null;
-      panels.push([]);
-      height = 0;
-    }
-    panels[panels.length - 1].push(row);
-    height += row.height;
+function drawPageHeader(doc: jsPDF, input: PharmacyPurchaseOrderPdfInput, width: number) {
+  doc.setFillColor(NAVY);
+  doc.rect(MARGIN + 8, 14, width - 12, 8, 'FD');
+  setType(doc, 13, 'bold', WHITE);
+  doc.text('BON DE COMMANDE - DOTATION MÉDICALE', MARGIN + 10, 19.5);
+  setType(doc, 8.5, 'italic');
+  doc.text('Modèle de l’annexe 217-3.A.3 (arrêté du 30/09/2021)', MARGIN + width / 2, 26.5, { align: 'center' });
+
+  const fieldX = MARGIN + width * 0.63;
+  const fields = [
+    ['Navire', input.vesselName], ['Armement', input.armament], ['Pavillon', input.flagState],
+    ['Port d’attache', input.registrationPort], ['Immatriculation', input.registrationNumber],
+    ...(input.imoNumber ? [['N° OMI', input.imoNumber]] : []),
+  ];
+  let fieldY = 34;
+  for (const [label, value] of fields) {
+    setType(doc, 8.5, 'bold');
+    doc.text(`${label} :`, fieldX, fieldY);
+    setType(doc, 8.5);
+    const lines = wrap(doc, value || '-', width * 0.37 - 30);
+    drawLines(doc, lines, fieldX + 30, fieldY);
+    fieldY += Math.max(1, lines.length) * LEADING;
   }
-  return panels;
+  setType(doc, 10, 'bold');
+  const dotation = wrap(doc, `Dotation médicale : ${input.medicalDotation}`, width * 0.62 - 9);
+  drawLines(doc, dotation, MARGIN + 7, 38);
+  setType(doc, 8.5);
+  const dateY = 41 + dotation.length * LEADING;
+  doc.text(`Date d’émission : ${formatPharmacyDate(input.issuedOn)}`, MARGIN + 7, dateY);
+  if (input.medicalEmergencyBag) doc.text('Sac médical d’urgence', MARGIN + 7, dateY + LEADING);
+  return Math.max(fieldY, dateY + (input.medicalEmergencyBag ? LEADING : 0)) + 4;
+}
+
+function drawPageFooter(doc: jsPDF, width: number, page: number) {
+  const y = 190;
+  const x = MARGIN + 7;
+  doc.setFillColor(RED);
+  doc.rect(x, y, 22, 10.5, 'F');
+  doc.setDrawColor(BLACK);
+  doc.line(x + 22, y, MARGIN + width - 7, y);
+  setType(doc, 9, 'normal', WHITE);
+  doc.text(String(page), x + 20, y + 4.2, { align: 'right' });
+  setType(doc, 8);
+  doc.text('DIVISION 217 | ANNEXE 217-3.A.3', MARGIN + width / 2, y + 4.2, { align: 'center' });
+  setType(doc, 8, 'italic');
+  doc.text('Édition JORF du 16/10/2021', MARGIN + width / 2, y + 8, { align: 'center' });
 }
 
 function drawImage(doc: jsPDF, bytes: Uint8Array, x: number, y: number, width: number, height: number, label: string) {
@@ -96,140 +203,138 @@ function drawImage(doc: jsPDF, bytes: Uint8Array, x: number, y: number, width: n
   }
 }
 
-function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array, layout: PageLayout): jsPDF | null {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: layout.format, compress: true, putOnlyUsedFonts: true });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const right = pageWidth - MARGIN;
-  const width = right - MARGIN;
-  const panelWidth = (width - PANEL_GAP * (layout.panels - 1)) / layout.panels;
-  const articleWidth = panelWidth * 0.75;
-  const quantityWidth = panelWidth - articleWidth;
-  const date = formatPharmacyDate(input.issuedOn);
-  const issuerWidth = width * 0.42;
-  const fields = [
-    { label: 'Navire', value: input.vesselName, ratio: 0.28 },
-    { label: 'Immatriculation', value: input.registrationNumber || 'Non renseignée', ratio: input.imoNumber ? 0.21 : 0.33 },
-    ...(input.imoNumber ? [{ label: 'N° OMI', value: input.imoNumber, ratio: 0.15 }] : []),
-    { label: 'Type de dotation médicale', value: input.medicalDotation, ratio: input.imoNumber ? 0.36 : 0.39 },
-  ];
-  setType(doc, 11, true);
-  const wrappedFields = fields.map(({ value, ratio }) => wrap(doc, value, width * ratio - 8));
-  const infoTop = 43;
-  const infoHeight = 12 + 4.6 * Math.max(...wrappedFields.map((lines) => lines.length));
-  const tableTop = infoTop + infoHeight + 15;
-  setType(doc, 11, true);
-  const name = wrap(doc, input.signerName, issuerWidth - 10);
+function drawSignature(doc: jsPDF, signature: Uint8Array, stamp: Uint8Array, y: number, width: number, height: number, signer: string[]) {
+  const signatureX = MARGIN + width * 0.48;
+  const stampX = MARGIN + width * 0.73;
+  doc.rect(MARGIN, y, width, height);
+  doc.line(signatureX, y, signatureX, y + height);
+  doc.line(stampX, y, stampX, y + height);
+  setType(doc, 9, 'bold');
+  doc.text('Émis par', MARGIN + 3, y + 5);
+  doc.text('Signature', signatureX + 3, y + 5);
+  doc.text('Cachet de l’entreprise', stampX + 3, y + 5);
   setType(doc, 9);
-  const job = wrap(doc, input.signerFunction || 'Non renseignée', issuerWidth - 10);
-  const issuerHeight = Math.max(34, 14 + name.length * 4.5 + job.length * 4);
-  const issuerTop = pageHeight - MARGIN - issuerHeight;
-  const review = input.lines.some((line) => line.quantityNeedsReview);
-  const tableBottom = issuerTop - (review ? 13 : 8);
-  const cellPadding = 2.4;
-  const rows = input.lines.map((line) => {
-    const designation = [line.designation, line.brand].filter(Boolean).join(' · ');
-    const quantity = formatPharmacyStockQuantity(line.quantity, line.unit) + (line.quantityNeedsReview ? ' *' : '');
-    setType(doc, layout.size, true);
-    const title = wrap(doc, designation, articleWidth - 2 * cellPadding);
-    const orderQuantity = wrap(doc, quantity, quantityWidth - 2 * cellPadding);
-    setType(doc, layout.size);
-    const dosage = line.requiredStrength ? wrap(doc, line.requiredStrength, articleWidth - 2 * cellPadding) : [];
-    return {
-      title, dosage, orderQuantity,
-      height: 2 * layout.padding + layout.leading * Math.max(title.length + dosage.length, orderQuantity.length),
+  drawLines(doc, signer, MARGIN + 3, y + 10);
+  drawImage(doc, signature, signatureX + 3, y + 6.5, stampX - signatureX - 6, 16, 'la signature');
+  drawImage(doc, stamp, stampX + 3, y + 6.5, MARGIN + width - stampX - 6, 16, 'le cachet de l’entreprise');
+}
+
+function rowHeight(lineCount: number) {
+  return Math.max(1, lineCount) * LEADING + CELL_PADDING * 2;
+}
+
+function renderOrder(input: PharmacyPurchaseOrderPdfInput, stamp: Uint8Array) {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
+  const width = doc.internal.pageSize.getWidth() - 2 * MARGIN;
+  doc.setDrawColor(BLACK);
+  doc.setLineWidth(0.18);
+  doc.setProperties({ title: 'Bon de commande - Inventaire Pharmacie', subject: input.vesselName, author: input.armament || 'BBTM sas' });
+  const groups = groupLines(input);
+  const needsReview = input.lines.some((line) => line.quantityNeedsReview);
+  setType(doc, FONT_SIZE);
+  const signer = wrap(doc, [input.signerName, input.signerFunction].filter(Boolean).join('\n'), width * 0.48 - 6);
+  const signatureHeight = Math.max(MIN_SIGNATURE_HEIGHT, 10 + signer.length * LEADING);
+  const orderEndHeight = 4 + signatureHeight + (needsReview ? 5 : 0);
+  let y = drawPageHeader(doc, input, width);
+  let pageHasRows = false;
+  const newPage = () => {
+    doc.addPage();
+    y = drawPageHeader(doc, input, width);
+    pageHasRows = false;
+  };
+
+  groups.forEach((group, groupIndex) => {
+    const columns = group.section === 'medicines' ? medicineColumns : equipmentColumns;
+    const headerHeight = rowHeight(Math.max(...columns.map(({ heading }) => heading.split('\n').length)));
+    const heading = sections[group.section].heading;
+    const sectionTitle = pharmacyDotationKey(group.dotation) === pharmacyDotationKey(input.medicalDotation)
+      ? heading : `${group.dotation} - ${heading}`;
+    const drawRow = (cells: string[][], height: number, header = false) => {
+      let x = MARGIN;
+      cells.forEach((lines, index) => {
+        const column = columns[index];
+        const columnWidth = column.width * width;
+        const align = header ? 'center' : column.align ?? 'center';
+        doc.rect(x, y, columnWidth, height);
+        setType(doc, FONT_SIZE, header || index === columns.length - 1 ? 'bold' : 'normal');
+        const baseline = y + (height - lines.length * LEADING) / 2 + 2.9;
+        if (lines.length) drawLines(doc, lines, align === 'left' ? x + CELL_PADDING : x + columnWidth / 2, baseline, align);
+        x += columnWidth;
+      });
+      y += height;
     };
-  });
-  const panels = splitPanels(rows, tableBottom - tableTop - HEADER_HEIGHT, layout.panels);
-  if (!panels) return null;
+    const drawHeading = () => {
+      setType(doc, 10, 'bold');
+      doc.text(sectionTitle, MARGIN + 7, y + 5);
+      y += SECTION_HEIGHT;
+      drawRow(columns.map(({ heading: label }) => label.split('\n')), headerHeight, true);
+    };
+    const categories = [...group.categories].sort(([a], [b]) => a.localeCompare(b, 'fr', { numeric: true, sensitivity: 'base' }));
+    let hasHeading = false;
+    categories.forEach(([category, lines], categoryIndex) => {
+      setType(doc, FONT_SIZE, 'bold');
+      const categoryLines = category ? wrap(doc, category, width - 2 * CELL_PADDING) : [];
+      const categoryHeight = categoryLines.length ? rowHeight(categoryLines.length) : 0;
+      const drawCategory = () => {
+        if (!categoryHeight) return;
+        doc.setFillColor(YELLOW);
+        doc.rect(MARGIN, y, width, categoryHeight, 'FD');
+        setType(doc, FONT_SIZE, 'bold');
+        drawLines(doc, categoryLines, MARGIN + CELL_PADDING, y + CELL_PADDING + 2.9);
+        y += categoryHeight;
+      };
+      lines.forEach((line, lineIndex) => {
+        const isLastRow = groupIndex === groups.length - 1 && categoryIndex === categories.length - 1 && lineIndex === lines.length - 1;
+        const rowBottom = PAGE_BOTTOM - (isLastRow ? orderEndHeight : 0);
+        setType(doc, FONT_SIZE);
+        const cells = columns.map(({ value, width: columnWidth }, index) => {
+          const content = value(line);
+          if (!content) return [];
+          setType(doc, FONT_SIZE, index === columns.length - 1 ? 'bold' : 'normal');
+          return wrap(doc, content, columnWidth * width - 2 * CELL_PADDING);
+        });
+        const cellLines = Math.max(1, ...cells.map((cell) => cell.length));
+        const categoryNeeded = lineIndex === 0;
+        const precedingHeight = (hasHeading ? 0 : SECTION_HEIGHT + headerHeight) + (categoryNeeded ? categoryHeight : 0);
+        if (pageHasRows && y + precedingHeight + rowHeight(cellLines) > rowBottom) {
+          newPage();
+          drawHeading();
+          drawCategory();
+        } else {
+          if (!hasHeading) drawHeading();
+          if (categoryNeeded) drawCategory();
+        }
+        hasHeading = true;
 
-  doc.setProperties({ title: 'Bon de commande – Inventaire Pharmacie', subject: input.vesselName, author: 'BBTM sas' });
-  setType(doc, 9, true, GREEN);
-  doc.text('SEAPILOT  /  INVENTAIRE PHARMACIE', MARGIN, 17);
-  setType(doc, 27, true);
-  doc.text('Bon de commande', MARGIN, 29);
-  setType(doc, 10, false, MUTED);
-  doc.text('Réapprovisionnement de la pharmacie de bord', MARGIN, 35.5);
-  const dateWidth = 41;
-  doc.setFillColor(LIGHT);
-  doc.roundedRect(right - dateWidth, 14, dateWidth, 21, 2, 2, 'F');
-  setType(doc, 7.4, true, MUTED);
-  doc.text('DATE D’ÉMISSION', right - dateWidth / 2, 21, { align: 'center' });
-  setType(doc, 13, true);
-  doc.text(date, right - dateWidth / 2, 29, { align: 'center' });
-
-  doc.setFillColor(LIGHT);
-  doc.roundedRect(MARGIN, infoTop, width, infoHeight, 2, 2, 'F');
-  let fieldX = MARGIN;
-  fields.forEach((field, index) => {
-    if (index) {
-      doc.setDrawColor(RULE);
-      doc.line(fieldX, infoTop + 3, fieldX, infoTop + infoHeight - 3);
-    }
-    setType(doc, 7.4, true, MUTED);
-    doc.text(field.label, fieldX + 4, infoTop + 5.4);
-    setType(doc, 11, true);
-    printLines(doc, wrappedFields[index], fieldX + 4, infoTop + 11.5, 4.6);
-    fieldX += width * field.ratio;
-  });
-
-  setType(doc, 13, true);
-  doc.text('Articles à commander', MARGIN, tableTop - 4);
-  setType(doc, 8.5, true, GREEN);
-  doc.text(`${rows.length} ${rows.length > 1 ? 'références' : 'référence'}`, right, tableTop - 4, { align: 'right' });
-  let lastRowBottom = tableTop;
-  panels.forEach((panel, panelIndex) => {
-    const panelX = MARGIN + panelIndex * (panelWidth + PANEL_GAP);
-    const articleX = panelX + cellPadding;
-    const quantityX = panelX + articleWidth + quantityWidth / 2;
-    doc.setFillColor(NAVY);
-    doc.roundedRect(panelX, tableTop, panelWidth, HEADER_HEIGHT, 1.1, 1.1, 'F');
-    setType(doc, 8, true, WHITE);
-    doc.text('Article / dosage', articleX, tableTop + 5.1);
-    doc.text('Quantité', quantityX, tableTop + 5.1, { align: 'center' });
-    let rowY = tableTop + HEADER_HEIGHT;
-    panel.forEach((row, index) => {
-      if (index % 2 === 0) {
-        doc.setFillColor(ALT);
-        doc.rect(panelX, rowY, panelWidth, row.height, 'F');
-      }
-      const y = rowY + layout.padding + layout.size * FONT_TO_MM * 0.84;
-      setType(doc, layout.size, true);
-      printLines(doc, row.title, articleX, y, layout.leading);
-      printLines(doc, row.orderQuantity, quantityX, y, layout.leading, 'center');
-      if (row.dosage.length) {
-        setType(doc, layout.size, false, MUTED);
-        printLines(doc, row.dosage, articleX, y + row.title.length * layout.leading, layout.leading);
-      }
-      rowY += row.height;
-      doc.setDrawColor(RULE);
-      doc.setLineWidth(0.18);
-      doc.line(panelX, rowY, panelX + panelWidth, rowY);
+        let offset = 0;
+        while (offset < cellLines) {
+          const capacity = Math.floor((rowBottom - y - 2 * CELL_PADDING) / LEADING);
+          if (capacity < 1) throw new Error('Les informations du navire sont trop longues pour le bon de commande.');
+          const count = Math.min(cellLines - offset, capacity);
+          drawRow(cells.map((cell) => cell.slice(offset, offset + count)), rowHeight(count));
+          pageHasRows = true;
+          offset += count;
+          if (offset < cellLines) {
+            newPage();
+            drawHeading();
+            drawCategory();
+          }
+        }
+      });
     });
-    lastRowBottom = Math.max(lastRowBottom, rowY);
+    y += 4;
   });
-  if (review) {
-    setType(doc, 8.5, false, MUTED);
-    doc.text('* Quantité à vérifier avant envoi.', MARGIN, lastRowBottom + 5);
-  }
 
-  doc.setDrawColor(RULE);
-  doc.setLineWidth(0.25);
-  doc.roundedRect(MARGIN, issuerTop, width, issuerHeight, 2, 2);
-  const signatureWidth = width * 0.27;
-  const stampX = MARGIN + issuerWidth + signatureWidth;
-  doc.line(MARGIN + issuerWidth, issuerTop + 4, MARGIN + issuerWidth, issuerTop + issuerHeight - 4);
-  doc.line(stampX, issuerTop + 4, stampX, issuerTop + issuerHeight - 4);
-  setType(doc, 7.8, true, MUTED);
-  doc.text('ÉMIS PAR', MARGIN + 5, issuerTop + 6);
-  doc.text('SIGNATURE', MARGIN + issuerWidth + signatureWidth / 2, issuerTop + 6, { align: 'center' });
-  doc.text('CACHET DE L’ENTREPRISE', stampX + (right - stampX) / 2, issuerTop + 6, { align: 'center' });
-  setType(doc, 11, true);
-  printLines(doc, name, MARGIN + 5, issuerTop + 13, 4.5);
-  setType(doc, 9, false, MUTED);
-  printLines(doc, job, MARGIN + 5, issuerTop + 14.5 + name.length * 4.5, 4);
-  drawImage(doc, input.signature, MARGIN + issuerWidth + 5, issuerTop + 9, signatureWidth - 10, 21, 'la signature');
-  drawImage(doc, stamp, stampX + 4, issuerTop + 9, right - stampX - 8, 21, 'le cachet de l’entreprise');
+  if (needsReview) {
+    setType(doc, 8.5);
+    doc.text('* Quantité à vérifier avant envoi.', MARGIN, y + 3);
+    y += 5;
+  }
+  drawSignature(doc, input.signature, stamp, y, width, signatureHeight, signer);
+  for (let page = 1; page <= doc.getNumberOfPages(); page += 1) {
+    doc.setPage(page);
+    drawPageFooter(doc, width, page);
+  }
   return doc;
 }
 
@@ -241,9 +346,6 @@ export async function buildPharmacyPurchaseOrderPdf(input: PharmacyPurchaseOrder
   if (!response.ok) throw new Error('Le cachet de l’entreprise est indisponible.');
   const stamp = new Uint8Array(await response.arrayBuffer());
   const name = input.vesselName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-  for (const layout of PAGE_LAYOUTS) {
-    const document = renderOrder(input, stamp, layout);
-    if (document) return { blob: document.output('blob'), filename: `bon-de-commande-pharmacie-${name}-${input.issuedOn}.pdf` };
-  }
-  throw new Error('Le bon de commande contient trop de texte pour tenir sur une seule page lisible.');
+  const document = renderOrder(input, stamp);
+  return { blob: document.output('blob'), filename: `bon-de-commande-pharmacie-${name}-${input.issuedOn}.pdf` };
 }

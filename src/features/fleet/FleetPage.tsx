@@ -9,6 +9,7 @@ import { AppDialog } from '../../components/AppDialog';
 import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../components/ModuleRibbon';
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
+import { pharmacyDotationKey } from '../pharmacy/pharmacyModel';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { todayPlanningDate } from '../planning/planningDates';
 import { planningErrorMessage } from '../planning/planningErrors';
@@ -44,6 +45,7 @@ type FleetVesselForm = Omit<
   SaveFleetVesselInput,
   keyof FleetFuelCapacity | 'capacitySections' | 'lightshipTonnes' | 'netTonnage' | 'summerFreeboardMm'
 > & {
+  medicalEmergencyBag: boolean;
   netTonnage: number | null;
   summerFreeboardMm: number | null;
   fuel: FleetFuelDraft;
@@ -57,11 +59,12 @@ const ASSET_KINDS: Array<{ key: FleetAssetKind; label: string; singular: string 
   { key: 'office', label: 'Bureaux', singular: 'Bureau' },
   { key: 'quay', label: 'Quais', singular: 'Quai' },
 ];
+const MEDICAL_DOTATIONS = ['DOTATION A', 'DOTATION B', 'DOTATION B restreinte', 'DOTATION C', 'DOTATION C restreinte'];
 
 const EMPTY_VESSEL: FleetVesselForm = {
   name: '', acronym: '', assetKind: 'vessel', typeLabel: '', unitTypeLabel: '', registrationNumber: '',
   imoNumber: '', registrationPort: '', callSign: '', mmsi: '', grossTonnage: '', maxPeople: null,
-  crewMembers: '', medicalDotation: '', lengthOverall: '', flagState: '', brochureSubtitle: '',
+  crewMembers: '', medicalDotation: '', medicalEmergencyBag: false, lengthOverall: '', flagState: '', brochureSubtitle: '',
   brochureSummary: '', brochureOperations: '', brochureCover: {}, builtYear: null, classificationLabel: '', navigationCategory: '',
   beamOverallM: null, draftMeters: null, netTonnage: null, summerFreeboardMm: null,
   deadweightTonnes: null, safeManning: null, mainEngine: '',
@@ -80,7 +83,8 @@ function vesselForm(vessel?: FleetVessel): FleetVesselForm {
     typeLabel: vessel.typeLabel, unitTypeLabel: vessel.unitTypeLabel, registrationNumber: vessel.registrationNumber,
     imoNumber: vessel.imoNumber, registrationPort: vessel.registrationPort, callSign: vessel.callSign,
     mmsi: vessel.mmsi, grossTonnage: vessel.grossTonnage, maxPeople: vessel.maxPeople,
-    crewMembers: vessel.crewMembers, medicalDotation: vessel.medicalDotation, lengthOverall: vessel.lengthOverall,
+    crewMembers: vessel.crewMembers, medicalDotation: vessel.medicalDotation, medicalEmergencyBag: vessel.medicalEmergencyBag,
+    lengthOverall: vessel.lengthOverall,
     flagState: vessel.flagState, brochureSubtitle: vessel.brochureSubtitle, brochureSummary: vessel.brochureSummary,
     brochureOperations: vessel.brochureOperations.join('\n'), brochureCover: vessel.brochureCover, builtYear: vessel.builtYear,
     classificationLabel: vessel.classificationLabel, navigationCategory: vessel.navigationCategory,
@@ -239,6 +243,7 @@ export function FleetPage({ client, roles }: FleetPageProps) {
       if (useDailyTank && !isFleetFuelTankCapacity(fuel.dailyTankCapacity)) throw new Error('Renseignez une capacité en litres valide pour la caisse journalière.');
       let saved = await saveFleetVessel(effectiveClient, {
         ...input, fuelTankCapacitiesLiters: mainTanks.length ? mainTanks : null,
+        medicalEmergencyBag: form.assetKind === 'vessel' && form.medicalEmergencyBag,
         fuelTankNames: fuelTankCount > 2 || fuelTankNames?.some((name, index) => name !== fleetFuelTankLabel(fuelTankCount, index))
           ? fuelTankNames : null,
         dailyFuelTankCapacityLiters: useDailyTank ? fuel.dailyTankCapacity : null,
@@ -309,6 +314,9 @@ export function FleetPage({ client, roles }: FleetPageProps) {
     const next = baseVisible.find((vessel) => vessel.assetKind === kind);
     setSelectedId(next?.id || null);
   }
+
+  const medicalDotationKey = pharmacyDotationKey(form?.medicalDotation);
+  const medicalDotationChoice = MEDICAL_DOTATIONS.find(option => option.toLowerCase() === medicalDotationKey);
 
   return <section className="fleet-page">
     <header className="fleet-page-heading">
@@ -423,7 +431,22 @@ export function FleetPage({ client, roles }: FleetPageProps) {
     {form ? <div className="fleet-dialog-backdrop" role="presentation"><form aria-label={form.id ? 'Modifier l’actif' : 'Ajouter un actif'} aria-modal="true" className={`fleet-dialog is-wide${form.assetKind === 'vessel' ? ' has-weather-matrix' : ''}`} onSubmit={submitVessel} role="dialog"><header><div><AssetIcon kind={form.assetKind} size={19} /><span><small>Référentiel BBTM</small><h2>{form.id ? 'Modifier l’actif' : 'Ajouter un actif'}</h2></span></div><button aria-label="Fermer" onClick={() => setForm(null)} type="button"><X size={18} /></button></header><div className="fleet-dialog-grid">
       <label>Type d’actif<select onChange={(event) => { setForm({ ...form, assetKind: event.target.value as FleetAssetKind }); setMatrixReady(true); }} value={form.assetKind}>{ASSET_KINDS.map((kind) => <option key={kind.key} value={kind.key}>{kind.singular}</option>)}</select></label><label>Nom<input autoFocus minLength={2} onChange={(event) => setForm({ ...form, name: event.target.value })} required value={form.name} /></label><label>Acronyme<input onChange={(event) => setForm({ ...form, acronym: event.target.value })} value={form.acronym} /></label><label>Type / désignation<input onChange={(event) => setForm({ ...form, typeLabel: event.target.value })} value={form.typeLabel} /></label>
       {form.assetKind === 'vessel' ? <><label className="is-wide fleet-photo-field"><ImagePlus size={18} /><span>Photo du navire<small>JPEG, PNG ou WebP · 10 Mo maximum</small></span><input accept="image/jpeg,image/png,image/webp" aria-label="Photo du navire" onChange={(event) => setPhotoFile(event.target.files?.[0] || null)} type="file" /></label><h3 className="is-wide">Identification maritime</h3><label>Immatriculation<input onChange={(event) => setForm({ ...form, registrationNumber: event.target.value })} value={form.registrationNumber} /></label><label>IMO<input onChange={(event) => setForm({ ...form, imoNumber: event.target.value })} value={form.imoNumber} /></label><label>Port d’immatriculation<input onChange={(event) => setForm({ ...form, registrationPort: event.target.value })} value={form.registrationPort} /></label><label>Indicatif d’appel<input onChange={(event) => setForm({ ...form, callSign: event.target.value })} value={form.callSign} /></label><label>MMSI<input onChange={(event) => setForm({ ...form, mmsi: event.target.value })} value={form.mmsi} /></label><label>Pavillon<input onChange={(event) => setForm({ ...form, flagState: event.target.value })} value={form.flagState} /></label><h3 className="is-wide">Caractéristiques</h3><label>Jauge brute<input onChange={(event) => setForm({ ...form, grossTonnage: event.target.value })} value={form.grossTonnage} /></label><label>Longueur hors tout<input onChange={(event) => setForm({ ...form, lengthOverall: event.target.value })} value={form.lengthOverall} /></label><label>Largeur hors tout (m){numberInput(form.beamOverallM, (value) => setForm({ ...form, beamOverallM: value }), 'Largeur hors tout')}</label><label>Tirant d’eau (m)<input aria-label="Tirant d’eau (m)" type="number" min={0} max={MAX_FLEET_DRAFT_METERS} step="any" value={form.draftMeters ?? ''} onChange={(event) => setForm({ ...form, draftMeters: event.target.value ? Number(event.target.value) : null })} /></label><label>Année de construction{numberInput(form.builtYear, (value) => setForm({ ...form, builtYear: value }), 'Année de construction')}</label><label>Jauge nette{numberInput(form.netTonnage, (value) => setForm({ ...form, netTonnage: value }), 'Jauge nette')}</label>
-      <label>Hauteur du Franc Bord - Été (mm){numberInput(form.summerFreeboardMm, (value) => setForm({ ...form, summerFreeboardMm: value }), 'Hauteur du Franc Bord - Été (mm)')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label><label className="is-wide">Dotation médicale<input onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })} value={form.medicalDotation} /></label><h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Emménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
+      <label>Hauteur du Franc Bord - Été (mm){numberInput(form.summerFreeboardMm, (value) => setForm({ ...form, summerFreeboardMm: value }), 'Hauteur du Franc Bord - Été (mm)')}</label><label>Port en lourd (t){numberInput(form.deadweightTonnes, (value) => setForm({ ...form, deadweightTonnes: value }), 'Port en lourd')}</label><label>Capacité maximale{numberInput(form.maxPeople, (value) => setForm({ ...form, maxPeople: value }), 'Capacité maximale')}</label><label>Effectif minimal{numberInput(form.safeManning, (value) => setForm({ ...form, safeManning: value }), 'Effectif minimal')}</label><label>Classification<input onChange={(event) => setForm({ ...form, classificationLabel: event.target.value })} value={form.classificationLabel} /></label><label>Catégorie de navigation<input onChange={(event) => setForm({ ...form, navigationCategory: event.target.value })} value={form.navigationCategory} /></label>
+      <label>Dotation médicale
+        <select disabled={isSaving} onChange={(event) => setForm({ ...form, medicalDotation: event.target.value })}
+          value={medicalDotationChoice ?? form.medicalDotation}>
+          <option value="">Non renseignée</option>
+          {form.medicalDotation && !medicalDotationChoice
+            ? <option value={form.medicalDotation}>{form.medicalDotation} (valeur historique)</option> : null}
+          {MEDICAL_DOTATIONS.map(option => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </label>
+      <label className="fleet-medical-bag">
+        <input checked={form.medicalEmergencyBag} disabled={isSaving}
+          onChange={(event) => setForm({ ...form, medicalEmergencyBag: event.target.checked })} type="checkbox" />
+        Sac Médical d'Urgence
+      </label>
+      <h3 className="is-wide">Propulsion & exploitation</h3><label>Moteur principal<input onChange={(event) => setForm({ ...form, mainEngine: event.target.value })} value={form.mainEngine} /></label><label>Puissance moteur (kW){numberInput(form.mainEnginePowerKw, (value) => setForm({ ...form, mainEnginePowerKw: value }), 'Puissance moteur')}</label><label>Propulseur d’étrave (kW){numberInput(form.bowThrusterPowerKw, (value) => setForm({ ...form, bowThrusterPowerKw: value }), 'Puissance propulseur')}</label><label>Vitesse maximale (nœuds){numberInput(form.maxSpeedKnots, (value) => setForm({ ...form, maxSpeedKnots: value }), 'Vitesse maximale')}</label><label>Traction au point fixe (t){numberInput(form.bollardPullTonnes, (value) => setForm({ ...form, bollardPullTonnes: value }), 'Traction')}</label><label className="is-wide">Assureur RC (P&amp;I)<input onChange={(event) => setForm({ ...form, liabilityInsurer: event.target.value })} value={form.liabilityInsurer} /></label><label className="is-wide">Groupes électrogènes<input onChange={(event) => setForm({ ...form, gensets: event.target.value })} value={form.gensets} /></label><label className="is-wide">Autonomie<textarea onChange={(event) => setForm({ ...form, rangeDescription: event.target.value })} value={form.rangeDescription} /></label><label className="is-wide">Équipements de pont<textarea onChange={(event) => setForm({ ...form, deckEquipment: event.target.value })} value={form.deckEquipment} /></label><label className="is-wide">Navigation & communications<textarea onChange={(event) => setForm({ ...form, electronicsCommunications: event.target.value })} value={form.electronicsCommunications} /></label><label className="is-wide">Emménagements<textarea onChange={(event) => setForm({ ...form, accommodation: event.target.value })} value={form.accommodation} /></label><section className="fleet-capacity-form" aria-label="Capacités">
         <h3>Capacités</h3>
         <FleetFuelFields value={form.fuel} disabled={isSaving} namesReady={fuelNamesReady} dailyNameReady={dailyFuelNameReady}
           onChange={fuel => setForm(current => current ? { ...current, fuel } : null)} />

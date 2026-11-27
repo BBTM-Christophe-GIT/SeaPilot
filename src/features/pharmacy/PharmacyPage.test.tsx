@@ -5,7 +5,7 @@ import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
-import { blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_EMERGENCY_BAG_KEY, blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { buildPharmacyWorkbook } from './pharmacyWorkbook';
 import { buildPharmacyPurchaseOrderPdf } from './pharmacyPurchaseOrderPdf';
@@ -62,6 +62,35 @@ describe('PharmacyPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ARTICLE SOURCE' }));
     expect(screen.getByText(/DOTATION MEDICALE · ligne 4/)).toBeInTheDocument();
     expect(screen.getByText('Observation du fichier')).toBeInTheDocument();
+  });
+  it('loads the emergency bag assigned to the vessel and saves its onboard stock', async () => {
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], medical_dotation: 'B restreinte', medical_emergency_bag: true }]);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValue({ items: [], controls: [], categories: [] });
+    vi.mocked(fetchPharmacyDotationRequirements).mockResolvedValue([{
+      catalog_code: 'E001', dotation_key: PHARMACY_EMERGENCY_BAG_KEY, medical_section: 'equipment',
+      designation_key: 'compresse sterile', designation: 'Compresse stérile', category: 'Pansement',
+      required_quantity: '4', required_stock_quantity: 4, required_stock_unit: 'paquet',
+      packaging: 'Paquet de 5', regulatory_notes: 'Conditionnement stérile', source_page: 52,
+      dotation_requirement_revision: null, applicability: 'standard',
+    }]);
+    page(['capitaine']);
+    const user = userEvent.setup();
+    const dotation = await screen.findByRole('combobox', { name: 'Type de dotation médicale' });
+    await waitFor(() => expect(dotation).toBeEnabled());
+    await user.selectOptions(dotation, PHARMACY_EMERGENCY_BAG_KEY);
+    expect(await screen.findByText('Paquet de 5')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Renseigner le stock de Compresse stérile' }));
+    const form = await screen.findByRole('dialog', { name: 'Ajouter un article' });
+    expect(within(form).getByLabelText('Quantité requise')).toBeDisabled();
+    expect(within(form).getByLabelText('Catégorie')).toHaveValue('Pansement');
+    await user.type(within(form).getByLabelText('Quantité à bord'), '2');
+    await user.type(within(form).getByLabelText('Marque / modèle'), 'Exemple');
+    await user.type(within(form).getByLabelText('Conditionnement à bord'), 'Paquet scellé');
+    await user.click(within(form).getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() => expect(savePharmacyItem).toHaveBeenCalledWith(client, 1, expect.objectContaining({
+      medical_dotation: PHARMACY_EMERGENCY_BAG_KEY, stock_quantity: 2, brand: 'Exemple',
+      stock_packaging: 'Paquet scellé', required_stock_quantity: 4, update_dotation_requirement: false,
+    }), undefined));
   });
   it('does not expose the order command to a Marin or a Captain outside the management scope', async () => {
     const marin = page(['marin']);

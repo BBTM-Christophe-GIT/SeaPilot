@@ -1,6 +1,7 @@
 import {
-  formatPharmacyStockQuantity, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyItemExpiryStatus, pharmacyItemStrength,
-  pharmacyMedicalSection, pharmacyStockDetails, type PharmacyDotationRequirement, type PharmacyItem,
+  PHARMACY_EMERGENCY_BAG_KEY, formatPharmacyItemExpiry, formatPharmacyStockQuantity, parsePharmacyQuantity,
+  pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength,
+  pharmacyMedicalSection, pharmacyQuantityLabel, pharmacyStockDetails, type PharmacyDotationRequirement, type PharmacyItem,
 } from './pharmacyModel';
 
 export interface PharmacyPurchaseOrderLine {
@@ -14,19 +15,32 @@ export interface PharmacyPurchaseOrderLine {
   unit: string;
   quantityNeedsReview: boolean;
   canExclude?: boolean;
+  canSkipReview?: boolean;
+  section?: PharmacyItem['medical_section'];
+  dotation?: string;
+  category?: string;
+  administrationRoute?: string;
+  presentation?: string;
+  requiredQuantity?: string;
+  stockQuantity?: string;
+  expiry?: string;
+  classification?: string;
+  remarks?: string;
 }
 
 type StockMeasure = ReturnType<typeof pharmacyStockDetails>['stock'];
-type OrderNeed = Pick<PharmacyPurchaseOrderLine, 'designation' | 'brand' | 'strength' | 'requiredStrength'> & {
+type OrderNeed = Pick<PharmacyPurchaseOrderLine, 'designation' | 'brand' | 'strength' | 'requiredStrength' | 'category' | 'administrationRoute' | 'presentation' | 'requiredQuantity' | 'stockQuantity' | 'expiry' | 'classification' | 'remarks'> & {
   section: PharmacyItem['medical_section'];
   stockUnit: string;
   unitLabel?: string | null;
   unitsPerBox: number | null;
+  lotId?: number;
   volumeContainer?: boolean;
   amount: number | null;
   expired: boolean;
   missing: boolean;
   uncertainStock?: boolean;
+  canSkipReview?: boolean;
 };
 type MeasuredLot = {
   details: ReturnType<typeof pharmacyStockDetails>;
@@ -47,6 +61,19 @@ function requiredOrderStrength(requirement: Pick<PharmacyItem, 'required_quantit
   return pharmacyItemStrength({ quantity: requirement.required_quantity, required_quantity: '', strength: requirement.required_strength?.trim() }) ?? '';
 }
 
+function requirementMetadata(requirement: PharmacyDotationRequirement | undefined) {
+  if (!requirement?.catalog_code) return {};
+  return {
+    category: requirement.category || undefined,
+    administrationRoute: requirement.administration_route || undefined,
+    presentation: requirement.packaging || undefined,
+    requiredQuantity: requirement.required_stock_quantity == null ? requirement.required_quantity
+      : formatPharmacyStockQuantity(requirement.required_stock_quantity, requirement.required_stock_unit),
+    classification: requirement.classification || undefined,
+    remarks: requirement.regulatory_notes || undefined,
+  };
+}
+
 function itemNeed(item: PharmacyItem, measure: StockMeasure, unitsPerBox: number | null | undefined, requiredStrength: string, unitLabel: string | null | undefined) {
   return {
     designation: item.designation.trim(),
@@ -54,6 +81,11 @@ function itemNeed(item: PharmacyItem, measure: StockMeasure, unitsPerBox: number
     strength: item.strength?.trim() || readableStrength(measure.strength),
     requiredStrength,
     section: item.medical_section,
+    category: item.category || undefined,
+    requiredQuantity: item.outside_dotation ? undefined : pharmacyQuantityLabel(item, 'required'),
+    lotId: item.id,
+    stockQuantity: [pharmacyQuantityLabel(item, 'stock'), item.stock_packaging].filter(Boolean).join(' · '),
+    expiry: item.expires_on ? formatPharmacyItemExpiry(item) : undefined,
     stockUnit: measure.unit,
     unitLabel,
     unitsPerBox: unitsPerBox ?? null,
@@ -81,9 +113,12 @@ function orderLine(need: OrderNeed): PharmacyPurchaseOrderLine {
     : unitsPerBox ? ceilQuantity(amount / unitsPerBox)
     : orderBoxes ? amount <= 1 ? 1 : null
     : amount;
-  const reason = uncertainStock ? 'Stock à vérifier' : expired && missing ? 'Périmé et manquant' : expired ? 'Périmé' : 'Manquant';
-  return { designation, brand, strength, requiredStrength, packaging, reason, quantity, unit, quantityNeedsReview: quantity === null,
-    ...(uncertainStock ? { canExclude: true } : {}) };
+  const reason = uncertainStock ? expired ? 'Périmé · référence à vérifier' : 'Stock à vérifier' : expired && missing ? 'Périmé et manquant' : expired ? 'Périmé' : 'Manquant';
+  const { section, category, administrationRoute, presentation, requiredQuantity, stockQuantity, expiry, classification, remarks } = need;
+  return { designation, brand, strength, requiredStrength, packaging: presentation || packaging, reason, quantity, unit,
+    quantityNeedsReview: quantity === null, section, category, administrationRoute, presentation, requiredQuantity,
+    stockQuantity, expiry, classification, remarks, ...(uncertainStock ? { canExclude: true } : {}),
+    ...(need.canSkipReview ? { canSkipReview: true } : {}) };
 }
 
 function compareInTargetUnits(details: ReturnType<typeof pharmacyStockDetails>): number | null {
@@ -132,6 +167,7 @@ export function buildPharmacyPurchaseOrderLines(
   requirements: readonly PharmacyDotationRequirement[],
   medicalDotation: string,
   issuedOn: string,
+  medicalEmergencyBag = false,
 ): PharmacyPurchaseOrderLine[] {
   const dotation = pharmacyDotationKey(medicalDotation);
   const shared = new Map(requirements.filter((entry) => entry.dotation_key === dotation)
@@ -148,9 +184,14 @@ export function buildPharmacyPurchaseOrderLines(
     current.amount = current.amount === null || need.amount === null ? null : current.amount + need.amount;
     current.expired ||= need.expired;
     current.missing ||= need.missing;
+    if (current.lotId !== need.lotId) {
+      current.lotId = undefined;
+      current.stockQuantity = 'Plusieurs lots';
+      current.expiry = undefined;
+    }
   };
-  const addUncertain = (need: MeasuredLot['need']) => {
-    add({ ...need, amount: null, expired: false, missing: false, uncertainStock: true });
+  const addUncertain = (need: MeasuredLot['need'], canSkipReview = false, expired = false) => {
+    add({ ...need, amount: null, expired, missing: false, uncertainStock: true, canSkipReview });
   };
   for (const item of items) {
     if (!item.active || pharmacyDotationKey(item.medical_dotation) !== dotation) continue;
@@ -163,12 +204,17 @@ export function buildPharmacyPurchaseOrderLines(
     const canUseTargetUnit = !stock.unit && stock.volumePerUnit === null && (!stock.strength || stock.strength === target.strength);
     const orderStock = canUseTargetUnit ? { ...stock, unit: target.unit } : stock;
     const orderInTargetUnits = Boolean(requiredStrength && stock.strength !== target.strength && (stock.strength || stock.volumePerUnit !== null));
-    const need = orderInTargetUnits
+    const stockNeed = orderInTargetUnits
       ? itemNeed({ ...item, strength: requiredStrength }, target, stockItem.required_package_size, requiredStrength, stockItem.required_stock_unit)
-      : itemNeed(item, orderStock, itemBoxSize(stockItem, orderStock, target), requiredStrength, canUseTargetUnit ? stockItem.required_stock_unit : stockItem.stock_unit);
+      : itemNeed(stockItem, orderStock, itemBoxSize(stockItem, orderStock, target), requiredStrength, canUseTargetUnit ? stockItem.required_stock_unit : stockItem.stock_unit);
+    const need = { ...stockNeed, ...requirementMetadata(requirement) };
     const expired = pharmacyItemExpiryStatus(item, issuedOn) === 'expired';
-    if (expired) add({ ...need, amount: expiryReplacementAmount(stock, target, orderInTargetUnits), expired: true, missing: false });
-    if (item.outside_dotation) continue;
+    const reviewReference = Boolean(requirement?.catalog_code && requirement.applicability !== 'standard');
+    if (expired) {
+      if (reviewReference) addUncertain(need, true, true);
+      else add({ ...need, amount: expiryReplacementAmount(stock, target, orderInTargetUnits), expired: true, missing: false });
+    }
+    if (item.outside_dotation || requirement?.applicability === 'not_applicable') continue;
 
     const actual = compareInTargetUnits(details);
     if (requirement) {
@@ -197,6 +243,7 @@ export function buildPharmacyPurchaseOrderLines(
   for (const [key, requirement] of shared) {
     const measured = activeByRequirement.get(key) ?? [];
     const sharedTarget = pharmacyStockDetails({ quantity: '', ...requirement }).target;
+    if (requirement.applicability === 'not_applicable') continue;
     const target = sharedTarget.count === null
       ? measured.find(({ details }) => details.target.count !== null)?.details.target ?? sharedTarget
       : sharedTarget;
@@ -210,7 +257,18 @@ export function buildPharmacyPurchaseOrderLines(
     const targetNeed = { designation: requirement.designation, brand: measured[0]?.need.brand ?? '',
       strength: requiredStrength, requiredStrength,
       section: requirement.medical_section, stockUnit: target.unit, unitLabel: requirement.required_stock_unit, unitsPerBox: requirement.required_package_size ?? null,
-      volumeContainer: !target.unit && target.volumePerUnit !== null };
+      volumeContainer: !target.unit && target.volumePerUnit !== null,
+      ...requirementMetadata(requirement),
+      ...(requirement.catalog_code && measured.length ? {
+        stockQuantity: measured.every(({ available }) => available !== null)
+          ? formatPharmacyStockQuantity(actual, requirement.required_stock_unit) : 'À vérifier',
+        expiry: measured.length === 1 ? measured[0].need.expiry : undefined,
+      } : {}),
+    };
+    if (requirement.catalog_code && (!measured.length || requirement.applicability !== 'standard' || target.count === null)) {
+      if (!measured.some(({ expired }) => expired && requirement.applicability !== 'standard')) addUncertain(targetNeed, true);
+      continue;
+    }
 
     if ((target.count === null && measured.length > 0) || presentations.size > 1 || measured.some(({ available }) => available === null)) {
       const configured = requirement.required_stock_quantity != null || requirement.required_stock_unit
@@ -231,6 +289,11 @@ export function buildPharmacyPurchaseOrderLines(
     }
   }
 
-  return [...needs.values()].map(orderLine)
+  const lines = [...needs.values()].map(orderLine)
     .sort((a, b) => a.designation.localeCompare(b.designation, 'fr', { numeric: true, sensitivity: 'base' }));
+  if (medicalEmergencyBag && dotation !== PHARMACY_EMERGENCY_BAG_KEY) {
+    lines.push(...buildPharmacyPurchaseOrderLines(items, requirements, PHARMACY_EMERGENCY_BAG_KEY, issuedOn)
+      .map((line) => ({ ...line, dotation: pharmacyDotationLabel(PHARMACY_EMERGENCY_BAG_KEY) })));
+  }
+  return lines;
 }

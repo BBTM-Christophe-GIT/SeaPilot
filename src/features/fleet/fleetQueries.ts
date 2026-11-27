@@ -11,7 +11,7 @@ export const MAX_FLEET_DRAFT_METERS = 50;
 const FLEET_VESSEL_SELECT = [
   'id', 'company_id', 'name', 'acronym', 'asset_kind', 'type_label', 'unit_type_label',
   'fleet_exit_on', 'registration_number', 'imo_number', 'registration_port', 'call_sign',
-  'mmsi', 'gross_tonnage', 'max_people', 'crew_members', 'medical_dotation', 'length_overall',
+  'mmsi', 'gross_tonnage', 'max_people', 'crew_members', 'medical_dotation', 'medical_emergency_bag', 'length_overall',
   'flag_state', 'active', 'sharepoint_list_id', 'sharepoint_item_id', 'source_modified_at',
   'source_guid', 'source_etag', 'source_active_label', 'source_fleet_exit_at', 'photo_url',
   'photo_storage_bucket', 'photo_storage_path', 'illustration_storage_bucket',
@@ -43,6 +43,7 @@ interface FleetVesselRow {
   max_people: number | string | null;
   crew_members: string | null;
   medical_dotation: string | null;
+  medical_emergency_bag: boolean;
   length_overall: string | null;
   flag_state: string | null;
   active: boolean;
@@ -113,6 +114,7 @@ export interface FleetVessel extends FleetFuelCapacity {
   maxPeople: number | null;
   crewMembers: string;
   medicalDotation: string;
+  medicalEmergencyBag: boolean;
   lengthOverall: string;
   flagState: string;
   active: boolean;
@@ -174,6 +176,7 @@ export interface SaveFleetVesselInput extends Partial<FleetFuelCapacity> {
   maxPeople: number | null;
   crewMembers: string;
   medicalDotation: string;
+  medicalEmergencyBag?: boolean;
   lengthOverall: string;
   flagState: string;
   brochureSubtitle: string;
@@ -234,7 +237,8 @@ function mapFleetVessel(row: FleetVesselRow): FleetVessel {
     fleetExitOn: row.fleet_exit_on || '', registrationNumber: row.registration_number || '', imoNumber: row.imo_number || '',
     registrationPort: row.registration_port || '', callSign: row.call_sign || '', mmsi: row.mmsi || '',
     grossTonnage: row.gross_tonnage || '', maxPeople: numberOrNull(row.max_people), crewMembers: row.crew_members || '',
-    medicalDotation: row.medical_dotation || '', lengthOverall: row.length_overall || '', flagState: row.flag_state || '',
+    medicalDotation: row.medical_dotation || '', medicalEmergencyBag: row.medical_emergency_bag === true,
+    lengthOverall: row.length_overall || '', flagState: row.flag_state || '',
     active: row.active, sharePointListId: row.sharepoint_list_id || '', sharePointItemId: row.sharepoint_item_id || '',
     sourceModifiedAt: row.source_modified_at || '', sourceGuid: row.source_guid || '', sourceEtag: row.source_etag || '',
     sourceActiveLabel: row.source_active_label || '', sourceFleetExitAt: row.source_fleet_exit_at || '', photoUrl: row.photo_url || '',
@@ -319,6 +323,7 @@ export async function saveFleetVessel(client: SupabaseClient, input: SaveFleetVe
     imo_number: optional(input.imoNumber), registration_port: optional(input.registrationPort), call_sign: optional(input.callSign),
     mmsi: optional(input.mmsi), gross_tonnage: optional(input.grossTonnage), max_people: input.maxPeople,
     crew_members: optional(input.crewMembers), medical_dotation: optional(input.medicalDotation),
+    ...(input.medicalEmergencyBag === undefined ? {} : { medical_emergency_bag: input.medicalEmergencyBag }),
     length_overall: optional(input.lengthOverall), flag_state: optional(input.flagState),
     brochure_subtitle: optional(input.brochureSubtitle), brochure_summary: optional(input.brochureSummary),
     brochure_operations: input.brochureOperations.split(/\r?\n|;/).map((value) => value.trim()).filter(Boolean),

@@ -12,7 +12,7 @@ const vessel: FleetVessel = {
   id: 1, companyId: 1, name: 'GOURY', acronym: 'GRY', assetKind: 'vessel', typeLabel: 'Navire de charge',
   unitTypeLabel: 'Navire', fleetExitOn: '', registrationNumber: '934968', imoNumber: '9213870',
   registrationPort: 'MARSEILLE', callSign: 'FLBU', mmsi: '361001000', grossTonnage: '293', maxPeople: 12,
-  crewMembers: '', medicalDotation: 'Dotation B', lengthOverall: '30.62 m', flagState: 'France', active: true,
+  crewMembers: '', medicalDotation: 'Dotation B', medicalEmergencyBag: false, lengthOverall: '30.62 m', flagState: 'France', active: true,
   sharePointListId: '', sharePointItemId: '', sourceModifiedAt: '', sourceGuid: '', sourceEtag: '', sourceActiveLabel: '',
   sourceFleetExitAt: '', photoUrl: '', photoStorageBucket: '', photoStoragePath: '', brochureSubtitle: '',
   brochureSummary: '', brochureOperations: [], builtYear: 2001, classificationLabel: 'DNV',

@@ -27,7 +27,7 @@ const baseVessel: FleetVessel = {
   id: 1, companyId: 1, name: 'GOURY', acronym: 'GRY', assetKind: 'vessel', typeLabel: 'Navire de charge',
   unitTypeLabel: 'Navire', fleetExitOn: '', registrationNumber: '934968', imoNumber: '9213870',
   registrationPort: 'MARSEILLE', callSign: 'FLBU', mmsi: '361001000', grossTonnage: '293', maxPeople: 12,
-  crewMembers: '', medicalDotation: 'Dotation B', lengthOverall: '30.62 m', flagState: 'France', active: true,
+  crewMembers: '', medicalDotation: 'Dotation B', medicalEmergencyBag: false, lengthOverall: '30.62 m', flagState: 'France', active: true,
   sharePointListId: '543b9f00-aed2-489a-808a-7b64cc835a83', sharePointItemId: '1',
   sourceModifiedAt: '2026-05-31T10:45:21Z', sourceGuid: '9c29663e-fe10-4560-b2cf-4bd228e38da5',
   sourceEtag: '33', sourceActiveLabel: 'GOURY', sourceFleetExitAt: '', photoUrl: '/vessels/goury.jpg',
@@ -251,6 +251,46 @@ describe('FleetPage', () => {
     await user.click(save);
     expect(saveFleetVessel).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       name: 'GOURY', brochureCover: { en: { operations: ['Offshore support', 'Diving support'] } },
+    }));
+  });
+
+  it('selects a regulatory dotation and persists the independent emergency bag choice', async () => {
+    const user = userEvent.setup();
+    const imported = { ...baseVessel, medicalDotation: 'Dotation médicale B - Médicaments (catégorie 2 - 200 miles)' };
+    vi.mocked(fetchFleetVessels).mockResolvedValue([imported]);
+    vi.mocked(saveFleetVessel).mockImplementation(async (_client, changes) => {
+      const saved = { ...imported, medicalDotation: changes.medicalDotation, medicalEmergencyBag: changes.medicalEmergencyBag ?? false };
+      vi.mocked(fetchFleetVessels).mockResolvedValue([saved]);
+      return saved;
+    });
+    render(<MemoryRouter><FleetPage client={{} as SupabaseClient} roles={['admin']} /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Modifier' }));
+    const editor = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    const dotation = editor.getByRole('combobox', { name: 'Dotation médicale' });
+    const bag = editor.getByRole('checkbox', { name: "Sac Médical d'Urgence" });
+    expect(within(dotation).getAllByRole('option').map(option => option.textContent)).toEqual([
+      'Non renseignée', 'DOTATION A', 'DOTATION B', 'DOTATION B restreinte', 'DOTATION C', 'DOTATION C restreinte',
+    ]);
+    expect(dotation).toHaveValue('DOTATION B');
+    expect(bag).not.toBeChecked();
+
+    await user.click(bag);
+    await user.click(editor.getByRole('button', { name: 'Enregistrer' }));
+    await screen.findByText('Navire enregistré.');
+    expect(saveFleetVessel).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      medicalDotation: imported.medicalDotation, medicalEmergencyBag: true,
+    }));
+    const crew = within(screen.getByRole('region', { name: 'Équipage et sécurité' }));
+    expect(crew.getByText("Sac Médical d'Urgence", { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^Oui$/);
+
+    await user.click(screen.getByRole('button', { name: 'Modifier' }));
+    const reopened = within(screen.getByRole('dialog', { name: 'Modifier l’actif' }));
+    expect(reopened.getByRole('checkbox', { name: "Sac Médical d'Urgence" })).toBeChecked();
+    await user.selectOptions(reopened.getByRole('combobox', { name: 'Dotation médicale' }), 'DOTATION C restreinte');
+    await user.click(reopened.getByRole('checkbox', { name: "Sac Médical d'Urgence" }));
+    await user.click(reopened.getByRole('button', { name: 'Enregistrer' }));
+    expect(saveFleetVessel).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      medicalDotation: 'DOTATION C restreinte', medicalEmergencyBag: false,
     }));
   });
 
@@ -520,6 +560,7 @@ describe('FleetPage', () => {
     const user = userEvent.setup();
     vi.mocked(fetchFleetVessels).mockResolvedValue([{
       ...baseVessel, netTonnage: 91, summerFreeboardMm: 875, weatherMatrix: GOURY_WEATHER_MATRIX,
+      medicalEmergencyBag: true,
       fuelTankCapacitiesLiters: [7000, 5000], dailyFuelTankCapacityLiters: 800,
       dailyFuelTankName: role === 'capitaine' ? 'Caisse service' : null,
       capacitySections: [{ name: 'Eau douce', tanks: [{
@@ -532,6 +573,9 @@ describe('FleetPage', () => {
     expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Identification maritime' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Source BBTM - Flotte' })).not.toBeInTheDocument();
+    const crew = within(screen.getByRole('region', { name: 'Équipage et sécurité' }));
+    expect(crew.getByText("Sac Médical d'Urgence", { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^Oui$/);
+    expect(crew.queryByRole('checkbox')).not.toBeInTheDocument();
     const dimensions = within(screen.getByRole('region', { name: 'Dimensions et tonnage' }));
     expect(dimensions.getByText('Jauge nette', { selector: 'dt' }).nextElementSibling).toHaveTextContent(/^91$/);
     expect(dimensions.getByText('Hauteur du Franc Bord - Été', { selector: 'dt' }).nextElementSibling).toHaveTextContent('875 mm');

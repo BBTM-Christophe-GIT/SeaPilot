@@ -7,7 +7,7 @@ import './pharmacyItemForm.css';
 
 const stockUnits = [
   'unité', 'ampoule', 'boîte', 'comprimé', 'dose', 'flacon', 'gélule', 'patch',
-  'pièce', 'sachet', 'suppositoire', 'tube', 'mL', 'cL', 'dL', 'litre',
+  'paquet', 'pièce', 'sachet', 'seringue', 'suppositoire', 'tube', 'mL', 'cL', 'dL', 'litre',
 ];
 const otherStockUnit = '__other__';
 
@@ -43,13 +43,13 @@ function requirementInput(source: PharmacyItem | PharmacyDotationRequirement | u
   };
 }
 
-export function PharmacyItemForm({ item, medicalDotation, medicalSection, initialDesignation = '', categories, categoryRecords, requirements, requirementsPending, requirementsError, busy, error, onClose, onSave }: {
-  item?: PharmacyItem; medicalDotation?: string | null; medicalSection?: PharmacyMedicalSection; categories: string[]; categoryRecords?: PharmacyCategory[]; busy: boolean; error: string;
+export function PharmacyItemForm({ item, medicalDotation, medicalSection, initialDesignation = '', initialCategory = '', categories, categoryRecords, requirements, requirementsPending, requirementsError, busy, error, onClose, onSave }: {
+  item?: PharmacyItem; initialCategory?: string; medicalDotation?: string | null; medicalSection?: PharmacyMedicalSection; categories: string[]; categoryRecords?: PharmacyCategory[]; busy: boolean; error: string;
   initialDesignation?: string;
   requirements?: PharmacyDotationRequirement[]; requirementsPending?: boolean; requirementsError?: boolean;
   onClose: () => void; onSave: (draft: PharmacyItemDraft) => void;
 }) {
-  const [draft, setDraft] = useState<PharmacyItemDraft>(() => item ? { ...item, strength: pharmacyItemStrength(item), medical_dotation: item.medical_dotation || '', medical_section: pharmacyMedicalSection(item.medical_section) } : { ...blankPharmacyItem(), designation: initialDesignation, medical_dotation: medicalDotation?.trim() || '', medical_section: medicalSection === 'unclassified' ? undefined : medicalSection });
+  const [draft, setDraft] = useState<PharmacyItemDraft>(() => item ? { ...item, strength: pharmacyItemStrength(item), medical_dotation: item.medical_dotation || '', medical_section: pharmacyMedicalSection(item.medical_section) } : { ...blankPharmacyItem(), designation: initialDesignation, category: initialCategory, medical_dotation: medicalDotation?.trim() || '', medical_section: medicalSection === 'unclassified' ? undefined : medicalSection });
   const [branchError, setBranchError] = useState('');
   const originalOnboard = item?.stock_quantity?.toString().replace('.', ',') ?? item?.quantity ?? '';
   const [onboardQuantity, setOnboardQuantity] = useState(originalOnboard);
@@ -67,7 +67,8 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
   const requirementSource = shared || item;
   const originalRequirement = requirementInput(requirementSource);
   const requirement = requirementEdit?.key === requirementKey ? requirementEdit.values : originalRequirement;
-  const requirementDisabled = Boolean(draft.outside_dotation || !draft.medical_section || (shareable && (requirementsPending || requirementsError)));
+  const regulatory = shared?.catalog_code ? shared : undefined;
+  const requirementDisabled = Boolean(regulatory || draft.outside_dotation || !draft.medical_section || (shareable && (requirementsPending || requirementsError)));
   const canShareExisting = Boolean(item && designationKey && shareable && !shared && !requirementDisabled && originalRequirement.quantity.trim());
   const shareExisting = canShareExisting && shareRequirementKey === sharedScopeKey;
   const updateRequirement = (changes: Partial<RequirementInput>) => setRequirementEdit({ key: requirementKey, values: { ...requirement, ...changes } });
@@ -86,7 +87,7 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
         quantity: item && onboardQuantity === originalOnboard ? item.quantity : onboardQuantity.trim(),
         required_quantity: requirementSource && requirement.quantity === originalRequirement.quantity ? requirementSource.required_quantity : requirement.quantity.trim(),
         stock_quantity: parsePharmacyQuantity(onboardQuantity),
-        required_stock_quantity: parsePharmacyQuantity(requirement.quantity),
+        required_stock_quantity: regulatory ? regulatory.required_stock_quantity : parsePharmacyQuantity(requirement.quantity),
         stock_unit: draft.stock_unit?.trim() || null,
         required_stock_unit: requirement.unit?.trim() || null,
         required_strength: requirement.strength.trim() || null,
@@ -105,13 +106,12 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
     <div className="pharmacy-item-form">
       <div className="pharmacy-item-fields pharmacy-item-classification">
         <label>Type de dotation médicale<input aria-label="Type de dotation médicale" readOnly value={pharmacyDotationLabel(draft.medical_dotation)} /><span className="pharmacy-item-help">{item ? 'Le type enregistré avec cet article est conservé.' : 'Le type est celui affecté au navire dans la Flotte.'}</span></label>
-        <label>Branche<select aria-label="Branche" required value={draft.medical_section || ''} onChange={(event) => { setDraft((previous) => ({ ...previous, medical_section: event.target.value as PharmacyMedicalSection, category: '', category_id: null })); setBranchError(''); }}><option value="" disabled>Choisir une branche</option>{(Object.entries(PHARMACY_MEDICAL_SECTIONS) as [PharmacyMedicalSection, string][]).filter(([section]) => section !== 'unclassified' || (item && pharmacyMedicalSection(item.medical_section) === 'unclassified')).map(([section, label]) => <option key={section} value={section}>{label}</option>)}</select></label>
+        <label>Branche<select aria-label="Branche" disabled={Boolean(regulatory)} required value={draft.medical_section || ''} onChange={(event) => { setDraft((previous) => ({ ...previous, medical_section: event.target.value as PharmacyMedicalSection, category: '', category_id: null })); setBranchError(''); }}><option value="" disabled>Choisir une branche</option>{(Object.entries(PHARMACY_MEDICAL_SECTIONS) as [PharmacyMedicalSection, string][]).filter(([section]) => section !== 'unclassified' || (item && pharmacyMedicalSection(item.medical_section) === 'unclassified')).map(([section, label]) => <option key={section} value={section}>{label}</option>)}</select></label>
         <label className="pharmacy-item-wide-on-small">Catégorie<input list="pharmacy-categories" maxLength={200} title={draft.category || undefined} value={draft.category} onChange={(event) => update('category', event.target.value)} /><datalist id="pharmacy-categories">{suggestions.map((category) => <option key={category} value={category} />)}</datalist></label>
         {!item ? <label className="pharmacy-item-wide">Section d’origine<input maxLength={300} value={draft.section} onChange={(event) => update('section', event.target.value)} /></label> : null}
       </div>
       <div className="pharmacy-item-fields">
-        <label className="pharmacy-item-wide-on-small">Désignation<input required maxLength={500} value={draft.designation} onChange={(event) => update('designation', event.target.value)} /></label>
-        <label>Marque<input maxLength={200} value={draft.brand} onChange={(event) => update('brand', event.target.value)} /></label>
+        <label className="pharmacy-item-wide-on-small">Désignation<input required readOnly={Boolean(regulatory)} maxLength={500} value={draft.designation} onChange={(event) => update('designation', event.target.value)} /></label>
         <label>N° de lot / référence<input maxLength={200} value={draft.lot_number} onChange={(event) => update('lot_number', event.target.value)} /></label>
       </div>
       <div className="pharmacy-item-stock">
@@ -119,9 +119,11 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
           <legend className="pharmacy-item-stock-title"><Package aria-hidden="true" size={16} /> Stock à bord</legend>
           <p id={stockHelpId} className="pharmacy-item-help">Quantités et conditionnement propres à ce navire.</p>
           <div className="pharmacy-item-stock-fields">
+            <label>Marque / modèle<input maxLength={200} value={draft.brand} onChange={(event) => update('brand', event.target.value)} /></label>
             <label>Quantité à bord<input maxLength={200} placeholder="Ex. 10" value={onboardQuantity} onChange={(event) => setOnboardQuantity(event.target.value)} /></label>
             <PharmacyUnitSelect label="Unité de stock" customLabel="Préciser l’unité" value={draft.stock_unit} onChange={(unit) => update('stock_unit', unit)} />
             <label>Dosage ou volume par unité<input maxLength={100} placeholder="Ex. 10 mL" value={draft.strength ?? ''} onChange={(event) => update('strength', event.target.value)} /></label>
+            <label>Conditionnement à bord<input maxLength={500} value={draft.stock_packaging ?? ''} onChange={(event) => update('stock_packaging', event.target.value)} /></label>
             <label>Unités par boîte<input type="number" min={1} step={1} max={1000000} placeholder="Facultatif" value={draft.package_size ?? ''} onChange={(event) => update('package_size', event.target.value === '' ? null : event.target.valueAsNumber)} /></label>
           </div>
         </fieldset>
@@ -133,17 +135,20 @@ export function PharmacyItemForm({ item, medicalDotation, medicalSection, initia
               : !shareable ? 'Quantité requise pour cet article.'
               : requirementsError ? 'Dotation commune indisponible. Actualisez l’inventaire pour réessayer.'
               : requirementsPending ? 'Chargement de la dotation commune…'
+              : regulatory ? `Division 217 du 30 septembre 2021 · page ${regulatory.source_page}`
               : shared ? 'Valeur reprise automatiquement et partagée avec les navires de même dotation.'
               : 'Valeur commune aux articles du même nom et de la même branche pour cette dotation.'}
           </p>
           <fieldset className="pharmacy-item-stock-fields" aria-label="Quantités de dotation" disabled={requirementDisabled}>
-            <label>Quantité requise<input maxLength={200} placeholder="Ex. 20" value={requirement.quantity} onChange={(event) => updateRequirement({ quantity: event.target.value })} /></label>
+            <label>Quantité requise<input maxLength={200} placeholder="Ex. 20" value={regulatory && regulatory.required_stock_quantity == null ? regulatory.required_quantity : requirement.quantity} onChange={(event) => updateRequirement({ quantity: event.target.value })} /></label>
             <PharmacyUnitSelect key={requirementKey} label="Unité de dotation" customLabel="Préciser l’unité de dotation" value={requirement.unit} onChange={(unit) => updateRequirement({ unit })} />
             <label>Dosage ou volume requis par unité<input maxLength={100} placeholder="Ex. 5 mL" value={requirement.strength} onChange={(event) => updateRequirement({ strength: event.target.value })} /></label>
             <label>Unités par boîte de dotation<input type="number" min={1} step={1} max={1000000} placeholder="Facultatif" value={requirement.packageSize ?? ''} onChange={(event) => updateRequirement({ packageSize: event.target.value === '' ? null : event.target.valueAsNumber })} /></label>
           </fieldset>
+          {regulatory?.packaging ? <p className="pharmacy-item-help"><strong>Conditionnement réglementaire</strong><br />{regulatory.packaging}</p> : null}
+          {regulatory?.regulatory_notes ? <p className="pharmacy-item-help">{regulatory.regulatory_notes}</p> : null}
           {canShareExisting ? <label className="pharmacy-item-check"><input type="checkbox" checked={shareExisting} onChange={(event) => setShareRequirementKey(event.target.checked ? sharedScopeKey : null)} /> Partager cette dotation</label> : null}
-          <label className="pharmacy-item-check"><input type="checkbox" checked={draft.outside_dotation ?? false} onChange={(event) => update('outside_dotation', event.target.checked)} /> Hors dotation</label>
+          <label className="pharmacy-item-check"><input type="checkbox" disabled={Boolean(regulatory)} checked={draft.outside_dotation ?? false} onChange={(event) => update('outside_dotation', event.target.checked)} /> Hors dotation</label>
         </fieldset>
         <p className="pharmacy-item-help pharmacy-item-wide">Saisissez le nombre total d’unités. À volume égal, 10 unités de 10 mL couvrent une dotation de 20 unités de 5 mL.</p>
       </div>

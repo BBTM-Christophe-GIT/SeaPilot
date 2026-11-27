@@ -2,16 +2,19 @@ import type { RoleKey } from '../permissions/roles';
 import { compareFleetAssets, normalizeFleetName } from '../fleet/fleetDisplay';
 
 export const PHARMACY_ALERT_DAYS = 30;
+export const PHARMACY_EMERGENCY_BAG_KEY = "sac medical d'urgence";
 export type PharmacyExpiryPrecision = 'day' | 'month' | 'unknown';
-export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null; medical_dotation?: string | null }
+export interface PharmacyVessel { id: number; company_id: number; name: string; acronym: string; can_manage: boolean; length_overall?: string | number | null; medical_dotation?: string | null; medical_emergency_bag?: boolean }
 export function pharmacyDotationKey(value: string | null | undefined): string {
   const raw = (value || '').trim().toLocaleLowerCase('fr');
   const folded = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+  if (folded.replaceAll('’', "'") === PHARMACY_EMERGENCY_BAG_KEY) return PHARMACY_EMERGENCY_BAG_KEY;
   const known = folded.match(/^(?:dotation(?: medicale)? )?([abc])(?: (restreinte?))?(?:\s*[-–—(].*)?$/);
   return known ? `dotation ${known[1]}${known[2] ? ' restreinte' : ''}` : raw;
 }
 export function pharmacyDotationLabel(value: string | null | undefined): string {
   const key = pharmacyDotationKey(value);
+  if (key === PHARMACY_EMERGENCY_BAG_KEY) return 'Sac Médical d’Urgence';
   const known = key.match(/^dotation ([abc])( restreinte)?$/);
   return known ? `Dotation ${known[1].toUpperCase()}${known[2] || ''}` : (value || '').trim() || 'Dotation non renseignée';
 }
@@ -50,6 +53,8 @@ export interface PharmacyItem {
   stock_quantity?: number | null;
   required_stock_quantity?: number | null;
   stock_unit?: string | null;
+  stock_packaging?: string | null;
+  d217_applicability?: PharmacyDotationRequirement['applicability'];
   package_size?: number | null;
   strength?: string | null;
   required_stock_unit?: string | null;
@@ -57,7 +62,7 @@ export interface PharmacyItem {
   required_strength?: string | null;
 }
 type PharmacyRequirementFields = Pick<PharmacyItem, 'required_quantity' | 'required_stock_quantity' | 'required_stock_unit' | 'required_strength' | 'required_package_size'>;
-export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id' | 'no_expiry' | 'outside_dotation' | 'stock_quantity' | 'stock_unit' | 'package_size' | 'strength'> & PharmacyRequirementFields & {
+export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id' | 'no_expiry' | 'outside_dotation' | 'stock_quantity' | 'stock_unit' | 'stock_packaging' | 'package_size' | 'strength'> & PharmacyRequirementFields & {
   update_dotation_requirement?: boolean;
   dotation_requirement_revision?: number | null;
 };
@@ -66,7 +71,15 @@ export interface PharmacyDotationRequirement extends PharmacyRequirementFields {
   medical_section: PharmacyMedicalSection;
   designation: string;
   designation_key: string;
-  dotation_requirement_revision: number;
+  dotation_requirement_revision: number | null;
+  catalog_code?: string;
+  category?: string;
+  packaging?: string | null;
+  regulatory_notes?: string | null;
+  source_page?: number;
+  administration_route?: string | null;
+  classification?: string | null;
+  applicability?: 'standard' | 'conditional' | 'recommended' | 'variable' | 'not_applicable';
 }
 export function pharmacyDesignationKey(value: string): string {
   const accents = 'àâäçéèêëîïôöùûüÿ';
@@ -74,6 +87,10 @@ export function pharmacyDesignationKey(value: string): string {
   return value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
     .replace(/[àâäçéèêëîïôöùûüÿ]/g, (character) => plain[accents.indexOf(character)]);
 }
+export function pharmacyRequirementKey(dotation: string | null | undefined, section: string | undefined, designationKey: string) {
+  return JSON.stringify([pharmacyDotationKey(dotation), pharmacyMedicalSection(section), designationKey]);
+}
+
 export interface PharmacyControl {
   id: number; company_id: number; vessel_id: number; issued_on: string | null; expires_on: string;
   storage_path: string; file_name: string; file_size: number; mime_type: string;
@@ -190,12 +207,12 @@ export function parsePharmacyQuantity(value: string): number | null {
   const quantity = Number(trimmed.replace(',', '.'));
   return quantity <= 1e12 ? quantity : null;
 }
-type PharmacyStock = Pick<PharmacyItem, 'quantity' | 'stock_quantity' | 'stock_unit' | 'strength' | 'outside_dotation'> & PharmacyRequirementFields;
+type PharmacyStock = Pick<PharmacyItem, 'quantity' | 'stock_quantity' | 'stock_unit' | 'strength' | 'outside_dotation' | 'd217_applicability'> & PharmacyRequirementFields;
 
 const pharmacyUnitAliases: Record<string, string> = {
   boites: 'boite', comprimes: 'comprime', gelules: 'gelule', ampoules: 'ampoule', flacons: 'flacon',
   sachets: 'sachet', unites: 'unite', doses: 'dose', tubes: 'tube', suppositoires: 'suppositoire',
-  patchs: 'patch', pieces: 'piece', litres: 'litre',
+  patchs: 'patch', pieces: 'piece', litres: 'litre', paquets: 'paquet', seringues: 'seringue',
 };
 function canonicalPharmacyUnit(value: string | null | undefined): string {
   const normalized = (value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
@@ -291,7 +308,8 @@ export function pharmacyStockDetails(item: PharmacyStock) {
 }
 
 export function pharmacyStockStatus(item: PharmacyStock): 'low' | 'ok' | 'unknown' | 'none' {
-  if (item.outside_dotation) return 'none';
+  if (item.outside_dotation || item.d217_applicability === 'not_applicable') return 'none';
+  if (item.d217_applicability && item.d217_applicability !== 'standard') return 'unknown';
   const { comparison } = pharmacyStockDetails(item);
   if (!comparison) return 'unknown';
   const { actual, required, volume } = comparison;

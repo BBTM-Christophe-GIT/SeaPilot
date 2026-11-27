@@ -19,8 +19,8 @@ begin
     'Anonymous accounts cannot issue purchase orders';
   insert into public.companies(code, name) values('pharmacy-order-test', 'Pharmacy order fixture') returning id into company;
   insert into public.companies(code, name) values('pharmacy-order-foreign', 'Foreign pharmacy fixture') returning id into foreign_company;
-  insert into public.vessels(company_id, name, asset_kind, medical_dotation, registration_number, imo_number)
-    values(company, 'PHARMACY ORDER', 'vessel', 'Dotation B restreinte', 'TEST-123', '9123456') returning id into vessel;
+  insert into public.vessels(company_id, name, asset_kind, medical_dotation, registration_number, imo_number, medical_emergency_bag)
+    values(company, 'PHARMACY ORDER', 'vessel', 'Dotation B restreinte', 'TEST-123', '9123456', true) returning id into vessel;
   insert into public.vessels(company_id, name, asset_kind)
     values(company, 'PHARMACY UNASSIGNED', 'vessel') returning id into unassigned_vessel;
   insert into public.vessels(company_id, name, asset_kind)
@@ -28,6 +28,7 @@ begin
 
   insert into public.pharmacy_inventory(company_id, vessel_id, designation, medical_dotation, medical_section, active) values
     (company, vessel, 'Stock courant', 'B restreinte', 'medicines', true),
+    (company, vessel, 'Stock sac', 'sac medical d''urgence', 'medicines', true),
     (company, vessel, 'Stock archivé', 'B restreinte', 'medicines', false),
     (company, vessel, 'Ancienne dotation', 'C', 'medicines', true),
     (company, unassigned_vessel, 'Autre navire', 'B restreinte', 'medicines', true);
@@ -87,11 +88,17 @@ begin
         'Daily functions take priority over assignment functions, with HR fallback for absent or legacy department labels';
       assert result->>'issued_on' = today::text and result->>'vessel_name' = 'PHARMACY ORDER'
         and result->>'registration_number' = 'TEST-123' and result->>'imo_number' = '9123456'
-        and result->>'medical_dotation' = 'Dotation B restreinte', 'Vessel fields and Paris issue date come from their source records';
-      assert jsonb_array_length(result->'items') = 1 and result#>>'{items,0,designation}' = 'Stock courant',
-        'Only active items from this vessel and its current dotation are returned';
-      assert jsonb_array_length(result->'requirements') = 1 and result#>>'{requirements,0,designation}' = 'Article absent',
-        'Only this company’s current dotation targets are returned, including absent items';
+        and result->>'medical_dotation' = 'Dotation B restreinte' and (result->>'medical_emergency_bag')::boolean,
+        'Vessel fields, emergency bag inclusion and Paris issue date come from their source records';
+      assert jsonb_array_length(result->'items') = 2
+        and result->'items' @> '[{"designation":"Stock courant"},{"designation":"Stock sac"}]',
+        'Only active items from this vessel, its current dotation and its checked bag are returned';
+      assert (select jsonb_agg(entry) @> '[{"designation":"Article absent"}]' and count(*) = 1
+        from jsonb_array_elements(result->'requirements') entry where not entry ? 'catalog_code'),
+        'Only this company’s current custom dotation targets are returned, including absent items';
+      assert (result->'requirements') @> '[{"dotation_key":"dotation b restreinte","catalog_code":"M004"},
+        {"dotation_key":"sac medical d''urgence","catalog_code":"M004"}]',
+        'The current official dotation and the enabled emergency bag both supply order requirements';
       begin
         perform public.pharmacy_purchase_order_context(foreign_vessel);
         raise exception 'Cross-company vessel accepted';
@@ -104,6 +111,8 @@ begin
       else
         result := public.pharmacy_purchase_order_context(unassigned_vessel);
         assert (result->'imo_number') = 'null'::jsonb, 'A vessel without IMO has no fictitious value';
+        assert not (result->>'medical_emergency_bag')::boolean and result->'requirements' = '[]'::jsonb,
+          'An unchecked bag and unset vessel dotation do not add order requirements';
       end if;
     elsif label = 'marin' then
       begin

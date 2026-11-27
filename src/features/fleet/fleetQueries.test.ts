@@ -25,7 +25,8 @@ describe('fleetQueries', () => {
     const client = { from: vi.fn().mockReturnValue({ select }) } as unknown as SupabaseClient;
 
     await expect(fetchFleetVessels(client)).resolves.toEqual([
-      expect.objectContaining({ id: 1, companyId: 1, name: 'GOURY', acronym: 'GRY', assetKind: 'vessel', maxPeople: null, draftMeters: null, active: true }),
+      expect.objectContaining({ id: 1, companyId: 1, name: 'GOURY', acronym: 'GRY', assetKind: 'vessel', maxPeople: null, draftMeters: null, active: true,
+        medicalEmergencyBag: false }),
     ]);
     expect(client.from).toHaveBeenCalledWith('vessels');
   });
@@ -34,6 +35,28 @@ describe('fleetQueries', () => {
     const client = { from: vi.fn() } as unknown as SupabaseClient;
     await expect(saveFleetVessel(client, { ...EMPTY_INPUT, name: ' ' })).rejects.toThrow('au moins deux caractères');
     expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it('round-trips the emergency bag and leaves it alone if omitted by the caller', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: { id: 1, company_id: 1, name: 'Navire test', active: true, medical_emergency_bag: true },
+      error: null,
+    });
+    const select = vi.fn().mockReturnValue({ single });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select }) });
+    const client = { from: vi.fn().mockReturnValue({ update }) } as unknown as SupabaseClient;
+    const input = { ...EMPTY_INPUT, id: 1, name: 'Navire test', medicalDotation: 'DOTATION B restreinte' };
+
+    await expect(saveFleetVessel(client, { ...input, medicalEmergencyBag: true })).resolves.toMatchObject({ medicalEmergencyBag: true });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      medical_dotation: 'DOTATION B restreinte', medical_emergency_bag: true,
+    }));
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('medical_emergency_bag'));
+
+    await saveFleetVessel(client, { ...input, medicalEmergencyBag: false });
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ medical_emergency_bag: false }));
+    await saveFleetVessel(client, input);
+    expect(update.mock.lastCall?.[0]).not.toHaveProperty('medical_emergency_bag');
   });
 
   it('stores the main and daily tanks separately and retains the original m³ capacity', async () => {
