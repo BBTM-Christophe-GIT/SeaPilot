@@ -64,6 +64,7 @@ export interface PharmacyItem {
 type PharmacyRequirementFields = Pick<PharmacyItem, 'required_quantity' | 'required_stock_quantity' | 'required_stock_unit' | 'required_strength' | 'required_package_size'>;
 export type PharmacyItemDraft = Pick<PharmacyItem, 'section' | 'category' | 'brand' | 'designation' | 'lot_number' | 'quantity' | 'expires_on' | 'expiry_text' | 'expiry_precision' | 'notes' | 'active' | 'medical_dotation' | 'medical_section' | 'category_id' | 'no_expiry' | 'outside_dotation' | 'stock_quantity' | 'stock_unit' | 'stock_packaging' | 'package_size' | 'strength'> & PharmacyRequirementFields & {
   update_dotation_requirement?: boolean;
+  initialize_stock_quantity?: boolean;
   dotation_requirement_revision?: number | null;
 };
 export interface PharmacyDotationRequirement extends PharmacyRequirementFields {

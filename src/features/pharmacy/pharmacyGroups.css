@@ -202,6 +202,55 @@
   outline-offset: 2px;
 }
 
+.pharmacy-table.has-row-actions {
+  min-width: 720px;
+}
+
+.pharmacy-table.has-row-actions thead th:first-child {
+  width: 28%;
+}
+
+.pharmacy-table.has-row-actions thead th:nth-child(2) {
+  width: 128px;
+}
+
+.pharmacy-page:has(.pharmacy-stock-entry) .pharmacy-workspace {
+  min-height: 284px;
+}
+
+.pharmacy-stock-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-space-1);
+}
+
+.pharmacy-page .pharmacy-stock-entry input {
+  min-height: var(--sp-control-height);
+  padding-inline: var(--sp-space-2);
+  border-color: var(--sp-border-strong);
+  border-radius: var(--sp-control-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+}
+
+.pharmacy-stock-entry .sp-button {
+  width: var(--sp-control-height);
+  min-width: var(--sp-control-height);
+  min-height: var(--sp-control-height);
+  padding: 0;
+}
+
+.pharmacy-stock-entry small {
+  grid-column: 1 / -1;
+  color: var(--sp-muted);
+  font-size: var(--sp-subtitle-size);
+}
+
+.pharmacy-page .pharmacy-stock-entry :is(input, button):focus-visible {
+  outline-color: var(--sp-focus);
+}
+
 .pharmacy-category-form {
   display: grid;
   gap: var(--sp-space-2);
@@ -287,6 +336,12 @@
     width: calc(88px + 3 * var(--sp-space-1));
   }
 
+  .pharmacy-page .pharmacy-stock-entry input,
+  .pharmacy-stock-entry .sp-button {
+    min-height: 44px;
+  }
+
+  .pharmacy-stock-entry .sp-button,
   .pharmacy-row-actions .sp-button {
     width: 44px;
     min-width: 44px;

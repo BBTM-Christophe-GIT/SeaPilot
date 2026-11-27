@@ -5,7 +5,7 @@ import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PharmacyPage } from './PharmacyPage';
 import type { RoleKey } from '../permissions/roles';
-import { PHARMACY_EMERGENCY_BAG_KEY, blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_EMERGENCY_BAG_KEY, blankPharmacyItem, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { buildPharmacyWorkbook } from './pharmacyWorkbook';
 import { buildPharmacyPurchaseOrderPdf } from './pharmacyPurchaseOrderPdf';
@@ -54,7 +54,7 @@ describe('PharmacyPage', () => {
     page();
     expect(await screen.findByRole('button', { name: 'ARTICLE SOURCE' })).toBeInTheDocument();
     expect(screen.getByText('10/2099')).toBeInTheDocument();
-    expect(screen.getByText('2 boîtes')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Quantité à bord de ARTICLE PÉRIMÉ' })).toHaveValue('2 boîtes');
     expect(screen.getByText('Aucun document déposé pour ce navire.')).toBeInTheDocument();
     expect(screen.getByText('Non renseignée')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Périmés.*1/ })).toBeInTheDocument();
@@ -79,8 +79,8 @@ describe('PharmacyPage', () => {
     await waitFor(() => expect(dotation).toBeEnabled());
     await user.selectOptions(dotation, PHARMACY_EMERGENCY_BAG_KEY);
     expect(await screen.findByText('Paquet de 5')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Renseigner le stock de Compresse stérile' }));
-    const form = await screen.findByRole('dialog', { name: 'Ajouter un article' });
+    await user.click(screen.getByRole('button', { name: 'Modifier Compresse stérile' }));
+    const form = await screen.findByRole('dialog', { name: 'Modifier l’article' });
     expect(within(form).getByLabelText('Quantité requise')).toBeDisabled();
     expect(within(form).getByLabelText('Catégorie')).toHaveValue('Pansement');
     await user.type(within(form).getByLabelText('Quantité à bord'), '2');
@@ -96,12 +96,60 @@ describe('PharmacyPage', () => {
     const marin = page(['marin']);
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     expect(screen.queryByRole('button', { name: 'Bon de commande PDF' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Quantité à bord de ARTICLE SOURCE' })).not.toBeInTheDocument();
     marin.unmount();
     vi.mocked(fetchPharmacyVessels).mockResolvedValue([{ ...vessels[0], can_manage: false }]);
     page(['capitaine']);
     await screen.findByRole('button', { name: 'ARTICLE SOURCE' });
     expect(screen.queryByRole('button', { name: 'Bon de commande PDF' })).not.toBeInTheDocument();
     expect(fetchPharmacyPurchaseOrderContext).not.toHaveBeenCalled();
+  });
+
+  it('counts an official stock directly for Le Rozel and orders one box for one missing tablet', async () => {
+    const rozel = { ...vessels[0], name: 'LE ROZEL', medical_dotation: 'DOTATION B restreinte' };
+    const reference: PharmacyDotationRequirement = {
+      dotation_key: 'dotation b restreinte', medical_section: 'medicines',
+      designation: 'Médicament exemple', designation_key: 'medicament exemple', catalog_code: 'M001',
+      category: 'Médicaments', applicability: 'standard', dotation_requirement_revision: null,
+      required_quantity: '10', required_stock_quantity: 10, required_stock_unit: 'comprimé', required_strength: '500 mg',
+    };
+    const counted: PharmacyItem = { ...item, designation: reference.designation, medical_section: 'medicines',
+      medical_dotation: rozel.medical_dotation, category: reference.category!, stock_quantity: 9, quantity: '9',
+      stock_unit: 'comprimé', strength: '500 mg', lot_number: '', expires_on: null };
+    const requirements = [reference, { ...reference, catalog_code: 'M002',
+      designation: 'Médicament à compter', designation_key: 'medicament a compter' }];
+    vi.mocked(fetchPharmacyVessels).mockResolvedValue([rozel]);
+    vi.mocked(fetchPharmacyDotationRequirements).mockResolvedValue(requirements);
+    vi.mocked(fetchPharmacyRegister).mockResolvedValueOnce({ items: [], categories: [], controls: [] })
+      .mockResolvedValue({ items: [counted], categories: [], controls: [] });
+    vi.mocked(fetchPharmacyPurchaseOrderContext).mockResolvedValue({ ...orderContext,
+      vessel_name: rozel.name, medical_dotation: rozel.medical_dotation, items: [counted], requirements });
+    vi.mocked(downloadPharmacyPurchaseOrderSignature).mockResolvedValue(new Uint8Array([1, 2]));
+    vi.mocked(buildPharmacyPurchaseOrderPdf).mockResolvedValue({ blob: new Blob(['pdf']), filename: 'bon-le-rozel.pdf' });
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:rozel'), revokeObjectURL: vi.fn() }));
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      page(['capitaine']);
+      const user = userEvent.setup();
+      const input = await screen.findByRole('textbox', { name: 'Quantité à bord de Médicament exemple' });
+      expect(screen.getByRole('button', { name: 'Modifier Médicament exemple' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Supprimer Médicament exemple' })).toBeDisabled();
+      await user.type(input, '9{Enter}');
+      await waitFor(() => expect(savePharmacyItem).toHaveBeenCalledWith(client, 1, expect.objectContaining({
+        designation: reference.designation, stock_quantity: 9, stock_unit: 'comprimé', strength: '500 mg',
+        medical_dotation: rozel.medical_dotation, initialize_stock_quantity: true,
+      }), undefined));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Supprimer Médicament exemple' })).toBeEnabled());
+      expect(screen.getByRole('textbox', { name: 'Quantité à bord de Médicament exemple' })).toHaveValue('9');
+      await user.click(screen.getByRole('button', { name: 'Bon de commande PDF' }));
+      await waitFor(() => expect(download).toHaveBeenCalledOnce());
+      expect(buildPharmacyPurchaseOrderPdf).toHaveBeenCalledWith(expect.objectContaining({
+        vesselName: 'LE ROZEL', lines: [expect.objectContaining({ designation: reference.designation, quantity: 1, unit: 'boîte' })],
+      }));
+    } finally {
+      download.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('downloads the signed order from the ribbon with fresh vessel data despite inventory filters', async () => {
@@ -380,7 +428,8 @@ describe('PharmacyPage', () => {
     expect(row.getByText('Sans date de péremption')).toBeInTheDocument();
     expect(row.queryByText('Date à vérifier')).not.toBeInTheDocument();
     expect(row.getByText('Stock insuffisant')).toBeInTheDocument();
-    expect(row.getByText('6 comprimés')).toBeInTheDocument();
+    expect(row.getByRole('textbox', { name: `Quantité à bord de ${lowStock.designation}` })).toHaveValue('6');
+    expect(row.getByText('comprimé')).toBeInTheDocument();
     expect(row.getByText('300 mg par unité')).toBeInTheDocument();
     expect(row.getByText('3 par boîte')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: item.designation })).not.toBeInTheDocument();
@@ -409,7 +458,7 @@ describe('PharmacyPage', () => {
       required_quantity: '20', required_stock_quantity: 20, required_stock_unit: 'ampoule', required_strength: '5 mL', dotation_requirement_revision: 3,
     }]);
     page(['capitaine'], '/modules/pharmacy?vessel=2');
-    const button = await screen.findByRole('button', { name: 'Renseigner le stock de Sérum physiologique' });
+    const button = await screen.findByRole('button', { name: 'Modifier Sérum physiologique' });
     const row = within(button.closest('tr')!);
     expect(row.getByText('20 ampoules')).toBeInTheDocument();
     expect(row.getByText('Stock à renseigner')).toBeInTheDocument();
@@ -622,7 +671,7 @@ describe('PharmacyPage', () => {
     const user = userEvent.setup(); page();
     await user.click(await screen.findByRole('button', { name: 'Supprimer ARTICLE SOURCE' }));
     fireEvent.click(screen.getByRole('button', { name: 'Actualiser l’inventaire' }));
-    await screen.findByText('12');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Quantité à bord de ARTICLE SOURCE' })).toHaveValue('12'));
     const dialog = screen.getByRole('dialog', { name: 'Supprimer ARTICLE SOURCE' });
     await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cet article a été modifié.');
@@ -1007,7 +1056,7 @@ describe('PharmacyPage', () => {
     await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Branche' }), 'equipment');
     expect(screen.getByRole('button', { name: 'ARTICLE MATÉRIEL' })).toBeInTheDocument();
-    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Quantité à bord de ARTICLE MATÉRIEL' })).toHaveValue('8');
     expect(screen.getByRole('rowheader', { name: /^1\. CARDIOLOGIE/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'SOINS MÉDICAMENTS' })).not.toBeInTheDocument();
   });
@@ -1025,11 +1074,11 @@ describe('PharmacyPage', () => {
     await screen.findByRole('button', { name: 'Renommer CATÉGORIE COMMUNE' });
     await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!).toBeEnabled());
     await user.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Fermer' }).at(-1)!);
-    expect(within(screen.getByRole('button', { name: 'ARTICLE GOURY' }).closest('tr')!).getAllByRole('cell')[1]).toHaveTextContent('4');
+    expect(screen.getByRole('textbox', { name: 'Quantité à bord de ARTICLE GOURY' })).toHaveValue('4');
     await user.click(screen.getByRole('button', { name: 'SUROIT' }));
     await screen.findByRole('button', { name: 'ARTICLE SUROIT' });
     expect(screen.getByRole('rowheader', { name: /^CATÉGORIE COMMUNE/ })).toBeInTheDocument();
-    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Quantité à bord de ARTICLE SUROIT' })).toHaveValue('12');
     expect(screen.queryByRole('button', { name: 'ARTICLE GOURY' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'ARTICLE SUROIT' }));
     expect(screen.getByText(/^2\.xlsx/)).toBeInTheDocument();

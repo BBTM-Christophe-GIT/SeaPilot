@@ -162,6 +162,35 @@ function withDocumentedLegacyPackaging(item: PharmacyItem): PharmacyItem {
     ? { ...item, stock_quantity: bareStock, stock_unit: 'boîte' } : item;
 }
 
+function measureOrderStock(item: PharmacyItem, requirement: PharmacyDotationRequirement | undefined) {
+  const recorded = withDocumentedLegacyPackaging(requirement ? { ...item, ...requirement } : item);
+  const details = pharmacyStockDetails(recorded);
+  const { stock, target, comparison } = details;
+  if (!requirement?.catalog_code || requirement.applicability !== 'standard' || item.stock_quantity == null || !target.unit) {
+    return { stockItem: recorded, details };
+  }
+
+  const compatibleStrength = !stock.strength || stock.strength === target.strength;
+  const countedInBoxes = stock.unit === 'boite' && target.unit !== 'boite';
+  const countableUnit = packedStockUnits.has(target.unit) || ['unite', 'piece', 'paire', 'unidose', 'lyophilisat', 'ovule'].includes(target.unit);
+  const unitsPerBox = countedInBoxes && countableUnit ? recorded.package_size : null;
+  if (countedInBoxes && (!unitsPerBox || !compatibleStrength)) {
+    return { stockItem: recorded, details: { ...details, stock: { ...stock, volumePerUnit: null }, comparison: null } };
+  }
+  if (!countedInBoxes && (comparison || (stock.unit && stock.unit !== target.unit) || !compatibleStrength)) {
+    return { stockItem: recorded, details };
+  }
+
+  // A structured count for a catalogue article uses its reference presentation unless an alternative is recorded.
+  const stockItem = {
+    ...recorded,
+    stock_quantity: unitsPerBox ? item.stock_quantity * unitsPerBox : item.stock_quantity,
+    stock_unit: unitsPerBox || !stock.unit ? requirement.required_stock_unit : recorded.stock_unit,
+    strength: stock.strength ? recorded.strength : requirement.required_strength,
+  };
+  return { stockItem, details: pharmacyStockDetails(stockItem) };
+}
+
 export function buildPharmacyPurchaseOrderLines(
   items: readonly PharmacyItem[],
   requirements: readonly PharmacyDotationRequirement[],
@@ -197,8 +226,7 @@ export function buildPharmacyPurchaseOrderLines(
     if (!item.active || pharmacyDotationKey(item.medical_dotation) !== dotation) continue;
     const key = requirementKey(item.medical_section, pharmacyDesignationKey(item.designation));
     const requirement = !item.outside_dotation ? shared.get(key) : undefined;
-    const stockItem = withDocumentedLegacyPackaging(requirement ? { ...item, ...requirement } : item);
-    const details = pharmacyStockDetails(stockItem);
+    const { stockItem, details } = measureOrderStock(item, requirement);
     const requiredStrength = item.outside_dotation ? '' : requiredOrderStrength(stockItem);
     const { stock, target } = details;
     const canUseTargetUnit = !stock.unit && stock.volumePerUnit === null && (!stock.strength || stock.strength === target.strength);
@@ -224,7 +252,8 @@ export function buildPharmacyPurchaseOrderLines(
     }
     // Some imported rows say MANQUANT despite a non-zero quantity. A current counted stock takes precedence.
     const conflictingNote = item.stock_quantity == null && /^manquant(?:e|s|es)?$/.test(pharmacyDesignationKey(item.notes));
-    if (conflictingNote && (actual === null || details.target.count === null || actual >= details.target.count)) addUncertain(need);
+    if (conflictingNote && (!requirement?.catalog_code || stock.count !== null)
+      && (actual === null || details.target.count === null || actual >= details.target.count)) addUncertain(need);
     if (requirement) continue;
 
     const required = details.target.count;
@@ -242,8 +271,10 @@ export function buildPharmacyPurchaseOrderLines(
 
   for (const [key, requirement] of shared) {
     const measured = activeByRequirement.get(key) ?? [];
-    const sharedTarget = pharmacyStockDetails({ quantity: '', ...requirement }).target;
     if (requirement.applicability === 'not_applicable') continue;
+    // The catalogue also includes every reference whose stock has yet to be counted.
+    if (requirement.catalog_code && !measured.some(({ details }) => details.stock.count !== null)) continue;
+    const sharedTarget = pharmacyStockDetails({ quantity: '', ...requirement }).target;
     const target = sharedTarget.count === null
       ? measured.find(({ details }) => details.target.count !== null)?.details.target ?? sharedTarget
       : sharedTarget;
@@ -265,7 +296,7 @@ export function buildPharmacyPurchaseOrderLines(
         expiry: measured.length === 1 ? measured[0].need.expiry : undefined,
       } : {}),
     };
-    if (requirement.catalog_code && (!measured.length || requirement.applicability !== 'standard' || target.count === null)) {
+    if (requirement.catalog_code && (requirement.applicability !== 'standard' || target.count === null)) {
       if (!measured.some(({ expired }) => expired && requirement.applicability !== 'standard')) addUncertain(targetNeed, true);
       continue;
     }
@@ -273,7 +304,7 @@ export function buildPharmacyPurchaseOrderLines(
     if ((target.count === null && measured.length > 0) || presentations.size > 1 || measured.some(({ available }) => available === null)) {
       const configured = requirement.required_stock_quantity != null || requirement.required_stock_unit
         || requirement.required_strength || requirement.required_package_size;
-      if (configured) addUncertain(targetNeed);
+      if (configured) addUncertain(targetNeed, Boolean(requirement.catalog_code));
       continue;
     }
 

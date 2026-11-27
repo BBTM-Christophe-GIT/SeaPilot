@@ -7,7 +7,7 @@ import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../comp
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { PHARMACY_EMERGENCY_BAG_KEY, PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyRequirementKey, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_EMERGENCY_BAG_KEY, PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, blankPharmacyItem, groupPharmacyItems, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyRequirementKey, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockDetails, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { PHARMACY_NOTIFICATIONS_CHANGED, usePharmacyAlertPolling } from './usePharmacyAlertPolling';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
@@ -49,6 +49,30 @@ function ItemStatus({ item }: { item: PharmacyItem }) {
     {stock === 'low' ? <span className="pharmacy-stock-low">Stock insuffisant</span> : stock === 'unknown' ? <span className="pharmacy-stock-unknown">Stock à vérifier</span> : expiry === 'none' && !item.outside_dotation ? '—' : null}
   </div>;
 }
+function InlineStockQuantity({ designation, initialValue = '', unit, busy, onSave }: {
+  designation: string; initialValue?: string; unit?: string | null; busy: boolean; onSave: (quantity: number) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const [invalid, setInvalid] = useState(false);
+  const changed = value.trim() !== initialValue.trim();
+  return <form className="pharmacy-stock-entry" onSubmit={(event) => {
+    event.preventDefault();
+    if (!changed || busy) return;
+    const quantity = parsePharmacyQuantity(value);
+    if (quantity === null) { setInvalid(true); return; }
+    onSave(quantity);
+  }}>
+    <input aria-label={`Quantité à bord de ${designation}`} aria-invalid={invalid || undefined}
+      inputMode="decimal" maxLength={24} placeholder="—" value={value} disabled={busy}
+      onChange={(event) => { setValue(event.target.value); setInvalid(false); }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { setValue(initialValue); setInvalid(false); } }} />
+    <button className="sp-button sp-button--secondary" aria-label={`Enregistrer la quantité de ${designation}`}
+      title="Enregistrer la quantité" disabled={busy || !changed} type="submit"><Check aria-hidden="true" size={16} /></button>
+    {unit ? <small>{unit}</small> : null}
+    {invalid ? <small role="alert">Saisissez un nombre positif ou zéro.</small> : null}
+  </form>;
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
   anchor.href = url; anchor.download = filename; anchor.click();
@@ -102,6 +126,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const [removal, setRemoval] = useState<{ item: PharmacyItem; vesselName: string; client: SupabaseClient } | null>(null);
   const [removalError, setRemovalError] = useState('');
   const removalInFlight = useRef(false);
+  const stockCountInFlight = useRef(false);
+  const [stockNotice, setStockNotice] = useState('');
   const requestId = useRef(0);
   const lastItemLink = useRef<{ client: SupabaseClient; vesselId: number; itemId: number } | null>(null);
   const vessel = vessels.find((entry) => entry.id === vesselId);
@@ -210,7 +236,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   }, [db, vesselId, context?.userId, canIssuePurchaseOrder]);
   useEffect(() => {
     setRemoval(null); setRemovalError('');
-    setCategoryScope(null);
+    setCategoryScope(null); setStockNotice('');
     if (!vessel) { setItems([]); setControls([]); setCategoryRecords([]); setSelected(null); return; }
     if (preview && !previewClient) return;
     const id = ++requestId.current;
@@ -256,10 +282,73 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   async function saveItem(draft: PharmacyItemDraft) {
     if (busy || !vessel) return;
     setBusy(true); setFormError('');
-    try { await savePharmacyItem(db, vessel.id, draft, editor?.item); setEditor(null); await reload(false); setNotice('Article enregistré.'); window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED)); }
-    catch (reason) { setFormError(messageOf(reason)); }
+    try {
+      const firstCount = Boolean(editor?.requirement && typeof draft.stock_quantity === 'number');
+      await savePharmacyItem(db, vessel.id, firstCount ? { ...draft, initialize_stock_quantity: true } : draft, editor?.item);
+      setEditor(null);
+      await reload(false);
+      setNotice('Article enregistré.');
+      window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED));
+    } catch (reason) { setFormError(messageOf(reason)); }
     finally { setBusy(false); }
   }
+  async function saveOnboardQuantity(quantity: number, item?: PharmacyItem, requirement?: PharmacyDotationRequirement) {
+    if (!vessel || !manager || loading || busy || stockCountInFlight.current) return;
+    const target = item && items.find((entry) => entry.id === item.id && entry.vessel_id === vessel.id);
+    if (item && (!target?.active || target.revision !== item.revision)) {
+      setError('Cet article a été modifié. Actualisez l’inventaire avant de ressaisir la quantité.');
+      return;
+    }
+    let draft: PharmacyItemDraft;
+    if (target) {
+      draft = {
+        ...target,
+        stock_unit: target.stock_unit || pharmacyStockDetails(target).stock.unit || null,
+        strength: pharmacyItemStrength(target),
+      };
+    } else {
+      if (!requirement || !isCurrentDotation || requirement.dotation_key !== selectedDotationKey) return;
+      draft = {
+        ...blankPharmacyItem(),
+        designation: requirement.designation,
+        category: requirement.category ?? '',
+        medical_dotation: medicalDotation,
+        medical_section: requirement.medical_section,
+        required_quantity: requirement.required_quantity,
+        required_stock_quantity: requirement.required_stock_quantity,
+        required_stock_unit: requirement.required_stock_unit,
+        required_strength: requirement.required_strength,
+        required_package_size: requirement.required_package_size,
+        stock_unit: requirement.required_stock_unit,
+        strength: requirement.required_strength,
+        initialize_stock_quantity: true,
+      };
+    }
+    draft.quantity = String(quantity);
+    draft.stock_quantity = quantity;
+    draft.update_dotation_requirement = false;
+
+    const viewId = requestId.current;
+    stockCountInFlight.current = true; setBusy(true); setError(''); setNotice(''); setStockNotice('');
+    try {
+      await savePharmacyItem(db, vessel.id, draft, target);
+      window.dispatchEvent(new Event(PHARMACY_NOTIFICATIONS_CHANGED));
+      if (viewId !== requestId.current) return;
+      try {
+        const loaded = await fetchPharmacyRegister(db, vessel.id);
+        if (viewId !== requestId.current) return;
+        setItems(loaded.items);
+        setCategoryRecords(loaded.categories);
+        setSelected((previous) => previous ? loaded.items.find((entry) => entry.id === previous.id) ?? null : null);
+        setStockNotice('Quantité à bord enregistrée.');
+      } catch {
+        if (viewId === requestId.current) setNotice('Quantité à bord enregistrée. Utilisez Actualiser l’inventaire pour recharger les articles.');
+      }
+    } catch (reason) {
+      if (viewId === requestId.current) setError(messageOf(reason));
+    } finally { stockCountInFlight.current = false; setBusy(false); }
+  }
+
   async function changeCategory(operation: 'save' | 'delete', value: string, target?: PharmacyCategory, requestedSection?: PharmacyMedicalSection) {
     const scope = categoryScope;
     if (!scope || scope.client !== db || scope.vessel.id !== vesselId || pharmacyDotationKey(scope.medicalDotation) !== pharmacyDotationKey(medicalDotation) || scope.medicalSection !== medicalSection || !manager) throw new Error('Le navire, la dotation, la branche ou les droits ont changé. Rouvrez la gestion des catégories.');
@@ -417,7 +506,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       });
       if (!orderLines.length) {
         setPurchaseOrderReview(null);
-        setNotice('Aucun article périmé ou manquant à commander pour la dotation actuelle.');
+        const counted = order.items.some((item) => item.active && !item.outside_dotation && pharmacyStockDetails(item).stock.count !== null);
+        setNotice(!counted && order.requirements.some((requirement) => requirement.catalog_code)
+          ? 'Renseignez les quantités à bord pour calculer les besoins du bon de commande.'
+          : 'Aucun article périmé ou manquant à commander pour la dotation actuelle.');
         return;
       }
       const [signature, { buildPharmacyPurchaseOrderPdf }] = await Promise.all([
@@ -508,7 +600,15 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                     </div>
                     <small>{details || item.category || 'Sans catégorie'}</small>
                   </td>
-                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{pharmacyQuantityLabel(item, 'stock')}{dosage ? <small>{dosage} par unité</small> : null}{item.package_size ? <small>{item.package_size} par boîte</small> : null}{item.stock_packaging ? <small>{item.stock_packaging}</small> : null}</td>
+                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>
+                    {manager && item.active ? <InlineStockQuantity key={item.revision} designation={item.designation || item.brand}
+                      initialValue={item.stock_quantity?.toString().replace('.', ',') ?? item.quantity}
+                      unit={item.stock_unit} busy={busy} onSave={(quantity) => void saveOnboardQuantity(quantity, item)} />
+                      : pharmacyQuantityLabel(item, 'stock')}
+                    {dosage ? <small>{dosage} par unité</small> : null}
+                    {item.package_size ? <small>{item.package_size} par boîte</small> : null}
+                    {item.stock_packaging ? <small>{item.stock_packaging}</small> : null}
+                  </td>
                   <td>{item.outside_dotation ? '—' : <>{pharmacyQuantityLabel(item, 'required')}{reference?.packaging ? <small>{reference.packaging}</small> : item.required_strength ? <small>{item.required_strength} par unité</small> : null}{item.required_package_size ? <small>{item.required_package_size} par boîte</small> : null}{reference?.regulatory_notes ? <small>{reference.regulatory_notes}</small> : null}</>}</td>
                   <td>{formatPharmacyItemExpiry(item)}{!item.no_expiry && item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td>
                   <td><ItemStatus item={item} /></td>
@@ -527,12 +627,17 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                 <tr className="pharmacy-branch-row"><th scope="rowgroup" colSpan={6}>Dotation commune · stock à renseigner</th></tr>
                 {branchMissingStocks.map((entry) => <tr key={JSON.stringify([entry.medical_section, entry.designation_key])}>
                   <td><strong>{entry.designation}</strong><small>{[pharmacyMedicalSectionLabel(entry.medical_section), entry.category].filter(Boolean).join(' · ')}</small></td>
-                  <td>—</td>
+                  <td>{manager && isCurrentDotation ? <>
+                    <InlineStockQuantity designation={entry.designation} unit={entry.required_stock_unit} busy={busy}
+                      onSave={(quantity) => void saveOnboardQuantity(quantity, undefined, entry)} />
+                    {entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}
+                  </> : '—'}</td>
                   <td>{entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}{entry.packaging ? <small>{entry.packaging}</small> : entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}{entry.required_package_size ? <small>{entry.required_package_size} par boîte</small> : null}{entry.regulatory_notes ? <small>{entry.regulatory_notes}</small> : null}</td>
                   <td>—</td>
                   <td><span className="pharmacy-badge is-unknown">Stock à renseigner</span></td>
                   <td>{manager && isCurrentDotation ? <div className="pharmacy-row-actions">
-                    <button className="sp-button sp-button--secondary" aria-label={`Renseigner le stock de ${entry.designation}`} title="Renseigner le stock" disabled={busy} onClick={() => { setFormError(''); setEditor({ requirement: entry }); }} type="button"><Plus aria-hidden="true" size={16} /></button>
+                    <button className="sp-button sp-button--secondary" aria-label={`Modifier ${entry.designation}`} title="Modifier le stock" disabled={busy} onClick={() => { setFormError(''); setEditor({ requirement: entry }); }} type="button"><Pencil aria-hidden="true" size={16} /></button>
+                    <button className="sp-button sp-button--secondary" aria-label={`Supprimer ${entry.designation}`} title="Aucun stock enregistré pour cette référence" disabled type="button"><Trash2 aria-hidden="true" size={16} /></button>
                   </div> : null}</td>
                 </tr>)}
               </tbody> : null}
@@ -541,7 +646,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
             </>}
           </table>
         </div>
-        <footer className="pharmacy-table-footer"><span>{filtered.length} / {showInactive ? sectionItems.length : active.length} articles</span><label className="pharmacy-checkbox"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Inclure les articles retirés</label></footer>
+        <footer className="pharmacy-table-footer"><span aria-live="polite">{stockNotice || `${filtered.length} / ${showInactive ? sectionItems.length : active.length} articles`}</span><label className="pharmacy-checkbox"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Inclure les articles retirés</label></footer>
       </div>
       <aside className="pharmacy-side-panel" aria-label="Contrôle et détails du navire">
         <section className="pharmacy-control-card"><header><span className="pharmacy-control-icon"><FileCheck2 size={21} /></span><div><h2>Contrôle Pharmacie</h2><p>Document du navire</p></div></header><span className={`pharmacy-badge is-${currentControl ? controlStatus : 'unknown'}`}>{controlText}</span><dl><div><dt>Échéance</dt><dd>{currentControl ? formatPharmacyDate(currentControl.expires_on) : 'Non renseignée'}</dd></div><div><dt>Dernier contrôle</dt><dd>{currentControl?.issued_on ? formatPharmacyDate(currentControl.issued_on) : 'Non renseigné'}</dd></div></dl>{currentControl ? <button className="secondary-button pharmacy-full-width" disabled={busy} onClick={() => void download(currentControl)} type="button"><Download size={15} /> Télécharger le document</button> : <p className="pharmacy-no-document">Aucun document déposé pour ce navire.</p>}{manager ? <button className="primary-button pharmacy-full-width" disabled={busy || loading} onClick={() => { setFormError(''); setControlOpen(true); }} type="button"><FileUp size={15} /> {currentControl ? 'Nouveau contrôle' : 'Déposer le document'}</button> : null}<p className="pharmacy-control-rule"><BellRing size={14} /> Alerte 30 jours avant l’échéance. Les échéances dépassées restent signalées.</p></section>
@@ -567,7 +672,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     {removal && removal.client === db && removal.item.vessel_id === vesselId && manager ? <AppDialog
       title={`Supprimer ${removal.item.designation || removal.item.brand || 'Article sans désignation'}`}
       eyebrow={`Inventaire Pharmacie · ${removal.vesselName}`} icon={<Trash2 aria-hidden="true" size={20} />} size="sm" isBusy={busy}
-      description="L’article sera retiré de l’inventaire actif. Son historique sera conservé."
+      description={regulatoryForItem(removal.item) ? 'Le stock enregistré sera retiré. La référence réglementaire restera à renseigner.' : 'L’article sera retiré de l’inventaire actif. Son historique sera conservé.'}
       onClose={() => { if (!removalInFlight.current) setRemoval(null); }}
       footer={<div className="app-dialog__actions"><button className="is-secondary" disabled={busy} onClick={() => setRemoval(null)} type="button">Annuler</button><button className="is-danger" disabled={busy} onClick={() => void removeItem()} type="button">{busy ? 'Suppression…' : 'Supprimer'}</button></div>}>
       <p>Confirmer la suppression de <strong>{removal.item.designation || removal.item.brand || 'Article sans désignation'}</strong> sur <strong>{removal.vesselName}</strong> ?</p>
