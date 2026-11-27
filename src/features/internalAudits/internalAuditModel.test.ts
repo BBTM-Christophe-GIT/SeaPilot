@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addAuditMonths, annualAuditWindow, auditWindow, blankAuditAnswers, compareAuditScores, completionIssues,
   auditDueOnFromDuration, defaultFindingDueOn, defaultFindingDuration, findingIssues, findingOverdue, isAuditDate, nextAnnualDate, planningStatus, previousYearAudit,
-  plannedAuditDateIssues, questionIssues, scoreAudit, scoreBySection, todayAuditParis,
+  getAuditFindingObservationPhotos, plannedAuditDateIssues, questionIssues, scoreAudit, scoreBySection, setAuditResponseReferences, todayAuditParis, updateAuditResponse,
   type AuditAnswer, type AuditAnswerValue, type AuditFinding, type AuditSite, type InternalAudit,
 } from './internalAuditModel';
 import { BBTM_AUDIT_QUESTIONS, BBTM_AUDIT_SOURCE, createDefaultAuditTemplate } from './internalAuditSeed';
@@ -50,6 +50,40 @@ describe('internal audit scoring', () => {
     const rows = [answer('conforme', 9), answer('non_conforme', 1, 'q2'), answer('incomplet', 3, 'q3', 'Maintenance')];
     expect(scoreBySection(rows).map(({ section, percentage }) => ({ section, percentage })))
       .toEqual([{ section: 'Sécurité', percentage: 90 }, { section: 'Maintenance', percentage: 50 }]);
+  });
+});
+
+describe('shared audit responses', () => {
+  it('shares one response and evidence across references while scoring each with its own weight', () => {
+    const photo = { id: 'photo', fileName: 'preuve.png', storagePath: 'audit/photo.png', mimeType: 'image/png', sizeBytes: 8, url: '' };
+    const original = [
+      { ...answer('incomplet', 2), observation: 'Document incomplet' },
+      { ...answer('conforme', 6, 'q2'), observationPhotos: [photo] },
+      answer('conforme', 4, 'q3'),
+    ];
+    const linked = setAuditResponseReferences(original, 'q1', ['q2']);
+    expect(linked[0].responseGroupId).toBeTruthy();
+    expect(linked[1]).toMatchObject({ responseGroupId: linked[0].responseGroupId, maxPoints: 6, answer: 'incomplet', observation: 'Document incomplet' });
+    expect(getAuditFindingObservationPhotos(audit({ rows: linked }), 'q2')).toEqual([photo]);
+    expect(scoreAudit(linked)).toMatchObject({ earnedPoints: 8, maxPoints: 12, answeredCount: 3 });
+
+    const edited = updateAuditResponse(linked, 'q2', { answer: 'non_conforme', observation: 'Document absent' });
+    expect(edited.slice(0, 2)).toEqual(linked.slice(0, 2).map((row) => ({ ...row, answer: 'non_conforme', observation: 'Document absent' })));
+    expect(edited[2]).toBe(original[2]);
+    const unlinked = setAuditResponseReferences(edited, 'q1', []);
+    expect(unlinked.slice(0, 2)).toEqual(edited.slice(0, 2).map((row) => ({ ...row, responseGroupId: null })));
+    expect(updateAuditResponse(unlinked, 'q1', { answer: 'na' })[1]).toBe(unlinked[1]);
+  });
+
+  it('retains the other linked references when moving one to a different response', () => {
+    const rows = [answer('conforme'), answer(null, 3, 'q2'), answer(null, 3, 'q3'), answer('na', 3, 'q4')];
+    const first = setAuditResponseReferences(rows, 'q1', ['q2', 'q3']);
+    const moved = setAuditResponseReferences(first, 'q4', ['q2']);
+    expect(moved[0]).toBe(first[0]);
+    expect(moved[2]).toBe(first[2]);
+    expect(moved[1].responseGroupId).toBe(moved[3].responseGroupId);
+    expect(moved[1].responseGroupId).not.toBe(moved[0].responseGroupId);
+    expect(moved[1].answer).toBe('na');
   });
 });
 

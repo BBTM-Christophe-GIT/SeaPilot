@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ClipboardCheck, Copy, Download, FileText, ListChecks, LockKeyhole, Pencil, Plus, Printer, RotateCcw, Save, Search, Ship, Trash2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Camera, CheckCircle2, ClipboardCheck, Copy, Download, FileText, Link2, ListChecks, LockKeyhole, Pencil, Plus, Printer, RotateCcw, Save, Search, Ship, Trash2, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
@@ -7,7 +7,7 @@ import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
 import { resolveFleetCoverPhotos } from '../fleet/fleetMedia';
 import { fetchFleetVessel } from '../fleet/fleetQueries';
 import {
-  annualAuditWindow, auditDueOnFromDuration, blankAuditAnswers, compareAuditScores, completionIssues, defaultFindingDuration, findingIssues, plannedAuditDateIssues, planningStatus, scoreAudit,
+  annualAuditWindow, auditDueOnFromDuration, blankAuditAnswers, compareAuditScores, completionIssues, defaultFindingDuration, findingIssues, getAuditFindingObservationPhotos, mergeAuditPhotos, plannedAuditDateIssues, planningStatus, scoreAudit, setAuditResponseReferences, updateAuditResponse,
   type AuditAnswer, type AuditAnswerValue, type AuditAssigneeRole, type AuditDeadlineUnit, type AuditFinding, type AuditFindingSeverity, type AuditPhoto,
   type AuditFindingStatus, type AuditParticipant, type AuditQuestion, type AuditSite, type AuditTemplate, type InternalAudit,
 } from './internalAuditModel';
@@ -23,6 +23,8 @@ import { downloadInternalAuditWorkbook } from './internalAuditWorkbook';
 import './internalAudits.css';
 
 type Tab = 'planning' | 'templates' | 'grid' | 'findings' | 'chart';
+type ObservationPhotoQueue = Record<string, File[]>;
+type AuditResponsePatch = Partial<Pick<AuditAnswer, 'answer' | 'observation' | 'observationPhotos'>>;
 const TABS: { id: Tab; label: string; icon: typeof CalendarDays }[] = [
   { id: 'planning', label: 'Planning', icon: CalendarDays }, { id: 'templates', label: 'Grilles', icon: FileText },
   { id: 'grid', label: 'Grille d’audit', icon: ClipboardCheck }, { id: 'findings', label: 'Synthèse', icon: ListChecks },
@@ -58,6 +60,30 @@ function photoIssues(files: File[]): string | null {
   if (files.some((file) => !PHOTO_TYPES.includes(file.type))) return 'Les photos doivent être au format JPEG, PNG ou WebP.';
   if (files.some((file) => file.size < 1 || file.size > 10 * 1024 * 1024)) return 'Chaque photo doit peser entre 1 octet et 10 Mo.';
   return null;
+}
+function responseKey(row: AuditAnswer): string {
+  return row.responseGroupId ? `group:${row.responseGroupId}` : `row:${row.id}`;
+}
+function indexResponseRows(rows: AuditAnswer[]) {
+  const groups = new Map<string, AuditAnswer[]>();
+  for (const row of rows) {
+    const key = responseKey(row);
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  return groups;
+}
+function queuedPhotosForResponse(group: AuditAnswer[], queue: ObservationPhotoQueue): File[] {
+  return group.flatMap((row) => queue[row.id] || []);
+}
+function groupedPhotoUploads(groups: Map<string, AuditAnswer[]>, queue: ObservationPhotoQueue): ObservationPhotoQueue {
+  const uploads: ObservationPhotoQueue = {};
+  for (const group of groups.values()) {
+    const files = queuedPhotosForResponse(group, queue);
+    if (files.length) uploads[group[0].id] = files;
+  }
+  return uploads;
 }
 async function previewPhotos(files: File[]): Promise<AuditPhoto[]> {
   return Promise.all(files.map(async (file) => {
@@ -152,6 +178,9 @@ export function InternalAuditsPage() {
   const [draftAudit, setDraftAudit] = useState<InternalAudit | null>(null);
   const [draftTemplate, setDraftTemplate] = useState<AuditTemplate | null>(null);
   const [auditDirty, setAuditDirty] = useState(false);
+  const [observationPhotoQueue, setObservationPhotoQueue] = useState<ObservationPhotoQueue>({});
+  const [photoEditor, setPhotoEditor] = useState<{ rowId: string; photos: AuditPhoto[]; files: File[] } | null>(null);
+  const [responseEditor, setResponseEditor] = useState<{ rowId: string; referenceIds: string[] } | null>(null);
   const [templateDirty, setTemplateDirty] = useState(false);
   const [section, setSection] = useState('');
   const [search, setSearch] = useState('');
@@ -192,7 +221,7 @@ export function InternalAuditsPage() {
   const selectedAudit = data?.audits.find((audit) => audit.id === auditId) || null;
   const selectedTemplate = data?.templates.find((template) => template.id === templateId && template.active) || null;
   const hrFunctions = data?.hrFunctions || [...new Set(data?.people.map((person) => person.functionLabel).filter(Boolean) || [])];
-  useEffect(() => { setDraftAudit(selectedAudit ? structuredClone(selectedAudit) : null); setAuditDirty(false); setSection(''); }, [selectedAudit]);
+  useEffect(() => { setDraftAudit(selectedAudit ? structuredClone(selectedAudit) : null); setAuditDirty(false); setObservationPhotoQueue({}); setSection(''); }, [selectedAudit]);
   useEffect(() => { setDraftTemplate(selectedTemplate ? structuredClone(selectedTemplate) : null); setTemplateDirty(false); }, [selectedTemplate]);
   useEffect(() => {
     if (requestedAudit === null) {
@@ -235,6 +264,13 @@ export function InternalAuditsPage() {
   const score = scoreAudit(draftAudit?.rows || []);
   const sections = [...new Set(draftAudit?.rows.map((row) => row.section) || [])];
   const editable = canManage && Boolean(draftAudit && draftAudit.status !== 'completed');
+  const canEditObservationPhotos = editable && Boolean(selectedAudit);
+  const auditRows = draftAudit?.rows;
+  const responseGroups = useMemo(() => indexResponseRows(auditRows || []), [auditRows]);
+  const findingObservationFiles = useMemo(() => findingRow ? queuedPhotosForResponse(responseGroups.get(responseKey(findingRow)) || [findingRow], observationPhotoQueue) : [], [findingRow, observationPhotoQueue, responseGroups]);
+  const responseEditorRow = auditRows?.find((row) => row.id === responseEditor?.rowId);
+  const photoEditorRow = auditRows?.find((row) => row.id === photoEditor?.rowId);
+  const replacedResponses = responseEditor && responseEditorRow ? auditRows?.filter((row) => responseEditor.referenceIds.includes(row.id) && (row.answer || row.observation) && (row.answer !== responseEditorRow.answer || row.observation !== responseEditorRow.observation)) || [] : [];
   const visibleRows = draftAudit?.rows.filter((row) => (!section || row.section === section) && (!search.trim() || `${row.reference} ${row.question} ${row.section} ${row.hrFunction || ''}`.toLocaleLowerCase('fr').includes(search.trim().toLocaleLowerCase('fr')))) || [];
   const selectedParticipantIds = draftAudit?.participantPersonIds || draftAudit?.participants?.filter((person) => person.source === 'selected').map((person) => person.personId).filter((id): id is number => id !== null) || [];
   const auditParticipants = draftAudit?.participants || [];
@@ -275,9 +311,26 @@ export function InternalAuditsPage() {
     const site = data?.sites.find((item) => item.id === audit.siteId);
     const dateIssues = site ? plannedAuditDateIssues(site, audit) : [];
     if (dateIssues.length) throw new Error(dateIssues.join(' '));
-    if (context.previewMode) setData((current) => current ? { ...current, sites: current.sites.map((item) => item.id === audit.siteId && !item.anniversaryOn ? { ...item, anniversaryOn: audit.plannedOn } : item), audits: [...current.audits.filter((item) => item.id !== audit.id), structuredClone(audit)] } : current);
-    else { await saveInternalAudit(context.client, audit); await refresh(); }
+    const uploads = groupedPhotoUploads(indexResponseRows(audit.rows), observationPhotoQueue);
+    let saved: InternalAudit;
+    if (context.previewMode) {
+      saved = structuredClone(audit);
+      for (const [rowId, files] of Object.entries(uploads)) {
+        const photos = await previewPhotos(files);
+        const row = saved.rows.find((item) => item.id === rowId);
+        saved.rows = updateAuditResponse(saved.rows, rowId, { observationPhotos: [...(row?.observationPhotos || []), ...photos] });
+      }
+    } else {
+      saved = await saveInternalAudit(context.client, audit, uploads);
+    }
+    setData((current) => current ? {
+      ...current,
+      sites: context.previewMode ? current.sites.map((item) => item.id === audit.siteId && !item.anniversaryOn ? { ...item, anniversaryOn: audit.plannedOn } : item) : current.sites,
+      audits: [...current.audits.filter((item) => item.id !== audit.id), saved],
+    } : current);
+    setObservationPhotoQueue({});
     setAuditDirty(false);
+    await refreshAfterSave();
   }
   function editAudit(patch: Partial<InternalAudit>) { setDraftAudit((current) => current ? { ...current, ...patch } : null); setAuditDirty(true); }
   function selectParticipants(ids: number[]) {
@@ -291,9 +344,61 @@ export function InternalAuditsPage() {
     });
     editAudit({ participantPersonIds: ids, participants: [...selected, ...auditParticipants.filter((participant) => participant.source === 'contributor')] });
   }
-  function editAnswer(rowId: string, patch: Partial<AuditAnswer>) {
-    setDraftAudit((current) => current ? { ...current, rows: current.rows.map((row) => row.id === rowId ? { ...row, ...patch } : row), performedOn: current.performedOn || today(), status: 'in_progress' } : null);
+  function editAnswer(rowId: string, patch: AuditResponsePatch) {
+    setDraftAudit((current) => current ? { ...current, rows: updateAuditResponse(current.rows, rowId, patch), performedOn: current.performedOn || today(), status: 'in_progress' } : null);
     setAuditDirty(true);
+  }
+  function openResponseEditor(row: AuditAnswer) {
+    setError('');
+    setResponseEditor({ rowId: row.id, referenceIds: (responseGroups.get(responseKey(row)) || [row]).map((item) => item.id) });
+  }
+  function applyResponseReferences(event: FormEvent) {
+    event.preventDefault();
+    if (!draftAudit || !responseEditor || !responseEditorRow || !editable) return;
+    const rows = setAuditResponseReferences(draftAudit.rows, responseEditor.rowId, responseEditor.referenceIds);
+    const group = [...indexResponseRows(rows).values()].find((items) => items.some((item) => item.id === responseEditor.rowId)) || [];
+    const files = queuedPhotosForResponse(group, observationPhotoQueue);
+    const issue = photoIssues(files);
+    if (issue || (group[0]?.observationPhotos?.length || 0) + files.length > 100) {
+      setError(issue || 'Une réponse peut comporter jusqu’à 100 photos.');
+      return;
+    }
+    if (rows.some((row, index) => row.responseGroupId !== draftAudit.rows[index].responseGroupId)) editAudit({ rows });
+    setResponseEditor(null);
+    setError('');
+  }
+  function openObservationPhotos(row: AuditAnswer) {
+    setError('');
+    const group = responseGroups.get(responseKey(row)) || [row];
+    setPhotoEditor({ rowId: row.id, photos: row.observationPhotos || [], files: queuedPhotosForResponse(group, observationPhotoQueue) });
+  }
+  function applyObservationPhotos(event: FormEvent) {
+    event.preventDefault();
+    if (!photoEditor || !photoEditorRow || !canEditObservationPhotos) return;
+    const issue = photoIssues(photoEditor.files);
+    if (issue || photoEditor.photos.length + photoEditor.files.length > 100) {
+      setError(issue || 'Une réponse peut comporter jusqu’à 100 photos.');
+      return;
+    }
+    const group = responseGroups.get(responseKey(photoEditorRow)) || [photoEditorRow];
+    const previousFiles = queuedPhotosForResponse(group, observationPhotoQueue);
+    const previousPhotos = photoEditorRow.observationPhotos || [];
+    if (photoEditor.files.length !== previousFiles.length || photoEditor.files.some((file) => !previousFiles.includes(file)) || photoEditor.photos.length !== previousPhotos.length) {
+      const newFiles = photoEditor.files.filter((file) => !previousFiles.includes(file));
+      setObservationPhotoQueue((current) => {
+        const next = { ...current };
+        for (const member of group) {
+          const remaining = (current[member.id] || []).filter((file) => photoEditor.files.includes(file));
+          const files = member.id === photoEditor.rowId ? [...remaining, ...newFiles] : remaining;
+          if (files.length) next[member.id] = files;
+          else delete next[member.id];
+        }
+        return next;
+      });
+      editAnswer(photoEditor.rowId, { observationPhotos: photoEditor.photos });
+    }
+    setPhotoEditor(null);
+    setError('');
   }
   function openFinding(row: AuditAnswer) {
     const duration = defaultFindingDuration('minor');
@@ -318,6 +423,22 @@ export function InternalAuditsPage() {
     editAudit({ rows: newRow ? [...draftAudit.rows, questionDraft] : draftAudit.rows.map((row) => row.id === questionDraft.id ? questionDraft : row) });
     setQuestionDraft(null); setSearch(''); setError('');
   }
+  function removeAuditQuestion(row: AuditAnswer) {
+    if (!draftAudit || allFindingsForAudit.some((finding) => finding.questionId === row.id)) return;
+    const remainingMember = responseGroups.get(responseKey(row))?.find((member) => member.id !== row.id);
+    if (observationPhotoQueue[row.id]?.length) {
+      setObservationPhotoQueue((current) => {
+        const next = { ...current };
+        const files = next[row.id] || [];
+        if (remainingMember) next[remainingMember.id] = [...(next[remainingMember.id] || []), ...files];
+        delete next[row.id];
+        return next;
+      });
+    }
+    const rows = row.responseGroupId ? setAuditResponseReferences(draftAudit.rows, row.id, []) : draftAudit.rows;
+    editAudit({ rows: rows.filter((item) => item.id !== row.id) });
+    setQuestionDraft(null);
+  }
   async function exportReport() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges || (exportFormat === 'pdf' && !reportSections.length)) return;
     await mutate(async () => {
@@ -335,12 +456,12 @@ export function InternalAuditsPage() {
   async function printGrid() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges) return;
     await mutate(async () => {
-      await openInternalAuditGridPrintPreview({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) });
+      await openInternalAuditGridPrintPreview({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant), loadPhoto: context.previewMode ? undefined : async (photo: AuditPhoto) => photoDataUrl(await downloadAuditPhoto(context.client, photo)) });
     }, 'Grille ouverte dans un aperçu PDF. Utilisez la commande Imprimer de votre navigateur.');
   }
   async function exportGrid() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges) return;
-    await mutate(async () => { await downloadInternalAuditGridReport({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) }); }, 'Grille PDF exportée.');
+    await mutate(async () => { await downloadInternalAuditGridReport({ audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings, events: [], sortByHrFunction, loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant), loadPhoto: context.previewMode ? undefined : async (photo: AuditPhoto) => photoDataUrl(await downloadAuditPhoto(context.client, photo)) }); }, 'Grille PDF exportée.');
   }
   async function exportTemplate() {
     if (!selectedTemplate || hasUnsavedChanges) return;
@@ -484,18 +605,35 @@ export function InternalAuditsPage() {
       <div className="ia-grid-tools"><label><span>Chapitre</span><select onChange={(event) => setSection(event.target.value)} value={section}><option value="">Tous les chapitres</option>{sections.map((name) => <option key={name}>{name}</option>)}</select></label><label className="ia-search"><Search size={16} /><input aria-label="Rechercher une question" onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher une question…" value={search} /></label><span>{score.excludedCount} N/A · exclus du calcul</span></div>
       <div className="ia-rating-guide">Conforme = barème · Incomplet = moitié du barème · Non Conforme = 0 · N/A = hors calcul</div>
       <div className="ia-grid-scroll" tabIndex={0} aria-label="Grille d’audit, défilement horizontal disponible">
-        <table className="ia-audit-table"><caption className="ia-sr-only">Grille d’audit {currentSite?.name} {draftAudit.year}</caption><colgroup><col className="ia-col-ref" /><col className="ia-col-question" /><col className="ia-col-guidance" /><col className="ia-col-function" /><col className="ia-col-points" /><col className="ia-col-answer" /><col className="ia-col-observation" /><col className="ia-col-actions" /></colgroup><thead><tr><th scope="col">Réf.</th><th scope="col">Question</th><th scope="col">Éléments à vérifier</th><th scope="col">Fonction RH</th><th scope="col">Barème</th><th scope="col">Réponse</th><th scope="col">Observations</th><th scope="col">Actions</th></tr></thead><tbody>
+        <table className="ia-audit-table"><caption className="ia-sr-only">Grille d’audit {currentSite?.name} {draftAudit.year}</caption><colgroup><col className="ia-col-ref" /><col className="ia-col-question" /><col className="ia-col-guidance" /><col className="ia-col-function" /><col className="ia-col-points" /><col className="ia-col-answer" /><col className="ia-col-observation" /><col className="ia-col-photo" /><col className="ia-col-actions" /></colgroup><thead><tr><th scope="col">Réf.</th><th scope="col">Question</th><th scope="col">Éléments à vérifier</th><th scope="col">Fonction RH</th><th scope="col">Barème</th><th scope="col">Réponse</th><th scope="col">Observations</th><th scope="col">Photo</th><th scope="col">Actions</th></tr></thead><tbody>
           {visibleRows.map((row, index) => {
             const rowFindings = allFindingsForAudit.filter((finding) => finding.questionId === row.id);
+            const reference = row.reference || row.question;
+            const responseGroup = responseGroups.get(responseKey(row)) || [row];
+            const photoCount = (row.observationPhotos?.length || 0) + queuedPhotosForResponse(responseGroup, observationPhotoQueue).length;
             return <Fragment key={row.id}>
-              {index === 0 || visibleRows[index - 1].section !== row.section ? <tr className="ia-chapter-row"><th colSpan={8} scope="colgroup">{row.section}</th></tr> : null}
-              <tr className="ia-answer-row"><td><span className="ia-reference">{row.reference || '—'}</span></td><th scope="row"><CompactAuditText text={row.question || 'Nouvelle question'} id={`question-${row.id}-tooltip`} /></th><td className="ia-guidance-cell"><CompactAuditText text={row.guidance || '—'} id={`guidance-${row.id}-tooltip`} /></td><td><HrFunctionSelect disabled={!editable || busy} functions={hrFunctions} label={`Fonction RH ${row.reference || row.question}`} onChange={(hrFunction) => editAudit({ rows: draftAudit.rows.map((item) => item.id === row.id ? { ...item, hrFunction } : item) })} value={row.hrFunction} /></td><td className="ia-points-cell">{row.maxPoints} pts</td><td><label className="ia-sr-only" htmlFor={`answer-${row.id}`}>Réponse {row.reference || row.question}</label><select className={`ia-answer-select is-${row.answer || 'empty'}`} disabled={!editable || busy} id={`answer-${row.id}`} onChange={(event) => editAnswer(row.id, { answer: event.target.value as AuditAnswerValue || null })} value={row.answer || ''}><option value="">Choisir…</option>{ANSWERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></td><td><label className="ia-sr-only" htmlFor={`observation-${row.id}`}>Observations · {row.reference || row.question}</label><input disabled={!editable || busy} id={`observation-${row.id}`} onChange={(event) => editAnswer(row.id, { observation: event.target.value })} placeholder="Constat ou preuve…" title={row.observation || undefined} type="text" value={row.observation} /></td><td><div className="ia-question-actions">{canManage ? <button aria-label={`Émettre un écart ${row.reference || row.question}`} className="is-secondary" disabled={busy || !row.question.trim()} onClick={() => openFinding(row)} type="button"><Plus size={14} />Écart</button> : null}{editable ? <button aria-label={`Modifier la question ${row.reference || row.question}`} className="ia-icon-button" disabled={busy} onClick={() => { setNewRow(false); setQuestionDraft(structuredClone(row)); setError(''); }} title="Modifier la question" type="button"><Pencil size={14} /></button> : null}{rowFindings.length ? <button className="ia-finding-link" disabled={busy || hasUnsavedChanges} onClick={() => setTab('findings')} type="button"><AlertTriangle size={13} /><span aria-hidden="true">{rowFindings.length}</span><span className="ia-sr-only">{rowFindings.length} écart{rowFindings.length > 1 ? 's' : ''} émis</span></button> : null}</div></td></tr>
+              {index === 0 || visibleRows[index - 1].section !== row.section ? <tr className="ia-chapter-row"><th colSpan={9} scope="colgroup">{row.section}</th></tr> : null}
+              <tr className="ia-answer-row">
+                <td><span className="ia-reference">{row.reference || '—'}</span></td>
+                <th scope="row"><CompactAuditText text={row.question || 'Nouvelle question'} id={`question-${row.id}-tooltip`} /></th>
+                <td className="ia-guidance-cell"><CompactAuditText text={row.guidance || '—'} id={`guidance-${row.id}-tooltip`} /></td>
+                <td><HrFunctionSelect disabled={!editable || busy} functions={hrFunctions} label={`Fonction RH ${reference}`} onChange={(hrFunction) => editAudit({ rows: draftAudit.rows.map((item) => item.id === row.id ? { ...item, hrFunction } : item) })} value={row.hrFunction} /></td>
+                <td className="ia-points-cell">{row.maxPoints} pts</td>
+                <td><div className="ia-answer-controls">
+                  <label className="ia-sr-only" htmlFor={`answer-${row.id}`}>Réponse {reference}</label>
+                  <select className={`ia-answer-select is-${row.answer || 'empty'}`} disabled={!editable || busy} id={`answer-${row.id}`} onChange={(event) => editAnswer(row.id, { answer: event.target.value as AuditAnswerValue || null })} value={row.answer || ''}><option value="">Choisir…</option>{ANSWERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                  {editable || responseGroup.length > 1 ? <button aria-label={`Réponse commune · ${reference}`} className={`is-secondary ia-response-link${responseGroup.length > 1 ? ' is-linked' : ''}`} disabled={busy} onClick={() => openResponseEditor(row)} title={responseGroup.length > 1 ? `Réponse commune à ${responseGroup.length} références` : 'Utiliser cette réponse pour plusieurs références'} type="button"><Link2 aria-hidden="true" size={14} />{responseGroup.length > 1 ? <span>{responseGroup.length}</span> : null}</button> : null}
+                </div></td>
+                <td><label className="ia-sr-only" htmlFor={`observation-${row.id}`}>Observations · {reference}</label><input disabled={!editable || busy} id={`observation-${row.id}`} onChange={(event) => editAnswer(row.id, { observation: event.target.value })} placeholder="Constat ou preuve…" title={row.observation || undefined} type="text" value={row.observation} /></td>
+                <td>{canEditObservationPhotos || photoCount ? <button aria-label={`Photos · ${reference}`} className="is-secondary ia-grid-photo" disabled={busy} onClick={() => openObservationPhotos(row)} title={photoCount ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Ajouter une photo à l’observation'} type="button"><Camera aria-hidden="true" size={15} />{photoCount ? <span>{photoCount}</span> : null}</button> : <span className="ia-points-cell">—</span>}</td>
+                <td><div className="ia-question-actions">{canManage ? <button aria-label={`Émettre un écart ${reference}`} className="is-secondary" disabled={busy || !row.question.trim()} onClick={() => openFinding(row)} type="button"><Plus size={14} />Écart</button> : null}{editable ? <button aria-label={`Modifier la question ${reference}`} className="ia-icon-button" disabled={busy} onClick={() => { setNewRow(false); setQuestionDraft(structuredClone(row)); setError(''); }} title="Modifier la question" type="button"><Pencil size={14} /></button> : null}{rowFindings.length ? <button className="ia-finding-link" disabled={busy || hasUnsavedChanges} onClick={() => setTab('findings')} type="button"><AlertTriangle size={13} /><span aria-hidden="true">{rowFindings.length}</span><span className="ia-sr-only">{rowFindings.length} écart{rowFindings.length > 1 ? 's' : ''} émis</span></button> : null}</div></td>
+              </tr>
             </Fragment>;
           })}
         </tbody></table>
       </div>
       {!visibleRows.length ? <EmptyState label="Aucune question ne correspond à ce filtre" /> : null}
-      {editable ? <footer className="ia-save-actions ia-audit-save"><button className="is-secondary" disabled={busy} onClick={() => { setQuestionDraft({ ...newQuestion(section || draftAudit.rows.at(-1)?.section), answer: null, observation: '' }); setNewRow(true); setError(''); }} type="button"><Plus size={16} />Ajouter une ligne à l’audit</button>{draftAudit.status === 'planned' ? <button className="is-secondary" disabled={busy} onClick={() => editAudit({ status: 'in_progress', performedOn: draftAudit.performedOn || today() })} type="button">Démarrer l’audit</button> : null}{auditDirty ? <button className="is-secondary" disabled={busy} onClick={() => { setDraftAudit(selectedAudit ? structuredClone(selectedAudit) : null); setAuditDirty(false); }} type="button">Annuler</button> : null}<button disabled={!auditDirty || busy} onClick={() => void saveDraft()} type="button"><Save size={16} />Enregistrer les réponses</button><button className="is-secondary" disabled={busy} onClick={() => setCompleteOpen(true)} type="button"><CheckCircle2 size={16} />Finaliser l’audit</button></footer> : null}
+      {editable ? <footer className="ia-save-actions ia-audit-save"><button className="is-secondary" disabled={busy} onClick={() => { setQuestionDraft({ ...newQuestion(section || draftAudit.rows.at(-1)?.section), answer: null, observation: '' }); setNewRow(true); setError(''); }} type="button"><Plus size={16} />Ajouter une ligne à l’audit</button>{draftAudit.status === 'planned' ? <button className="is-secondary" disabled={busy} onClick={() => editAudit({ status: 'in_progress', performedOn: draftAudit.performedOn || today() })} type="button">Démarrer l’audit</button> : null}{auditDirty ? <button className="is-secondary" disabled={busy} onClick={() => { setDraftAudit(selectedAudit ? structuredClone(selectedAudit) : null); setObservationPhotoQueue({}); setAuditDirty(false); }} type="button">Annuler</button> : null}<button disabled={!auditDirty || busy} onClick={() => void saveDraft()} type="button"><Save size={16} />Enregistrer les réponses</button><button className="is-secondary" disabled={busy} onClick={() => setCompleteOpen(true)} type="button"><CheckCircle2 size={16} />Finaliser l’audit</button></footer> : null}
     </section> : <EmptyState label="Planifiez un audit pour commencer à remplir une grille" /> : null}
 
     {tab === 'findings' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Synthèse des écarts</h2><p>Non conformités majeures, mineures et remarques avec leur suivi de traitement.</p></div><label className="ia-compact-field">Afficher<select onChange={(event) => setFindingFilter(event.target.value)} value={findingFilter}><option value="">Tous les écarts</option><option value="pending">Non clôturés</option>{Object.entries(SEVERITIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></header><div className="ia-findings-list">{findings.map((finding) => {
@@ -504,7 +642,7 @@ export function InternalAuditsPage() {
       const overdue = Boolean(finding.dueOn && finding.dueOn < today()) && !['resolved', 'closed'].includes(finding.status);
       const events = data.events.filter((event) => event.findingId === finding.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const canTreat = canManage || data.permissions.treatableFindingIds.includes(finding.id);
-      return <article className="ia-finding" key={finding.id}><header><div><span className={`ia-badge is-${finding.severity}`}>{SEVERITIES[finding.severity]}</span><span className={`ia-badge is-${finding.status}`}>{FINDING_STATUSES[finding.status]}</span></div><strong>{finding.reference || 'Sans référence'}</strong></header><h3>{finding.description}</h3>{linkedRow ? <p className="ia-finding-question">{linkedRow.section} · {linkedRow.question}</p> : null}<PhotoGallery photos={finding.photos} label="Photos du constat" /><div className="ia-finding-info"><span><small>Responsable de traitement</small><strong>{finding.assigneeLabel}</strong></span><span className={overdue ? 'is-overdue' : ''}><small>Échéance de traitement</small><strong>{finding.dueOn ? dateLabel(finding.dueOn) : 'Sans échéance'}{overdue ? ' · En retard' : ''}</strong></span>{canTreat ? <button className="is-secondary" disabled={busy} onClick={() => { setError(''); setTreatmentFiles([]); setTreatmentForm({ status: finding.status === 'open' ? 'in_progress' : finding.status === 'closed' ? 'open' : finding.status, treatment: '' }); setTreatmentFinding(finding); }} type="button"><Pencil size={15} />Suivre le traitement</button> : null}</div>{finding.treatment ? <p className="ia-treatment-note"><strong>Dernier traitement</strong>{finding.treatment}</p> : null}<details className="ia-finding-history"><summary>Historique du traitement ({events.length})</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><div><strong>{event.actorName || 'Responsable de traitement'}</strong><small>{dateLabel(event.createdAt)} · {FINDING_STATUSES[event.status]}</small></div><p>{event.treatment}</p><PhotoGallery photos={event.photos} label={event.status === 'closed' ? 'Photos de clôture' : 'Photos du traitement'} /></li>)}</ol> : <p>Aucun traitement enregistré pour le moment.</p>}</details></article>;
+      return <article className="ia-finding" key={finding.id}><header><div><span className={`ia-badge is-${finding.severity}`}>{SEVERITIES[finding.severity]}</span><span className={`ia-badge is-${finding.status}`}>{FINDING_STATUSES[finding.status]}</span></div><strong>{finding.reference || 'Sans référence'}</strong></header><h3>{finding.description}</h3>{linkedRow ? <p className="ia-finding-question">{linkedRow.section} · {linkedRow.question}</p> : null}<PhotoGallery photos={mergeAuditPhotos(getAuditFindingObservationPhotos(linkedAudit, finding.questionId), finding.photos)} label="Photos du constat" /><div className="ia-finding-info"><span><small>Responsable de traitement</small><strong>{finding.assigneeLabel}</strong></span><span className={overdue ? 'is-overdue' : ''}><small>Échéance de traitement</small><strong>{finding.dueOn ? dateLabel(finding.dueOn) : 'Sans échéance'}{overdue ? ' · En retard' : ''}</strong></span>{canTreat ? <button className="is-secondary" disabled={busy} onClick={() => { setError(''); setTreatmentFiles([]); setTreatmentForm({ status: finding.status === 'open' ? 'in_progress' : finding.status === 'closed' ? 'open' : finding.status, treatment: '' }); setTreatmentFinding(finding); }} type="button"><Pencil size={15} />Suivre le traitement</button> : null}</div>{finding.treatment ? <p className="ia-treatment-note"><strong>Dernier traitement</strong>{finding.treatment}</p> : null}<details className="ia-finding-history"><summary>Historique du traitement ({events.length})</summary>{events.length ? <ol>{events.map((event) => <li key={event.id}><div><strong>{event.actorName || 'Responsable de traitement'}</strong><small>{dateLabel(event.createdAt)} · {FINDING_STATUSES[event.status]}</small></div><p>{event.treatment}</p><PhotoGallery photos={event.photos} label={event.status === 'closed' ? 'Photos de clôture' : 'Photos du traitement'} /></li>)}</ol> : <p>Aucun traitement enregistré pour le moment.</p>}</details></article>;
     })}{!findings.length ? <EmptyState label="Aucun écart pour cet audit et ce filtre" description="Émettez un écart depuis une ligne de la grille d’audit pour le suivre ici." /> : null}</div></section> : null}
 
     {tab === 'chart' ? <section className="ia-panel"><header className="ia-panel-header"><div><h2>Évolution des scores</h2><p>Comparaison avec l’audit réalisé du même site l’année précédente.</p></div></header>{draftAudit?.status === 'completed' && comparison ? <div className="ia-chart-content">
@@ -518,10 +656,41 @@ export function InternalAuditsPage() {
     {siteEditor ? <AppDialog title={`Date anniversaire · ${siteEditor.name}`} description="Cette date définit la prochaine échéance annuelle et sa fenêtre de trois mois avant / après." isBusy={busy} onClose={() => setSiteEditor(null)} onSubmit={(event) => { event.preventDefault(); void mutate(async () => { if (context.previewMode) setData((current) => current ? { ...current, sites: current.sites.map((site) => site.id === siteEditor.id ? siteEditor : site) } : current); else { await saveAuditSite(context.client, siteEditor); await refresh(); } setSiteEditor(null); }, 'Date anniversaire mise à jour.'); }} footer={<div className="ia-dialog-actions"><button disabled={busy} type="submit"><Save size={16} />Enregistrer la date</button></div>}><DialogError error={error} /><label>Date anniversaire de référence<input required type="date" value={siteEditor.anniversaryOn || ''} onChange={(event) => setSiteEditor({ ...siteEditor, anniversaryOn: event.target.value })} /></label></AppDialog> : null}
     {deleteTemplate ? <AppDialog title="Supprimer ce modèle de grille ?" description={`Le modèle « ${deleteTemplate.name} » ne sera plus proposé pour les nouveaux audits. Les audits existants, leurs réponses, écarts et historiques seront conservés.`} isBusy={busy} onClose={() => setDeleteTemplate(null)} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setDeleteTemplate(null)} type="button">Annuler</button><button disabled={busy} onClick={() => void confirmDeleteTemplate()} type="button"><Trash2 size={16} />Confirmer la suppression</button></div>}><DialogError error={error} /><p className="ia-form-help">Cette suppression concerne uniquement le modèle de référence.</p></AppDialog> : null}
     {duplicateOpen ? <AppDialog title="Créer une grille personnalisée" description={draftTemplate ? "Partez de la grille sélectionnée puis adaptez les questions pour le navire ou le site choisi." : "Créez un nouveau modèle à partir de la grille de référence BBTM, puis adaptez ses questions."} isBusy={busy} onClose={() => setDuplicateOpen(false)} onSubmit={(event) => void duplicateTemplate(event)} footer={<div className="ia-dialog-actions"><button disabled={busy} type="submit"><Copy size={16} />Créer la grille</button></div>}><DialogError error={error} /><div className="ia-form-grid"><label className="ia-full">Nom de la nouvelle grille<input placeholder="Ex. Grille LE ROZEL" required value={duplicateForm.name} onChange={(event) => setDuplicateForm({ ...duplicateForm, name: event.target.value })} /></label><label className="ia-full">Site / Navire<select value={duplicateForm.siteId} onChange={(event) => setDuplicateForm({ ...duplicateForm, siteId: event.target.value })}><option value="">Grille commune</option>{sortedSites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label></div></AppDialog> : null}
-    {questionDraft ? <AppDialog title={newRow ? 'Ajouter une question à l’audit' : 'Modifier la question'} isBusy={busy} onClose={() => setQuestionDraft(null)} onSubmit={applyQuestion} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setQuestionDraft(null)} type="button">Annuler</button><button disabled={busy} type="submit">{newRow ? 'Ajouter la question' : 'Appliquer les modifications'}</button></div>}><DialogError error={error} /><div className="ia-editor-fields"><label>Chapitre<input required value={questionDraft.section} onChange={(event) => setQuestionDraft({ ...questionDraft, section: event.target.value })} /></label><label>Référence<input value={questionDraft.reference} onChange={(event) => setQuestionDraft({ ...questionDraft, reference: event.target.value })} /></label><label>Barème maximum<input min="0" step="0.5" required type="number" value={questionDraft.maxPoints} onChange={(event) => setQuestionDraft({ ...questionDraft, maxPoints: Number(event.target.value) })} /></label><label className="ia-full">Fonction RH<HrFunctionSelect functions={hrFunctions} value={questionDraft.hrFunction} onChange={(hrFunction) => setQuestionDraft({ ...questionDraft, hrFunction })} /></label><label className="ia-full">Question<textarea required rows={2} value={questionDraft.question} onChange={(event) => setQuestionDraft({ ...questionDraft, question: event.target.value })} /></label><label className="ia-full">Consignes / éléments à vérifier<textarea rows={3} value={questionDraft.guidance} onChange={(event) => setQuestionDraft({ ...questionDraft, guidance: event.target.value })} /></label>{!newRow ? <button className="ia-text-danger" disabled={busy || allFindingsForAudit.some((finding) => finding.questionId === questionDraft.id)} title={allFindingsForAudit.some((finding) => finding.questionId === questionDraft.id) ? 'Cette ligne est liée à un écart et doit être conservée.' : undefined} onClick={() => { if (!draftAudit || allFindingsForAudit.some((finding) => finding.questionId === questionDraft.id)) return; editAudit({ rows: draftAudit.rows.filter((row) => row.id !== questionDraft.id) }); setQuestionDraft(null); }} type="button"><Trash2 size={15} />Supprimer cette ligne</button> : null}</div></AppDialog> : null}
-    {findingRow ? <AppDialog title={`Émettre un écart · ${findingRow.reference || 'question'}`} description={findingRow.question} isBusy={busy} onClose={() => setFindingRow(null)} onSubmit={(event) => void emitFinding(event)} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setFindingRow(null)} type="button">Annuler</button><button disabled={busy} type="submit"><AlertTriangle size={16} />Enregistrer l’écart</button></div>}><DialogError error={error} /><div className="ia-form-grid"><label className="ia-full">Type d’écart<select value={findingForm.severity} onChange={(event) => changeSeverity(event.target.value as AuditFindingSeverity)}>{Object.entries(SEVERITIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="ia-full">Description du constat<textarea required rows={3} value={findingForm.description} onChange={(event) => setFindingForm({ ...findingForm, description: event.target.value })} /></label><label className="ia-full">Responsable de traitement<select required value={findingForm.target} onChange={(event) => setFindingForm({ ...findingForm, target: event.target.value })}><option value="">Désigner une personne ou une fonction</option>{sortedSites.filter((site) => site.kind === 'vessel' && site.vesselId).map((site) => <optgroup key={site.id} label={`Fonctions · ${site.name}`}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={`role:${value}:${site.vesselId}`}>{label} {site.name}</option>)}</optgroup>)}<optgroup label="Personnes">{data.people.map((person) => <option key={person.id} value={`person:${person.id}`}>{person.name}{person.functionLabel ? ` · ${person.functionLabel}` : ''}</option>)}</optgroup></select></label>{findingForm.severity !== 'remark' ? <><label>Délai de traitement<input max="3650" min="1" step="1" required type="number" value={findingForm.delayValue} onChange={(event) => setFindingForm({ ...findingForm, delayValue: event.target.value })} /></label><label>Unité du délai<select value={findingForm.delayUnit} onChange={(event) => setFindingForm({ ...findingForm, delayUnit: event.target.value as AuditDeadlineUnit })}><option value="days">Jour(s)</option><option value="weeks">Semaine(s)</option><option value="months">Mois</option></select></label><p className="ia-computed-deadline"><small>Échéance calculée</small><strong>{dateLabel(findingDueOn)}</strong></p></> : <p className="ia-form-help ia-full">Aucun délai imposé pour une remarque. Son traitement et sa clôture restent facultatifs.</p>}<div className="ia-full"><PhotoUpload files={findingFiles} label="Photos du constat (facultatif)" disabled={busy} onChange={(files) => chooseFiles(files, 'finding')} /></div></div></AppDialog> : null}
+    {questionDraft ? <AppDialog title={newRow ? 'Ajouter une question à l’audit' : 'Modifier la question'} isBusy={busy} onClose={() => setQuestionDraft(null)} onSubmit={applyQuestion} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setQuestionDraft(null)} type="button">Annuler</button><button disabled={busy} type="submit">{newRow ? 'Ajouter la question' : 'Appliquer les modifications'}</button></div>}><DialogError error={error} /><div className="ia-editor-fields"><label>Chapitre<input required value={questionDraft.section} onChange={(event) => setQuestionDraft({ ...questionDraft, section: event.target.value })} /></label><label>Référence<input value={questionDraft.reference} onChange={(event) => setQuestionDraft({ ...questionDraft, reference: event.target.value })} /></label><label>Barème maximum<input min="0" step="0.5" required type="number" value={questionDraft.maxPoints} onChange={(event) => setQuestionDraft({ ...questionDraft, maxPoints: Number(event.target.value) })} /></label><label className="ia-full">Fonction RH<HrFunctionSelect functions={hrFunctions} value={questionDraft.hrFunction} onChange={(hrFunction) => setQuestionDraft({ ...questionDraft, hrFunction })} /></label><label className="ia-full">Question<textarea required rows={2} value={questionDraft.question} onChange={(event) => setQuestionDraft({ ...questionDraft, question: event.target.value })} /></label><label className="ia-full">Consignes / éléments à vérifier<textarea rows={3} value={questionDraft.guidance} onChange={(event) => setQuestionDraft({ ...questionDraft, guidance: event.target.value })} /></label>{!newRow ? <button className="ia-text-danger" disabled={busy || allFindingsForAudit.some((finding) => finding.questionId === questionDraft.id)} title={allFindingsForAudit.some((finding) => finding.questionId === questionDraft.id) ? 'Cette ligne est liée à un écart et doit être conservée.' : undefined} onClick={() => removeAuditQuestion(questionDraft)} type="button"><Trash2 size={15} />Supprimer cette ligne</button> : null}</div></AppDialog> : null}
+    {findingRow ? <AppDialog title={`Émettre un écart · ${findingRow.reference || 'question'}`} description={findingRow.question} isBusy={busy} onClose={() => setFindingRow(null)} onSubmit={(event) => void emitFinding(event)} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setFindingRow(null)} type="button">Annuler</button><button disabled={busy} type="submit"><AlertTriangle size={16} />Enregistrer l’écart</button></div>}><DialogError error={error} /><div className="ia-form-grid"><label className="ia-full">Type d’écart<select value={findingForm.severity} onChange={(event) => changeSeverity(event.target.value as AuditFindingSeverity)}>{Object.entries(SEVERITIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="ia-full">Description du constat<textarea required rows={3} value={findingForm.description} onChange={(event) => setFindingForm({ ...findingForm, description: event.target.value })} /></label><label className="ia-full">Responsable de traitement<select required value={findingForm.target} onChange={(event) => setFindingForm({ ...findingForm, target: event.target.value })}><option value="">Désigner une personne ou une fonction</option>{sortedSites.filter((site) => site.kind === 'vessel' && site.vesselId).map((site) => <optgroup key={site.id} label={`Fonctions · ${site.name}`}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={`role:${value}:${site.vesselId}`}>{label} {site.name}</option>)}</optgroup>)}<optgroup label="Personnes">{data.people.map((person) => <option key={person.id} value={`person:${person.id}`}>{person.name}{person.functionLabel ? ` · ${person.functionLabel}` : ''}</option>)}</optgroup></select></label>{findingForm.severity !== 'remark' ? <><label>Délai de traitement<input max="3650" min="1" step="1" required type="number" value={findingForm.delayValue} onChange={(event) => setFindingForm({ ...findingForm, delayValue: event.target.value })} /></label><label>Unité du délai<select value={findingForm.delayUnit} onChange={(event) => setFindingForm({ ...findingForm, delayUnit: event.target.value as AuditDeadlineUnit })}><option value="days">Jour(s)</option><option value="weeks">Semaine(s)</option><option value="months">Mois</option></select></label><p className="ia-computed-deadline"><small>Échéance calculée</small><strong>{dateLabel(findingDueOn)}</strong></p></> : <p className="ia-form-help ia-full">Aucun délai imposé pour une remarque. Son traitement et sa clôture restent facultatifs.</p>}{findingRow.observationPhotos?.length || findingObservationFiles.length ? <div className="ia-full">
+          <PhotoGallery photos={findingRow.observationPhotos} label="Photos communes à l’observation et à l’écart" />
+          {findingObservationFiles.length ? <div className="ia-finding-pending-photos"><strong>Photos communes à enregistrer</strong><PhotoFilePreviews files={findingObservationFiles} /></div> : null}
+        </div> : null}<div className="ia-full"><PhotoUpload files={findingFiles} label="Photos du constat (facultatif)" disabled={busy} onChange={(files) => chooseFiles(files, 'finding')} /></div></div></AppDialog> : null}
     {treatmentFinding ? <AppDialog title="Suivi du traitement" description={treatmentFinding.description} isBusy={busy} onClose={() => setTreatmentFinding(null)} onSubmit={(event) => void saveTreatment(event)} footer={<div className="ia-dialog-actions"><button disabled={busy} type="submit"><Save size={16} />Enregistrer le traitement</button></div>}><DialogError error={error} /><div className="ia-form-grid"><label className="ia-full">Avancement<select value={treatmentForm.status} onChange={(event) => setTreatmentForm({ ...treatmentForm, status: event.target.value as AuditFindingStatus })}>{Object.entries(FINDING_STATUSES).filter(([value]) => value !== 'closed' || (canManage && (treatmentFinding.status === 'resolved' || (treatmentFinding.severity === 'remark' && treatmentFinding.status !== 'closed')))).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="ia-full">Traitement / preuve de correction<textarea placeholder="Action menée, vérification, preuve ou motif de réouverture…" rows={4} value={treatmentForm.treatment} onChange={(event) => setTreatmentForm({ ...treatmentForm, treatment: event.target.value })} /></label><div className="ia-full"><PhotoUpload files={treatmentFiles} label={treatmentForm.status === 'closed' ? 'Photos de clôture (facultatif)' : 'Photos du traitement (facultatif)'} disabled={busy} onChange={(files) => chooseFiles(files, 'treatment')} /></div></div><p className="ia-form-help">Responsable : {treatmentFinding.assigneeLabel} · {treatmentFinding.dueOn ? `Échéance : ${dateLabel(treatmentFinding.dueOn)}` : 'Sans échéance'}. {treatmentForm.status === 'closed' ? 'Aucune photo ou note supplémentaire n’est obligatoire pour clôturer.' : 'Renseignez une note ou joignez une photo pour documenter le traitement.'}</p></AppDialog> : null}
-    {completeOpen && draftAudit ? <AppDialog title="Finaliser l’audit" description="Les réponses, questions, barèmes et observations seront conservés et figés. Le traitement des écarts reste accessible dans la synthèse." isBusy={busy} onClose={() => setCompleteOpen(false)} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setCompleteOpen(false)} type="button">Revenir à la grille</button><button disabled={busy || completionIssues(draftAudit).length > 0} onClick={() => void mutate(async () => { await persistAudit({ ...draftAudit, status: 'completed', completedAt: new Date().toISOString() }); setCompleteOpen(false); }, 'Audit réalisé. Les réponses sont conservées et les écarts restent suivis.')} type="button"><CheckCircle2 size={16} />Confirmer la réalisation</button></div>}><DialogError error={error} /><div className="ia-completion-score"><strong>{percent(score.percentage)}</strong><span>{score.answeredCount} / {score.totalCount} réponses · {allFindingsForAudit.length} écarts émis</span></div>{completionIssues(draftAudit).length ? <ul className="ia-completion-issues">{completionIssues(draftAudit).map((issue) => <li key={issue}>{issue}</li>)}</ul> : <p>La grille est complète et prête à être conservée.</p>}</AppDialog> : null}
+    {responseEditor && responseEditorRow && auditRows ? <AppDialog
+      title={`Réponse commune · ${responseEditorRow.reference || responseEditorRow.question}`}
+      description={editable ? 'La réponse et l’observation de cette ligne seront utilisées pour les références cochées. Leurs photos seront réunies. Chaque référence garde son barème.' : undefined}
+      isBusy={busy}
+      onClose={() => { setResponseEditor(null); setError(''); }}
+      onSubmit={editable ? applyResponseReferences : undefined}
+      footer={<div className="ia-dialog-actions"><button className="is-secondary" onClick={() => { setResponseEditor(null); setError(''); }} type="button">{editable ? 'Annuler' : 'Fermer'}</button>{editable ? <button disabled={busy} type="submit"><Link2 aria-hidden="true" size={16} />Appliquer aux références</button> : null}</div>}
+    >
+      <DialogError error={error} />
+      <AuditResponseReferenceList rows={auditRows} sourceId={responseEditor.rowId} selectedIds={responseEditor.referenceIds} editable={editable} onChange={(referenceIds) => setResponseEditor({ ...responseEditor, referenceIds })} />
+      {editable && replacedResponses.length ? <p className="ia-response-replacement" role="status">La réponse ou l’observation existante sera remplacée pour {replacedResponses.map((row) => row.reference || row.question).join(', ')}.</p> : null}
+    </AppDialog> : null}
+    {photoEditor && photoEditorRow ? <AppDialog
+      title={`Photos · ${photoEditorRow.reference || photoEditorRow.question}`}
+      description={canEditObservationPhotos ? 'Les photos de l’observation apparaissent aussi dans les écarts liés à cette référence.' : undefined}
+      isBusy={busy}
+      onClose={() => { setPhotoEditor(null); setError(''); }}
+      onSubmit={canEditObservationPhotos ? applyObservationPhotos : undefined}
+      footer={<div className="ia-dialog-actions"><button className="is-secondary" onClick={() => { setPhotoEditor(null); setError(''); }} type="button">{canEditObservationPhotos ? 'Annuler' : 'Fermer'}</button>{canEditObservationPhotos ? <button disabled={busy} type="submit">Appliquer les photos</button> : null}</div>}
+    >
+      <DialogError error={error} />
+      <PhotoGallery label="Photos de l’observation" photos={photoEditor.photos} onRemove={canEditObservationPhotos ? (photo) => setPhotoEditor({ ...photoEditor, photos: photoEditor.photos.filter((item) => item.id !== photo.id) }) : undefined} />
+      {canEditObservationPhotos ? <PhotoUpload disabled={busy} files={photoEditor.files} label="Ajouter des photos" onChange={(files) => {
+        const issue = photoIssues(files);
+        setError(issue || '');
+        if (!issue) setPhotoEditor({ ...photoEditor, files });
+      }} /> : null}
+    </AppDialog> : null}
+    {completeOpen && draftAudit ? <AppDialog title="Finaliser l’audit" description="Les réponses, questions, barèmes, observations et photos seront conservés et figés. Le traitement des écarts reste accessible dans la synthèse." isBusy={busy} onClose={() => setCompleteOpen(false)} footer={<div className="ia-dialog-actions"><button className="is-secondary" disabled={busy} onClick={() => setCompleteOpen(false)} type="button">Revenir à la grille</button><button disabled={busy || completionIssues(draftAudit).length > 0} onClick={() => void mutate(async () => { await persistAudit({ ...draftAudit, status: 'completed', completedAt: new Date().toISOString() }); setCompleteOpen(false); }, 'Audit réalisé. Les réponses sont conservées et les écarts restent suivis.')} type="button"><CheckCircle2 size={16} />Confirmer la réalisation</button></div>}><DialogError error={error} /><div className="ia-completion-score"><strong>{percent(score.percentage)}</strong><span>{score.answeredCount} / {score.totalCount} réponses · {allFindingsForAudit.length} écarts émis</span></div>{completionIssues(draftAudit).length ? <ul className="ia-completion-issues">{completionIssues(draftAudit).map((issue) => <li key={issue}>{issue}</li>)}</ul> : <p>La grille est complète et prête à être conservée.</p>}</AppDialog> : null}
   </section>;
 }
 
@@ -597,18 +766,40 @@ function ChapterRadar({ audit, comparison }: { audit: InternalAudit; comparison:
   </section>;
 }
 
-function PhotoGallery({ photos = [], label }: { photos?: AuditPhoto[]; label: string }) {
-  if (!photos.length) return null;
-  return <div className="ia-photo-gallery" aria-label={label}><strong>{label}</strong><div>{photos.map((photo) => photo.url ? <a href={photo.url} key={photo.id} rel="noreferrer" target="_blank" title={`Ouvrir ${photo.fileName}`}><img alt={photo.fileName} loading="lazy" src={photo.url} /><span>{photo.fileName}</span></a> : <span key={photo.id}>{photo.fileName} · aperçu indisponible</span>)}</div></div>;
+function AuditResponseReferenceList({ rows, sourceId, selectedIds, editable, onChange }: { rows: AuditAnswer[]; sourceId: string; selectedIds: string[]; editable: boolean; onChange: (ids: string[]) => void }) {
+  const [search, setSearch] = useState('');
+  const filter = search.trim().toLocaleLowerCase('fr');
+  const visible = editable ? rows.filter((row) => !filter || `${row.reference} ${row.question} ${row.section}`.toLocaleLowerCase('fr').includes(filter)) : rows.filter((row) => selectedIds.includes(row.id));
+  return <fieldset className="ia-response-references">
+    <legend>Références couvertes ({selectedIds.length})</legend>
+    {editable ? <label><span className="ia-sr-only">Rechercher une référence</span><input onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher une référence…" type="search" value={search} /></label> : null}
+    {visible.length ? <ul>{visible.map((row) => <li key={row.id}>
+      <label><input checked={selectedIds.includes(row.id)} disabled={!editable || row.id === sourceId} onChange={(event) => onChange(event.target.checked ? [...selectedIds, row.id] : selectedIds.filter((id) => id !== row.id))} type="checkbox" />
+        <span><strong>{row.reference || 'Sans référence'}</strong> {row.question}{row.id === sourceId ? <small>Réponse utilisée</small> : null}</span>
+      </label>
+    </li>)}</ul> : <p>Aucune référence ne correspond à la recherche.</p>}
+  </fieldset>;
 }
 
-function PhotoUpload({ files, label, onChange, disabled }: { files: File[]; label: string; onChange: (files: File[]) => void; disabled: boolean }) {
+function PhotoGallery({ photos = [], label, onRemove }: { photos?: AuditPhoto[]; label: string; onRemove?: (photo: AuditPhoto) => void }) {
+  if (!photos.length) return null;
+  return <div className="ia-photo-gallery" aria-label={label}><strong>{label}</strong><div>{photos.map((photo) => <div className="ia-photo-gallery-item" key={photo.id}>
+    {photo.url ? <a href={photo.url} rel="noreferrer" target="_blank" title={`Ouvrir ${photo.fileName}`}><img alt={photo.fileName} loading="lazy" src={photo.url} /><span>{photo.fileName}</span></a> : <span>{photo.fileName} · aperçu indisponible</span>}
+    {onRemove ? <button aria-label={`Retirer ${photo.fileName}`} className="ia-icon-button" onClick={() => onRemove(photo)} type="button"><X aria-hidden="true" size={14} /></button> : null}
+  </div>)}</div></div>;
+}
+
+function PhotoFilePreviews({ files, onRemove, disabled }: { files: File[]; onRemove?: (fileIndex: number) => void; disabled?: boolean }) {
   const [previews, setPreviews] = useState<string[]>([]);
   useEffect(() => {
     const urls = files.map((file) => URL.createObjectURL(file)); setPreviews(urls);
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, [files]);
-  return <div className="ia-photo-upload"><label><span><Camera aria-hidden="true" size={16} />{label}</span><input accept="image/jpeg,image/png,image/webp" disabled={disabled} multiple onChange={(event) => { onChange([...files, ...Array.from(event.target.files || [])]); event.target.value = ''; }} type="file" /></label><p>JPEG, PNG ou WebP · 10 Mo maximum par photo · jusqu’à 10 photos.</p>{files.length ? <ul>{files.map((file, index) => <li key={`${file.name}-${index}`}><img alt={`Aperçu ${file.name}`} src={previews[index]} /><span>{file.name}</span><button aria-label={`Retirer ${file.name}`} className="ia-icon-button" disabled={disabled} onClick={() => onChange(files.filter((_, fileIndex) => fileIndex !== index))} type="button"><X size={14} /></button></li>)}</ul> : null}</div>;
+  return files.length ? <ul className="ia-photo-file-list">{files.map((file, index) => <li key={`${file.name}-${index}`}><img alt={`Aperçu ${file.name}`} src={previews[index]} /><span>{file.name}</span>{onRemove ? <button aria-label={`Retirer ${file.name}`} className="ia-icon-button" disabled={disabled} onClick={() => onRemove(index)} type="button"><X size={14} /></button> : null}</li>)}</ul> : null;
+}
+
+function PhotoUpload({ files, label, onChange, disabled }: { files: File[]; label: string; onChange: (files: File[]) => void; disabled: boolean }) {
+  return <div className="ia-photo-upload"><label><span><Camera aria-hidden="true" size={16} />{label}</span><input accept="image/jpeg,image/png,image/webp" disabled={disabled} multiple onChange={(event) => { onChange([...files, ...Array.from(event.target.files || [])]); event.target.value = ''; }} type="file" /></label><p>JPEG, PNG ou WebP · 10 Mo maximum par photo · jusqu’à 10 photos.</p><PhotoFilePreviews disabled={disabled} files={files} onRemove={(index) => onChange(files.filter((_, fileIndex) => fileIndex !== index))} /></div>;
 }
 
 function CompactAuditText({ text, id }: { text: string; id: string }) {

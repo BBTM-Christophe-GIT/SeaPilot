@@ -8,12 +8,10 @@ export const INTERNAL_AUDIT_PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp';
 const PHOTO_URL_TTL_SECONDS = 60 * 60;
 const EXTENSIONS: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
-export interface AuditPhotoScope {
+export type AuditPhotoScope = {
   companyId: number;
   auditId: string;
-  findingId: string;
-  kind: 'finding' | 'treatment' | 'closure';
-}
+} & ({ findingId: string; kind: 'finding' | 'treatment' | 'closure' } | { kind: 'observation' });
 
 export function photoReferences(photos: readonly AuditPhoto[] = []): Omit<AuditPhoto, 'url'>[] {
   return photos.map(({ id, fileName, storagePath, mimeType, sizeBytes }) => ({ id, fileName, storagePath, mimeType, sizeBytes }));
@@ -59,11 +57,12 @@ export async function uploadAuditPhotos(client: SupabaseClient, scope: AuditPhot
   if (userResult.error) throw userResult.error;
   const actorId = userResult.data.user?.id;
   if (!actorId) throw new Error('Reconnectez-vous avant d’ajouter des photos.');
+  const subjectId = scope.kind === 'observation' ? scope.auditId : scope.findingId;
   const uploaded: AuditPhoto[] = [];
   try {
     for (const file of files) {
       const id = crypto.randomUUID();
-      const storagePath = `${scope.companyId}/${scope.auditId}/${scope.findingId}/${scope.kind}/${actorId}/${id}.${EXTENSIONS[file.type]}`;
+      const storagePath = `${scope.companyId}/${scope.auditId}/${subjectId}/${scope.kind}/${actorId}/${id}.${EXTENSIONS[file.type]}`;
       const result = await client.storage.from(INTERNAL_AUDIT_PHOTO_BUCKET).upload(storagePath, file, { contentType: file.type, upsert: false, cacheControl: '3600' });
       if (result.error) throw result.error;
       uploaded.push({ id, fileName: file.name, storagePath, mimeType: file.type, sizeBytes: file.size, url: '' });

@@ -76,7 +76,7 @@ Le planning conserve le classement par année et affiche une ligne par site, ave
 
 L’onglet Graphique présente un radar des chapitres ISM pour les années N et N−1 du même site. Le pourcentage exclut les N/A ; un chapitre absent ne devient jamais un score nul. Un tableau accessible affiche les mêmes valeurs. Les exports complets PDF et Excel gardent leurs trois sections et la comparaison annuelle.
 
-Le bouton **Imprimer la grille** ouvre un PDF consacré aux questions, consignes, réponses, observations et points de l’audit enregistré. Il permet l’impression depuis le lecteur PDF sans lancer automatiquement une impression physique. Les modifications doivent être enregistrées ou annulées avant impression. Aucun fichier de preuve n’est chargé pour cette grille seule.
+Le bouton **Imprimer la grille** ouvre un PDF consacré aux questions, consignes, réponses, observations, photos de la grille et points de l’audit enregistré. Il permet l’impression depuis le lecteur PDF sans lancer automatiquement une impression physique. Les modifications doivent être enregistrées ou annulées avant impression.
 
 ## Compléments de la version 3.66.0
 
@@ -95,3 +95,13 @@ Voir [la migration, les règles d’accès et les vérifications](./internal-aud
 Le rapport PDF s’ouvre sur une couverture sans en-tête. Elle présente le nom du navire ou du site, la date de réalisation, le score global et le décompte des écarts par type. Les titres complets des chapitres sont disposés autour du radar, à leurs sommets respectifs. L’en-tête intérieur porte le logo BBTM noir et affiche l’année de l’audit. La photo provient du module Navires et suit les mêmes autorisations de lecture. Si aucune image ne peut être chargée, le rapport reste disponible et la couverture le signale.
 
 La grille affiche le score de l’audit, le nombre d’écarts émis et une barre de score à la fin de chaque chapitre. La synthèse sépare la liste des écarts de leur suivi, qui contient les statuts, traitements datés et preuves. La section **Graphique** présente le radar des scores de l’audit et conserve les tableaux de comparaison avec l’année précédente. Les scores indisponibles sont indiqués par **N/A** sur les radars et restent distincts de **0 %**. L’impression de la grille et le téléchargement d’un modèle vierge démarrent directement par la grille.
+
+## Réponses communes et photos de la grille
+
+Dans **Grille d’audit**, ouvrez **Réponse commune** depuis la référence qui porte la réponse à partager. Choisissez les autres références, puis validez. La réponse et l’observation de la ligne de départ s’appliquent à la sélection. Les photos déjà ajoutées aux références choisies sont regroupées. Une modification sur une référence liée s’applique à toutes les autres. Chaque référence garde son barème et ses écarts. Après dissociation, la référence conserve la dernière réponse, l’observation et les photos qu’elle partageait.
+
+La colonne **Photo** permet de joindre la preuve au niveau de la réponse. Après enregistrement, la même photo est visible dans la grille et dans les écarts associés à ses références. Les photos ajoutées directement à un écart ou à son traitement restent accessibles dans leurs sections. Le PDF et le classeur Excel reprennent les références liées et les preuves de la grille.
+
+Appliquer `supabase/migrations/20261127133547_internal_audit_shared_responses_observation_photos.sql` avant le déploiement du client. La migration conserve le contrat de la RPC de sauvegarde. La photo est stockée une seule fois dans le bucket privé des audits. Les gestionnaires peuvent lire les preuves de leurs audits. Les autres profils peuvent consulter une photo commune qui figure sur une référence dont ils peuvent lire un écart. Une photo enregistrée ne peut pas être remplacée par le client et le contenu d’un audit réalisé reste figé.
+
+La suite `supabase/tests/internal_audit_shared_responses_observation_photos_test.sql` vérifie les profils réels, l’isolation par société et par référence, la validation des preuves et la conservation des audits réalisés. Elle utilise des fixtures locales et annule ses écritures.

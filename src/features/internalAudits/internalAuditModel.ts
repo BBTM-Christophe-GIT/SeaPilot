@@ -46,6 +46,8 @@ export interface AuditTemplate {
 export interface AuditAnswer extends AuditQuestion {
   answer: AuditAnswerValue | null;
   observation: string;
+  responseGroupId?: string | null;
+  observationPhotos?: AuditPhoto[];
 }
 
 /** Identities and signature references are captured by the authenticated server workflow. */
@@ -175,7 +177,61 @@ export function scoreBySection(rows: readonly AuditAnswer[]): (AuditScore & { se
 }
 
 export function blankAuditAnswers(rows: readonly AuditQuestion[]): AuditAnswer[] {
-  return rows.map((row) => ({ ...row, answer: null, observation: '' }));
+  return rows.map((row) => ({ ...row, answer: null, observation: '', responseGroupId: null, observationPhotos: [] }));
+}
+
+type AuditResponse = Pick<AuditAnswer, 'answer' | 'observation' | 'observationPhotos'>;
+
+export function updateAuditResponse(rows: AuditAnswer[], rowId: string, patch: Partial<AuditResponse>): AuditAnswer[] {
+  const source = rows.find((row) => row.id === rowId);
+  if (!source) return rows;
+  return rows.map((row) => row.id === rowId || (source.responseGroupId && row.responseGroupId === source.responseGroupId)
+    ? { ...row, ...patch }
+    : row);
+}
+
+export function setAuditResponseReferences(rows: AuditAnswer[], rowId: string, referenceRowIds: readonly string[]): AuditAnswer[] {
+  const source = rows.find((row) => row.id === rowId);
+  if (!source) return rows;
+  const chosenIds = new Set([rowId, ...referenceRowIds]);
+  const chosen = rows.filter((row) => chosenIds.has(row.id));
+  if (rows.every((row) => chosenIds.has(row.id) === (row.id === rowId
+    || Boolean(source.responseGroupId && row.responseGroupId === source.responseGroupId)))) return rows;
+
+  const affectedGroups = new Set(chosen.flatMap((row) => row.responseGroupId ? [row.responseGroupId] : []));
+  const remainingCounts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.responseGroupId && affectedGroups.has(row.responseGroupId) && !chosenIds.has(row.id)) {
+      remainingCounts.set(row.responseGroupId, (remainingCounts.get(row.responseGroupId) ?? 0) + 1);
+    }
+  }
+  const responseGroupId = chosen.length > 1 ? crypto.randomUUID() : null;
+  const observationPhotos = mergeAuditPhotos(source.observationPhotos, ...chosen.map((row) => row.observationPhotos));
+  return rows.map((row) => {
+    if (chosenIds.has(row.id)) {
+      return { ...row, responseGroupId, answer: source.answer, observation: source.observation, observationPhotos };
+    }
+    if (row.responseGroupId && remainingCounts.get(row.responseGroupId) === 1) {
+      return { ...row, responseGroupId: null };
+    }
+    return row;
+  });
+}
+
+export function mergeAuditPhotos(...lists: (readonly AuditPhoto[] | undefined)[]): AuditPhoto[] {
+  const byPath = new Map<string, AuditPhoto>();
+  for (const list of lists) {
+    for (const photo of list ?? []) {
+      if (!byPath.has(photo.storagePath) || (!byPath.get(photo.storagePath)?.url && photo.url)) {
+        byPath.set(photo.storagePath, photo);
+      }
+    }
+  }
+  return [...byPath.values()];
+}
+
+export function getAuditFindingObservationPhotos(audit: InternalAudit | undefined, questionId: string): AuditPhoto[] {
+  return audit?.rows.find((row) => row.id === questionId)?.observationPhotos ?? [];
 }
 
 /** Date-only calculations use UTC to preserve calendar days through DST changes. */

@@ -1,8 +1,8 @@
 // @vitest-environment node
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import type { AuditFinding } from './internalAuditModel';
-import { addAuditFindingTreatment, saveAuditFinding } from './internalAuditQueries';
+import type { AuditFinding, InternalAudit } from './internalAuditModel';
+import { addAuditFindingTreatment, fetchInternalAuditData, saveAuditFinding, saveInternalAudit } from './internalAuditQueries';
 import { downloadAuditPhoto, getAuditPhotoUrl, hydrateAuditPhotoUrls, INTERNAL_AUDIT_PHOTO_BUCKET, photoReferences, uploadAuditPhotos, validateAuditPhotoFiles } from './internalAuditPhotos';
 
 const actorId = '9c000000-0000-0000-0000-000000000001';
@@ -10,6 +10,12 @@ const scope = { companyId: 7, auditId: '9c300000-0000-0000-0000-000000000001', f
 const png = (name = 'preuve.png') => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' });
 const finding: AuditFinding = { id: scope.findingId, companyId: 7, auditId: scope.auditId, questionId: 'q1', reference: '1', severity: 'major', description: 'Écart', assigneePersonId: 42,
   assigneeRole: null, assigneeVesselId: null, assigneeLabel: 'Responsable', openedOn: '2026-10-01', dueOn: '2026-10-08', treatmentDelayValue: 1, treatmentDelayUnit: 'weeks', status: 'open', treatment: '', resolvedAt: null, closedAt: null, photos: [] };
+const gridAudit: InternalAudit = {
+  id: scope.auditId, companyId: scope.companyId, siteId: 'site', templateId: 'grille', templateName: 'Grille audit',
+  templateVersion: 1, year: 2026, plannedOn: '2026-10-01', performedOn: null, auditorName: 'Auditeur', status: 'in_progress', completedAt: null,
+  rows: ['q1', 'q2'].map((id) => ({ id, reference: id, section: 'Audit', question: 'Vérifier', maxPoints: 3, guidance: '',
+    responseGroupId: '9c500000-0000-0000-0000-000000000001', answer: 'incomplet', observation: 'Un document à fournir.' })),
+};
 
 function mockClient() {
   const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -82,6 +88,56 @@ describe('private internal audit image evidence', () => {
     const sentPhotos = mock.rpc.mock.calls[0][1].p_payload.photos;
     expect(sentPhotos[0]).toEqual(photoReferences([oldPhoto])[0]);
     expect(sentPhotos[0]).not.toHaveProperty('url');
+  });
+
+  it('uploads each common observation photo once, then saves and signs the same reference on both lines', async () => {
+    const mock = mockClient();
+    mock.rpc.mockImplementation(async (_name: string, args: { p_payload: InternalAudit }) => ({
+      data: { id: scope.auditId, rows: args.p_payload.rows }, error: null,
+    }));
+    const saved = await saveInternalAudit(mock.client, gridAudit, { q2: [png('commune.png')] });
+    const savedPhoto = saved.rows[0].observationPhotos![0];
+    const path = `${scope.companyId}/${scope.auditId}/${scope.auditId}/observation/${actorId}/${savedPhoto.id}.png`;
+    expect(mock.upload).toHaveBeenCalledExactlyOnceWith(path, expect.any(File), expect.objectContaining({ upsert: false }));
+    expect(mock.rpc).toHaveBeenCalledExactlyOnceWith('internal_audit_save', { p_payload: expect.objectContaining({
+      rows: gridAudit.rows.map((row) => ({ ...row, observationPhotos: photoReferences([savedPhoto]) })),
+    }) });
+    expect(saved.rows[1].observationPhotos).toEqual([savedPhoto]);
+    expect(savedPhoto.url).toBe(`https://signed.example/${path}`);
+
+    mock.rpc.mockResolvedValueOnce({ data: {
+      permissions: { canManage: true },
+      audits: [{ rows: gridAudit.rows.map((row) => ({ ...row, observationPhotos: photoReferences([savedPhoto]) })) }],
+    }, error: null });
+    const reloaded = await fetchInternalAuditData(mock.client);
+    expect(reloaded.audits[0].rows[1].observationPhotos).toEqual([savedPhoto]);
+    expect(mock.createSignedUrls.mock.calls).toEqual([[[path], 3600], [[path], 3600]]);
+  });
+
+  it('rolls back newly uploaded observation photos after an interrupted save', async () => {
+    const mock = mockClient();
+    const error = { code: '55000', message: 'Audit déjà réalisé.' };
+    mock.rpc.mockResolvedValue({ data: null, error });
+    await expect(saveInternalAudit(mock.client, gridAudit, { q1: [png()] })).rejects.toBe(error);
+    expect(mock.remove).toHaveBeenCalledExactlyOnceWith([mock.upload.mock.calls[0][0]]);
+  });
+
+  it('keeps common evidence for a readable finding and leaves unrelated observation photos out of crew exports', async () => {
+    const mock = mockClient();
+    const common = { id: 'common', fileName: 'commune.png', storagePath: 'private/common.png', mimeType: 'image/png', sizeBytes: 8 };
+    const unrelated = { ...common, id: 'other', storagePath: 'private/other.png' };
+    mock.rpc.mockResolvedValue({ data: {
+      permissions: { canManage: false },
+      audits: [{ id: gridAudit.id, rows: [
+        ...gridAudit.rows.map((row) => ({ ...row, observationPhotos: [common] })),
+        { ...gridAudit.rows[0], id: 'q3', responseGroupId: null, observationPhotos: [unrelated] },
+      ] }],
+      findings: [{ id: finding.id, audit_id: gridAudit.id, question_id: 'q2' }],
+    }, error: null });
+    const data = await fetchInternalAuditData(mock.client);
+    expect(mock.createSignedUrls).toHaveBeenCalledExactlyOnceWith([common.storagePath], 3600);
+    expect(data.audits[0].rows[0].observationPhotos).toEqual([{ ...common, url: `https://signed.example/${common.storagePath}` }]);
+    expect(data.audits[0].rows[2].observationPhotos).toEqual([]);
   });
 
   it('checks the server treatment scope before uploading for an assigned account', async () => {

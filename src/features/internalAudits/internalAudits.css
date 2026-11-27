@@ -134,14 +134,14 @@
 .ia-rating-guide { margin: 0 15px 9px; padding: 7px 10px; border-radius: 6px; color: #657e8b; background: #f0f5f7; font-size: .68rem; line-height: 1.5; }
 .ia-grid-scroll { position: relative; overflow-x: auto; min-width: 0; scrollbar-width: thin; }
 .ia-grid-scroll:focus-visible { outline: 3px solid #a8dedd; outline-offset: -3px; }
-.ia-audit-table { width: 100%; min-width: 1280px; border-collapse: collapse; table-layout: fixed; font-size: .73rem; line-height: 1.45; text-align: left; }
+.ia-audit-table { width: 100%; min-width: 1340px; border-collapse: collapse; table-layout: fixed; font-size: .73rem; line-height: 1.45; text-align: left; }
 .ia-col-ref { width: 58px; }
-.ia-col-question { width: 22%; }
-.ia-col-guidance { width: 26%; }
+.ia-col-question { width: 20%; }
+.ia-col-guidance { width: 23%; }
 .ia-col-function { width: 165px; }
 .ia-col-points { width: 61px; }
-.ia-col-answer { width: 143px; }
-.ia-col-observation { width: 20%; }
+.ia-col-answer { width: 174px; }
+.ia-col-photo { width: 70px; }
 .ia-col-actions { width: 113px; }
 .ia-audit-table thead th { padding: 10px 8px; border-block: 1px solid #dce7eb; background: #f6f9fa; color: #637e8a; font-size: .67rem; font-weight: 700; }
 .ia-audit-table .ia-chapter-row th { padding: 8px 12px; border-block: 1px solid #dbe8eb; background: #edf6f6; color: #25717c; font-size: .73rem; font-weight: 750; }
@@ -161,6 +161,10 @@
 .ia-answer-select.is-incomplet { border-color: #dcc597; background: #fff9ed; color: #906514; }
 .ia-answer-select.is-non_conforme { border-color: #dcb0aa; background: #fff5f3; color: #a53c35; }
 .ia-answer-select.is-na { border-color: #c0ced8; background: #f1f5f8; color: #667b8b; }
+.ia-answer-controls { display: flex; align-items: center; gap: 4px; }
+.internal-audits-page .ia-response-link, .internal-audits-page .ia-grid-photo { flex: 0 0 auto; gap: 3px; min-width: 30px; min-height: 30px; padding: 4px 6px; border-radius: 5px; font-size: .68rem; }
+.internal-audits-page .ia-response-link.is-linked { background: #eaf6f6; border-color: #a8cccc; color: #23696e; }
+.internal-audits-page .ia-response-link.is-linked:hover:not(:disabled) { background: #dceded; }
 .ia-question-actions { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 .internal-audits-page .ia-question-actions button { min-height: 29px; gap: 3px; padding: 5px 6px; border-radius: 5px; font-size: .68rem; }
 .internal-audits-page .ia-question-actions .ia-finding-link { justify-content: start; font-size: .63rem; padding: 3px 0; min-height: 22px; }
@@ -250,18 +254,29 @@
 .ia-dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
 .ia-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; border: 0; }
 .ia-form-help { margin-top: 13px !important; color: #6c8491; font-size: .76rem; line-height: 1.6; }
+.ia-response-references { min-width: 0; padding: 0; border: 0; margin: 0; }
+.ia-response-references legend { margin-bottom: 7px; color: #385867; font-size: .77rem; font-weight: 700; }
+.ia-response-references ul { display: grid; max-height: min(42vh, 320px); overflow: auto; overscroll-behavior: contain; padding: 0 5px; margin: 10px 0 0; border: 1px solid #dce7eb; border-radius: 7px; list-style: none; }
+.ia-response-references li + li { border-top: 1px solid #e7eef0; }
+.internal-audits-page .ia-response-references li label { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 8px; padding: 8px 5px; font-weight: 400; }
+.internal-audits-page .ia-response-references li input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--ia-teal); }
+.ia-response-references li small { display: block; margin-top: 2px; color: #657e88; }
+.ia-response-replacement { margin-top: 10px !important; padding: 7px 9px; border-radius: 6px; background: #fff6e6; color: #774a12; font-size: .74rem; }
 .ia-computed-deadline { display: grid; gap: 6px; grid-column: 1 / -1; padding: 10px 12px; border: 1px solid #dce9e9; border-radius: 7px; background: #f2f8f8; color: #315e69; font-size: .8rem; }
 .ia-computed-deadline small { color: #69858e; font-size: .69rem; }
 .ia-photo-upload { padding: 12px; border: 1px dashed #c5d8df; border-radius: 8px; background: #f9fcfc; }
 .ia-photo-upload label > span { display: flex; align-items: center; gap: 6px; }
 .ia-photo-upload p { color: #728993; font-size: .68rem; line-height: 1.6; margin-top: 7px !important; }
-.ia-photo-upload ul { display: flex; gap: 8px; list-style: none; margin: 12px 0 0; padding: 0; flex-wrap: wrap; }
-.ia-photo-upload li { display: flex; gap: 7px; align-items: center; padding: 5px; border: 1px solid #d8e6eb; border-radius: 6px; background: white; max-width: 100%; }
-.ia-photo-upload li img { height: 40px; width: 48px; object-fit: cover; border-radius: 4px; }
-.ia-photo-upload li span { font-size: .69rem; max-width: 160px; overflow-wrap: anywhere; }
+.ia-photo-file-list { display: flex; gap: 8px; list-style: none; margin: 12px 0 0; padding: 0; flex-wrap: wrap; }
+.ia-photo-file-list li { display: flex; gap: 7px; align-items: center; padding: 5px; border: 1px solid #d8e6eb; border-radius: 6px; background: white; max-width: 100%; }
+.ia-photo-file-list li img { height: 40px; width: 48px; object-fit: cover; border-radius: 4px; }
+.ia-photo-file-list li span { font-size: .69rem; max-width: 160px; overflow-wrap: anywhere; }
+.ia-finding-pending-photos > strong { color: #68838f; font-size: .69rem; }
 .ia-photo-gallery { margin-top: 13px; }
+.ia-photo-gallery + .ia-photo-upload, .ia-photo-gallery + .ia-finding-pending-photos { margin-top: 12px; }
 .ia-photo-gallery > strong { color: #68838f; font-size: .69rem; }
 .ia-photo-gallery > div { display: flex; align-items: start; gap: 10px; flex-wrap: wrap; margin-top: 7px; }
+.ia-photo-gallery-item { display: flex; align-items: start; gap: 4px; max-width: 100%; }
 .ia-photo-gallery a { display: grid; gap: 5px; padding: 5px; border: 1px solid #dce7eb; border-radius: 7px; width: 132px; color: #587989; text-decoration: none; }
 .ia-photo-gallery a:focus-visible { outline: 3px solid #a8dedd; outline-offset: 2px; }
 .ia-photo-gallery img { width: 120px; height: 82px; object-fit: cover; border-radius: 4px; }
