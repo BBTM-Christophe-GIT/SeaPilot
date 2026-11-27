@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fetchFleetVessel, resolveFleetVesselPhotoUrl, type FleetVessel } from '../fleet/fleetQueries';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { InternalAuditsPage } from './InternalAuditsPage';
@@ -12,6 +13,11 @@ import { createInternalAuditPreviewData } from './internalAuditPreview';
 const queries = vi.hoisted(() => ({ fetchInternalAuditData: vi.fn(), saveAuditTemplate: vi.fn(), deleteAuditTemplate: vi.fn(), loadAuditParticipantSignature: vi.fn(), saveInternalAudit: vi.fn(), saveAuditFinding: vi.fn(), saveAuditSite: vi.fn(), addAuditFindingTreatment: vi.fn() }));
 const reportExports = vi.hoisted(() => ({ pdf: vi.fn(), workbook: vi.fn(), print: vi.fn(), grid: vi.fn(), template: vi.fn() }));
 vi.mock('./internalAuditQueries', () => queries);
+vi.mock('../fleet/fleetQueries', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../fleet/fleetQueries')>(),
+  fetchFleetVessel: vi.fn(),
+  resolveFleetVesselPhotoUrl: vi.fn(),
+}));
 vi.mock('./internalAuditReport', () => ({ downloadInternalAuditReport: reportExports.pdf, openInternalAuditGridPrintPreview: reportExports.print, downloadInternalAuditGridReport: reportExports.grid, downloadInternalAuditTemplateReport: reportExports.template }));
 vi.mock('./internalAuditWorkbook', () => ({ downloadInternalAuditWorkbook: reportExports.workbook }));
 
@@ -716,10 +722,26 @@ describe('InternalAuditsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
     await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
     await waitFor(() => expect(reportExports.pdf).toHaveBeenCalledOnce());
-    expect(reportExports.pdf.mock.calls[0][0]).toMatchObject({ audit: { id: fixture.audits[1].id }, site: { name: 'LE ROZEL' }, findings: fixture.findings, loadPhoto: expect.any(Function) });
+    expect(reportExports.pdf.mock.calls[0][0]).toMatchObject({ audit: { id: fixture.audits[1].id }, site: { name: 'LE ROZEL' }, findings: fixture.findings, loadPhoto: expect.any(Function), loadVesselPhoto: expect.any(Function) });
+    const site = fixture.sites[3];
+    const vessel = { id: site.vesselId, companyId: site.companyId, name: site.name, assetKind: 'vessel', photoUrl: '/vessels/rozel.png' } as FleetVessel;
+    vi.mocked(fetchFleetVessel).mockResolvedValueOnce(vessel);
+    vi.mocked(resolveFleetVesselPhotoUrl).mockResolvedValueOnce('https://example.test/signed-photo');
+    const fetchPhoto = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(['navire'], { type: 'image/png' }) } as Response);
+    try {
+      const input = reportExports.pdf.mock.calls[0][0];
+      await expect(input.loadVesselPhoto()).resolves.toBe('data:image/png;base64,bmF2aXJl');
+      expect(fetchFleetVessel).toHaveBeenCalledWith(expect.anything(), site.vesselId);
+      expect(fetchPhoto.mock.calls).toEqual([['https://example.test/signed-photo'], [vessel.photoUrl]]);
+    } finally {
+      fetchPhoto.mockRestore();
+    }
     await user.selectOptions(screen.getByRole('combobox', { name: 'Format du rapport' }), 'xlsx');
     await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));
     await waitFor(() => expect(reportExports.workbook).toHaveBeenCalledOnce());
+    expect(reportExports.workbook.mock.calls[0][0]).not.toHaveProperty('loadVesselPhoto');
     await user.selectOptions(screen.getAllByRole('combobox', { name: /^Réponse / })[0], 'na');
     expect(screen.getByRole('button', { name: 'Exporter le rapport' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Exporter le rapport' }));

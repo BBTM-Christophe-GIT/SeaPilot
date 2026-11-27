@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import { describe, expect, it, vi } from 'vitest';
 import { BBTM_AUDIT_QUESTIONS } from './internalAuditSeed';
+import { formatAuditDate } from './internalAuditModel';
 import type { AuditAnswer, AuditFinding, AuditFindingEvent, AuditParticipant, AuditPhoto, AuditSite, AuditTemplate, InternalAudit } from './internalAuditModel';
 import {
   auditReportPercent, auditReportTimestampDay, buildInternalAuditGridReport, buildInternalAuditReport, buildInternalAuditTemplateReport,
@@ -56,6 +57,13 @@ async function pdfProof(blob: Blob) {
     .map((stream) => Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1')).join('\n');
   const images = streams.filter((stream) => stream.dict.get(PDFName.of('Subtype'))?.toString() === '/Image');
   return { document, content, images };
+}
+
+function pageContent(document: PDFDocument, index: number) {
+  const contents = document.getPage(index).node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map((reference) => document.context.lookup(reference)) : [contents];
+  return streams.filter((stream): stream is PDFRawStream => stream instanceof PDFRawStream)
+    .map((stream) => Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1')).join('\n');
 }
 
 describe('internal audit report data', () => {
@@ -131,6 +139,10 @@ describe('internal audit PDF export', () => {
     expect(proof.content.includes('03 - Graphique')).toBe(sections.includes('chart'));
     expect(proof.content.includes('TRACE_SECTION_GRID')).toBe(sections.includes('grid'));
     expect(proof.content.includes('TRACE_SECTION_SUMMARY')).toBe(sections.includes('summary'));
+    const cover = pageContent(proof.document, 0);
+    expect(cover).toContain('Score global de');
+    expect(cover).toContain('LE ROZEL');
+    expect(cover).not.toContain('TRACE_SECTION_GRID');
     expect(loadPhoto).toHaveBeenCalledTimes(sections.includes('summary') ? 1 : 0);
     expect(loadSignature).toHaveBeenCalledOnce();
     expect(loadSignature).toHaveBeenCalledWith(participants[0]);
@@ -270,10 +282,46 @@ describe('internal audit PDF export', () => {
     expect(proof.content).toContain('03 - Graphique');
     expect(proof.content).toContain('Aucun audit');
     expect(proof.content).toContain('2025');
-    const chapterBlocks = proof.content.split('BT').filter((block) => block.includes('(5. Responsabilit'));
-    expect(chapterBlocks.length).toBeGreaterThan(1);
-    // A page header must not change the following chart label to its 13-point bold font.
-    expect(chapterBlocks.every((block) => Number(block.match(/\/F\d+ ([\d.]+) Tf/)?.[1]) <= 8.5)).toBe(true);
+    expect(proof.content.match(/Score du chapitre - /g)).toHaveLength(new Set(rows.map((row) => row.section)).size);
+    const listIndex = proof.content.indexOf('02.1 - Liste');
+    const followUpIndex = proof.content.indexOf('02.2 - Suivi');
+    expect(listIndex).toBeGreaterThan(-1);
+    expect(followUpIndex).toBeGreaterThan(listIndex);
+    expect(proof.content.indexOf('TRACE_TREATMENT')).toBeGreaterThan(followUpIndex);
+    const chart = proof.document.getPages().map((_, index) => pageContent(proof.document, index))
+      .find((page) => page.includes('03 - Graphique') && page.includes('Score global'));
+    expect(chart).toContain('5. Responsabilit');
+    expect(chart).toContain('capitaine');
+  });
+  it('embeds the black BBTM logo and the vessel photo on the dated audit cover', async () => {
+    const logo = await readFile('public/bbtm-report-logo.png');
+    const qaDirectory = process.env.AUDIT_REPORT_QA_OUTPUT;
+    const image = qaDirectory ? await readFile(join(qaDirectory, 'qa-photo-base64.txt'), 'utf8') : png;
+    const loadVesselPhoto = vi.fn(async () => image);
+    const fetchLogo = vi.fn(async () => new Response(new Uint8Array(logo)));
+    vi.stubGlobal('document', { baseURI: 'https://seapilot.test/' });
+    vi.stubGlobal('fetch', fetchLogo);
+    try {
+      const report = await buildInternalAuditReport(input({ loadVesselPhoto, sections: ['grid', 'summary', 'chart'] }));
+      const proof = await pdfProof(report.blob);
+      const cover = pageContent(proof.document, 0);
+      expect(fetchLogo).toHaveBeenCalledWith('/bbtm-report-logo.png');
+      expect(loadVesselPhoto).toHaveBeenCalledOnce();
+      expect(cover.match(/\/I\d+ Do/g)).toHaveLength(2);
+      expect(pageContent(proof.document, 1).match(/\/I\d+ Do/g)?.length).toBeGreaterThan(0);
+      expect(cover).toContain('Score global de');
+      expect(cover).toContain(formatAuditDate(audit.performedOn!));
+      expect(cover).toContain('capitaine');
+      expect(cover).not.toContain('Photo du navire indisponible');
+      await saveQaReport('audit-vessel-cover.pdf', report.blob);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it('builds a cover for a vessel whose fleet photo cannot be read', async () => {
+    const report = await buildInternalAuditReport(input({ sections: ['chart'], loadVesselPhoto: async () => 'data:image/png;base64,AA==' }));
+    const proof = await pdfProof(report.blob);
+    expect(pageContent(proof.document, 0)).toContain('Photo du navire indisponible');
   });
   it('embeds finding and treatment photos and handles very long user-entered text across pages', async () => {
     const qaDirectory = process.env.AUDIT_REPORT_QA_OUTPUT;

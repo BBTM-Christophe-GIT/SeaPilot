@@ -4,6 +4,8 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { AppDialog } from '../../components/AppDialog';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { compareFleetAssets, fleetIllustration } from '../fleet/fleetDisplay';
+import { resolveFleetCoverPhotos } from '../fleet/fleetMedia';
+import { fetchFleetVessel } from '../fleet/fleetQueries';
 import {
   annualAuditWindow, auditDueOnFromDuration, blankAuditAnswers, compareAuditScores, completionIssues, defaultFindingDuration, findingIssues, plannedAuditDateIssues, planningStatus, scoreAudit,
   type AuditAnswer, type AuditAnswerValue, type AuditAssigneeRole, type AuditDeadlineUnit, type AuditFinding, type AuditFindingSeverity, type AuditPhoto,
@@ -65,6 +67,32 @@ async function previewPhotos(files: File[]): Promise<AuditPhoto[]> {
   }));
 }
 function photoDataUrl(blob: Blob): Promise<string> { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('La photo n’a pas pu être téléchargée.')); reader.readAsDataURL(blob); }); }
+
+async function loadAuditVesselPhoto(client: AppShellOutletContext['client'], site: AuditSite, previewMode: boolean): Promise<string | null> {
+  if (site.kind !== 'vessel' || site.vesselId === null) return null;
+
+  let photoUrls: string[];
+  if (previewMode) {
+    photoUrls = [fleetIllustration(site)].filter(Boolean);
+  } else {
+    const vessel = await fetchFleetVessel(client, site.vesselId);
+    if (!vessel || vessel.companyId !== site.companyId || vessel.assetKind !== 'vessel') return null;
+    photoUrls = await resolveFleetCoverPhotos(client, vessel);
+  }
+
+  for (const url of photoUrls) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const photo = await response.blob();
+      if (photo.size && PHOTO_TYPES.includes(photo.type)) return await photoDataUrl(photo);
+    } catch {
+      // Try the next Navires image when the source is unavailable.
+    }
+  }
+  return null;
+}
+
 function deltaLabel(value: number | null): string { return value === null ? '—' : `${value > 0 ? '+' : ''}${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} pts`; }
 
 function HrFunctionSelect({ value, functions, onChange, disabled, label = 'Fonction RH' }: { value?: string; functions: string[]; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
@@ -294,7 +322,14 @@ export function InternalAuditsPage() {
     if (!data || !selectedAudit || !currentSite || hasUnsavedChanges || (exportFormat === 'pdf' && !reportSections.length)) return;
     await mutate(async () => {
       const input = { audit: selectedAudit, site: currentSite, audits: data.audits, findings: data.findings.filter((finding) => finding.auditId === selectedAudit.id), events: data.events, sections: reportSections, sortByHrFunction, loadPhoto: context.previewMode ? undefined : async (photo: AuditPhoto) => photoDataUrl(await downloadAuditPhoto(context.client, photo)), loadSignature: context.previewMode ? undefined : async (participant: AuditParticipant) => loadAuditParticipantSignature(context.client, participant) };
-      if (exportFormat === 'pdf') await downloadInternalAuditReport(input); else await downloadInternalAuditWorkbook(input);
+      if (exportFormat === 'pdf') {
+        await downloadInternalAuditReport({
+          ...input,
+          loadVesselPhoto: currentSite.kind === 'vessel' ? () => loadAuditVesselPhoto(context.client, currentSite, context.previewMode) : undefined,
+        });
+      } else {
+        await downloadInternalAuditWorkbook(input);
+      }
     }, `Rapport ${exportFormat === 'pdf' ? 'PDF' : 'Excel'} exporté.`);
   }
   async function printGrid() {
