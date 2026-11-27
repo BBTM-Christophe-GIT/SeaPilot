@@ -252,6 +252,33 @@ describe('internal audit PDF export', () => {
     expect(report.pageCount).toBeGreaterThan(3);
     if (process.env.AUDIT_REPORT_QA_OUTPUT) await writeFile(join(process.env.AUDIT_REPORT_QA_OUTPUT, 'audit-grid-only.pdf'), new Uint8Array(await report.blob.arrayBuffer()));
   });
+  it('embeds a shared observation photo once in the printable grid and includes it in a summary-only report', async () => {
+    const sharedPhoto = { ...photo, fileName: 'QA_PHOTO_COMMUNE.png' };
+    const unrelatedPhoto = { ...photo, id: 'unrelated', storagePath: '1/audit/other.png', fileName: 'QA_PHOTO_AUTRE.png' };
+    const linkedRows: AuditAnswer[] = [
+      ...rows.slice(0, 2).map((row) => ({ ...row, answer: 'incomplet' as const, observation: 'Observation commune',
+        responseGroupId: 'group', observationPhotos: [sharedPhoto] })),
+      { ...rows[2], observationPhotos: [unrelatedPhoto] },
+    ];
+    const loadPhoto = vi.fn(async () => png);
+    const reportInput = input({ audit: { ...audit, rows: linkedRows }, loadPhoto });
+    const generatedGrid = await buildInternalAuditGridReport(reportInput);
+    const grid = await pdfProof(generatedGrid.blob);
+    expect(grid.content).toContain('QA_PHOTO_COMMUNE.png');
+    expect(grid.content).toContain('Photos de la grille');
+    expect(grid.content.match(/\/I\d+ Do/g)).toHaveLength(2);
+    expect(loadPhoto.mock.calls).toEqual([[sharedPhoto], [unrelatedPhoto]]);
+    const data = internalAuditReportData(reportInput);
+    expect(data.questions[0].sharedReferences).toEqual(linkedRows.slice(0, 2).map((row) => row.reference));
+    expect(data.questions.slice(0, 2).map(({ earnedPoints }) => earnedPoints)).toEqual([1.5, 1.5]);
+    expect(data.observationEvidence[0].references).toEqual(new Set(linkedRows.slice(0, 2).map((row) => row.reference)));
+    loadPhoto.mockClear();
+    const summary = await pdfProof((await buildInternalAuditReport({ ...reportInput, sections: ['summary'] })).blob);
+    expect(summary.content).toContain('QA_PHOTO_COMMUNE.png');
+    expect(summary.content).not.toContain('QA_PHOTO_AUTRE.png');
+    expect(loadPhoto.mock.calls).toEqual([[sharedPhoto]]);
+    await saveQaReport('audit-grid-common-photo.pdf', generatedGrid.blob);
+  });
   it('reserves a preview during the click and never invokes physical printing', async () => {
     const preview = { opener: {}, document: { title: '', body: { textContent: '' } }, location: { replace: vi.fn() }, close: vi.fn(), closed: false, print: vi.fn() };
     const open = vi.fn(() => preview);

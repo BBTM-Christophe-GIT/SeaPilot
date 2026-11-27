@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AuditFinding, AuditFindingEvent, AuditFindingStatus, AuditParticipant, AuditQuestion, AuditSite,
+  AuditAnswer, AuditFinding, AuditFindingEvent, AuditFindingStatus, AuditParticipant, AuditPhoto, AuditQuestion, AuditSite,
   AuditTemplate, InternalAudit,
 } from './internalAuditModel';
-import { discardAuditPhotoUploads, hydrateAuditPhotoUrls, mapAuditPhotos, photoReferences, uploadAuditPhotos } from './internalAuditPhotos';
+import { updateAuditResponse } from './internalAuditModel';
+import { discardAuditPhotoUploads, hydrateAuditPhotoUrls, INTERNAL_AUDIT_PHOTO_MAX_FILES, mapAuditPhotos, photoReferences, uploadAuditPhotos } from './internalAuditPhotos';
 
 export interface AuditPersonOption {
   id: number;
@@ -46,7 +47,10 @@ export function mapInternalAudit(row: Row): InternalAudit {
   return { id: text(row.id), companyId: Number(row.company_id), siteId: text(row.site_id), templateId: text(row.template_id),
     templateName: text(row.template_name), templateVersion: Number(row.template_version), year: Number(row.year),
     plannedOn: text(row.planned_on), performedOn: nullableText(row.performed_on), auditorName: text(row.auditor_name),
-    status: row.status as InternalAudit['status'], rows: rows(row.rows) as unknown as InternalAudit['rows'], completedAt: nullableText(row.completed_at),
+    status: row.status as InternalAudit['status'], rows: rows(row.rows).map((answer) => {
+      const { observationPhotos, ...fields } = answer;
+      return { ...(fields as unknown as AuditAnswer), ...(Array.isArray(observationPhotos) ? { observationPhotos: mapAuditPhotos(observationPhotos) } : {}) };
+    }), completedAt: nullableText(row.completed_at),
     participants: rows(row.participants).map(mapAuditParticipant),
     participantPersonIds: Array.isArray(row.participantPersonIds) ? row.participantPersonIds.map(Number) : rows(row.participants).filter((person) => person.source === 'selected').map((person) => Number(person.personId)) };
 }
@@ -118,8 +122,33 @@ export async function fetchInternalAuditData(client: SupabaseClient): Promise<In
     hrFunctions: Array.isArray(data.hrFunctions) ? data.hrFunctions.map(text) : [],
     permissions: { canManage: permissions.canManage === true, treatableFindingIds: Array.isArray(permissions.treatableFindingIds) ? permissions.treatableFindingIds.map(text) : [] },
   };
-  await hydrateAuditPhotoUrls(client, [...result.findings.flatMap((finding) => finding.photos || []), ...result.events.flatMap((event) => event.photos || [])]);
-  await hydrateParticipantSignatures(client, result.audits);
+  if (!result.permissions.canManage) {
+    const visibleQuestions = new Map<string, Set<string>>();
+    for (const finding of result.findings) {
+      const questions = visibleQuestions.get(finding.auditId) ?? new Set<string>();
+      questions.add(finding.questionId);
+      visibleQuestions.set(finding.auditId, questions);
+    }
+    for (const audit of result.audits) {
+      const questions = visibleQuestions.get(audit.id);
+      const visiblePaths = new Set(audit.rows
+        .filter((row) => questions?.has(row.id))
+        .flatMap((row) => (row.observationPhotos ?? []).map((photo) => photo.storagePath)));
+      for (const row of audit.rows) {
+        if (row.observationPhotos) {
+          row.observationPhotos = row.observationPhotos.filter((photo) => visiblePaths.has(photo.storagePath));
+        }
+      }
+    }
+  }
+  await Promise.all([
+    hydrateAuditPhotoUrls(client, [
+      ...result.audits.flatMap((audit) => audit.rows.flatMap((row) => row.observationPhotos ?? [])),
+      ...result.findings.flatMap((finding) => finding.photos ?? []),
+      ...result.events.flatMap((event) => event.photos ?? []),
+    ]),
+    hydrateParticipantSignatures(client, result.audits),
+  ]);
   return result;
 }
 
@@ -151,7 +180,11 @@ export async function deleteAuditTemplate(client: SupabaseClient, templateId: st
   return mapAuditTemplate(await rpc(client, 'internal_audit_archive_template', { p_template_id: templateId, p_version: version }));
 }
 
-export async function saveInternalAudit(client: SupabaseClient, audit: InternalAudit): Promise<InternalAudit> {
+export async function saveInternalAudit(
+  client: SupabaseClient,
+  audit: InternalAudit,
+  observationPhotoFiles: Readonly<Record<string, readonly File[]>> = {},
+): Promise<InternalAudit> {
   validateQuestions(audit.rows);
   if (!audit.plannedOn || !audit.siteId || !audit.templateId || !Number.isInteger(audit.year)) throw new Error('Le site, la grille et la date prévue sont obligatoires.');
   if (audit.status === 'completed' && (!audit.performedOn || !audit.auditorName.trim() || audit.rows.some((row) => !row.answer))) {
@@ -161,10 +194,50 @@ export async function saveInternalAudit(client: SupabaseClient, audit: InternalA
   if (participantPersonIds.some((id) => !Number.isInteger(id) || id < 1) || new Set(participantPersonIds).size !== participantPersonIds.length) {
     throw new Error('Choisissez des participants RH distincts et valides.');
   }
-  const payload = { ...audit, participantPersonIds };
-  delete payload.participants;
-  const saved = mapInternalAudit(await rpc(client, 'internal_audit_save', { p_payload: payload }));
-  await hydrateParticipantSignatures(client, [saved]);
+  const answersById = new Map(audit.rows.map((row) => [row.id, row]));
+  const uploadBatches = new Map<string, { row: AuditAnswer; files: File[] }>();
+  for (const [rowId, files] of Object.entries(observationPhotoFiles)) {
+    if (!files.length) continue;
+    const row = answersById.get(rowId);
+    if (!row) throw new Error('La référence des photos ne figure pas dans cet audit.');
+    const key = row.responseGroupId ? `group:${row.responseGroupId}` : `row:${row.id}`;
+    const batch = uploadBatches.get(key) ?? { row, files: [] };
+    batch.files.push(...files);
+    uploadBatches.set(key, batch);
+  }
+  for (const { row, files } of uploadBatches.values()) {
+    if (files.length > INTERNAL_AUDIT_PHOTO_MAX_FILES) throw new Error('Ajoutez au maximum 10 nouvelles photos par réponse.');
+    if ((row.observationPhotos?.length ?? 0) + files.length > 100) throw new Error('Une réponse peut contenir au maximum 100 photos.');
+  }
+
+  const uploaded: AuditPhoto[] = [];
+  let answers = audit.rows;
+  let saved: InternalAudit;
+  try {
+    for (const { row, files } of uploadBatches.values()) {
+      const photos = await uploadAuditPhotos(client, { companyId: audit.companyId, auditId: audit.id, kind: 'observation' }, files);
+      uploaded.push(...photos);
+      answers = updateAuditResponse(answers, row.id, { observationPhotos: [...(row.observationPhotos ?? []), ...photos] });
+    }
+    const payload = {
+      ...audit,
+      participantPersonIds,
+      rows: answers.map((answer) => ({
+        ...answer,
+        ...(answer.observationPhotos ? { observationPhotos: photoReferences(answer.observationPhotos) } : {}),
+      })),
+    };
+    delete payload.participants;
+    saved = mapInternalAudit(await rpc(client, 'internal_audit_save', { p_payload: payload }));
+  } catch (error) {
+    const cleaned = await discardAuditPhotoUploads(client, uploaded);
+    if (!cleaned) throw new Error('Certaines photos sont conservées. Rechargez l’audit avant de réessayer.', { cause: error });
+    throw error;
+  }
+  await Promise.all([
+    hydrateAuditPhotoUrls(client, saved.rows.flatMap((row) => row.observationPhotos ?? [])),
+    hydrateParticipantSignatures(client, [saved]),
+  ]);
   return saved;
 }
 

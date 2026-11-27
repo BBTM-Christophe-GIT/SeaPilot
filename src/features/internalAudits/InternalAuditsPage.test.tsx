@@ -6,7 +6,7 @@ import { fetchFleetVessel, resolveFleetVesselPhotoUrl, type FleetVessel } from '
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
 import { InternalAuditsPage } from './InternalAuditsPage';
-import { auditDueOnFromDuration, todayAuditParis, type AuditFinding, type AuditFindingStatus, type AuditTemplate, type InternalAudit } from './internalAuditModel';
+import { auditDueOnFromDuration, todayAuditParis, updateAuditResponse, type AuditFinding, type AuditFindingStatus, type AuditPhoto, type AuditTemplate, type InternalAudit } from './internalAuditModel';
 import type { InternalAuditData } from './internalAuditQueries';
 import { createInternalAuditPreviewData } from './internalAuditPreview';
 
@@ -514,6 +514,8 @@ describe('InternalAuditsPage', () => {
   it('uses authenticated Capitaine permissions for treatment and keeps audit answers read-only', async () => {
     const user = userEvent.setup();
     fixture.permissions = { canManage: false, treatableFindingIds: [fixture.findings[0].id] };
+    const auditedRow = fixture.audits[1].rows[0];
+    auditedRow.observationPhotos = [{ id: 'evidence', fileName: 'observation.png', storagePath: 'observation.png', mimeType: 'image/png', sizeBytes: 8, url: 'blob:observation' }];
     renderPage(['capitaine']);
     await screen.findByRole('heading', { name: 'Audit ISM Interne' });
     expect(screen.queryByRole('button', { name: /^Planifier / })).not.toBeInTheDocument();
@@ -521,7 +523,13 @@ describe('InternalAuditsPage', () => {
     for (const answer of screen.getAllByRole('combobox', { name: /^Réponse / })) expect(answer).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Enregistrer les réponses' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Émettre un écart / })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: `Photos · ${auditedRow.reference}` }));
+    const gallery = screen.getByRole('dialog');
+    expect(within(gallery).getByRole('img', { name: 'observation.png' })).toBeInTheDocument();
+    expect(within(gallery).queryByLabelText('Ajouter des photos')).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    expect(screen.getByRole('img', { name: 'observation.png' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Suivre le traitement' }));
     expect(screen.queryByRole('option', { name: 'Clôturé' })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Avancement' }), 'resolved');
@@ -610,6 +618,58 @@ describe('InternalAuditsPage', () => {
     expect(screen.getAllByText('0 %', { exact: true }).length).toBeGreaterThan(1);
     expect(screen.queryByText('Absent', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Scores par chapitre : audit 2026 et année 2025' })).toBeInTheDocument();
+  });
+
+  it('links references, saves their photo once and shows it in observations and the linked finding', async () => {
+    const user = userEvent.setup();
+    const [first, second] = fixture.audits[1].rows;
+    Object.assign(first, { answer: 'incomplet', observation: 'Essai à bord' });
+    Object.assign(second, { answer: 'conforme', observation: 'Ancienne observation' });
+    const file = new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'preuve-commune.png', { type: 'image/png' });
+    const uploaded: AuditPhoto = { id: 'evidence', fileName: file.name, storagePath: 'audit/evidence', mimeType: file.type, sizeBytes: file.size, url: 'blob:evidence' };
+    queries.saveInternalAudit.mockImplementationOnce(async (_client, audit: InternalAudit, files: Record<string, File[]>) => {
+      const saved = { ...audit, rows: Object.keys(files).reduce((rows, rowId) => updateAuditResponse(rows, rowId, { observationPhotos: [uploaded] }), audit.rows) };
+      fixture.audits = fixture.audits.map((item) => item.id === audit.id ? saved : item);
+      return saved;
+    });
+
+    renderPage();
+    await screen.findByRole('heading', { name: 'Audit ISM Interne' });
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    expect(screen.getByRole('columnheader', { name: 'Photo' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: `Réponse commune · ${first.reference}` }));
+    const links = screen.getByRole('dialog');
+    const otherReference = within(links).getByRole('checkbox', { name: `${second.reference} ${second.question}` });
+    await user.click(otherReference);
+    expect(within(links).getByRole('status')).toHaveTextContent(second.reference);
+    await user.click(within(links).getByRole('button', { name: 'Appliquer aux références' }));
+    expect(screen.getByRole('combobox', { name: `Réponse ${second.reference}` })).toHaveValue('incomplet');
+    expect(screen.getByRole('textbox', { name: `Observations · ${second.reference}` })).toHaveValue('Essai à bord');
+    await user.selectOptions(screen.getByRole('combobox', { name: `Réponse ${second.reference}` }), 'non_conforme');
+    expect(screen.getByRole('combobox', { name: `Réponse ${first.reference}` })).toHaveValue('non_conforme');
+
+    await user.click(screen.getByRole('button', { name: `Photos · ${second.reference}` }));
+    const photos = screen.getByRole('dialog');
+    await user.upload(within(photos).getByLabelText('Ajouter des photos'), file);
+    await user.click(within(photos).getByRole('button', { name: 'Appliquer les photos' }));
+    expect(screen.getByRole('button', { name: `Photos · ${first.reference}` })).toHaveTextContent('1');
+    await user.click(screen.getByRole('button', { name: `Émettre un écart ${first.reference}` }));
+    const finding = screen.getByRole('dialog');
+    expect(within(finding).getByRole('textbox', { name: 'Description du constat' })).toHaveValue('Essai à bord');
+    expect(within(finding).getByRole('img', { name: `Aperçu ${file.name}` })).toBeInTheDocument();
+    await user.click(within(finding).getByRole('button', { name: 'Annuler' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer les réponses' }));
+    await waitFor(() => expect(queries.saveInternalAudit).toHaveBeenCalledOnce());
+    const [, savedDraft, queued] = queries.saveInternalAudit.mock.calls[0];
+    expect(savedDraft.rows[0].responseGroupId).toBeTruthy();
+    expect(savedDraft.rows[1].responseGroupId).toBe(savedDraft.rows[0].responseGroupId);
+    expect(savedDraft.rows.map((row: InternalAudit['rows'][number]) => row.maxPoints)).toEqual([first.maxPoints, second.maxPoints]);
+    expect(queued).toEqual({ [first.id]: [file] });
+    await user.click(screen.getByRole('button', { name: /^Synthèse/ }));
+    expect(await screen.findByRole('img', { name: file.name })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Grille d’audit' }));
+    await user.click(screen.getByRole('button', { name: `Photos · ${second.reference}` }));
+    expect(within(screen.getByRole('dialog')).getByRole('img', { name: file.name })).toBeInTheDocument();
   });
 
   it('starts a planned audit with the Paris date and displays guidance in the compact question row', async () => {

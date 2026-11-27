@@ -2,7 +2,7 @@ import type { AuditAnswer, AuditFinding, AuditFindingEvent, AuditParticipant, Au
 import type { CellHookData, RowInput } from 'jspdf-autotable';
 import {
   AUDIT_ANSWER_LABELS, AUDIT_STATUS_LABELS, FINDING_SEVERITY_LABELS, FINDING_STATUS_LABELS,
-  blankAuditAnswers, compareAuditScores, formatAuditDate, scoreAudit, scoreBySection, todayAuditParis,
+  blankAuditAnswers, compareAuditScores, formatAuditDate, getAuditFindingObservationPhotos, scoreAudit, scoreBySection, todayAuditParis,
 } from './internalAuditModel';
 import { drawInternalAuditRadar, internalAuditScoreColor } from './internalAuditRadar';
 
@@ -36,12 +36,19 @@ export interface InternalAuditReportQuestion {
   answerLabel: string;
   earnedPoints: number | null;
   pointsLabel: string;
+  sharedReferences: string[];
 }
 
 export interface InternalAuditReportFinding {
   finding: AuditFinding;
   question: AuditAnswer | null;
+  observationPhotos: AuditPhoto[];
   events: AuditFindingEvent[];
+}
+
+interface ObservationEvidence {
+  photo: AuditPhoto;
+  references: Set<string>;
 }
 
 export interface InternalAuditReportData {
@@ -49,6 +56,7 @@ export interface InternalAuditReportData {
   draft: boolean;
   questions: InternalAuditReportQuestion[];
   findings: InternalAuditReportFinding[];
+  observationEvidence: ObservationEvidence[];
   score: ReturnType<typeof scoreAudit>;
   comparison: ReturnType<typeof compareAuditScores>;
 }
@@ -71,6 +79,21 @@ export function internalAuditReportFilename(audit: InternalAudit, site: AuditSit
   return `Audit_ISM_Interne_${slug || 'Site'}_${audit.year}${audit.status === 'completed' ? '' : '_Brouillon'}.pdf`;
 }
 
+function evidenceByReference() {
+  const evidence = new Map<string, ObservationEvidence>();
+  return {
+    add(photos: readonly AuditPhoto[], reference: string) {
+      for (const photo of photos) {
+        const key = photo.storagePath || photo.id;
+        const entry = evidence.get(key) ?? { photo, references: new Set<string>() };
+        entry.references.add(reference);
+        evidence.set(key, entry);
+      }
+    },
+    list() { return [...evidence.values()]; },
+  };
+}
+
 /** One mapping is shared by printable and spreadsheet exports. */
 export function internalAuditReportData(input: InternalAuditReportInput): InternalAuditReportData {
   if (input.site.id !== input.audit.siteId || input.site.companyId !== input.audit.companyId) {
@@ -78,6 +101,17 @@ export function internalAuditReportData(input: InternalAuditReportInput): Intern
   }
   internalAuditReportSections(input.sections);
   const findings = input.findings.filter((finding) => finding.auditId === input.audit.id && finding.companyId === input.audit.companyId);
+  const groupedReferences = new Map<string, Set<string>>();
+  const observationEvidence = evidenceByReference();
+  for (const [index, row] of input.audit.rows.entries()) {
+    const reference = row.reference.trim() || `Question ${index + 1}`;
+    observationEvidence.add(row.observationPhotos ?? [], reference);
+    if (row.responseGroupId) {
+      const references = groupedReferences.get(row.responseGroupId) ?? new Set<string>();
+      references.add(reference);
+      groupedReferences.set(row.responseGroupId, references);
+    }
+  }
   const questionRows = [...input.audit.rows];
   if (input.sortByHrFunction) questionRows.sort((left, right) => {
     const leftFunction = left.hrFunction?.trim() || '';
@@ -89,10 +123,11 @@ export function internalAuditReportData(input: InternalAuditReportInput): Intern
     draft: input.audit.status !== 'completed',
     score: scoreAudit(input.audit.rows),
     comparison: compareAuditScores(input.audit, input.audits),
+    observationEvidence: observationEvidence.list(),
     questions: questionRows.map((row) => {
       const earnedPoints = row.answer === 'conforme' ? row.maxPoints : row.answer === 'incomplet' ? row.maxPoints / 2 : row.answer === 'non_conforme' ? 0 : null;
       return {
-        row, earnedPoints,
+        row, earnedPoints, sharedReferences: [...(groupedReferences.get(row.responseGroupId ?? '') ?? [])],
         answerLabel: row.answer === null ? 'Non renseigné' : AUDIT_ANSWER_LABELS[row.answer],
         pointsLabel: row.answer === 'na' ? 'Hors calcul (N/A)' : row.answer === null ? `Barème : ${auditReportNumber(row.maxPoints)}`
           : `${auditReportNumber(earnedPoints ?? 0)} / ${auditReportNumber(row.maxPoints)} points`,
@@ -101,6 +136,7 @@ export function internalAuditReportData(input: InternalAuditReportInput): Intern
     findings: findings.map((finding) => ({
       finding,
       question: input.audit.rows.find((row) => row.id === finding.questionId) ?? null,
+      observationPhotos: getAuditFindingObservationPhotos(input.audit, finding.questionId),
       events: input.events.filter((event) => event.findingId === finding.id).sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)),
     })),
   };
@@ -203,11 +239,18 @@ async function buildAuditPdf(
   const gridOnly = sections.length === 1 && sections[0] === 'grid';
   const chapterScores = scoreBySection(input.audit.rows);
   const photoReferences = new Map<string, AuditPhoto>();
+  const summaryObservationEvidence = evidenceByReference();
+  if (sections.includes('grid')) {
+    for (const { photo } of data.observationEvidence) photoReferences.set(photo.storagePath || photo.id, photo);
+  }
   for (const entry of sections.includes('summary') ? data.findings : []) {
+    if (!sections.includes('grid')) summaryObservationEvidence.add(entry.observationPhotos, entry.finding.reference || 'Sans référence');
     for (const photo of [...(entry.finding.photos ?? []), ...entry.events.flatMap((event) => event.photos ?? [])]) {
       photoReferences.set(photo.storagePath || photo.id, photo);
     }
   }
+  const summaryEvidence = summaryObservationEvidence.list();
+  for (const { photo } of summaryEvidence) photoReferences.set(photo.storagePath || photo.id, photo);
   const loadedPhotos = new Map<string, string>();
   for (const [key, photo] of photoReferences) loadedPhotos.set(key, await resolveInternalAuditReportPhoto(input, photo));
   const participants = templateMode ? [] : input.audit.participants || [];
@@ -433,23 +476,25 @@ async function buildAuditPdf(
     data.questions.forEach((question, index) => {
       const section = gridChapters[index];
       if (section !== gridChapters[index - 1]) {
-        gridRows.push([{ content: cleanText(section), colSpan: 5, styles: { fillColor: pale, fontStyle: 'bold', textColor: navy } }]);
+        gridRows.push([{ content: cleanText(section), colSpan: 6, styles: { fillColor: pale, fontStyle: 'bold', textColor: navy } }]);
       }
+      const commonAnswer = question.sharedReferences.length > 1 ? `\nRéponse commune : ${question.sharedReferences.join(', ')}` : '';
       gridRows.push([
         cleanText(question.row.reference || '-'),
         cleanText(question.row.hrFunction?.trim() || 'Non affectée'),
         cleanText(`${question.row.question}${question.row.guidance ? `\n\nÉléments à vérifier :\n${question.row.guidance}` : ''}`),
-        cleanText(`${question.answerLabel}\n${question.pointsLabel}`),
+        cleanText(`${question.answerLabel}\n${question.pointsLabel}${commonAnswer}`),
         cleanText(question.row.observation || '-'),
+        cleanText(question.row.observationPhotos?.map((photo) => photo.fileName).join('\n') || '-'),
       ]);
       if (!templateMode && chapterEnds.get(section) === index) {
         const score = chapterPercentages.get(section) ?? null;
         scoreRows.set(gridRows.length, score);
-        gridRows.push([{ content: cleanText(`Score du chapitre - ${section} : ${auditReportPercent(score)}`), colSpan: 5,
+        gridRows.push([{ content: cleanText(`Score du chapitre - ${section} : ${auditReportPercent(score)}`), colSpan: 6,
           styles: { fontStyle: 'bold', minCellHeight: 14, cellPadding: { top: 2.6, right: 2.6, bottom: 7, left: 2.6 } } }]);
       }
     });
-    table(gridRows, ['Référence', 'Fonction RH', 'Question / Éléments à vérifier', 'Notation', 'Observations'], [20, 34, 105, 32, 82], {
+    table(gridRows, ['Référence', 'Fonction RH', 'Question / Éléments à vérifier', 'Notation', 'Observations', 'Photo'], [20, 32, 89, 37, 61, 34], {
       drawCell(cell) {
         if (cell.section !== 'body' || cell.column.index !== 0 || !scoreRows.has(cell.row.index)) return;
         const score = scoreRows.get(cell.row.index) ?? null;
@@ -462,6 +507,13 @@ async function buildAuditPdf(
         }
       },
     });
+    if (data.observationEvidence.length) {
+      ensureSpace(26);
+      paragraph('Photos de la grille', { bold: true, size: 12 });
+      for (const { photo, references } of data.observationEvidence) {
+        await renderPhotos([photo], `Observation - ${[...references].join(', ')}`);
+      }
+    }
   }
 
   if (sections.includes('summary')) {
@@ -480,10 +532,12 @@ async function buildAuditPdf(
     ensureSpace(26);
     paragraph('02.2 - Suivi du traitement des écarts', { bold: true, size: 12 });
     if (!data.findings.length) paragraph('Aucun écart à suivre.', { color: muted });
-    for (const { finding, question, events } of data.findings) {
+    for (const { finding, question, observationPhotos, events } of data.findings) {
       ensureSpace(17);
       paragraph(`${finding.reference || 'Sans référence'} - ${FINDING_SEVERITY_LABELS[finding.severity]} - ${FINDING_STATUS_LABELS[finding.status]}`, { bold: true, size: 10 });
       if (question) paragraph(`Question : ${question.question}`, { size: 8, color: muted });
+      if (observationPhotos.length) paragraph(`Photos de la grille : ${observationPhotos.map((photo) => photo.fileName).join(', ')}`,
+        { size: 8, color: muted });
       if (finding.treatment && finding.treatment !== events.at(-1)?.treatment) {
         paragraph(finding.treatment, { size: 8.5 });
       } else if (!finding.treatment && !events.length) {
@@ -497,6 +551,9 @@ async function buildAuditPdf(
         await renderPhotos(event.photos ?? [], `Photo du traitement - ${event.actorName || 'Responsable de traitement'} - ${formatAuditDate(auditReportTimestampDay(event.createdAt))}`);
       }
       cursor += 4;
+    }
+    for (const { photo, references } of summaryEvidence) {
+      await renderPhotos([photo], `Photo de l’observation et de l’écart - ${[...references].join(', ')}`);
     }
   }
 
@@ -569,7 +626,7 @@ export function buildInternalAuditReport(input: InternalAuditReportInput): Promi
   return buildAuditPdf(input);
 }
 
-/** Print the persisted audit snapshot without findings, comparison or private-photo requests. */
+/** Print the persisted grid with its observation photos and without finding or treatment photos. */
 export function buildInternalAuditGridReport(input: InternalAuditReportInput): Promise<InternalAuditGeneratedReport> {
   return buildAuditPdf({ ...input, sections: ['grid'] }, 'print');
 }

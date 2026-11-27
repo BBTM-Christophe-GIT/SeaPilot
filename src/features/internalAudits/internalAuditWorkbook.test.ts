@@ -109,6 +109,26 @@ describe('internal audit Excel report', () => {
     await expect(buildInternalAuditWorkbook(report)).rejects.toThrow('preuve.png');
   });
 
+  it('lists a common photo for each linked reference and its finding with one embedded image', async () => {
+    const report = input();
+    const photo = { id: 'shared-photo', fileName: 'preuve-commune.png', storagePath: 'private.png', mimeType: 'image/png', sizeBytes: 70, url: '' };
+    const linkedRows = report.audit.rows.slice(0, 2).map((row) => ({ ...row, responseGroupId: 'shared',
+      answer: 'conforme' as const, observation: 'Observation commune', observationPhotos: [photo] }));
+    report.audit.rows = linkedRows;
+    report.findings = [{ ...report.findings[0], questionId: linkedRows[1].id, reference: linkedRows[1].reference, photos: [] }];
+    report.events = [];
+    report.loadPhoto = async () => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC';
+    const zip = await JSZip.loadAsync(await (await buildInternalAuditWorkbook(report)).blob.arrayBuffer());
+    const grid = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
+    const summary = await zip.file('xl/worksheets/sheet2.xml')!.async('string');
+    expect(grid.match(/preuve-commune\.png/g)).toHaveLength(2);
+    expect(grid).toContain('Références liées');
+    expect(grid).toContain(linkedRows.map((row) => row.reference).join(', '));
+    expect(summary).toContain('Photos de la grille');
+    expect(summary).toContain('preuve-commune.png');
+    expect(Object.values(zip.files).filter((item) => /xl\/media\/photo\d+\.png$/.test(item.name))).toHaveLength(1);
+  });
+
   it('keeps long grid and finding text fully readable in continuation rows without duplicating points', async () => {
     const report = input();
     const question = 'Question et contrôles applicables à bord : '.repeat(250) + '\n\nFin de question.';

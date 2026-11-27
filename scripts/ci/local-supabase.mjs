@@ -88,6 +88,7 @@ const pgTapTests = [
   'purchase_request_marin_operations_test.sql',
   'purchase_request_marin_approval_test.sql',
   'action_plan_captain_treatment_test.sql',
+  'internal_audit_shared_responses_observation_photos_test.sql',
   'qsms_procedure_publishing_test.sql',
   'qhse_work_permits_test.sql',
 ]

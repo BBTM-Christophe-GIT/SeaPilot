@@ -1,4 +1,4 @@
-import { internalAuditReportData, resolveInternalAuditReportPhoto, type InternalAuditReportInput } from './internalAuditReport';
+import { internalAuditReportData, resolveInternalAuditReportPhoto, type InternalAuditReportFinding, type InternalAuditReportInput } from './internalAuditReport';
 import {
   AUDIT_ANSWER_LABELS, AUDIT_STATUS_LABELS, FINDING_SEVERITY_LABELS, FINDING_STATUS_LABELS,
   compareAuditScores, type AuditPhoto,
@@ -11,8 +11,8 @@ const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
 type Cell = string | number | null;
 type TableRow = { values: Cell[]; style?: number; height?: number; merge?: boolean };
-const GRID_WIDTHS = [26, 12, 64, 76, 18, 10, 10, 55, 28];
-const SUMMARY_WIDTHS = [13, 27, 65, 32, 26, 20, 55, 80];
+const GRID_WIDTHS = [26, 12, 64, 76, 18, 10, 10, 55, 28, 30, 24];
+const SUMMARY_WIDTHS = [13, 27, 65, 32, 26, 20, 55, 80, 30];
 const GRAPH_WIDTHS = [42, 16, 16, 25, 4];
 
 /** Conservative Calibri wrapping estimates keep rows readable without Excel autofit. */
@@ -104,11 +104,10 @@ function chartDrawing(): string {
   return `${XML}<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:twoCellAnchor><xdr:from><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>15</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>34</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="1" name="Comparaison annuelle"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${REL}" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`;
 }
 type Evidence = { photo: AuditPhoto; label: string };
-function evidenceRows(input: InternalAuditReportInput): Evidence[] {
-  const findings = input.findings.filter((finding) => finding.auditId === input.audit.id && finding.companyId === input.audit.companyId);
-  return findings.flatMap((finding) => [
+function findingEvidence(findings: readonly InternalAuditReportFinding[]): Evidence[] {
+  return findings.flatMap(({ finding, events }) => [
     ...(finding.photos ?? []).map((photo) => ({ photo, label: `${finding.reference} · Constat · ${photo.fileName}` })),
-    ...input.events.filter((event) => event.findingId === finding.id).flatMap((event) => (event.photos ?? []).map((photo) => ({ photo, label: `${finding.reference} · ${FINDING_STATUS_LABELS[event.status]} · ${event.createdAt} · ${photo.fileName}` }))),
+    ...events.flatMap((event) => (event.photos ?? []).map((photo) => ({ photo, label: `${finding.reference} · ${FINDING_STATUS_LABELS[event.status]} · ${event.createdAt} · ${photo.fileName}` }))),
   ]);
 }
 
@@ -117,33 +116,40 @@ export async function buildInternalAuditWorkbook(input: InternalAuditReportInput
   const reportData = internalAuditReportData({ ...input, sections: undefined });
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  const comparison = compareAuditScores(input.audit, input.audits);
-  const findings = input.findings.filter((finding) => finding.auditId === input.audit.id && finding.companyId === input.audit.companyId);
+  const { comparison, findings } = reportData;
   const grid: TableRow[] = [
     ...metadata(input, 'Grille d’audit'),
-    { values: ['Chapitre ISM', 'Référence', 'Question', 'Éléments à vérifier', 'Réponse', 'Barème', 'Points', 'Observations', 'Fonction RH'], style: 2, height: 40 },
-    ...reportData.questions.flatMap(({ row }) => continuationRows([
+    { values: ['Chapitre ISM', 'Référence', 'Question', 'Éléments à vérifier', 'Réponse', 'Barème', 'Points', 'Observations', 'Fonction RH', 'Photo (dans Synthèse)', 'Références liées'], style: 2, height: 40 },
+    ...reportData.questions.flatMap(({ row, sharedReferences }) => continuationRows([
       row.section, row.reference, row.question, row.guidance,
       row.answer ? AUDIT_ANSWER_LABELS[row.answer] : 'Sans réponse', row.maxPoints,
       row.answer === 'na' || row.answer == null ? null : row.answer === 'conforme' ? row.maxPoints : row.answer === 'incomplet' ? row.maxPoints / 2 : 0,
       row.observation,
       row.hrFunction?.trim() || 'Non affectée',
+      row.observationPhotos?.map((photo) => photo.fileName).join('\n') || '',
+      sharedReferences.length > 1 ? sharedReferences.join(', ') : '',
     ], GRID_WIDTHS, 1, [4, 5, 6], 42)),
     { values: ['Total applicable (hors N/A)', null, null, null, null, comparison.current.maxPoints, comparison.current.earnedPoints] },
     { values: ['Score (%)', comparison.current.percentage] },
   ];
   const summary: TableRow[] = [
     ...metadata(input, 'Synthèse'),
-    { values: ['Référence', 'Type d’écart', 'Constat', 'Responsable', 'Échéance de traitement', 'Statut', 'Dernier traitement', 'Historique'], style: 2, height: 55 },
-    ...findings.flatMap((finding) => continuationRows([
+    { values: ['Référence', 'Type d’écart', 'Constat', 'Responsable', 'Échéance de traitement', 'Statut', 'Dernier traitement', 'Historique', 'Photos de la grille'], style: 2, height: 55 },
+    ...findings.flatMap(({ finding, events, observationPhotos }) => continuationRows([
       finding.reference, FINDING_SEVERITY_LABELS[finding.severity], finding.description, finding.assigneeLabel,
       finding.dueOn || 'Aucun délai · clôture facultative', FINDING_STATUS_LABELS[finding.status], finding.treatment,
-      input.events.filter((event) => event.findingId === finding.id).map((event) => `${event.createdAt} · ${event.actorName} · ${FINDING_STATUS_LABELS[event.status]} : ${event.treatment}`).join('\n'),
+      events.map((event) => `${event.createdAt} · ${event.actorName} · ${FINDING_STATUS_LABELS[event.status]} : ${event.treatment}`).join('\n'),
+      observationPhotos.map((photo) => photo.fileName).join('\n'),
     ], SUMMARY_WIDTHS, 0, [1, 4, 5], 72)),
   ];
   if (!findings.length) summary.push({ values: ['Aucun écart émis pour cet audit.'] });
   const graph: TableRow[] = [...metadata(input, 'Graphique'), { values: ['Chapitre / score', input.audit.year - 1, input.audit.year, 'Évolution (points de %)'], style: 2, height: 30 }, { values: ['Score global', comparison.previous?.percentage ?? null, comparison.current.percentage, comparison.delta] }, ...comparison.sections.map((item) => ({ values: [item.section, item.previous, item.current, item.delta] })), { values: [comparison.previousAudit ? `Comparaison avec l’audit réalisé ${input.audit.year - 1}.` : `Aucun audit réalisé en ${input.audit.year - 1} · score précédent absent.`] }, { values: ['N/A exclus du barème. Cellule vide = score indisponible.'] }];
-  const evidence = evidenceRows(input);
+  const evidence = [
+    ...findingEvidence(findings),
+    ...reportData.observationEvidence.map(({ photo, references }) => ({
+      photo, label: `${[...references].join(', ')} · Observation · ${photo.fileName}`,
+    })),
+  ];
   const images: { bytes: string; extension: string; row: number; label: string; width: number; height: number }[] = [];
   const imageReader = evidence.length ? new (await import('jspdf')).jsPDF() : null;
   for (const item of evidence) {
