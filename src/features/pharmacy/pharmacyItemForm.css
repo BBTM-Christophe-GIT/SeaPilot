@@ -170,6 +170,7 @@
 }
 
 @media (max-width: 600px) {
+  .pharmacy-item-classification,
   .pharmacy-item-stock {
     grid-template-columns: minmax(0, 1fr);
   }

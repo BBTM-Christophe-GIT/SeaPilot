@@ -7,7 +7,7 @@ import { ModuleRibbon, ModuleRibbonCommand, ModuleRibbonGroup } from '../../comp
 import { supabase } from '../../lib/supabaseClient';
 import type { RoleKey } from '../permissions/roles';
 import type { AppShellOutletContext } from '../shell/AppShell';
-import { PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
+import { PHARMACY_EMERGENCY_BAG_KEY, PHARMACY_MEDICAL_SECTIONS, canManagePharmacy, formatPharmacyDate, formatPharmacyItemExpiry, formatPharmacyStockQuantity, groupPharmacyItems, parsePharmacyQuantity, pharmacyDesignationKey, pharmacyDotationKey, pharmacyDotationLabel, pharmacyItemExpiryStatus, pharmacyItemStrength, pharmacyMedicalSection, pharmacyMedicalSectionLabel, pharmacyRequirementKey, pharmacyExpiryStatus, pharmacyQuantityLabel, pharmacyStockStatus, pharmacyVesselExpiryCounts, selectPharmacyVessels, type PharmacyCategory, type PharmacyControl, type PharmacyDotationRequirement, type PharmacyItem, type PharmacyItemDraft, type PharmacyMedicalSection, type PharmacyVessel } from './pharmacyModel';
 import { deletePharmacyCategory, downloadPharmacyControl, fetchPharmacyDotationRequirements, fetchPharmacyRegister, fetchPharmacyVesselExpiryCounts, fetchPharmacyVessels, savePharmacyCategory, savePharmacyItem, uploadPharmacyControl } from './pharmacyQueries';
 import { PHARMACY_NOTIFICATIONS_CHANGED, usePharmacyAlertPolling } from './usePharmacyAlertPolling';
 import { PharmacyCategoriesDialog } from './PharmacyCategoriesDialog';
@@ -111,18 +111,38 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
   const requirementVesselId = vessel?.id;
   const requirements = requirementsRead?.client === db && requirementsRead.vesselId === requirementVesselId && requirementsRead.version === requirementsVersion ? requirementsRead : null;
   const dotationOptions = new Map<string, string>([[pharmacyDotationKey(currentDotation), currentDotation]]);
+  if (vessel?.medical_emergency_bag) dotationOptions.set(PHARMACY_EMERGENCY_BAG_KEY, PHARMACY_EMERGENCY_BAG_KEY);
   for (const record of [...categoryRecords, ...items]) {
     const key = pharmacyDotationKey(record.medical_dotation);
-    if (!dotationOptions.has(key)) dotationOptions.set(key, record.medical_dotation?.trim() || '');
+    if (key !== PHARMACY_EMERGENCY_BAG_KEY && !dotationOptions.has(key)) dotationOptions.set(key, record.medical_dotation?.trim() || '');
   }
-  const dotationItems = items.filter((item) => pharmacyDotationKey(item.medical_dotation) === pharmacyDotationKey(medicalDotation));
+  const selectedDotationKey = pharmacyDotationKey(medicalDotation);
+  const selectedRequirements = (requirements?.rows ?? []).filter((entry) => entry.dotation_key === selectedDotationKey);
+  const regulatoryRequirements = new Map(selectedRequirements.filter((entry) => entry.catalog_code).map((entry) =>
+    [pharmacyRequirementKey(entry.dotation_key, entry.medical_section, entry.designation_key), entry]));
+  const regulatoryForItem = (item: PharmacyItem) => item.outside_dotation ? undefined
+    : regulatoryRequirements.get(pharmacyRequirementKey(item.medical_dotation, item.medical_section, pharmacyDesignationKey(item.designation)));
+  const dotationItems = items.filter((item) => pharmacyDotationKey(item.medical_dotation) === selectedDotationKey)
+    .map((item) => {
+      const reference = regulatoryForItem(item);
+      if (!reference) return item;
+      return { ...item,
+        d217_applicability: reference.applicability,
+        required_quantity: reference.required_quantity,
+        required_stock_quantity: reference.required_stock_quantity,
+        required_stock_unit: reference.required_stock_unit,
+        required_strength: reference.required_strength,
+        required_package_size: reference.required_package_size,
+      };
+    });
   const dotationCategories = categoryRecords.filter((entry) => pharmacyDotationKey(entry.medical_dotation) === pharmacyDotationKey(medicalDotation));
   const sectionOptions = (Object.keys(PHARMACY_MEDICAL_SECTIONS) as PharmacyMedicalSection[]).filter((section) => section !== 'unclassified' || [...dotationItems, ...dotationCategories].some((entry) => pharmacyMedicalSection(entry.medical_section) === 'unclassified'));
   const sectionItems = dotationItems.filter((item) => medicalSection === 'all' || pharmacyMedicalSection(item.medical_section) === medicalSection);
   const sectionCategories = dotationCategories.filter((entry) => medicalSection === 'all' || pharmacyMedicalSection(entry.medical_section) === medicalSection);
-  const isCurrentDotation = pharmacyDotationKey(medicalDotation) === pharmacyDotationKey(currentDotation);
+  const isCurrentDotation = selectedDotationKey === pharmacyDotationKey(currentDotation)
+    || (selectedDotationKey === PHARMACY_EMERGENCY_BAG_KEY && vessel?.medical_emergency_bag === true);
   const active = sectionItems.filter((item) => item.active);
-  const categories = [...new Set([...sectionCategories.map((entry) => entry.name), ...sectionItems.map((item) => item.category)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
+  const categories = [...new Set([...sectionCategories.map((entry) => entry.name), ...sectionItems.map((item) => item.category), ...selectedRequirements.filter((entry) => medicalSection === 'all' || entry.medical_section === medicalSection).map((entry) => entry.category ?? '')].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
   const currentControl = controls.find((control) => control.is_current);
   const controlStatus = pharmacyExpiryStatus(currentControl?.expires_on || null);
   const counts = {
@@ -137,14 +157,14 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     && matchesItemFilter(item, filter));
   const visibleCatalogue = !normalizedQuery && filter === 'all' ? sectionCategories.filter((entry) => !category || entry.name === category) : [];
   const groups = groupPharmacyItems(filtered, visibleCatalogue);
-  const existingRequirements = new Set(dotationItems.filter((item) => item.active)
-    .map((item) => JSON.stringify([pharmacyMedicalSection(item.medical_section), pharmacyDesignationKey(item.designation)])));
-  const missingStocks = filter === 'all' && !category ? (requirements?.rows ?? []).filter((entry) =>
-    entry.dotation_key === pharmacyDotationKey(medicalDotation)
-    && (medicalSection === 'all' || medicalSection === entry.medical_section)
-    && (entry.required_stock_quantity != null || entry.required_quantity.trim())
-    && !existingRequirements.has(JSON.stringify([entry.medical_section, entry.designation_key]))
-    && pharmacyDesignationKey(entry.designation).includes(pharmacyDesignationKey(normalizedQuery))) : [];
+  const existingRequirements = new Set(dotationItems.filter((item) => item.active && !item.outside_dotation)
+    .map((item) => pharmacyRequirementKey(item.medical_dotation, item.medical_section, pharmacyDesignationKey(item.designation))));
+  const missingStocks = filter === 'all' ? selectedRequirements.filter((entry) =>
+    (medicalSection === 'all' || medicalSection === entry.medical_section)
+    && (!category || entry.category === category)
+    && (entry.catalog_code || entry.required_stock_quantity != null || entry.required_quantity.trim())
+    && !existingRequirements.has(pharmacyRequirementKey(entry.dotation_key, entry.medical_section, entry.designation_key))
+    && pharmacyDesignationKey([entry.designation, entry.category].filter(Boolean).join(' ')).includes(pharmacyDesignationKey(normalizedQuery))) : [];
 
   useEffect(() => {
     if (!preview) return;
@@ -201,7 +221,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       const previous = lastItemLink.current;
       const openLinkedItem = requestedItemId && (!previous || previous.client !== db || previous.vesselId !== vesselId || previous.itemId !== requestedItemId);
       lastItemLink.current = { client: db, vesselId, itemId: requestedItemId };
-      const linked = openLinkedItem ? loaded.items.find((item) => item.id === requestedItemId && item.vessel_id === vesselId) : undefined;
+      const linked = openLinkedItem ? loaded.items.find((item) => item.id === requestedItemId && item.vessel_id === vesselId
+        && (vessel.medical_emergency_bag || pharmacyDotationKey(item.medical_dotation) !== PHARMACY_EMERGENCY_BAG_KEY)) : undefined;
       if (linked) { setMedicalDotation(linked.medical_dotation?.trim() || ''); setMedicalSection(pharmacyMedicalSection(linked.medical_section)); setSelected(linked); setShowInactive(!linked.active); }
     }).catch((reason) => { if (id === requestId.current) setError(messageOf(reason)); }).finally(() => { if (id === requestId.current) setLoading(false); });
     return () => { requestId.current += 1; };
@@ -218,7 +239,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         const refreshedVessels = selectPharmacyVessels(await fetchPharmacyVessels(db));
         if (id !== requestId.current) return;
         const refreshed = refreshedVessels.find((entry) => entry.id === vesselId);
-        if (!refreshed || refreshed.can_manage !== vessel?.can_manage || pharmacyDotationKey(refreshed.medical_dotation) !== pharmacyDotationKey(vessel?.medical_dotation)) {
+        if (!refreshed || refreshed.can_manage !== vessel?.can_manage || pharmacyDotationKey(refreshed.medical_dotation) !== pharmacyDotationKey(vessel?.medical_dotation)
+          || refreshed.medical_emergency_bag !== vessel?.medical_emergency_bag) {
           handedToVesselLoad = refreshedVessels.length > 0;
           setVessels(refreshedVessels);
           setVesselId(refreshed?.id || refreshedVessels[0]?.id || 0);
@@ -374,7 +396,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
     try {
       const order = await fetchPharmacyPurchaseOrderContext(db, vessel.id);
       if (scope !== purchaseOrderScope.current) return;
-      const lines = buildPharmacyPurchaseOrderLines(order.items, order.requirements, order.medical_dotation, order.issued_on);
+      const lines = buildPharmacyPurchaseOrderLines(order.items, order.requirements, order.medical_dotation, order.issued_on, order.medical_emergency_bag);
       if (quantities && (purchaseOrderReview?.issuedOn !== order.issued_on || purchaseOrderReview.medicalDotation !== order.medical_dotation || JSON.stringify(purchaseOrderReview.lines) !== JSON.stringify(lines))) {
         setPurchaseOrderReview(null);
         setError('La date ou l’inventaire a changé. Ouvrez à nouveau le bon de commande.');
@@ -391,7 +413,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         if (!quantity || (line.unit === 'boîte' && !Number.isSafeInteger(quantity))) {
           throw new Error(`Renseignez une quantité valide pour ${line.designation}.`);
         }
-        return [{ ...line, quantity, quantityNeedsReview: false, reason: line.canExclude ? 'Manquant' : line.reason }];
+        return [{ ...line, quantity, quantityNeedsReview: false, reason: line.canExclude && !line.canSkipReview ? 'Manquant' : line.reason }];
       });
       if (!orderLines.length) {
         setPurchaseOrderReview(null);
@@ -409,6 +431,10 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         registrationNumber: order.registration_number,
         imoNumber: order.imo_number,
         medicalDotation: pharmacyDotationLabel(order.medical_dotation),
+        medicalEmergencyBag: order.medical_emergency_bag,
+        armament: order.armament,
+        flagState: order.flag_state,
+        registrationPort: order.registration_port,
         signerName: order.signer_name,
         signerFunction: order.signer_function,
         signature,
@@ -453,7 +479,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
       <div className="pharmacy-inventory-panel">
         <div className="pharmacy-filters">
           <label className="pharmacy-filter-field pharmacy-dotation-filter">Type de dotation médicale<select aria-label="Type de dotation médicale" disabled={loading} value={pharmacyDotationKey(medicalDotation)} onChange={(event) => { setMedicalDotation(dotationOptions.get(event.target.value) || ''); setMedicalSection('all'); setCategory(''); setSelected(null); setEditor(null); setRemoval(null); setCategoryScope(null); setNotice(''); }}>
-            {[...dotationOptions].map(([key, value]) => <option key={key} value={key}>{pharmacyDotationLabel(value)}{key === pharmacyDotationKey(currentDotation) ? ' · actuelle' : ' · historique'}</option>)}
+            {[...dotationOptions].map(([key, value]) => <option key={key} value={key}>{pharmacyDotationLabel(value)}{key === PHARMACY_EMERGENCY_BAG_KEY ? '' : key === pharmacyDotationKey(currentDotation) ? ' · actuelle' : ' · historique'}</option>)}
           </select></label>
           <label className="pharmacy-filter-field">Branche<select aria-label="Branche" disabled={loading} value={medicalSection} onChange={(event) => { setMedicalSection(event.target.value as 'all' | PharmacyMedicalSection); setCategory(''); setSelected(null); setEditor(null); setRemoval(null); setCategoryScope(null); setNotice(''); }}><option value="all">Toutes les branches</option>{sectionOptions.map((section) => <option key={section} value={section}>{pharmacyMedicalSectionLabel(section)}</option>)}</select></label>
           <label className="pharmacy-filter-field">Catégorie<select aria-label="Catégorie" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Toutes les catégories</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -466,10 +492,12 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
               <tbody className="pharmacy-dotation-group" data-pharmacy-dotation={pharmacyDotationKey(medicalDotation)}><tr className="pharmacy-dotation-row"><th colSpan={6}><span>Type de dotation médicale</span><strong>{pharmacyDotationLabel(medicalDotation)}</strong></th></tr></tbody>
               {sectionOptions.filter((section) => medicalSection === 'all' || section === medicalSection).map((section) => {
                 const branchGroups = groups.filter((group) => group.medical_section === section);
+                const branchMissingStocks = missingStocks.filter((entry) => entry.medical_section === section);
                 return <Fragment key={section}><tbody><tr className="pharmacy-branch-row" data-pharmacy-section={section}><th colSpan={6}>{pharmacyMedicalSectionLabel(section)}</th></tr></tbody>
                 {branchGroups.length ? branchGroups.map((group) => <tbody key={group.key}>
               <tr className="pharmacy-category-row"><th scope="rowgroup" colSpan={6}><div><span><strong>{group.category}</strong></span><em>{group.items.length} article{group.items.length > 1 ? 's' : ''}</em></div></th></tr>
               {!group.items.length ? <tr><td className="pharmacy-empty pharmacy-empty-category" colSpan={6}>{dotationItems.some((item) => pharmacyMedicalSection(item.medical_section) === group.medical_section && categoryKey(item.category) === categoryKey(group.category)) ? 'Aucun article affiché sur ce navire avec les filtres actuels.' : 'Aucun article enregistré sur ce navire.'}</td></tr> : group.items.map((item) => {
+                const reference = regulatoryForItem(item);
                 const dosage = item.stock_quantity != null ? pharmacyItemStrength(item) : item.strength;
                 const details = [item.brand, item.lot_number ? `Lot ${item.lot_number}` : ''].filter(Boolean).join(' · ');
                 return <tr data-pharmacy-item={item.id} key={item.id} className={`${!item.active ? 'is-inactive' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`}>
@@ -480,8 +508,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                     </div>
                     <small>{details || item.category || 'Sans catégorie'}</small>
                   </td>
-                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{pharmacyQuantityLabel(item, 'stock')}{dosage ? <small>{dosage} par unité</small> : null}{item.package_size ? <small>{item.package_size} par boîte</small> : null}</td>
-                  <td>{item.outside_dotation ? '—' : <>{pharmacyQuantityLabel(item, 'required')}{item.required_strength ? <small>{item.required_strength} par unité</small> : null}{item.required_package_size ? <small>{item.required_package_size} par boîte</small> : null}</>}</td>
+                  <td className={pharmacyStockStatus(item) === 'low' ? 'pharmacy-low-value' : ''}>{pharmacyQuantityLabel(item, 'stock')}{dosage ? <small>{dosage} par unité</small> : null}{item.package_size ? <small>{item.package_size} par boîte</small> : null}{item.stock_packaging ? <small>{item.stock_packaging}</small> : null}</td>
+                  <td>{item.outside_dotation ? '—' : <>{pharmacyQuantityLabel(item, 'required')}{reference?.packaging ? <small>{reference.packaging}</small> : item.required_strength ? <small>{item.required_strength} par unité</small> : null}{item.required_package_size ? <small>{item.required_package_size} par boîte</small> : null}{reference?.regulatory_notes ? <small>{reference.regulatory_notes}</small> : null}</>}</td>
                   <td>{formatPharmacyItemExpiry(item)}{!item.no_expiry && item.expiry_precision === 'month' && item.expires_on ? <small>Mois indiqué</small> : null}</td>
                   <td><ItemStatus item={item} /></td>
                   <td>{manager ? <div className="pharmacy-row-actions">
@@ -494,15 +522,13 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                   </div> : <button className="pharmacy-icon-button" aria-label={`Détails ${item.designation || item.brand}`} onClick={() => setSelected(item)} type="button"><ChevronDown size={16} /></button>}</td>
                 </tr>;
               })}
-            </tbody>) : <tbody><tr><td className="pharmacy-empty" colSpan={6}>{vessel ? 'Aucun article ne correspond aux filtres dans cette branche.' : 'Aucun navire accessible pour votre profil.'}</td></tr></tbody>}
-                </Fragment>;
-              })}
-              {missingStocks.length ? <tbody>
+            </tbody>) : branchMissingStocks.length ? null : <tbody><tr><td className="pharmacy-empty" colSpan={6}>Aucun article ne correspond aux filtres dans cette branche.</td></tr></tbody>}
+              {branchMissingStocks.length ? <tbody>
                 <tr className="pharmacy-branch-row"><th scope="rowgroup" colSpan={6}>Dotation commune · stock à renseigner</th></tr>
-                {missingStocks.map((entry) => <tr key={JSON.stringify([entry.medical_section, entry.designation_key])}>
-                  <td><strong>{entry.designation}</strong><small>{pharmacyMedicalSectionLabel(entry.medical_section)}</small></td>
+                {branchMissingStocks.map((entry) => <tr key={JSON.stringify([entry.medical_section, entry.designation_key])}>
+                  <td><strong>{entry.designation}</strong><small>{[pharmacyMedicalSectionLabel(entry.medical_section), entry.category].filter(Boolean).join(' · ')}</small></td>
                   <td>—</td>
-                  <td>{entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}{entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}{entry.required_package_size ? <small>{entry.required_package_size} par boîte</small> : null}</td>
+                  <td>{entry.required_stock_quantity == null ? entry.required_quantity : formatPharmacyStockQuantity(entry.required_stock_quantity, entry.required_stock_unit)}{entry.packaging ? <small>{entry.packaging}</small> : entry.required_strength ? <small>{entry.required_strength} par unité</small> : null}{entry.required_package_size ? <small>{entry.required_package_size} par boîte</small> : null}{entry.regulatory_notes ? <small>{entry.regulatory_notes}</small> : null}</td>
                   <td>—</td>
                   <td><span className="pharmacy-badge is-unknown">Stock à renseigner</span></td>
                   <td>{manager && isCurrentDotation ? <div className="pharmacy-row-actions">
@@ -510,6 +536,8 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
                   </div> : null}</td>
                 </tr>)}
               </tbody> : null}
+                </Fragment>;
+              })}
             </>}
           </table>
         </div>
@@ -531,7 +559,7 @@ export function PharmacyPage({ client, roles }: { client?: SupabaseClient; roles
         {controls.length > 1 ? <details className="pharmacy-history"><summary>Historique des contrôles ({controls.length - 1})</summary>{controls.filter((control) => !control.is_current).map((control) => <button key={control.id} onClick={() => void download(control)} disabled={busy} type="button"><Download size={14} /><span>{control.file_name}<small>Échéance {formatPharmacyDate(control.expires_on)}</small></span></button>)}</details> : null}
       </aside>
     </div>
-    {editor ? <PharmacyItemForm item={editor.item} medicalDotation={currentDotation} medicalSection={editor.requirement?.medical_section ?? (medicalSection === 'all' ? undefined : medicalSection)} initialDesignation={editor.requirement?.designation} categoryRecords={dotationCategories} categories={categories} requirements={requirements?.rows} requirementsPending={Boolean(requirementVesselId && !requirements)} requirementsError={requirements?.failed} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
+    {editor ? <PharmacyItemForm item={editor.item} medicalDotation={medicalDotation} medicalSection={editor.requirement?.medical_section ?? (medicalSection === 'all' ? undefined : medicalSection)} initialDesignation={editor.requirement?.designation} initialCategory={editor.requirement?.category} categoryRecords={dotationCategories} categories={categories} requirements={requirements?.rows} requirementsPending={Boolean(requirementVesselId && !requirements)} requirementsError={requirements?.failed} busy={busy} error={formError} onClose={() => setEditor(null)} onSave={(draft) => void saveItem(draft)} /> : null}
     {categoryScope && categoryScope.client === db && categoryScope.vessel.id === vesselId && pharmacyDotationKey(categoryScope.medicalDotation) === pharmacyDotationKey(medicalDotation) && categoryScope.medicalSection === medicalSection && manager ? <PharmacyCategoriesDialog
       vesselName={categoryScope.vessel.name} medicalDotation={categoryScope.medicalDotation} initialMedicalSection={categoryScope.medicalSection} categories={dotationCategories} items={dotationItems} busy={busy || loading} notice={notice}
       onClose={() => { if (!categoryInFlight.current) setCategoryScope(null); }}

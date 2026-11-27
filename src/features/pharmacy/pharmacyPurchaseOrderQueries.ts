@@ -7,6 +7,10 @@ export interface PharmacyPurchaseOrderContext {
   registration_number: string | null;
   imo_number: string | null;
   medical_dotation: string;
+  medical_emergency_bag?: boolean;
+  armament?: string | null;
+  flag_state?: string | null;
+  registration_port?: string | null;
   signer_name: string;
   signer_function: string | null;
   signature_path: string;

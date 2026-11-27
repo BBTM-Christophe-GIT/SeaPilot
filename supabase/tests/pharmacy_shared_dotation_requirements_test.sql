@@ -78,7 +78,9 @@ begin
   assert exists(select 1 from public.pharmacy_inventory_notifications() where item_id=lot_b and kind='stock'), '18 × 5 mL is insufficient for 20 × 5 mL';
   assert public.list_pharmacy_dotation_requirements(empty_vessel) @> jsonb_build_array(common_key||'{"designation":"Sérum  partagé","required_stock_quantity":20,"dotation_requirement_revision":1}'),
     'The form can find a common target even before a vessel has matching inventory';
-  assert public.list_pharmacy_dotation_requirements(vessel_c) = '[]'::jsonb, 'Catalog lookup is scoped to the vessel dotation';
+  assert not exists(select 1 from jsonb_array_elements(public.list_pharmacy_dotation_requirements(vessel_c)) entry
+    where entry->>'dotation_key' <> 'dotation b' or entry->>'designation_key' = 'serum partage'),
+    'The Fleet B vessel cannot read a custom C restreinte target alongside its official catalog';
   assert not exists(select 1 from public.pharmacy_inventory where vessel_id=empty_vessel), 'Sharing a target does not invent stock rows';
 
   lot_new:=public.save_pharmacy_item(vessel_b,'{"designation":"Sérum partagé","medical_section":"medicines","stock_quantity":4,"stock_unit":"flacon","strength":"2,5 cL"}');

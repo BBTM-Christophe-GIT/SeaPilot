@@ -132,6 +132,7 @@ const assertionTests = [
   'public_catalogue_and_import_rpc_security_test.sql',
   'pharmacy_vessel_read_scope_test.sql',
   'pharmacy_purchase_order_context_test.sql',
+  'pharmacy_d217_test.sql',
   'medical_pharmacy_stock_test.sql',
   'pharmacy_shared_dotation_requirements_test.sql',
 ]

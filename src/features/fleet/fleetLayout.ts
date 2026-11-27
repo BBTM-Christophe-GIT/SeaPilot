@@ -94,6 +94,7 @@ const categories = [
       field('maxPeople', 'Capacité maximale', 'Maximum persons on board', v => v.maxPeople),
       field('safeManning', 'Effectif minimal', 'Minimum safe manning', v => v.safeManning ?? v.crewMembers),
       field('medicalDotation', 'Dotation médicale', 'Medical supplies', v => v.medicalDotation, internal),
+      field('medicalEmergencyBag', "Sac Médical d'Urgence", 'Emergency medical bag', v => v.medicalEmergencyBag ? 'Oui' : 'Non', internal),
     ],
   },
   {

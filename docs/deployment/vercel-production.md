@@ -1,5 +1,7 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.124.0** ajoute les cinq dotations médicales et le Sac Médical d’Urgence dans Navires. L’inventaire affiche la référence Division 217 correspondante et le bon de commande PDF reprend la trame de la page 47. Appliquer les deux migrations décrites dans le [guide Inventaire Pharmacie](./pharmacy-inventory.md#dotations-division-217) avant le frontend.
+
 La version **3.123.0** (build `2026-11-27.001`) actualise l’export PDF
 des audits ISM internes. La couverture reprend la photo du navire, la date,
 le score global, le décompte des écarts par type et les chapitres répartis
