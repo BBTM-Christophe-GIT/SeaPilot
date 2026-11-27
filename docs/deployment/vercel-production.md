@@ -1,5 +1,13 @@
 # SeaPilot Vercel Production Notes
 
+La version **3.123.0** (build `2026-11-27.001`) actualise l’export PDF
+des audits ISM internes. La couverture reprend la photo du navire, la date,
+le score global, le décompte des écarts par type et les chapitres répartis
+autour du radar. Les pages intérieures affichent le logo BBTM noir et
+l’année. La grille affiche le score et les écarts émis, suivis des barres
+de score par chapitre. La synthèse distingue la liste des écarts de leur
+suivi. Aucune migration requise.
+
 La version **3.122.1** affiche **ILE DE FRANCE** dans les listes
 **Ajouter un document** et **Programmer une visite**. Depuis le sélecteur
 de visite, un navire sans document propose l’ajout de sa première ligne

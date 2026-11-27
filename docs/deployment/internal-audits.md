@@ -89,3 +89,9 @@ Les gestionnaires désignent les participants depuis les profils RH. Le serveur 
 Le PDF peut inclure une ou plusieurs sections : **Grille d’audit**, **Synthèse**, **Graphique**. Les participants figurent à la suite des sections choisies. La grille seule est téléchargeable avant que les réponses soient complétées. Le classeur Excel conserve ses trois onglets. Les exports restent bloqués tant que des modifications ne sont pas enregistrées ; une signature enregistrée mais indisponible produit une erreur explicite.
 
 Voir [la migration, les règles d’accès et les vérifications](./internal-audit-grid-roles-participants.md).
+
+## Couverture et scores du rapport PDF
+
+Le rapport PDF s’ouvre sur une couverture sans en-tête. Elle présente le nom du navire ou du site, la date de réalisation, le score global et le décompte des écarts par type. Les titres complets des chapitres sont disposés autour du radar, à leurs sommets respectifs. L’en-tête intérieur porte le logo BBTM noir et affiche l’année de l’audit. La photo provient du module Navires et suit les mêmes autorisations de lecture. Si aucune image ne peut être chargée, le rapport reste disponible et la couverture le signale.
+
+La grille affiche le score de l’audit, le nombre d’écarts émis et une barre de score à la fin de chaque chapitre. La synthèse sépare la liste des écarts de leur suivi, qui contient les statuts, traitements datés et preuves. La section **Graphique** présente le radar des scores de l’audit et conserve les tableaux de comparaison avec l’année précédente. Les scores indisponibles sont indiqués par **N/A** sur les radars et restent distincts de **0 %**. L’impression de la grille et le téléchargement d’un modèle vierge démarrent directement par la grille.
